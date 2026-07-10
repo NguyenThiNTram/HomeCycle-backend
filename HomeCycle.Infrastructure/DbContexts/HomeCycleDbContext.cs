@@ -378,11 +378,20 @@ public partial class HomeCycleDbContext : DbContext
             entity.HasKey(e => e.OtpId).HasName("OTP_pkey");
 
             entity.Property(e => e.OtpId).ValueGeneratedNever();
+
+            entity.Property(e => e.Email);
+            entity.Property(e => e.Purpose).IsRequired().HasDefaultValue("Register");
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()");
+            entity.Property(e => e.ExpiredAt);
             entity.Property(e => e.IsUsed).HasDefaultValue(false);
 
-            entity.HasOne(d => d.User).WithMany(p => p.OTPs)
-                .OnDelete(DeleteBehavior.ClientSetNull)
+            //entity.HasOne(d => d.User).WithMany(p => p.OTPs)
+            //    .OnDelete(DeleteBehavior.ClientSetNull)
+            //    .HasConstraintName("fk_otp_user");
+            entity.HasOne(d => d.User)
+                .WithMany(p => p.OTPs)
+                .HasForeignKey(d => d.UserId)
+                .OnDelete(DeleteBehavior.Restrict)
                 .HasConstraintName("fk_otp_user");
         });
 

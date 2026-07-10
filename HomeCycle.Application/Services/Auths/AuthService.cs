@@ -1,10 +1,12 @@
 ﻿using AutoMapper;
 using FluentValidation;
+using Google.Apis.Auth;
 using HomeCycle.Application.Commons.Errors;
 using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Requests.Auths;
 using HomeCycle.Application.DTOs.Responses;
 using HomeCycle.Application.Interfaces.Generics;
+using HomeCycle.Application.Interfaces.Repositories;
 using HomeCycle.Application.Interfaces.Repositories.Users;
 using HomeCycle.Application.Interfaces.Security;
 using HomeCycle.Application.Interfaces.Services.Auths;
@@ -32,8 +34,10 @@ namespace HomeCycle.Application.Services.Auths
         private readonly IConfiguration _configuration;
         private readonly IValidator<RegisterPersonalRequest> _validator;
         private readonly IValidator<LoginPersonalRequest> _loginValidator;
+        private readonly IOtpRepository _otpRepository;
+        private readonly IEmailService _emailService;
 
-        public AuthService(IUserRepository userRepository, IUnitOfWork unitOfWork, IPasswordHasher passwordHasher, IJwtService jwtService, IMapper mapper, IConfiguration configuration, IValidator<RegisterPersonalRequest> validator, IValidator<LoginPersonalRequest> loginValidator, IPersonalProfileRepository personalProfileRepository)
+        public AuthService(IUserRepository userRepository, IUnitOfWork unitOfWork, IPasswordHasher passwordHasher, IJwtService jwtService, IMapper mapper, IConfiguration configuration, IValidator<RegisterPersonalRequest> validator, IValidator<LoginPersonalRequest> loginValidator, IPersonalProfileRepository personalProfileRepository, IOtpRepository otpRepository, IEmailService emailService)
         {
             _userRepository = userRepository;
             _unitOfWork = unitOfWork;
@@ -44,6 +48,8 @@ namespace HomeCycle.Application.Services.Auths
             _validator = validator;
             _personalProfileRepository = personalProfileRepository;
             _loginValidator = loginValidator;
+            _otpRepository = otpRepository;
+            _emailService = emailService;
         }
 
         public async Task<Result<LoginResponseDto>> LoginPersonalAsync(LoginPersonalRequest request, CancellationToken cancellationToken = default)
@@ -183,78 +189,26 @@ namespace HomeCycle.Application.Services.Auths
             }
         }
 
-        //public async Task<Result<LoginResponseDto>> RefreshTokenAsync(string refreshToken, CancellationToken cancellationToken = default)
-        //{
-        //    if (string.IsNullOrWhiteSpace(refreshToken))
-        //        return Result<LoginResponseDto>.Fail(AuthErrors.InvalidRefreshToken);
-
-        //    var token = await _userRepository.GetRefreshTokenAsync(refreshToken, cancellationToken);
-
-        //    if (token == null || token.ExpiredAt <= DateTime.UtcNow || token.RevokedAt != null)
-        //        return Result<LoginResponseDto>.Fail(AuthErrors.ExpiredRefreshToken);
-
-        //    var user = await _userRepository.GetByIdAsync(token.UserId, cancellationToken);
-
-        //    if (token.RevokedAt != null)
-        //        return Result<LoginResponseDto>.Fail(AuthErrors.RevokedRefreshToken);
-
-        //    if (user == null) 
-        //        return Result<LoginResponseDto>.Fail(AuthErrors.InvalidCredential);
-
-        //    //var newAccessToken = _jwtService.GenerateAccessToken(user);
-        //    var newRefreshToken = _jwtService.GenerateRefreshToken();
-        //    var now = DateTime.UtcNow;
-
-        //    token.RevokedAt = now;
-        //    token.ReplacedByToken = newRefreshToken;
-
-        //    await _userRepository.AddRefreshTokenAsync(new refresh_token
-        //    {
-        //        RefreshTokenId = Guid.NewGuid(),
-        //        UserId = user.UserId,
-        //        Token = newRefreshToken,
-        //        ExpiredAt = now.AddDays(7),
-        //        CreatedAt = now
-        //    }, cancellationToken);
-
-        //    await _unitOfWork.SaveChangesAsync(cancellationToken);
-
-        //    return Result<LoginResponseDto>.Success(new LoginResponseDto
-        //    {
-        //        Message = "Refresh token successful.",
-        //        AccessToken = _jwtService.GenerateAccessToken(user),
-        //        RefreshToken = newRefreshToken
-        //    });
-        //}
-
         public async Task<Result<LoginResponseDto>> RefreshTokenAsync(string refreshToken, CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrWhiteSpace(refreshToken))
                 return Result<LoginResponseDto>.Fail(AuthErrors.InvalidRefreshToken);
 
-            // 1. Lấy token cũ lên (EF Core bắt đầu theo dõi thực thể này)
             var token = await _userRepository.GetRefreshTokenAsync(refreshToken, cancellationToken);
 
-            // 2. Gom tất cả điều kiện kiểm tra Token hợp lệ vào 1 chỗ cho sạch code
             if (token == null || token.ExpiredAt <= DateTime.UtcNow || token.RevokedAt != null)
                 return Result<LoginResponseDto>.Fail(AuthErrors.ExpiredRefreshToken);
 
-            // 3. Lấy thông tin User sở hữu token
             var user = await _userRepository.GetByIdAsync(token.UserId, cancellationToken);
             if (user == null)
                 return Result<LoginResponseDto>.Fail(AuthErrors.InvalidCredential);
 
-            // 4. Chuẩn bị dữ liệu cho token mới
             var newRefreshToken = _jwtService.GenerateRefreshToken();
             var now = DateTime.UtcNow;
 
-            // 5. Cập nhật trạng thái Token cũ trực tiếp (Thay đổi trạng thái trên RAM)
             token.RevokedAt = now;
             token.ReplacedByToken = newRefreshToken;
 
-            // LƯU Ý: Tuyệt đối KHÔNG gọi _userRepository.UpdateRefreshToken(token) ở đây nữa!
-
-            // 6. Thêm bản ghi Token mới vào cơ sở dữ liệu
             await _userRepository.AddRefreshTokenAsync(new refresh_token
             {
                 RefreshTokenId = Guid.NewGuid(),
@@ -264,7 +218,6 @@ namespace HomeCycle.Application.Services.Auths
                 CreatedAt = now
             }, cancellationToken);
 
-            // 7. Thực thi lưu xuống Database (EF Core tự gom cụm Update token cũ và Insert token mới vào 1 Transaction)
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
             return Result<LoginResponseDto>.Success(new LoginResponseDto
@@ -275,5 +228,62 @@ namespace HomeCycle.Application.Services.Auths
             });
         }
 
+        public async Task<string> ExecuteGoogleLoginAsync(string idToken)
+        {
+            try
+            {
+                var clientId = _configuration["GoogleAuth:web:client_id"];
+                var settings = new GoogleJsonWebSignature.ValidationSettings()
+                {
+                    Audience = new List<string> { clientId! },
+
+                    // Cho phép lệch tối đa 30 phút để tránh lỗi đồng hồ không đồng bộ
+                    ExpirationTimeClockTolerance = TimeSpan.FromMinutes(30)
+                };
+
+                // Xác thực token với Google
+                var payload = await GoogleJsonWebSignature.ValidateAsync(idToken, settings);
+
+                return $"Login successful by email: {payload.Email}";
+            }
+            catch (InvalidJwtException)
+            {
+                throw new Exception("Token from Google is invalid or expired!");
+            }
+        }
+
+        public async Task SendOtpAsync(string email)
+        {
+
+            var otpCode =Random.Shared.Next(100000, 999999).ToString();
+
+            var otp = new otp
+            {
+                OtpId = Guid.NewGuid(),
+                Email = email,
+                Code = otpCode,
+                Purpose = "Register",
+                IsUsed = false,
+                CreatedAt = DateTime.UtcNow,
+                ExpiredAt =DateTime.UtcNow.AddMinutes(5)
+            };
+
+            await _otpRepository.AddAsync(otp);
+            await _emailService.SendOtpEmailAsync(email, otpCode);
+        }
+
+        public async Task<bool> VerifyOtpAsync(string email, string code)
+        {
+            var otp =await _otpRepository.GetValidOtpAsync(email,code);
+
+            if (otp == null)
+                return false;
+
+            otp.IsUsed = true;
+            otp.UsedAt =DateTime.UtcNow;
+
+            await _unitOfWork.SaveChangesAsync();
+            return true;
+        }
     }
 }

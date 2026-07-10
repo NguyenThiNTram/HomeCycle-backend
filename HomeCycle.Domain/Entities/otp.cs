@@ -9,10 +9,11 @@ namespace HomeCycle.Domain.Entities;
 public class otp
 {
     public Guid OtpId { get; set; }
-    public Guid UserId { get; set; }
+    public Guid? UserId { get; set; }
 
-    public string? Code { get; set; }
-    public string? Purpose { get; set; }
+    public string? Code { get; set; } = null;
+    public string? Email { get; set; } = null;
+    public string? Purpose { get; set; } = "Register";
 
     public bool IsUsed { get; set; }
 
@@ -27,6 +28,6 @@ public class otp
     public otp(Guid OtpId, Guid UserId)
     {
         this.OtpId = OtpId;
-        this.UserId = UserId;
+        //this.UserId = UserId;
     }
 }

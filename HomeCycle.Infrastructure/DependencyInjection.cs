@@ -1,5 +1,6 @@
 ﻿using FluentValidation;
 using HomeCycle.Application.Interfaces.Generics;
+using HomeCycle.Application.Interfaces.Repositories;
 using HomeCycle.Application.Interfaces.Repositories.Users;
 using HomeCycle.Application.Interfaces.Security;
 using HomeCycle.Application.Interfaces.Services.Auths;
@@ -7,6 +8,7 @@ using HomeCycle.Application.Mappings;
 using HomeCycle.Application.Services.Auths;
 using HomeCycle.Application.Validations.Auths;
 using HomeCycle.Infrastructure.DbContexts;
+using HomeCycle.Infrastructure.Externals;
 using HomeCycle.Infrastructure.Repositories.Users;
 using HomeCycle.Infrastructure.Security;
 using HomeCycle.Infrastructure.UnitOfWorks;
@@ -54,9 +56,11 @@ namespace HomeCycle.Infrastructure
             // register Repositories
             services.AddScoped<IUserRepository, UserRepository>();
             services.AddScoped<IPersonalProfileRepository, PersonalProfileRepository>();
+            services.AddScoped<IOtpRepository, OtpRepository>();
 
             // register Services
             services.AddScoped<IAuthService, AuthService>();
+            services.AddScoped<IEmailService, EmailService>();
 
             return services;
         }

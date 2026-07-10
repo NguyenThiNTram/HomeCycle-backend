@@ -11,7 +11,6 @@ namespace HomeCycle.Application.DTOs.Requests.Auths
         public string Username { get; set; } = string.Empty;
         public string Email { get; set; } = string.Empty;
         public string Password { get; set; } = string.Empty;
-        //public string ConfirmPassword { get; set; } = null!;
 
         public string? FullName { get; set; }
         public string? PhoneNumber { get; set; }
@@ -23,11 +22,6 @@ namespace HomeCycle.Application.DTOs.Requests.Auths
         public string? RepresentativeAddress { get; set; }
         public string? FrontIDCardImage { get; set; }
         public string? BackIDCardImage { get; set; }
-
-        //public int? VerificationStatus { get; set; }
-        //public Guid? VerifiedBy { get; set; }
-        //public DateTime? VerifiedAt { get; set; }
-        //public int ReputationScore { get; set; } = 0;
 
     }
 }
