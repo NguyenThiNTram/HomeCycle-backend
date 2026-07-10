@@ -16,10 +16,10 @@ namespace HomeCycle.Application.Validations.Auths
                 .NotEmpty().WithMessage("Username is required.")
                 .MaximumLength(100);
 
-            RuleFor(x => x.Email)
-                .NotEmpty().WithMessage("Email is required.")
-                .EmailAddress().WithMessage("Email is invalid.")
-                .MaximumLength(255);
+            //RuleFor(x => x.Email)
+            //    .NotEmpty().WithMessage("Email is required.")
+            //    .EmailAddress().WithMessage("Email is invalid.")
+            //    .MaximumLength(255);
 
             RuleFor(x => x.Password)
                 .NotEmpty().WithMessage("Password is required.")

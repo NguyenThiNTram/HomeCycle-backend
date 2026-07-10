@@ -1,4 +1,5 @@
 ﻿using HomeCycle.Application.DTOs.Requests.Auths;
+using HomeCycle.Application.DTOs.Responses.Auths;
 using HomeCycle.Application.Interfaces.Services.Auths;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -31,11 +32,20 @@ namespace HomeCycle.API.Controllers
 
         [HttpPost("/Personal/Register")]
         public async Task<IActionResult> RegisterPersonal(
+            [FromHeader(Name = "X-Registration-Token")] string registrationToken, // Lấy token từ Header
             [FromBody] RegisterPersonalRequest request,
             CancellationToken cancellationToken)
         {
-            var result = await _authService
-                .RegisterPersonalAsync(request, cancellationToken);
+            if (string.IsNullOrWhiteSpace(registrationToken))
+            {
+                return Unauthorized(new
+                {
+                    success = false,
+                    message = "Vui lòng cung cấp mã xác thực phiên đăng ký (X-Registration-Token)."
+                });
+            }
+
+            var result = await _authService.RegisterPersonalAsync(registrationToken, request, cancellationToken);
 
             if (!result.IsSuccess)
             {
@@ -87,26 +97,29 @@ namespace HomeCycle.API.Controllers
 
             return Ok(new
             {
-                Message = "OTP are sended!!!"
+                Message = "OTP are sent!!!"
             });
         }
 
         [HttpPost("verify-otp")]
-        public async Task<IActionResult> VerifyOtp(VerifyOtpRequest request)
+        public async Task<IActionResult> VerifyOtp([FromBody] VerifyOtpRequest request)
         {
             var result = await _authService.VerifyOtpAsync(request.Email, request.Otp);
 
-            if (!result)
+            if (!result.IsSuccess)
             {
-                return BadRequest(new
+                return BadRequest(new VerifyOtpResponse
                 {
-                    Message = "OTP không đúng hoặc đã hết hạn."
+                    Success = false,
+                    Message = result.Error?.Message ?? "OTP không đúng hoặc đã hết hạn."
                 });
             }
-            return Ok(new
+
+            return Ok(new VerifyOtpResponse
             {
                 Success = true,
-                Message ="Xác thực email thành công."
+                Message = "Xác thực email thành công.",
+                RegistrationToken = result.Data
             });
         }
     }

@@ -54,13 +54,17 @@ namespace HomeCycle.Infrastructure.Externals
             await _db.SaveChangesAsync();
         }
 
-        public async Task<bool> IsEmailVerifiedAsync(string email)
+        public async Task<bool> IsEmailVerifiedAsync(string email, CancellationToken cancellationToken = default)
         {
             return await _db.OTPs
                 .AnyAsync(x =>
                     x.Email == email &&
                     x.Purpose == "Register" &&
-                    x.IsUsed);
+                    x.IsUsed &&
+                    x.UsedAt != null &&
+                    x.ExpiredAt > DateTime.UtcNow
+                    , cancellationToken
+                );
         }
     }
 }

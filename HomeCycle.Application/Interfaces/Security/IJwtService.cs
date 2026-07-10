@@ -12,5 +12,8 @@ namespace HomeCycle.Application.Interfaces.Security
     {
         string GenerateAccessToken(user user);
         string GenerateRefreshToken();
+
+        string GenerateRegistrationToken(string email);
+        string ValidateRegistrationTokenAndGetEmail(string token);
     }
 }

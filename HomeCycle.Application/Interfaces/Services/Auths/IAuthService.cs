@@ -11,7 +11,7 @@ namespace HomeCycle.Application.Interfaces.Services.Auths
 {
     public interface IAuthService
     {
-        Task<Result<AuthResponse>> RegisterPersonalAsync(RegisterPersonalRequest request, CancellationToken cancellationToken = default);
+        Task<Result<AuthResponse>> RegisterPersonalAsync(string email, RegisterPersonalRequest request, CancellationToken cancellationToken = default);
         Task<Result<LoginResponseDto>> LoginPersonalAsync(LoginPersonalRequest request, CancellationToken cancellationToken = default);
         Task<Result<LoginResponseDto>> RefreshTokenAsync(string refreshToken, CancellationToken ct = default);
 
@@ -20,6 +20,6 @@ namespace HomeCycle.Application.Interfaces.Services.Auths
 
         //otp
         Task SendOtpAsync(string email);
-        Task<bool> VerifyOtpAsync(string email, string code);
+        Task<Result<string>> VerifyOtpAsync(string email, string code);
     }
 }

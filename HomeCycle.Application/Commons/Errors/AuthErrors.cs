@@ -22,5 +22,9 @@ namespace HomeCycle.Application.Commons.Errors
         public static readonly Error ExpiredRefreshToken = new("AUTH_REFRESH_TOKEN_EXPIRED", "Refresh token has expired.");
 
         public static readonly Error RevokedRefreshToken = new("AUTH_REFRESH_TOKEN_REVOKED", "Refresh token has been revoked.");
+
+        public static readonly Error EmailNotVerified = new("AUTH_EMAIL_NOT_VERIFIED", "Email has not been verified.");
+
+        public static readonly Error InvalidOtp = new("AUTH_INVALID_OTP", "Invalid OTP.");
     }
 }

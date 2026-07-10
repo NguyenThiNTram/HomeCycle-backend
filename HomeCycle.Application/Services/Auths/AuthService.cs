@@ -7,6 +7,7 @@ using HomeCycle.Application.DTOs.Requests.Auths;
 using HomeCycle.Application.DTOs.Responses;
 using HomeCycle.Application.Interfaces.Generics;
 using HomeCycle.Application.Interfaces.Repositories;
+using HomeCycle.Application.Interfaces.Repositories.Banks;
 using HomeCycle.Application.Interfaces.Repositories.Users;
 using HomeCycle.Application.Interfaces.Security;
 using HomeCycle.Application.Interfaces.Services.Auths;
@@ -36,8 +37,9 @@ namespace HomeCycle.Application.Services.Auths
         private readonly IValidator<LoginPersonalRequest> _loginValidator;
         private readonly IOtpRepository _otpRepository;
         private readonly IEmailService _emailService;
+        private readonly IBankAccountRepository _bankAccountRepository;
 
-        public AuthService(IUserRepository userRepository, IUnitOfWork unitOfWork, IPasswordHasher passwordHasher, IJwtService jwtService, IMapper mapper, IConfiguration configuration, IValidator<RegisterPersonalRequest> validator, IValidator<LoginPersonalRequest> loginValidator, IPersonalProfileRepository personalProfileRepository, IOtpRepository otpRepository, IEmailService emailService)
+        public AuthService(IUserRepository userRepository, IUnitOfWork unitOfWork, IPasswordHasher passwordHasher, IJwtService jwtService, IMapper mapper, IConfiguration configuration, IValidator<RegisterPersonalRequest> validator, IValidator<LoginPersonalRequest> loginValidator, IPersonalProfileRepository personalProfileRepository, IOtpRepository otpRepository, IEmailService emailService, IBankAccountRepository bankAccountRepository)
         {
             _userRepository = userRepository;
             _unitOfWork = unitOfWork;
@@ -50,6 +52,7 @@ namespace HomeCycle.Application.Services.Auths
             _loginValidator = loginValidator;
             _otpRepository = otpRepository;
             _emailService = emailService;
+            _bankAccountRepository = bankAccountRepository;
         }
 
         public async Task<Result<LoginResponseDto>> LoginPersonalAsync(LoginPersonalRequest request, CancellationToken cancellationToken = default)
@@ -101,22 +104,121 @@ namespace HomeCycle.Application.Services.Auths
 
         }
 
-        public async Task<Result<AuthResponse>> RegisterPersonalAsync(RegisterPersonalRequest request, CancellationToken cancellationToken = default)
+        //public async Task<Result<AuthResponse>> RegisterPersonalAsync(RegisterPersonalRequest request, CancellationToken cancellationToken = default)
+        //{
+        //    var validationResult = await _validator.ValidateAsync(request, cancellationToken);
+
+        //    if (!validationResult.IsValid)
+        //    {
+        //        var errors = validationResult.Errors
+        //            .Select(x => x.ErrorMessage)
+        //            .ToList();
+
+        //        return Result<AuthResponse>.Fail(ValidationErrors.InvalidRequest(string.Join(", ", errors)));
+        //    }
+
+        //    var emailExists = await _userRepository.ExistsByEmailAsync(request.Email, cancellationToken);
+        //    if (emailExists)
+        //        return Result<AuthResponse>.Fail(AuthErrors.EmailExists);
+
+        //    var usernameExists = await _userRepository.ExistsByUsernameAsync(request.Username, cancellationToken);
+        //    if (usernameExists)
+        //        return Result<AuthResponse>.Fail(AuthErrors.UsernameExists);
+
+        //    await _unitOfWork.BeginTransactionAsync();
+
+        //    try
+        //    {
+        //        var now = DateTime.UtcNow;
+        //        var newUser = new user
+        //        {
+        //            UserId = Guid.NewGuid(),
+        //            Username = request.Username.Trim(),
+        //            Email = request.Email.Trim().ToLower(),
+        //            IsEmailVerified = false,
+        //            Password = _passwordHasher.HashPassword(request.Password),
+        //            PhoneNumber = request.PhoneNumber?.Trim(),
+        //            AvatarUrl = request.AvatarUrl?.Trim(),
+        //            Role = UserRole.Personal,
+        //            Status = UserStatus.Active,
+        //            CreatedAt = now
+        //        };
+        //        await _userRepository.AddAsync(newUser, cancellationToken);
+
+        //        var personalProfile = new personal_profile
+        //        {
+        //            PersonalProfileId = Guid.NewGuid(),
+        //            UserId = newUser.UserId,
+        //            FullName = request.FullName?.Trim(),
+        //            RepresentativeCode = request.RepresentativeCode?.Trim(),
+        //            RepresentativeName = request.RepresentativeName?.Trim(),
+        //            RepresentativeDob = request.RepresentativeDob,
+        //            RepresentativeAddress = request.RepresentativeAddress?.Trim(),
+        //            FrontIDCardImage = request.FrontIDCardImage,
+        //            BackIDCardImage = request.BackIDCardImage,
+        //            CreatedAt = now
+        //        };
+        //        await _personalProfileRepository.AddAsync(personalProfile, cancellationToken);
+
+        //        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        //        await _unitOfWork.CommitTransactionAsync();
+
+        //        var accessToken = _jwtService.GenerateAccessToken(newUser);
+        //        var refreshToken = _jwtService.GenerateRefreshToken();
+
+        //        return Result<AuthResponse>.Success(
+        //        new AuthResponse
+        //        {
+        //            Message = "Register personal successful.",
+
+        //            User = new AuthUserDto
+        //            {
+        //                UserId = newUser.UserId,
+        //                Username = newUser.Username,
+        //                Email = newUser.Email,
+        //                PhoneNumber = newUser.PhoneNumber,
+        //                AvatarUrl = newUser.AvatarUrl,
+        //                Role = newUser.Role,
+        //                Status = newUser.Status,
+        //                IsEmailVerified = newUser.IsEmailVerified
+        //            }
+        //        }
+        //        );
+        //    }
+        //    catch
+        //    {
+        //        await _unitOfWork.RollbackTransactionAsync();
+        //        throw;
+        //    }
+        //}
+
+        public async Task<Result<AuthResponse>> RegisterPersonalAsync(string registrationToken, RegisterPersonalRequest request, CancellationToken cancellationToken = default)
         {
+            //if (string.IsNullOrWhiteSpace(email))
+            //    return Result<AuthResponse>.Fail(ValidationErrors.InvalidRequest("Email is required."));
+
+            var email = _jwtService.ValidateRegistrationTokenAndGetEmail(registrationToken);
+            if (string.IsNullOrEmpty(email))
+                return Result<AuthResponse>.Fail(ValidationErrors.InvalidRequest("Phiên đăng ký không hợp lệ hoặc đã hết hạn. Vui lòng xác thực lại email."));
+
+            var normalizedEmail = email.Trim().ToLower();
+
+            var emailExists = await _userRepository.ExistsByEmailAsync(normalizedEmail, cancellationToken);
+            if (emailExists)
+                return Result<AuthResponse>.Fail(AuthErrors.EmailExists);
+
+            //var isEmailVerified = await _otpRepository.IsEmailVerifiedAsync(normalizedEmail, cancellationToken);
+            //if (!isEmailVerified)
+            //    return Result<AuthResponse>.Fail(AuthErrors.EmailNotVerified);
+
             var validationResult = await _validator.ValidateAsync(request, cancellationToken);
 
             if (!validationResult.IsValid)
             {
-                var errors = validationResult.Errors
-                    .Select(x => x.ErrorMessage)
-                    .ToList();
-
-                return Result<AuthResponse>.Fail(ValidationErrors.InvalidRequest(string.Join(", ", errors)));
+                var errors = validationResult.Errors.Select(x => x.ErrorMessage).ToList();
+                return Result<AuthResponse>.Fail(
+                    ValidationErrors.InvalidRequest(string.Join(", ", errors)));
             }
-
-            var emailExists = await _userRepository.ExistsByEmailAsync(request.Email, cancellationToken);
-            if (emailExists)
-                return Result<AuthResponse>.Fail(AuthErrors.EmailExists);
 
             var usernameExists = await _userRepository.ExistsByUsernameAsync(request.Username, cancellationToken);
             if (usernameExists)
@@ -127,12 +229,13 @@ namespace HomeCycle.Application.Services.Auths
             try
             {
                 var now = DateTime.UtcNow;
+
                 var newUser = new user
                 {
                     UserId = Guid.NewGuid(),
                     Username = request.Username.Trim(),
-                    Email = request.Email.Trim().ToLower(),
-                    IsEmailVerified = false,
+                    Email = normalizedEmail,
+                    IsEmailVerified = true,
                     Password = _passwordHasher.HashPassword(request.Password),
                     PhoneNumber = request.PhoneNumber?.Trim(),
                     AvatarUrl = request.AvatarUrl?.Trim(),
@@ -140,6 +243,7 @@ namespace HomeCycle.Application.Services.Auths
                     Status = UserStatus.Active,
                     CreatedAt = now
                 };
+
                 await _userRepository.AddAsync(newUser, cancellationToken);
 
                 var personalProfile = new personal_profile
@@ -155,19 +259,32 @@ namespace HomeCycle.Application.Services.Auths
                     BackIDCardImage = request.BackIDCardImage,
                     CreatedAt = now
                 };
+
                 await _personalProfileRepository.AddAsync(personalProfile, cancellationToken);
+
+                if (!string.IsNullOrWhiteSpace(request.AccountNumber))
+                {
+                    var bankAccount = new bank_account
+                    {
+                        UserBankId = Guid.NewGuid(),
+                        UserId = newUser.UserId,
+                        BankCode = request.BankCode?.Trim(),
+                        BankName = request.BankName?.Trim(),
+                        AccountNumber = request.AccountNumber.Trim(),
+                        AccountName = request.AccountName?.Trim(),
+                        VerifyStatus = 0,
+                        CreatedAt = now
+                    };
+
+                    await _bankAccountRepository.AddAsync(bankAccount, cancellationToken);
+                }
 
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync();
 
-                var accessToken = _jwtService.GenerateAccessToken(newUser);
-                var refreshToken = _jwtService.GenerateRefreshToken();
-
-                return Result<AuthResponse>.Success(
-                new AuthResponse
+                return Result<AuthResponse>.Success(new AuthResponse
                 {
                     Message = "Register personal successful.",
-
                     User = new AuthUserDto
                     {
                         UserId = newUser.UserId,
@@ -179,8 +296,7 @@ namespace HomeCycle.Application.Services.Auths
                         Status = newUser.Status,
                         IsEmailVerified = newUser.IsEmailVerified
                     }
-                }
-                );
+                });
             }
             catch
             {
@@ -272,18 +388,24 @@ namespace HomeCycle.Application.Services.Auths
             await _emailService.SendOtpEmailAsync(email, otpCode);
         }
 
-        public async Task<bool> VerifyOtpAsync(string email, string code)
+        public async Task<Result<string>> VerifyOtpAsync(string email, string code)
         {
             var otp =await _otpRepository.GetValidOtpAsync(email,code);
 
             if (otp == null)
-                return false;
+                return Result<string>.Fail(AuthErrors.InvalidOtp);
 
             otp.IsUsed = true;
             otp.UsedAt =DateTime.UtcNow;
 
+            // Registration Token sau khi OTP hợp lệ
+            string registrationToken = _jwtService.GenerateRegistrationToken(email);
+
             await _unitOfWork.SaveChangesAsync();
-            return true;
+
+            // Trả token này về cho Frontend
+            return Result<string>.Success(registrationToken);
+            //return true;
         }
     }
 }
