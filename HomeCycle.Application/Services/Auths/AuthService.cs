@@ -104,94 +104,6 @@ namespace HomeCycle.Application.Services.Auths
 
         }
 
-        //public async Task<Result<AuthResponse>> RegisterPersonalAsync(RegisterPersonalRequest request, CancellationToken cancellationToken = default)
-        //{
-        //    var validationResult = await _validator.ValidateAsync(request, cancellationToken);
-
-        //    if (!validationResult.IsValid)
-        //    {
-        //        var errors = validationResult.Errors
-        //            .Select(x => x.ErrorMessage)
-        //            .ToList();
-
-        //        return Result<AuthResponse>.Fail(ValidationErrors.InvalidRequest(string.Join(", ", errors)));
-        //    }
-
-        //    var emailExists = await _userRepository.ExistsByEmailAsync(request.Email, cancellationToken);
-        //    if (emailExists)
-        //        return Result<AuthResponse>.Fail(AuthErrors.EmailExists);
-
-        //    var usernameExists = await _userRepository.ExistsByUsernameAsync(request.Username, cancellationToken);
-        //    if (usernameExists)
-        //        return Result<AuthResponse>.Fail(AuthErrors.UsernameExists);
-
-        //    await _unitOfWork.BeginTransactionAsync();
-
-        //    try
-        //    {
-        //        var now = DateTime.UtcNow;
-        //        var newUser = new user
-        //        {
-        //            UserId = Guid.NewGuid(),
-        //            Username = request.Username.Trim(),
-        //            Email = request.Email.Trim().ToLower(),
-        //            IsEmailVerified = false,
-        //            Password = _passwordHasher.HashPassword(request.Password),
-        //            PhoneNumber = request.PhoneNumber?.Trim(),
-        //            AvatarUrl = request.AvatarUrl?.Trim(),
-        //            Role = UserRole.Personal,
-        //            Status = UserStatus.Active,
-        //            CreatedAt = now
-        //        };
-        //        await _userRepository.AddAsync(newUser, cancellationToken);
-
-        //        var personalProfile = new personal_profile
-        //        {
-        //            PersonalProfileId = Guid.NewGuid(),
-        //            UserId = newUser.UserId,
-        //            FullName = request.FullName?.Trim(),
-        //            RepresentativeCode = request.RepresentativeCode?.Trim(),
-        //            RepresentativeName = request.RepresentativeName?.Trim(),
-        //            RepresentativeDob = request.RepresentativeDob,
-        //            RepresentativeAddress = request.RepresentativeAddress?.Trim(),
-        //            FrontIDCardImage = request.FrontIDCardImage,
-        //            BackIDCardImage = request.BackIDCardImage,
-        //            CreatedAt = now
-        //        };
-        //        await _personalProfileRepository.AddAsync(personalProfile, cancellationToken);
-
-        //        await _unitOfWork.SaveChangesAsync(cancellationToken);
-        //        await _unitOfWork.CommitTransactionAsync();
-
-        //        var accessToken = _jwtService.GenerateAccessToken(newUser);
-        //        var refreshToken = _jwtService.GenerateRefreshToken();
-
-        //        return Result<AuthResponse>.Success(
-        //        new AuthResponse
-        //        {
-        //            Message = "Register personal successful.",
-
-        //            User = new AuthUserDto
-        //            {
-        //                UserId = newUser.UserId,
-        //                Username = newUser.Username,
-        //                Email = newUser.Email,
-        //                PhoneNumber = newUser.PhoneNumber,
-        //                AvatarUrl = newUser.AvatarUrl,
-        //                Role = newUser.Role,
-        //                Status = newUser.Status,
-        //                IsEmailVerified = newUser.IsEmailVerified
-        //            }
-        //        }
-        //        );
-        //    }
-        //    catch
-        //    {
-        //        await _unitOfWork.RollbackTransactionAsync();
-        //        throw;
-        //    }
-        //}
-
         public async Task<Result<AuthResponse>> RegisterPersonalAsync(string registrationToken, RegisterPersonalRequest request, CancellationToken cancellationToken = default)
         {
             //if (string.IsNullOrWhiteSpace(email))
@@ -284,7 +196,7 @@ namespace HomeCycle.Application.Services.Auths
 
                 return Result<AuthResponse>.Success(new AuthResponse
                 {
-                    Message = "Register personal successful.",
+                    //Message = "Register personal successful.",
                     User = new AuthUserDto
                     {
                         UserId = newUser.UserId,
