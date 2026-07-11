@@ -9,13 +9,31 @@
   <ItemGroup>
     <ProjectReference Include="..\HomeCycle.Application\HomeCycle.Application.csproj" />
     <ProjectReference Include="..\HomeCycle.Share\HomeCycle.Share.csproj" />
+    <ProjectReference Include="..\HomeCycle.Domain\HomeCycle.Domain.csproj" />
   </ItemGroup>
 
   <ItemGroup>
-    <Folder Include="DbContext\" />
+    <Folder Include="DbContexts\" />
     <Folder Include="Migrations\" />
-    <Folder Include="Externals\" />
-    <Folder Include="Repositories\" />
+    <Folder Include="Repositories\Generics\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="FluentValidation.DependencyInjectionExtensions" Version="12.1.1" />
+    <PackageReference Include="Google.Apis.Auth" Version="1.75.0" />
+    <PackageReference Include="MailKit" Version="4.17.0" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="8.0.26" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.8">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Tools" Version="8.0.8">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.9" />
+    <PackageReference Include="Microsoft.Extensions.Identity.Core" Version="10.0.9" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="8.0.8" />
   </ItemGroup>
 
 </Project>
