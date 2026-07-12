@@ -5,6 +5,7 @@ using HomeCycle.Application.Commons.Errors;
 using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Requests.Auths;
 using HomeCycle.Application.DTOs.Responses;
+using HomeCycle.Application.DTOs.Responses.Auths;
 using HomeCycle.Application.Interfaces.Generics;
 using HomeCycle.Application.Interfaces.Repositories;
 using HomeCycle.Application.Interfaces.Repositories.Banks;
@@ -14,6 +15,7 @@ using HomeCycle.Application.Interfaces.Services.Auths;
 using HomeCycle.Domain.Entities;
 using HomeCycle.Domain.Enums;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
@@ -38,8 +40,9 @@ namespace HomeCycle.Application.Services.Auths
         private readonly IOtpRepository _otpRepository;
         private readonly IEmailService _emailService;
         private readonly IBankAccountRepository _bankAccountRepository;
+        private readonly ILogger<AuthService> _logger;
 
-        public AuthService(IUserRepository userRepository, IUnitOfWork unitOfWork, IPasswordHasher passwordHasher, IJwtService jwtService, IMapper mapper, IConfiguration configuration, IValidator<RegisterPersonalRequest> validator, IValidator<LoginPersonalRequest> loginValidator, IPersonalProfileRepository personalProfileRepository, IOtpRepository otpRepository, IEmailService emailService, IBankAccountRepository bankAccountRepository)
+        public AuthService(IUserRepository userRepository, IUnitOfWork unitOfWork, IPasswordHasher passwordHasher, IJwtService jwtService, IMapper mapper, IConfiguration configuration, IValidator<RegisterPersonalRequest> validator, IValidator<LoginPersonalRequest> loginValidator, IPersonalProfileRepository personalProfileRepository, IOtpRepository otpRepository, IEmailService emailService, IBankAccountRepository bankAccountRepository, ILogger<AuthService> logger)
         {
             _userRepository = userRepository;
             _unitOfWork = unitOfWork;
@@ -53,6 +56,7 @@ namespace HomeCycle.Application.Services.Auths
             _otpRepository = otpRepository;
             _emailService = emailService;
             _bankAccountRepository = bankAccountRepository;
+            _logger = logger;
         }
 
         public async Task<Result<LoginResponseDto>> LoginPersonalAsync(LoginPersonalRequest request, CancellationToken cancellationToken = default)
@@ -61,11 +65,8 @@ namespace HomeCycle.Application.Services.Auths
 
             if (!validationResult.IsValid)
             {
-                var errors = validationResult.Errors
-                    .Select(x => x.ErrorMessage)
-                    .ToList();
-
-                return Result<LoginResponseDto>.Fail(ValidationErrors.InvalidRequest(string.Join(", ", errors)));
+                var errors = string.Join(", ", validationResult.Errors.Select(x => x.ErrorMessage));
+                return Result<LoginResponseDto>.Fail(ValidationErrors.InvalidRequest(errors));
             }
 
             var user = await _userRepository.GetByEmailAsync(request.Email, cancellationToken);
@@ -80,6 +81,7 @@ namespace HomeCycle.Application.Services.Auths
 
             var accessToken = _jwtService.GenerateAccessToken(user);
             var refreshToken = _jwtService.GenerateRefreshToken();
+            var now = DateTime.UtcNow;
 
             await _userRepository.AddRefreshTokenAsync(
                 new refresh_token
@@ -87,8 +89,8 @@ namespace HomeCycle.Application.Services.Auths
                     RefreshTokenId = Guid.NewGuid(),
                     UserId = user.UserId,
                     Token = refreshToken,
-                    ExpiredAt = DateTime.UtcNow.AddDays(7),
-                    CreatedAt = DateTime.UtcNow
+                    ExpiredAt = now.AddDays(7),
+                    CreatedAt = now
                 });
 
             await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -96,7 +98,6 @@ namespace HomeCycle.Application.Services.Auths
             var response = new LoginResponseDto
             {
                 Message = "Login personal successful.",
-                //User = _mapper.Map<AuthUserDto>(user),
                 AccessToken = accessToken,
                 RefreshToken = refreshToken
             };
@@ -106,42 +107,42 @@ namespace HomeCycle.Application.Services.Auths
 
         public async Task<Result<AuthResponse>> RegisterPersonalAsync(string registrationToken, RegisterPersonalRequest request, CancellationToken cancellationToken = default)
         {
-            //if (string.IsNullOrWhiteSpace(email))
-            //    return Result<AuthResponse>.Fail(ValidationErrors.InvalidRequest("Email is required."));
-
+            // Validate Token & lấy Data
             var email = _jwtService.ValidateRegistrationTokenAndGetEmail(registrationToken);
             if (string.IsNullOrEmpty(email))
-                return Result<AuthResponse>.Fail(ValidationErrors.InvalidRequest("Phiên đăng ký không hợp lệ hoặc đã hết hạn. Vui lòng xác thực lại email."));
+                return Result<AuthResponse>.Fail(ValidationErrors.InvalidRequest(
+                    "The registration session is invalid or has expired. Please re-verify your email"));
 
             var normalizedEmail = email.Trim().ToLower();
+
+            var googleAvatar = _jwtService.GetAvatarFromRegistrationToken(registrationToken);
+
+            var finalAvatarUrl = !string.IsNullOrWhiteSpace(request.AvatarUrl)
+                ? request.AvatarUrl
+                : googleAvatar;
 
             var emailExists = await _userRepository.ExistsByEmailAsync(normalizedEmail, cancellationToken);
             if (emailExists)
                 return Result<AuthResponse>.Fail(AuthErrors.EmailExists);
 
-            //var isEmailVerified = await _otpRepository.IsEmailVerifiedAsync(normalizedEmail, cancellationToken);
-            //if (!isEmailVerified)
-            //    return Result<AuthResponse>.Fail(AuthErrors.EmailNotVerified);
-
             var validationResult = await _validator.ValidateAsync(request, cancellationToken);
 
             if (!validationResult.IsValid)
             {
-                var errors = validationResult.Errors.Select(x => x.ErrorMessage).ToList();
-                return Result<AuthResponse>.Fail(
-                    ValidationErrors.InvalidRequest(string.Join(", ", errors)));
+                var errors = string.Join(", ", validationResult.Errors.Select(x => x.ErrorMessage));
+                return Result<AuthResponse>.Fail(ValidationErrors.InvalidRequest(errors));
             }
 
-            var usernameExists = await _userRepository.ExistsByUsernameAsync(request.Username, cancellationToken);
+            var normalizedUsername = request.Username.Trim();
+
+            var usernameExists = await _userRepository.ExistsByUsernameAsync(request.Username,cancellationToken);
             if (usernameExists)
                 return Result<AuthResponse>.Fail(AuthErrors.UsernameExists);
 
             await _unitOfWork.BeginTransactionAsync();
-
             try
             {
                 var now = DateTime.UtcNow;
-
                 var newUser = new user
                 {
                     UserId = Guid.NewGuid(),
@@ -150,7 +151,7 @@ namespace HomeCycle.Application.Services.Auths
                     IsEmailVerified = true,
                     Password = _passwordHasher.HashPassword(request.Password),
                     PhoneNumber = request.PhoneNumber?.Trim(),
-                    AvatarUrl = request.AvatarUrl?.Trim(),
+                    AvatarUrl = finalAvatarUrl?.Trim(),
                     Role = UserRole.Personal,
                     Status = UserStatus.Active,
                     CreatedAt = now
@@ -191,12 +192,13 @@ namespace HomeCycle.Application.Services.Auths
                     await _bankAccountRepository.AddAsync(bankAccount, cancellationToken);
                 }
 
+                await _otpRepository.UpdateUserIdAsync(normalizedEmail, newUser.UserId, cancellationToken);
+
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync();
 
                 return Result<AuthResponse>.Success(new AuthResponse
                 {
-                    //Message = "Register personal successful.",
                     User = new AuthUserDto
                     {
                         UserId = newUser.UserId,
@@ -256,7 +258,7 @@ namespace HomeCycle.Application.Services.Auths
             });
         }
 
-        public async Task<string> ExecuteGoogleLoginAsync(string idToken)
+        public async Task<Result<GoogleAuthResponseDto>> ExecuteGoogleLoginAsync(string idToken, CancellationToken cancellationToken = default)
         {
             try
             {
@@ -271,18 +273,63 @@ namespace HomeCycle.Application.Services.Auths
 
                 // Xác thực token với Google
                 var payload = await GoogleJsonWebSignature.ValidateAsync(idToken, settings);
+                var normalizedEmail = payload.Email.Trim().ToLower();
 
-                return $"Login successful by email: {payload.Email}";
+                var user = await _userRepository.GetByEmailAsync(normalizedEmail, cancellationToken);
+
+                if (user != null)
+                {
+                    // user đã tồn tại
+                    if (user.Status == UserStatus.Suspended || user.Status == UserStatus.Deleted)
+                        return Result<GoogleAuthResponseDto>.Fail(AuthErrors.AccountSuspended);
+
+                    var accessToken = _jwtService.GenerateAccessToken(user);
+                    var refreshToken = _jwtService.GenerateRefreshToken();
+                    var now = DateTime.UtcNow;
+
+                    await _userRepository.AddRefreshTokenAsync(new refresh_token
+                    {
+                        RefreshTokenId = Guid.NewGuid(),
+                        UserId = user.UserId,
+                        Token = refreshToken,
+                        ExpiredAt = now.AddDays(7),
+                        CreatedAt = now
+                    }, cancellationToken);
+
+                    await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+                    return Result<GoogleAuthResponseDto>.Success(new GoogleAuthResponseDto
+                    {
+                        IsNewUser = false,
+                        AccessToken = accessToken,
+                        RefreshToken = refreshToken
+                    });
+                }
+                else
+                {
+                    // user mới (đăng kí)
+                    // Tạo một token đăng ký đặc biệt, đóng gói Email và Avatar từ Google vào Claims
+                    // Bạn có thể tái sử dụng cơ chế của GenerateRegistrationToken hoặc tạo riêng
+                    string externalRegisterToken = _jwtService.GenerateRegistrationToken(email: normalizedEmail,
+                        avatarUrl: payload.Picture,
+                        provider: "Google");
+
+                    return Result<GoogleAuthResponseDto>.Success(new GoogleAuthResponseDto
+                    {
+                        IsNewUser = true,
+                        ExternalRegisterToken = externalRegisterToken
+                    });
+                }
             }
-            catch (InvalidJwtException)
+            catch (InvalidJwtException ex)
             {
-                throw new Exception("Token from Google is invalid or expired!");
+                _logger.LogWarning(ex, "Token từ Google không hợp lệ hoặc đã hết hạn.");
+                return Result<GoogleAuthResponseDto>.Fail(ValidationErrors.InvalidRequest("Token from Google is invalid or expired!"));
             }
         }
 
         public async Task SendOtpAsync(string email)
         {
-
             var otpCode =Random.Shared.Next(100000, 999999).ToString();
 
             var otp = new otp
@@ -309,6 +356,8 @@ namespace HomeCycle.Application.Services.Auths
 
             otp.IsUsed = true;
             otp.UsedAt =DateTime.UtcNow;
+
+            await _otpRepository.UpdateAsync(otp);
 
             // Registration Token sau khi OTP hợp lệ
             string registrationToken = _jwtService.GenerateRegistrationToken(email);

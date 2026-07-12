@@ -26,5 +26,7 @@ namespace HomeCycle.Application.Commons.Errors
         public static readonly Error EmailNotVerified = new("AUTH_EMAIL_NOT_VERIFIED", "Email has not been verified.");
 
         public static readonly Error InvalidOtp = new("AUTH_INVALID_OTP", "Invalid OTP.");
+
+        public static readonly Error AccountSuspended = new("AUTH_ACCOUNT_SUSPENDED", "Account has been suspended.");
     }
 }

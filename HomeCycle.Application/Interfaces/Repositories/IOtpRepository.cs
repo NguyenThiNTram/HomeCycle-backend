@@ -16,5 +16,7 @@ namespace HomeCycle.Application.Interfaces.Repositories
         Task UpdateAsync(otp otp);
 
         Task<bool> IsEmailVerifiedAsync(string email, CancellationToken cancellationToken = default);
+
+        Task UpdateUserIdAsync(string email, Guid userId, CancellationToken cancellationToken);
     }
 }
