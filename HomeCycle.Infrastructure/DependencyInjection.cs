@@ -5,8 +5,11 @@ using HomeCycle.Application.Interfaces.Repositories.Banks;
 using HomeCycle.Application.Interfaces.Repositories.Users;
 using HomeCycle.Application.Interfaces.Security;
 using HomeCycle.Application.Interfaces.Services.Auths;
+using HomeCycle.Application.Interfaces.Services.Externals;
+using HomeCycle.Application.Interfaces.Services.Users;
 using HomeCycle.Application.Mappings;
 using HomeCycle.Application.Services.Auths;
+using HomeCycle.Application.Services.Personals;
 using HomeCycle.Application.Validations.Auths;
 using HomeCycle.Infrastructure.DbContexts;
 using HomeCycle.Infrastructure.Externals;
@@ -55,16 +58,21 @@ namespace HomeCycle.Infrastructure
             // register FluentValidation
             services.AddValidatorsFromAssemblyContaining<RegisterPersonalRequestValidator>();
 
+            // register External Services
+            services.AddScoped<IFileStorageService, FirebaseStorageService>();
+            services.AddScoped<IOtpRepository, OtpRepository>();
+            services.AddScoped<IEmailService, EmailService>();
+
             // register Repositories
             services.AddScoped<IUserRepository, UserRepository>();
             services.AddScoped<IPersonalProfileRepository, PersonalProfileRepository>();
-            services.AddScoped<IOtpRepository, OtpRepository>();
+            
             services.AddScoped<IBankAccountRepository, BankAccountRepository>();
 
             // register Services
             services.AddScoped<IAuthService, AuthService>();
-            services.AddScoped<IEmailService, EmailService>();
-
+            services.AddScoped<IPersonalProfileService, PersonalProfileService>();
+            
             return services;
         }
     }

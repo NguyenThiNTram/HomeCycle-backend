@@ -90,5 +90,12 @@ namespace HomeCycle.Infrastructure.Repositories.Users
         {
             _db.Refresh_Tokens.Update(token.ToInfrastructure());
         }
+
+        public async Task UpdateAsync(user user, CancellationToken cancellationToken = default)
+        {
+            var entity = user.ToInfrastructure();
+            _db.Users.Update(entity);
+            await _db.SaveChangesAsync(cancellationToken);
+        }
     }
 }

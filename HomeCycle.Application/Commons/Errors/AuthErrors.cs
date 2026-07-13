@@ -29,4 +29,10 @@ namespace HomeCycle.Application.Commons.Errors
 
         public static readonly Error AccountSuspended = new("AUTH_ACCOUNT_SUSPENDED", "Account has been suspended.");
     }
+
+    public static class ProfileErrors
+    {
+        public static readonly Error UserNotFound = new("AUTH_USER_NOT_FOUND", "User not found! Please try again.");
+        public static readonly Error ProfileNotFound = new("AUTH_PROFILE_NOT_FOUND", "Profile not found! Please try again.");
+    }
 }

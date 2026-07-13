@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using HomeCycle.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 
 namespace HomeCycle.Domain.Entities;
@@ -21,7 +22,7 @@ public class personal_profile
     public string? FrontIDCardImage { get; set; }
     public string? BackIDCardImage { get; set; }
 
-    public int? VerificationStatus { get; set; }
+    public VerifyStatus? VerificationStatus { get; set; }
     public Guid? VerifiedBy { get; set; }
     public DateTime? VerifiedAt { get; set; }
 

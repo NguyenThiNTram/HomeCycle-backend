@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace HomeCycle.Application.DTOs.Responses
+namespace HomeCycle.Application.DTOs.Responses.Auths
 {
     public class AuthResponse
     {
