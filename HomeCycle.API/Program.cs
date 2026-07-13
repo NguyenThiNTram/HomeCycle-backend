@@ -114,7 +114,11 @@ namespace HomeCycle.API
                 c.RoutePrefix = "swagger"; // Đường dẫn truy cập sẽ là /swagger
             });
 
-            app.UseHttpsRedirection();
+            if (!app.Environment.IsProduction()) // Hoặc if (app.Environment.IsDevelopment() && !Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER").Equals("true"))
+            {
+                // Tốt nhất nếu chạy Docker hoàn toàn thì comment hẳn dòng dưới này lại:
+                // app.UseHttpsRedirection();
+            }
 
             app.UseAuthentication();
             app.UseAuthorization();
