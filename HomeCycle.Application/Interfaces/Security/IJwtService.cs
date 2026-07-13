@@ -13,7 +13,8 @@ namespace HomeCycle.Application.Interfaces.Security
         string GenerateAccessToken(user user);
         string GenerateRefreshToken();
 
-        string GenerateRegistrationToken(string email);
+        string GenerateRegistrationToken(string email, string avatarUrl = null, string provider = "Email");
         string ValidateRegistrationTokenAndGetEmail(string token);
+        string? GetAvatarFromRegistrationToken(string token);
     }
 }

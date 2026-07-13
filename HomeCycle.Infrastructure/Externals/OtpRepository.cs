@@ -54,6 +54,19 @@ namespace HomeCycle.Infrastructure.Externals
             await _db.SaveChangesAsync();
         }
 
+        public async Task UpdateUserIdAsync(string email, Guid userId, CancellationToken cancellationToken)
+        {
+            var otp = await _db.OTPs
+                .Where(x => x.Email == email)
+                .OrderByDescending(x => x.CreatedAt)
+                .FirstOrDefaultAsync(cancellationToken);
+
+            if (otp == null)
+                return;
+
+            otp.UserId = userId;
+        }
+
         public async Task<bool> IsEmailVerifiedAsync(string email, CancellationToken cancellationToken = default)
         {
             return await _db.OTPs

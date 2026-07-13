@@ -56,18 +56,25 @@ namespace HomeCycle.Infrastructure.Security
             return Convert.ToBase64String(randomNumber);
         }
 
-        public string GenerateRegistrationToken(string email)
+        public string GenerateRegistrationToken(string email, string? avatarUrl = null, string provider = "Email")
         {
             var jwtSection = _configuration.GetSection("Jwt");
             var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSection["SecretKey"]!));
             var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
-            var claims = new[]
+            var claims = new List<Claim>
             {
             new Claim(JwtRegisteredClaimNames.Email, email),
             new Claim("token_use", "registration"),
+            new Claim("provider", provider),
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
-        };
+            };
+
+            // Dùng avt google nếu có
+            if (!string.IsNullOrWhiteSpace(avatarUrl))
+            {
+                claims.Add(new Claim("avatar_url", avatarUrl));
+            }
 
             var token = new JwtSecurityToken(
                 issuer: jwtSection["Issuer"],
@@ -116,6 +123,30 @@ namespace HomeCycle.Infrastructure.Security
                 return emailClaim?.Value;
             }
             catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        public string? GetAvatarFromRegistrationToken(string token)
+        {
+            if (string.IsNullOrWhiteSpace(token))
+                return null;
+
+            var jwtSection = _configuration.GetSection("Jwt");
+            var tokenHandler = new JwtSecurityTokenHandler();
+
+            try
+            {
+                var jwtToken = tokenHandler.ReadJwtToken(token);
+                var tokenUse = jwtToken.Claims.FirstOrDefault(x => x.Type == "token_use")?.Value;
+
+                if (tokenUse != "registration")
+                    return null;
+
+                return jwtToken.Claims.FirstOrDefault(x => x.Type == "avatar_url")?.Value;
+            }
+            catch
             {
                 return null;
             }
