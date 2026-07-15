@@ -22,5 +22,8 @@ namespace HomeCycle.Application.Interfaces.Services.Auths
         //otp
         Task SendOtpAsync(string email);
         Task<Result<string>> VerifyOtpAsync(string email, string code);
+
+        Task<Result<LoginResponseDto>> RegisterBusinessAccountAsync(string registrationToken, RegisterBusinessAccountRequest request, CancellationToken cancellationToken = default);
+
     }
 }

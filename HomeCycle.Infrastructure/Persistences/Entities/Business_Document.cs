@@ -15,18 +15,17 @@ public partial class Business_Document
     public Guid BusinessProfileId { get; set; }
 
     [StringLength(100)]
-    public string? DocumentType { get; set; }
+    public int DocumentType { get; set; }
 
     [StringLength(500)]
-    public string? DocumentUrl { get; set; }
+    public string DocumentUrl { get; set; }
 
-    public int? Status { get; set; }
+    public int Status { get; set; }
 
-    public int? VerificationStatus { get; set; }
 
     public Guid? VerifiedBy { get; set; }
 
-    public DateTime VerifiedAt { get; set; }
+    public DateTime? VerifiedAt { get; set; }
 
     public DateTime CreatedAt { get; set; }
 

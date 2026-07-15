@@ -9,6 +9,7 @@ using HomeCycle.Application.DTOs.Responses.Auths;
 using HomeCycle.Application.Interfaces.Generics;
 using HomeCycle.Application.Interfaces.Repositories;
 using HomeCycle.Application.Interfaces.Repositories.Banks;
+using HomeCycle.Application.Interfaces.Repositories.Profiles;
 using HomeCycle.Application.Interfaces.Repositories.Users;
 using HomeCycle.Application.Interfaces.Security;
 using HomeCycle.Application.Interfaces.Services.Auths;
@@ -42,7 +43,18 @@ namespace HomeCycle.Application.Services.Auths
         private readonly IBankAccountRepository _bankAccountRepository;
         private readonly ILogger<AuthService> _logger;
 
-        public AuthService(IUserRepository userRepository, IUnitOfWork unitOfWork, IPasswordHasher passwordHasher, IJwtService jwtService, IMapper mapper, IConfiguration configuration, IValidator<RegisterPersonalRequest> validator, IValidator<LoginPersonalRequest> loginValidator, IPersonalProfileRepository personalProfileRepository, IOtpRepository otpRepository, IEmailService emailService, IBankAccountRepository bankAccountRepository, ILogger<AuthService> logger)
+        public AuthService(
+            IUserRepository userRepository, 
+            IUnitOfWork unitOfWork, IPasswordHasher passwordHasher, 
+            IJwtService jwtService, 
+            IMapper mapper, IConfiguration configuration,
+            IValidator<RegisterPersonalRequest> validator,
+            IValidator<LoginPersonalRequest> loginValidator,
+            IPersonalProfileRepository personalProfileRepository, 
+            IOtpRepository otpRepository, 
+            IEmailService emailService, 
+            IBankAccountRepository bankAccountRepository, 
+            ILogger<AuthService> logger)
         {
             _userRepository = userRepository;
             _unitOfWork = unitOfWork;
@@ -368,5 +380,63 @@ namespace HomeCycle.Application.Services.Auths
             return Result<string>.Success(registrationToken);
             //return true;
         }
+
+        public async Task<Result<LoginResponseDto>> RegisterBusinessAccountAsync(
+            string registrationToken,
+            RegisterBusinessAccountRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            var email = _jwtService.ValidateRegistrationTokenAndGetEmail(registrationToken);
+            if (string.IsNullOrEmpty(email))
+                return Result<LoginResponseDto>.Fail(ValidationErrors.InvalidRequest("The registration session is invalid or has expired."));
+
+            var normalizedEmail = email.Trim().ToLower();
+
+            if (await _userRepository.ExistsByEmailAsync(normalizedEmail, cancellationToken))
+                return Result<LoginResponseDto>.Fail(AuthErrors.EmailExists);
+
+            if (await _userRepository.ExistsByUsernameAsync(request.Username.Trim(), cancellationToken))
+                return Result<LoginResponseDto>.Fail(AuthErrors.UsernameExists);
+
+            var now = DateTime.UtcNow;
+            var newUser = new user
+            {
+                UserId = Guid.NewGuid(),
+                Username = request.Username.Trim(),
+                Email = normalizedEmail,
+                IsEmailVerified = true,
+                Password = _passwordHasher.HashPassword(request.Password),
+                PhoneNumber = null,
+                AvatarUrl = null,
+                Role = UserRole.Business,
+                Status = UserStatus.Active,
+                CreatedAt = now
+            };
+
+            await _userRepository.AddAsync(newUser, cancellationToken);
+            await _otpRepository.UpdateUserIdAsync(normalizedEmail, newUser.UserId, cancellationToken);
+
+            var accessToken = _jwtService.GenerateAccessToken(newUser);
+            var refreshToken = _jwtService.GenerateRefreshToken();
+
+            await _userRepository.AddRefreshTokenAsync(new refresh_token
+            {
+                RefreshTokenId = Guid.NewGuid(),
+                UserId = newUser.UserId,
+                Token = refreshToken,
+                ExpiredAt = now.AddDays(7),
+                CreatedAt = now
+            }, cancellationToken);
+
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+            return Result<LoginResponseDto>.Success(new LoginResponseDto
+            {
+                //Message = "Account registered successfully. Please complete your business profile in the next step.",
+                AccessToken = accessToken,
+                RefreshToken = refreshToken
+            });
+        }
+
     }
 }

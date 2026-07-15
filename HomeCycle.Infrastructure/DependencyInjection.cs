@@ -2,15 +2,21 @@
 using HomeCycle.Application.Interfaces.Generics;
 using HomeCycle.Application.Interfaces.Repositories;
 using HomeCycle.Application.Interfaces.Repositories.Banks;
+using HomeCycle.Application.Interfaces.Repositories.Profiles;
 using HomeCycle.Application.Interfaces.Repositories.Users;
 using HomeCycle.Application.Interfaces.Security;
 using HomeCycle.Application.Interfaces.Services.Auths;
+using HomeCycle.Application.Interfaces.Services.Moderators;
+using HomeCycle.Application.Interfaces.Services.Profiles;
 using HomeCycle.Application.Mappings;
 using HomeCycle.Application.Services.Auths;
+using HomeCycle.Application.Services.Moderators;
+using HomeCycle.Application.Services.Profiles;
 using HomeCycle.Application.Validations.Auths;
 using HomeCycle.Infrastructure.DbContexts;
 using HomeCycle.Infrastructure.Externals;
 using HomeCycle.Infrastructure.Repositories.Banks;
+using HomeCycle.Infrastructure.Repositories.Profiles;
 using HomeCycle.Infrastructure.Repositories.Users;
 using HomeCycle.Infrastructure.Security;
 using HomeCycle.Infrastructure.UnitOfWorks;
@@ -60,10 +66,16 @@ namespace HomeCycle.Infrastructure
             services.AddScoped<IPersonalProfileRepository, PersonalProfileRepository>();
             services.AddScoped<IOtpRepository, OtpRepository>();
             services.AddScoped<IBankAccountRepository, BankAccountRepository>();
+            services.AddScoped<IBusinessProfileRepository, BusinessProfileRepository>();
+            services.AddScoped<IBusinessDocumentRepository, BusinessDocumentRepository>();
+            services.AddScoped<IBusinessProductTypeRepository, BusinessProductTypeRepository>();
+            services.AddScoped<IBusinessServiceAreaRepository, BusinessServiceAreaRepository>();
 
             // register Services
             services.AddScoped<IAuthService, AuthService>();
             services.AddScoped<IEmailService, EmailService>();
+            services.AddScoped<IBusinessProfileService, BusinessProfileService>();
+            services.AddScoped<IModeratorService, ModeratorService>();
 
             return services;
         }

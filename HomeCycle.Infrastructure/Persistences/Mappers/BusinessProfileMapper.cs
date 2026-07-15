@@ -26,7 +26,11 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 BusinessModel = entity.BusinessModel,
                 ReputationScore = entity.ReputationScore,
                 CreatedAt = entity.CreatedAt,
-                UpdatedAt = entity.UpdatedAt
+                UpdatedAt = entity.UpdatedAt,
+                Status = entity.Status,
+                CurrentModeratorId = entity.CurrentModeratorId,
+                IdentityNumber = entity.IdentityNumber,
+                FullName = entity.FullName
             };
         }
         public static Business_Profile ToInfrastructure(this business_profile entity)
@@ -46,7 +50,11 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 BusinessModel = entity.BusinessModel,
                 ReputationScore = entity.ReputationScore,
                 CreatedAt = entity.CreatedAt,
-                UpdatedAt = entity.UpdatedAt
+                UpdatedAt = entity.UpdatedAt,
+                Status = entity.Status,
+                CurrentModeratorId = entity.CurrentModeratorId,
+                IdentityNumber = entity.IdentityNumber,
+                FullName = entity.FullName
             };
         }
     }

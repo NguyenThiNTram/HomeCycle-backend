@@ -178,7 +178,7 @@ public partial class HomeCycleDbContext : DbContext
             entity.Property(e => e.BusinessDocumentId).ValueGeneratedNever();
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()");
             entity.Property(e => e.UpdatedAt).HasDefaultValueSql("now()");
-            entity.Property(e => e.VerifiedAt).HasDefaultValueSql("now()");
+            entity.Property(e => e.DocumentUrl).IsRequired();
 
             entity.HasOne(d => d.BusinessProfile).WithMany(p => p.Business_Documents)
                 .OnDelete(DeleteBehavior.ClientSetNull)
@@ -211,10 +211,19 @@ public partial class HomeCycleDbContext : DbContext
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()");
             entity.Property(e => e.ReputationScore).HasDefaultValue(100);
             entity.Property(e => e.UpdatedAt).HasDefaultValueSql("now()");
-
+            entity.Property(e => e.IdentityNumber).HasMaxLength(20).IsRequired();
+            entity.Property(e => e.FullName)
+                .HasMaxLength(255)
+                .IsRequired(false);
             entity.HasOne(d => d.User).WithOne(p => p.Business_Profile)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("fk_business_user");
+
+            entity.HasOne(d => d.CurrentModeratorNavigation)
+                .WithMany() 
+                .HasForeignKey(d => d.CurrentModeratorId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("fk_business_moderator");
         });
 
         modelBuilder.Entity<Business_Service_Area>(entity =>

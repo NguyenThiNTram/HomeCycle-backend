@@ -1,8 +1,10 @@
 ﻿using HomeCycle.Application.DTOs.Requests.Auths;
 using HomeCycle.Application.DTOs.Responses.Auths;
 using HomeCycle.Application.Interfaces.Services.Auths;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using System.Security.Claims;
 
 namespace HomeCycle.API.Controllers
 {
@@ -122,5 +124,41 @@ namespace HomeCycle.API.Controllers
                 RegistrationToken = result.Data
             });
         }
+
+        [HttpPost("/business/register")]
+        public async Task<IActionResult> RegisterBusinessAccount(
+            [FromHeader(Name = "X-Registration-Token")] string registrationToken,
+            [FromBody] RegisterBusinessAccountRequest request,
+            CancellationToken cancellationToken)
+        {
+            if (string.IsNullOrWhiteSpace(registrationToken))
+            {
+                return Unauthorized(new
+                {
+                    success = false,
+                    message = "Registration session verification failed. Please provide 'X-Registration-Token' header."
+                });
+            }
+
+            var result = await _authService.RegisterBusinessAccountAsync(registrationToken, request, cancellationToken);
+
+            if (!result.IsSuccess)
+            {
+                return BadRequest(new
+                {
+                    success = false,
+                    code = result.Error.Code,
+                    message = result.Error.Message
+                });
+            }
+
+            return Ok(new
+            {
+                success = true,
+                message = result.Data.Message,
+                data = result.Data
+            });
+        }
+
     }
 }
