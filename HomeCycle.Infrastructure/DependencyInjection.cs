@@ -70,6 +70,7 @@ namespace HomeCycle.Infrastructure
             services.AddScoped<IBusinessDocumentRepository, BusinessDocumentRepository>();
             services.AddScoped<IBusinessProductTypeRepository, BusinessProductTypeRepository>();
             services.AddScoped<IBusinessServiceAreaRepository, BusinessServiceAreaRepository>();
+            services.AddScoped<IBusinessProcurementPreferenceRepository, BusinessProcurementPreferenceRepository>();
 
             // register Services
             services.AddScoped<IAuthService, AuthService>();

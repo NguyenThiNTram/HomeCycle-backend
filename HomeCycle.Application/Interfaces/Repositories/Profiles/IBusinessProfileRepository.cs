@@ -13,5 +13,6 @@ namespace HomeCycle.Application.Interfaces.Repositories.Profiles
         Task<business_profile?> GetByUserIdAsync(Guid userId, CancellationToken cancellationToken = default);
         Task<bool> ExistsByUserIdAsync(Guid userId, CancellationToken cancellationToken = default);
         void Update(business_profile profile);
+
     }
 }

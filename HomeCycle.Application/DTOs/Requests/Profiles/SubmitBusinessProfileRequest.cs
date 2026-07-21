@@ -28,7 +28,6 @@ namespace HomeCycle.Application.DTOs.Requests.Profiles
 
      
         public List<BusinessDocumentDto> Documents { get; set; } = new();
-        public List<Guid> ProductTypeIds { get; set; } = new();
         public List<BusinessServiceAreaDto> ServiceAreas { get; set; } = new();
     }
 

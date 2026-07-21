@@ -6,7 +6,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace HomeCycle.Application.Validations.Auths
+namespace HomeCycle.Application.Validations.Profiles
 {
     public class SubmitBusinessProfileRequestValidator : AbstractValidator<SubmitBusinessProfileRequest>
     {
@@ -44,10 +44,6 @@ namespace HomeCycle.Application.Validations.Auths
             RuleFor(x => x.BankName).NotEmpty().WithMessage("Bank name is required.");
             RuleFor(x => x.AccountNumber).NotEmpty().WithMessage("Bank account number is required.");
             RuleFor(x => x.AccountName).NotEmpty().WithMessage("Bank account holder name is required.");
-
-            // 5. Validate Registered Product Categories
-            RuleFor(x => x.ProductTypeIds)
-                .NotEmpty().WithMessage("At least one business product type category must be selected.");
 
             // 6. Chốt chặn tài liệu chứng thực upload bắt buộc (CCCD trước/sau + Giấy phép)
             RuleFor(x => x.Documents)

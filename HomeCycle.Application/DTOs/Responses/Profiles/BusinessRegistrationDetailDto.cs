@@ -18,7 +18,7 @@ namespace HomeCycle.Application.DTOs.Responses.Profiles
         public string City { get; set; } = null!;
         public string IdentityNumber { get; set; } = null!;
         public string? OperatingScope { get; set; }
-        public string? BusinessModel { get; set; } 
+        public int BusinessModel { get; set; } 
         public int Status { get; set; } 
 
      
@@ -30,16 +30,13 @@ namespace HomeCycle.Application.DTOs.Responses.Profiles
        
         public List<BusinessRegistrationDocumentDto> Documents { get; set; } = new();
 
-        public List<Guid> ProductTypeIds { get; set; } = new();
-
-
         public List<BusinessRegistrationServiceAreaDto> ServiceAreas { get; set; } = new();
     }
 
     public class BusinessRegistrationDocumentDto
     {
         public Guid BusinessDocumentId { get; set; }
-        public string? DocumentType { get; set; } 
+        public int DocumentType { get; set; } 
         public string DocumentUrl { get; set; } = null!;
         public int Status { get; set; } 
         public string? RejectReason { get; set; } 

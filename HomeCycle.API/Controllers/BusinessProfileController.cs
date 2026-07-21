@@ -18,43 +18,22 @@ namespace HomeCycle.API.Controllers
             _businessProfileService = businessProfileService;
         }
 
-   
-        [HttpGet("status")]
-        [Authorize] // Ép buộc gửi kèm JWT
-        public async Task<IActionResult> GetProfileStatus(CancellationToken cancellationToken)
+        [HttpGet("registration-detail")]
+        [Authorize]
+        public async Task<IActionResult> GetRegistrationDetail(CancellationToken cancellationToken)
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
             if (string.IsNullOrEmpty(userIdClaim))
-                return Unauthorized(new { success = false, message = "Không tìm thấy định danh tài khoản trong phiên làm việc." });
+                return Unauthorized(new { success = false, message = "Không tìm thấy thông tin tài khoản trong phiên làm việc." });
 
             var userId = Guid.Parse(userIdClaim);
-
-            // Nhận trực tiếp Result<BusinessProfileStatus?>
-            var result = await _businessProfileService.GetProfileStatusAsync(userId, cancellationToken);
+            var result = await _businessProfileService.GetRegistrationDetailAsync(userId, cancellationToken);
 
             if (!result.IsSuccess)
-                return BadRequest(new { success = false, code = result.Error.Code, message = result.Error.Message });
+                return BadRequest(new { success = false, message = result.Error.Message });
 
-            // Trả thẳng giá trị Enum hoặc null về cho Frontend
             return Ok(new { success = true, data = result.Data });
         }
-
-        //[HttpGet("registration-detail")]
-        //[Authorize]
-        //public async Task<IActionResult> GetRegistrationDetail(CancellationToken cancellationToken)
-        //{
-        //    var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        //    if (string.IsNullOrEmpty(userIdClaim))
-        //        return Unauthorized(new { success = false, message = "Không tìm thấy thông tin tài khoản trong phiên làm việc." });
-
-        //    var userId = Guid.Parse(userIdClaim);
-        //    var result = await _businessProfileService.GetRegistrationDetailAsync(userId, cancellationToken);
-
-        //    if (!result.IsSuccess)
-        //        return BadRequest(new { success = false, message = result.Error.Message });
-
-        //    return Ok(new { success = true, data = result.Data });
-        //}
 
         [HttpPost("submit")]
         [Authorize]
@@ -62,11 +41,7 @@ namespace HomeCycle.API.Controllers
             [FromBody] SubmitBusinessProfileRequest request,
             CancellationToken cancellationToken)
         {
-            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            if (string.IsNullOrEmpty(userIdClaim))
-                return Unauthorized(new { success = false, message = "Không tìm thấy định danh tài khoản trong phiên làm việc." });
-
-            var userId = Guid.Parse(userIdClaim);
+            var userId = GetCurrentUserId();
             var result = await _businessProfileService.SubmitBusinessProfileAsync(userId, request, cancellationToken);
 
             if (!result.IsSuccess)
@@ -75,6 +50,38 @@ namespace HomeCycle.API.Controllers
             return Ok(new { success = true, message = result.Data });
         }
 
+        [HttpGet("onboarding-status")]
+        public async Task<IActionResult> GetOnboardingStatus(CancellationToken cancellationToken)
+        {
+            var userId = GetCurrentUserId();
+            var result = await _businessProfileService.GetOnboardingStatusAsync(userId, cancellationToken);
 
+            return result.IsSuccess ? Ok(new { success = true, data = (int)result.Data }) : BadRequest(result.Error);
+        }
+
+        [HttpPost("survey")]
+        public async Task<IActionResult> SaveSurvey(
+            [FromBody] SubmitBusinessSurveyRequest request,
+            CancellationToken cancellationToken)
+        {
+            var userId = GetCurrentUserId();
+            var result = await _businessProfileService.SaveProcurementPreferenceAsync(userId, request, cancellationToken);
+            return result.IsSuccess ? Ok(new { success = true }) : BadRequest(result.Error);
+        }
+
+        [HttpGet("survey-detail")]
+        public async Task<IActionResult> GetSurveyDetail(CancellationToken cancellationToken)
+        {
+            var userId = GetCurrentUserId();
+            var result = await _businessProfileService.GetProcurementPreferenceAsync(userId, cancellationToken);
+
+            return result.IsSuccess ? Ok(new { success = true, data = result.Data }) : BadRequest(result.Error);
+        }
+
+        private Guid GetCurrentUserId()
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            return Guid.Parse(userIdClaim ?? Guid.Empty.ToString());
+        }
     }
 }

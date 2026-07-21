@@ -21,6 +21,7 @@ namespace HomeCycle.Application.Services.Profiles
     {
         private readonly IBusinessProfileRepository _businessProfileRepository;
         private readonly IBusinessDocumentRepository _businessDocumentRepository;
+        private readonly IBusinessProcurementPreferenceRepository _preferenceRepository;
         private readonly IBusinessProductTypeRepository _businessProductTypeRepository;
         private readonly IBusinessServiceAreaRepository _businessServiceAreaRepository;
         private readonly IBankAccountRepository _bankAccountRepository;
@@ -30,6 +31,7 @@ namespace HomeCycle.Application.Services.Profiles
         public BusinessProfileService(
             IBusinessProfileRepository businessProfileRepository,
             IBusinessDocumentRepository businessDocumentRepository,
+            IBusinessProcurementPreferenceRepository preferenceRepository,
             IBusinessProductTypeRepository businessProductTypeRepository,
             IBusinessServiceAreaRepository businessServiceAreaRepository,
             IBankAccountRepository bankAccountRepository,
@@ -38,6 +40,7 @@ namespace HomeCycle.Application.Services.Profiles
         {
             _businessProfileRepository = businessProfileRepository;
             _businessDocumentRepository = businessDocumentRepository;
+            _preferenceRepository = preferenceRepository;
             _businessProductTypeRepository = businessProductTypeRepository;
             _businessServiceAreaRepository = businessServiceAreaRepository;
             _bankAccountRepository = bankAccountRepository;
@@ -80,7 +83,7 @@ namespace HomeCycle.Application.Services.Profiles
                         IdentityNumber = request.IdentityNumber.Trim(),
                         OperatingScope = request.OperatingScope?.Trim(),
                         BusinessModel = request.BusinessModel,
-                        Status = (int)BusinessProfileStatus.Pending, // 0 - Pending
+                        Status = (int)BusinessProfileStatus.Pending, 
                         CurrentModeratorId = null,
                         ReputationScore = 100,
                         CreatedAt = now,
@@ -134,7 +137,6 @@ namespace HomeCycle.Application.Services.Profiles
 
                     // 2. DỌN SẠCH DỮ LIỆU LIÊN KẾT CŨ TRÁNH RÁC DATABASE
                     await _businessDocumentRepository.DeleteAllByProfileIdAsync(targetProfileId, cancellationToken);
-                    await _businessProductTypeRepository.DeleteAllByProfileIdAsync(targetProfileId, cancellationToken);
                     await _businessServiceAreaRepository.DeleteAllByProfileIdAsync(targetProfileId, cancellationToken);
 
                     // 3. Cập nhật tài khoản ngân hàng liên kết & Reset trạng thái BankVerify về Unverified
@@ -183,17 +185,6 @@ namespace HomeCycle.Application.Services.Profiles
                 }).ToList();
                 await _businessDocumentRepository.AddRangeAsync(businessDocs, cancellationToken);
 
-                // 2. Bulk Insert Product Types
-                var bizProductTypes = request.ProductTypeIds.Select(productTypeId => new business_product_type
-                {
-                    BusinessProductTypeId = Guid.NewGuid(),
-                    BusinessProfileId = targetProfileId,
-                    ProductTypeId = productTypeId,
-                    Priority = 0,
-                    CreatedAt = now
-                }).ToList();
-                await _businessProductTypeRepository.AddRangeAsync(bizProductTypes, cancellationToken);
-
                 // 3. Bulk Insert Service Areas (Chỉ nạp nếu là Doanh nghiệp Enterprise và có thông tin đăng ký)
                 if (request.BusinessModel == (int)BusinessModel.Enterprise && request.ServiceAreas != null && request.ServiceAreas.Any())
                 {
@@ -226,89 +217,174 @@ namespace HomeCycle.Application.Services.Profiles
             }
         }
 
-        //public async Task<Result<BusinessRegistrationDetailDto>> GetRegistrationDetailAsync(
-        //    Guid userId,
-        //    CancellationToken cancellationToken = default)
-        //{
-        //    // A. Lấy thông tin Business Profile thô của User
-        //    var profile = await _businessProfileRepository.GetByUserIdAsync(userId, cancellationToken);
-        //    if (profile == null)
-        //    {
-        //        return Result<BusinessRegistrationDetailDto>.Fail(
-        //            ValidationErrors.NotFound("Hồ sơ doanh nghiệp của tài khoản này hiện chưa được khởi tạo."));
-        //    }
-
-        //    // B. Lấy thông tin tài khoản ngân hàng liên kết phục vụ Napas/PayOS
-        //    var bankAccount = await _bankAccountRepository.GetByUserIdAsync(userId, cancellationToken);
-
-        //    // C. Truy vấn tất cả thông tin phụ ở các bảng con thông qua Profile ID
-        //    var documents = await _businessDocumentRepository.GetByProfileIdAsync(profile.BusinessProfileId, cancellationToken);
-        //    var productTypes = await _businessProductTypeRepository.GetByProfileIdAsync(profile.BusinessProfileId, cancellationToken);
-        //    var serviceAreas = await _businessServiceAreaRepository.GetByProfileIdAsync(profile.BusinessProfileId, cancellationToken);
-
-        //    // D. Dựng DTO chi tiết gửi về cho Frontend
-        //    var registrationDetail = new BusinessRegistrationDetailDto
-        //    {
-        //        BusinessProfileId = profile.BusinessProfileId,
-        //        BusinessName = profile.BusinessName ?? string.Empty,
-        //        FullName = profile.FullName,
-        //        BusinessDescription = profile.BusinessDescription,
-        //        TaxCode = profile.TaxCode ?? string.Empty,
-        //        BusinessAddress = profile.BusinessAddress ?? string.Empty,
-        //        Ward = profile.Ward ?? string.Empty,
-        //        City = profile.City ?? string.Empty,
-        //        IdentityNumber = profile.IdentityNumber ?? string.Empty,
-        //        OperatingScope = profile.OperatingScope,
-        //        BusinessModel = profile.BusinessModel, // Đồng bộ kiểu dữ liệu string? với Domain
-        //        Status = profile.Status,
-
-        //        // Gán thông tin tài khoản ngân hàng
-        //        BankCode = bankAccount?.BankCode ?? string.Empty,
-        //        BankName = bankAccount?.BankName ?? string.Empty,
-        //        AccountNumber = bankAccount?.AccountNumber ?? string.Empty,
-        //        AccountName = bankAccount?.AccountName ?? string.Empty,
-
-        //        // Gán danh sách tài liệu pháp lý kèm trạng thái duyệt và Reject Reason của từng file
-        //        Documents = documents.Select(doc => new BusinessRegistrationDocumentDto
-        //        {
-        //            BusinessDocumentId = doc.BusinessDocumentId,
-        //            DocumentType = doc.DocumentType, // Đồng bộ kiểu dữ liệu string? với Domain
-        //            DocumentUrl = doc.DocumentUrl ?? string.Empty,
-        //            Status = doc.Status ?? 0,
-        //            RejectReason = doc.RejectReason // Trả về lý do từ chối cụ thể để Frontend hiển thị inline
-        //        }).ToList(),
-
-        //        // Gán danh mục ngành hàng liên kết
-        //        ProductTypeIds = productTypes.Select(pt => pt.ProductTypeId).ToList(),
-
-        //        // Gán danh sách kho bãi (Dành cho Enterprise)
-        //        ServiceAreas = serviceAreas.Select(sa => new BusinessRegistrationServiceAreaDto
-        //        {
-        //            City = sa.City ?? string.Empty,
-        //            District = sa.District ?? string.Empty,
-        //            Ward = sa.Ward ?? string.Empty
-        //        }).ToList()
-        //    };
-
-        //    return Result<BusinessRegistrationDetailDto>.Success(registrationDetail);
-        //}
-
-        public async Task<Result<BusinessProfileStatus?>> GetProfileStatusAsync(
-    Guid userId,
-    CancellationToken cancellationToken = default)
+        public async Task<Result<BusinessRegistrationDetailDto>> GetRegistrationDetailAsync(
+            Guid userId,
+            CancellationToken cancellationToken = default)
         {
-            // SELECT thực thể Profile thô từ Database
-            var profile = await _businessProfileRepository.GetByUserIdAsync(userId, cancellationToken);
 
-            // Nếu chưa tồn tại bất kỳ bản ghi hồ sơ nào dưới DB -> Trả thẳng null
+            var profile = await _businessProfileRepository.GetByUserIdAsync(userId, cancellationToken);
             if (profile == null)
             {
-                return Result<BusinessProfileStatus?>.Success(null);
+                return Result<BusinessRegistrationDetailDto>.Fail(
+                    new Error("BusinessProfile.NotFound", "Business profile could not be found for this user account."));
             }
 
-            // Nếu đã tồn tại, Cast trực tiếp trạng thái int sang Domain Enum và trả về thẳng
-            return Result<BusinessProfileStatus?>.Success((BusinessProfileStatus)profile.Status);
+
+            var bankAccount = await _bankAccountRepository.GetByUserIdAsync(userId, cancellationToken);
+
+           var documents = await _businessDocumentRepository.GetByProfileIdAsync(profile.BusinessProfileId, cancellationToken);
+            var productTypes = await _businessProductTypeRepository.GetByProfileIdAsync(profile.BusinessProfileId, cancellationToken);
+            var serviceAreas = await _businessServiceAreaRepository.GetByProfileIdAsync(profile.BusinessProfileId, cancellationToken);
+
+
+            var registrationDetail = new BusinessRegistrationDetailDto
+            {
+                BusinessProfileId = profile.BusinessProfileId,
+                BusinessName = profile.BusinessName ?? string.Empty,
+                FullName = profile.FullName,
+                BusinessDescription = profile.BusinessDescription,
+                TaxCode = profile.TaxCode ?? string.Empty,
+                BusinessAddress = profile.BusinessAddress ?? string.Empty,
+                Ward = profile.Ward ?? string.Empty,
+                City = profile.City ?? string.Empty,
+                IdentityNumber = profile.IdentityNumber ?? string.Empty,
+                OperatingScope = profile.OperatingScope,
+                BusinessModel = profile.BusinessModel, 
+                Status = profile.Status,
+
+
+                BankCode = bankAccount?.BankCode ?? string.Empty,
+                BankName = bankAccount?.BankName ?? string.Empty,
+                AccountNumber = bankAccount?.AccountNumber ?? string.Empty,
+                AccountName = bankAccount?.AccountName ?? string.Empty,
+
+                Documents = documents.Select(doc => new BusinessRegistrationDocumentDto
+                {
+                    BusinessDocumentId = doc.BusinessDocumentId,
+                    DocumentType = doc.DocumentType,
+                    DocumentUrl = doc.DocumentUrl ?? string.Empty,
+                    Status = doc.Status,
+                    RejectReason = doc.RejectReason 
+                }).ToList(),
+
+
+
+                ServiceAreas = serviceAreas.Select(sa => new BusinessRegistrationServiceAreaDto
+                {
+                    City = sa.City ?? string.Empty,
+                    District = sa.District ?? string.Empty,
+                    Ward = sa.Ward ?? string.Empty
+                }).ToList()
+            };
+
+            return Result<BusinessRegistrationDetailDto>.Success(registrationDetail);
         }
-        
+
+
+        public async Task<Result> SaveProcurementPreferenceAsync(Guid userId, SubmitBusinessSurveyRequest request, CancellationToken cancellationToken)
+        {
+            var businessProfile = await _businessProfileRepository.GetByUserIdAsync(userId);
+            if (businessProfile == null)
+                return Result.Fail(new Error("BusinessProfile.NotFound", "Không tìm thấy hồ sơ doanh nghiệp tương ứng.")); 
+            Guid businessProfileId = businessProfile.BusinessProfileId;
+            var domainPreference = await _preferenceRepository.GetByBusinessProfileIdAsync(businessProfileId, cancellationToken);
+
+            if (domainPreference == null)
+            {
+                var newPreference = new business_procurement_preference
+                {
+                    PreferenceId = Guid.NewGuid(),
+                    BusinessProfileId = businessProfileId,
+                    TargetCities = request.TargetCities,
+                    AcceptableDamageLevels = request.AcceptableDamageLevels,
+                    AcceptableFunctionalityStatuses = request.AcceptableFunctionalityStatuses,
+                    ProcurementScales = request.ProcurementScales,
+                    CreatedAt = DateTime.UtcNow
+                };
+                await _preferenceRepository.AddAsync(newPreference, cancellationToken);
+            }
+            else
+            {
+                domainPreference.TargetCities = request.TargetCities;
+                domainPreference.AcceptableDamageLevels = request.AcceptableDamageLevels;
+                domainPreference.AcceptableFunctionalityStatuses = request.AcceptableFunctionalityStatuses;
+                domainPreference.ProcurementScales = request.ProcurementScales;
+                domainPreference.UpdatedAt = DateTime.UtcNow;
+
+                _preferenceRepository.Update(domainPreference);
+            }
+
+            await _businessProductTypeRepository.DeleteAllByProfileIdAsync(businessProfileId);
+
+            var newProductTypes = new List<business_product_type>();
+            int priority = 1;
+            foreach (var typeId in request.ProductTypeIds)
+            {
+                newProductTypes.Add(new business_product_type
+                {
+                    BusinessProductTypeId = Guid.NewGuid(),
+                    BusinessProfileId = businessProfileId,
+                    ProductTypeId = typeId,
+                    Priority = priority++,
+                    CreatedAt = DateTime.UtcNow
+                });
+            }
+            await _businessProductTypeRepository.AddRangeAsync(newProductTypes);
+
+            await _unitOfWork.SaveChangesAsync();
+            return Result.Success();
+        }
+
+        public async Task<Result<BusinessSurveyDetailResponse>> GetProcurementPreferenceAsync(Guid userId, CancellationToken cancellationToken)
+        {
+            var businessProfile = await _businessProfileRepository.GetByUserIdAsync(userId);
+            if (businessProfile == null)
+                return Result<BusinessSurveyDetailResponse>.Fail(
+                    new Error("Survey.NotFound", "The business procurement preference survey has not been completed."));
+
+            var preference = await _preferenceRepository.GetByBusinessProfileIdAsync(businessProfile.BusinessProfileId, cancellationToken);
+            if (preference == null)
+                return Result<BusinessSurveyDetailResponse>.Fail(
+                    new Error("BusinessProfile.NotFound", "Business profile could not be found."));
+
+            var productTypesEntities = await _businessProductTypeRepository.GetByProfileIdAsync(businessProfile.BusinessProfileId);
+            var productTypeIds = productTypesEntities.Select(pt => pt.ProductTypeId).ToList(); // Ép kiểu tường minh về List<Guid>
+
+            var response = new BusinessSurveyDetailResponse
+            {
+                TargetCities = preference.TargetCities,
+                AcceptableDamageLevels = preference.AcceptableDamageLevels,
+                AcceptableFunctionalityStatuses = preference.AcceptableFunctionalityStatuses,
+                ProcurementScales = preference.ProcurementScales,
+                ProductTypeIds = productTypeIds
+            };
+
+            return Result<BusinessSurveyDetailResponse>.Success(response);
+        }
+
+        public async Task<Result<BusinessOnboardingStatus>> GetOnboardingStatusAsync(Guid userId, CancellationToken cancellationToken)
+        {
+            var profile = await _businessProfileRepository.GetByUserIdAsync(userId);
+
+            if (profile == null)
+                return Result<BusinessOnboardingStatus>.Success(BusinessOnboardingStatus.MissingProfile);
+
+            if (profile.Status == (int)BusinessProfileStatus.Pending)
+                return Result<BusinessOnboardingStatus>.Success(BusinessOnboardingStatus.PendingApproval);
+
+            if (profile.Status == (int)BusinessProfileStatus.Rejected)
+                return Result<BusinessOnboardingStatus>.Success(BusinessOnboardingStatus.Rejected);
+
+            if (profile.Status == (int)BusinessProfileStatus.Approved)
+            {
+                bool hasSurvey = await _preferenceRepository.ExistsByBusinessProfileIdAsync(profile.BusinessProfileId, cancellationToken);
+                if (!hasSurvey)
+                    return Result<BusinessOnboardingStatus>.Success(BusinessOnboardingStatus.SurveyPending);
+            }
+
+            return Result<BusinessOnboardingStatus>.Success(BusinessOnboardingStatus.Completed);
+        }
+
+
     }
-}
+}   
