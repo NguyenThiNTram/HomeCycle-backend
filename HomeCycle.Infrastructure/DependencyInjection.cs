@@ -25,6 +25,7 @@ using HomeCycle.Infrastructure.Repositories.Products;
 using HomeCycle.Infrastructure.Repositories.Users;
 using HomeCycle.Infrastructure.Security;
 using HomeCycle.Infrastructure.UnitOfWorks;
+using MathNet.Numerics;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -61,6 +62,7 @@ namespace HomeCycle.Infrastructure
 
             // register FluentValidation
             services.AddValidatorsFromAssemblyContaining<RegisterPersonalRequestValidator>();
+            services.AddValidatorsFromAssembly(typeof(LoginRequestValidator).Assembly);
 
             // register External Services
             services.AddScoped<IFileStorageService, FirebaseStorageService>();

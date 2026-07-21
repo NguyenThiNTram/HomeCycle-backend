@@ -39,14 +39,15 @@ namespace HomeCycle.Application.Services.Auths
         private readonly IMapper _mapper;
         private readonly IConfiguration _configuration;
         private readonly IValidator<RegisterPersonalRequest> _validator;
-        private readonly IValidator<LoginPersonalRequest> _loginValidator;
+        private readonly IValidator<LoginPersonalRequest> _loginPersonalValidator;
+        private readonly IValidator<LoginRequest> _loginValidator;
         private readonly IOtpRepository _otpRepository;
         private readonly IEmailService _emailService;
         private readonly IBankAccountRepository _bankAccountRepository;
         private readonly ILogger<AuthService> _logger;
         private readonly IFileStorageService _fileStorageService;
 
-        public AuthService(IUserRepository userRepository, IUnitOfWork unitOfWork, IPasswordHasher passwordHasher, IJwtService jwtService, IMapper mapper, IConfiguration configuration, IValidator<RegisterPersonalRequest> validator, IValidator<LoginPersonalRequest> loginValidator, IPersonalProfileRepository personalProfileRepository, IOtpRepository otpRepository, IEmailService emailService, IBankAccountRepository bankAccountRepository, ILogger<AuthService> logger, IFileStorageService fileStorageService)
+        public AuthService(IUserRepository userRepository, IUnitOfWork unitOfWork, IPasswordHasher passwordHasher, IJwtService jwtService, IMapper mapper, IConfiguration configuration, IValidator<RegisterPersonalRequest> validator, IValidator<LoginPersonalRequest> _loginPersonalValidator, IValidator<LoginRequest> loginValidator, IPersonalProfileRepository personalProfileRepository, IOtpRepository otpRepository, IEmailService emailService, IBankAccountRepository bankAccountRepository, ILogger<AuthService> logger, IFileStorageService fileStorageService)
         {
             _userRepository = userRepository;
             _unitOfWork = unitOfWork;
@@ -56,6 +57,7 @@ namespace HomeCycle.Application.Services.Auths
             _configuration = configuration;
             _validator = validator;
             _personalProfileRepository = personalProfileRepository;
+            _loginPersonalValidator = _loginPersonalValidator;
             _loginValidator = loginValidator;
             _otpRepository = otpRepository;
             _emailService = emailService;
@@ -66,7 +68,7 @@ namespace HomeCycle.Application.Services.Auths
 
         public async Task<Result<LoginResponseDto>> LoginPersonalAsync(LoginPersonalRequest request, CancellationToken cancellationToken = default)
         {
-            var validationResult = await _loginValidator.ValidateAsync(request, cancellationToken);
+            var validationResult = await _loginPersonalValidator.ValidateAsync(request, cancellationToken);
 
             if (!validationResult.IsValid)
             {
@@ -108,6 +110,59 @@ namespace HomeCycle.Application.Services.Auths
             };
             return Result<LoginResponseDto>.Success(response);
 
+        }
+
+        //login chung cho tất cả các loại user (Personal, Business, Moderator, Admin)
+        public async Task<Result<LoginResponseDto>> LoginAsync(
+            LoginRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            var validationResult = await _loginValidator.ValidateAsync(request, cancellationToken);
+            if (!validationResult.IsValid)
+            {
+                var errors = string.Join(", ", validationResult.Errors.Select(x => x.ErrorMessage));
+                return Result<LoginResponseDto>.Fail(ValidationErrors.InvalidRequest(errors));
+            }
+
+            var user = await _userRepository.GetByEmailAsync(request.Email, cancellationToken);
+            if (user is null)
+                return Result<LoginResponseDto>.Fail(AuthErrors.InvalidCredential);
+
+            if (user.Status == UserStatus.Suspended || user.Status == UserStatus.Deleted)
+            {
+                return Result<LoginResponseDto>.Fail(AuthErrors.AccountSuspended);
+            }
+
+            var isPasswordValid = _passwordHasher.VerifyPassword(request.Password, user.Password);
+            if (!isPasswordValid)
+                return Result<LoginResponseDto>.Fail(AuthErrors.InvalidCredential);
+
+            var accessToken = _jwtService.GenerateAccessToken(user);
+            var refreshToken = _jwtService.GenerateRefreshToken();
+            var now = DateTime.UtcNow;
+
+            await _userRepository.AddRefreshTokenAsync(
+                new refresh_token
+                {
+                    RefreshTokenId = Guid.NewGuid(),
+                    UserId = user.UserId,
+                    Token = refreshToken,
+                    ExpiredAt = now.AddDays(7),
+                    CreatedAt = now
+                }, cancellationToken);
+
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+            var response = new LoginResponseDto
+            {
+                AccessToken = accessToken,
+                RefreshToken = refreshToken,
+                UserId = user.UserId,
+                Email = user.Email,
+                Role = user.Role.ToString(), // Tự động lấy Role của User (Personal/Business/Moderator/Admin)
+            };
+
+            return Result<LoginResponseDto>.Success(response);
         }
 
         public async Task<Result<AuthResponse>> RegisterPersonalAsync(string registrationToken, RegisterPersonalRequest request, CancellationToken cancellationToken = default)

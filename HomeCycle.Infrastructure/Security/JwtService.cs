@@ -1,5 +1,6 @@
 ﻿using HomeCycle.Application.Interfaces.Security;
 using HomeCycle.Domain.Entities;
+using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
 using System;
@@ -53,7 +54,8 @@ namespace HomeCycle.Infrastructure.Security
             var randomNumber = new byte[64];
             using var rng = RandomNumberGenerator.Create();
             rng.GetBytes(randomNumber);
-            return Convert.ToBase64String(randomNumber);
+            //return Convert.ToBase64String(randomNumber);
+            return WebEncoders.Base64UrlEncode(randomNumber);
         }
 
         public string GenerateRegistrationToken(string email, string? avatarUrl = null, string provider = "Email")

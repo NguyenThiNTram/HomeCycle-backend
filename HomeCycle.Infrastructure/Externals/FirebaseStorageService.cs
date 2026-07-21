@@ -41,6 +41,9 @@ namespace HomeCycle.Infrastructure.Externals
 
             // Lấy chuỗi JSON cấu hình từ appsettings.json
             var credentialsSection = configuration.GetSection("Firebase:CredentialPath");
+            if (!credentialsSection.Exists())
+                throw new InvalidOperationException("Không tìm thấy cấu hình Firebase:CredentialPath.");
+
             var credentialParameters = new Dictionary<string, string>();
 
             var parameters = new JsonCredentialParameters

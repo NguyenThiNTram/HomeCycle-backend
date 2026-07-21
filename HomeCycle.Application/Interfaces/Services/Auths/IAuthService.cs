@@ -12,6 +12,7 @@ namespace HomeCycle.Application.Interfaces.Services.Auths
 {
     public interface IAuthService
     {
+        Task<Result<LoginResponseDto>> LoginAsync(LoginRequest request, CancellationToken cancellationToken = default);
         Task<Result<AuthResponse>> RegisterPersonalAsync(string email, RegisterPersonalRequest request, CancellationToken cancellationToken = default);
         Task<Result<LoginResponseDto>> LoginPersonalAsync(LoginPersonalRequest request, CancellationToken cancellationToken = default);
         Task<Result<LoginResponseDto>> RefreshTokenAsync(string refreshToken, CancellationToken cancellationToken = default);
