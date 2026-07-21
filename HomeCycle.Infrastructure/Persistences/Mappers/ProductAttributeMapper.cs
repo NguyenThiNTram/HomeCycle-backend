@@ -21,7 +21,11 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 Unit = entity.Unit,
                 DisplayOrder = entity.DisplayOrder,
                 IsFilterable = entity.IsFilterable,
-                IsRequired = entity.IsRequired
+                IsRequired = entity.IsRequired,
+
+                ProductAttributeOptions = entity.Product_Attribute_Options?
+                    .Select(opt => opt.ToDomain())
+                    .ToList() ?? new List<product_attribute_option>()
             };
         }
         public static Product_Attribute ToInfrastructure(this product_attribute entity)
@@ -36,7 +40,11 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 Unit = entity.Unit,
                 DisplayOrder = entity.DisplayOrder,
                 IsFilterable = entity.IsFilterable,
-                IsRequired = entity.IsRequired
+                IsRequired = entity.IsRequired,
+
+                Product_Attribute_Options = entity.ProductAttributeOptions?
+                    .Select(opt => opt.ToInfrastructure())
+                    .ToList() ?? new List<Product_Attribute_Option>()
             };
         }
     }

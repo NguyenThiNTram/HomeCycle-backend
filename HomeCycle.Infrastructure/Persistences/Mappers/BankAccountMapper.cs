@@ -1,4 +1,5 @@
 ﻿using HomeCycle.Domain.Entities;
+using HomeCycle.Domain.Enums;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -19,7 +20,7 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 BankName = entity.BankName,
                 AccountNumber = entity.AccountNumber,
                 AccountName = entity.AccountName,
-                VerifyStatus = entity.VerifyStatus,
+                VerifyStatus = (VerifyStatus?)entity.VerifyStatus,
                 CreatedAt = entity.CreatedAt
             };
         }
@@ -33,7 +34,7 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 BankName = entity.BankName,
                 AccountNumber = entity.AccountNumber,
                 AccountName = entity.AccountName,
-                VerifyStatus = entity.VerifyStatus,
+                VerifyStatus = (int?)entity.VerifyStatus,
                 CreatedAt = entity.CreatedAt
             };
         }

@@ -5,7 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace HomeCycle.Application.Interfaces.Repositories
+namespace HomeCycle.Application.Interfaces.Security
 {
     public interface IOtpRepository
     {

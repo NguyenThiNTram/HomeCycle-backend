@@ -1,4 +1,5 @@
 ﻿using HomeCycle.Domain.Entities;
+using HomeCycle.Domain.Enums;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -19,7 +20,7 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 Description = entity.Description,
                 Quantity = entity.Quantity,
                 RemainingQuantity = entity.RemainingQuantity,
-                PostType = entity.PostType,
+                PostType = (PostType?)entity.PostType,
                 BasePrice = entity.BasePrice,
                 StreetAddress = entity.StreetAddress,
                 Ward = entity.Ward,
@@ -43,7 +44,7 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 Description = entity.Description,
                 Quantity = entity.Quantity,
                 RemainingQuantity = entity.RemainingQuantity,
-                PostType = entity.PostType,
+                PostType = (int?)entity.PostType,
                 BasePrice = entity.BasePrice,
                 StreetAddress = entity.StreetAddress,
                 Ward = entity.Ward,

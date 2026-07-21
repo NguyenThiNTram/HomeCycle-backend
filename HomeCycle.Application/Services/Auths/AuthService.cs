@@ -12,8 +12,11 @@ using HomeCycle.Application.Interfaces.Repositories.Banks;
 using HomeCycle.Application.Interfaces.Repositories.Users;
 using HomeCycle.Application.Interfaces.Security;
 using HomeCycle.Application.Interfaces.Services.Auths;
+using HomeCycle.Application.Interfaces.Services.Externals;
 using HomeCycle.Domain.Entities;
 using HomeCycle.Domain.Enums;
+using MathNet.Numerics.Statistics.Mcmc;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json.Linq;
@@ -36,13 +39,15 @@ namespace HomeCycle.Application.Services.Auths
         private readonly IMapper _mapper;
         private readonly IConfiguration _configuration;
         private readonly IValidator<RegisterPersonalRequest> _validator;
-        private readonly IValidator<LoginPersonalRequest> _loginValidator;
+        private readonly IValidator<LoginPersonalRequest> _loginPersonalValidator;
+        private readonly IValidator<LoginRequest> _loginValidator;
         private readonly IOtpRepository _otpRepository;
         private readonly IEmailService _emailService;
         private readonly IBankAccountRepository _bankAccountRepository;
         private readonly ILogger<AuthService> _logger;
+        private readonly IFileStorageService _fileStorageService;
 
-        public AuthService(IUserRepository userRepository, IUnitOfWork unitOfWork, IPasswordHasher passwordHasher, IJwtService jwtService, IMapper mapper, IConfiguration configuration, IValidator<RegisterPersonalRequest> validator, IValidator<LoginPersonalRequest> loginValidator, IPersonalProfileRepository personalProfileRepository, IOtpRepository otpRepository, IEmailService emailService, IBankAccountRepository bankAccountRepository, ILogger<AuthService> logger)
+        public AuthService(IUserRepository userRepository, IUnitOfWork unitOfWork, IPasswordHasher passwordHasher, IJwtService jwtService, IMapper mapper, IConfiguration configuration, IValidator<RegisterPersonalRequest> validator, IValidator<LoginPersonalRequest> _loginPersonalValidator, IValidator<LoginRequest> loginValidator, IPersonalProfileRepository personalProfileRepository, IOtpRepository otpRepository, IEmailService emailService, IBankAccountRepository bankAccountRepository, ILogger<AuthService> logger, IFileStorageService fileStorageService)
         {
             _userRepository = userRepository;
             _unitOfWork = unitOfWork;
@@ -52,16 +57,18 @@ namespace HomeCycle.Application.Services.Auths
             _configuration = configuration;
             _validator = validator;
             _personalProfileRepository = personalProfileRepository;
+            _loginPersonalValidator = _loginPersonalValidator;
             _loginValidator = loginValidator;
             _otpRepository = otpRepository;
             _emailService = emailService;
             _bankAccountRepository = bankAccountRepository;
             _logger = logger;
+            _fileStorageService = fileStorageService;
         }
 
         public async Task<Result<LoginResponseDto>> LoginPersonalAsync(LoginPersonalRequest request, CancellationToken cancellationToken = default)
         {
-            var validationResult = await _loginValidator.ValidateAsync(request, cancellationToken);
+            var validationResult = await _loginPersonalValidator.ValidateAsync(request, cancellationToken);
 
             if (!validationResult.IsValid)
             {
@@ -105,6 +112,59 @@ namespace HomeCycle.Application.Services.Auths
 
         }
 
+        //login chung cho tất cả các loại user (Personal, Business, Moderator, Admin)
+        public async Task<Result<LoginResponseDto>> LoginAsync(
+            LoginRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            var validationResult = await _loginValidator.ValidateAsync(request, cancellationToken);
+            if (!validationResult.IsValid)
+            {
+                var errors = string.Join(", ", validationResult.Errors.Select(x => x.ErrorMessage));
+                return Result<LoginResponseDto>.Fail(ValidationErrors.InvalidRequest(errors));
+            }
+
+            var user = await _userRepository.GetByEmailAsync(request.Email, cancellationToken);
+            if (user is null)
+                return Result<LoginResponseDto>.Fail(AuthErrors.InvalidCredential);
+
+            if (user.Status == UserStatus.Suspended || user.Status == UserStatus.Deleted)
+            {
+                return Result<LoginResponseDto>.Fail(AuthErrors.AccountSuspended);
+            }
+
+            var isPasswordValid = _passwordHasher.VerifyPassword(request.Password, user.Password);
+            if (!isPasswordValid)
+                return Result<LoginResponseDto>.Fail(AuthErrors.InvalidCredential);
+
+            var accessToken = _jwtService.GenerateAccessToken(user);
+            var refreshToken = _jwtService.GenerateRefreshToken();
+            var now = DateTime.UtcNow;
+
+            await _userRepository.AddRefreshTokenAsync(
+                new refresh_token
+                {
+                    RefreshTokenId = Guid.NewGuid(),
+                    UserId = user.UserId,
+                    Token = refreshToken,
+                    ExpiredAt = now.AddDays(7),
+                    CreatedAt = now
+                }, cancellationToken);
+
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+            var response = new LoginResponseDto
+            {
+                AccessToken = accessToken,
+                RefreshToken = refreshToken,
+                UserId = user.UserId,
+                Email = user.Email,
+                Role = user.Role.ToString(), // Tự động lấy Role của User (Personal/Business/Moderator/Admin)
+            };
+
+            return Result<LoginResponseDto>.Success(response);
+        }
+
         public async Task<Result<AuthResponse>> RegisterPersonalAsync(string registrationToken, RegisterPersonalRequest request, CancellationToken cancellationToken = default)
         {
             // Validate Token & lấy Data
@@ -116,10 +176,19 @@ namespace HomeCycle.Application.Services.Auths
             var normalizedEmail = email.Trim().ToLower();
 
             var googleAvatar = _jwtService.GetAvatarFromRegistrationToken(registrationToken);
+            string? finalAvatarUrl = googleAvatar;
 
-            var finalAvatarUrl = !string.IsNullOrWhiteSpace(request.AvatarUrl)
-                ? request.AvatarUrl
-                : googleAvatar;
+            // xử lý avatar (Lưu vào thư mục "avatars")
+            if (request.AvatarUrl != null)
+            {
+                using var stream = request.AvatarUrl.OpenReadStream();
+                var storedFileName = await _fileStorageService.UploadFileAsync(stream, request.AvatarUrl.FileName, "avatars");
+                finalAvatarUrl = _fileStorageService.GetFileUrl(storedFileName, "avatars");
+            }
+
+            // xử lý CCCD/CMND (Lưu vào thư mục bảo mật "legal-documents")
+            //var frontIdCardUrl = await UploadFileHelperAsync(request.FrontIDCardImage, "legal-documents", cancellationToken);
+            //var backIdCardUrl = await UploadFileHelperAsync(request.BackIDCardImage, "legal-documents", cancellationToken);
 
             var emailExists = await _userRepository.ExistsByEmailAsync(normalizedEmail, cancellationToken);
             if (emailExists)
@@ -159,6 +228,29 @@ namespace HomeCycle.Application.Services.Auths
 
                 await _userRepository.AddAsync(newUser, cancellationToken);
 
+                string? frontIdCardUrl = null;
+                string? backIdCardUrl = null;
+
+                if (request.FrontIDCardImage != null)
+                {
+                    using var stream = request.FrontIDCardImage.OpenReadStream();
+
+                    frontIdCardUrl = await _fileStorageService.UploadFileAsync(
+                        stream,
+                        request.FrontIDCardImage.FileName,
+                        $"identities/{newUser.UserId}/front_id_card");
+                }
+
+                if (request.BackIDCardImage != null)
+                {
+                    using var stream = request.BackIDCardImage.OpenReadStream();
+
+                    backIdCardUrl = await _fileStorageService.UploadFileAsync(
+                        stream,
+                        request.BackIDCardImage.FileName,
+                        $"identities/{newUser.UserId}/back_id_card");
+                }
+
                 var personalProfile = new personal_profile
                 {
                     PersonalProfileId = Guid.NewGuid(),
@@ -168,8 +260,9 @@ namespace HomeCycle.Application.Services.Auths
                     RepresentativeName = request.RepresentativeName?.Trim(),
                     RepresentativeDob = request.RepresentativeDob,
                     RepresentativeAddress = request.RepresentativeAddress?.Trim(),
-                    FrontIDCardImage = request.FrontIDCardImage,
-                    BackIDCardImage = request.BackIDCardImage,
+                    FrontIDCardImage = frontIdCardUrl,
+                    BackIDCardImage = backIdCardUrl,
+                    VerificationStatus = 0,
                     CreatedAt = now
                 };
 
@@ -212,9 +305,10 @@ namespace HomeCycle.Application.Services.Auths
                     }
                 });
             }
-            catch
+            catch (Exception ex)
             {
                 await _unitOfWork.RollbackTransactionAsync();
+                Console.WriteLine(ex.ToString());
                 throw;
             }
         }
@@ -328,14 +422,21 @@ namespace HomeCycle.Application.Services.Auths
             }
         }
 
-        public async Task SendOtpAsync(string email)
+        public async Task<Result<string>> SendOtpAsync(string email)
         {
+            var normalizedEmail = email.Trim().ToLower();
+
+            var emailExists = await _userRepository.ExistsByEmailAsync(normalizedEmail);
+
+            if (emailExists)
+                return Result<string>.Fail(AuthErrors.EmailExists);
+
             var otpCode =Random.Shared.Next(100000, 999999).ToString();
 
             var otp = new otp
             {
                 OtpId = Guid.NewGuid(),
-                Email = email,
+                Email = normalizedEmail,
                 Code = otpCode,
                 Purpose = "Register",
                 IsUsed = false,
@@ -344,7 +445,9 @@ namespace HomeCycle.Application.Services.Auths
             };
 
             await _otpRepository.AddAsync(otp);
-            await _emailService.SendOtpEmailAsync(email, otpCode);
+            await _emailService.SendOtpEmailAsync(normalizedEmail, otpCode);
+
+            return Result<string>.Success("OTP has been sent successfully.");
         }
 
         public async Task<Result<string>> VerifyOtpAsync(string email, string code)
@@ -367,6 +470,23 @@ namespace HomeCycle.Application.Services.Auths
             // Trả token này về cho Frontend
             return Result<string>.Success(registrationToken);
             //return true;
+        }
+
+        //-----------------------------------------------------------------------------------------------------
+        // HELPER METHODS
+        //-----------------------------------------------------------------------------------------------------
+        private async Task<string?> UploadFileHelperAsync(IFormFile? file, string folderName, CancellationToken cancellationToken = default)
+        {
+            if (file == null || file.Length == 0) return null;
+
+            // Kích hoạt luồng đọc stream an toàn
+            using var stream = file.OpenReadStream();
+
+            // Gọi Storage Service với folder tương ứng theo nghiệp vụ SRS
+            var storedFileName = await _fileStorageService.UploadFileAsync(stream, file.FileName, folderName);
+
+            // Trả về Full URL hiển thị trực tiếp
+            return _fileStorageService.GetFileUrl(storedFileName, folderName);
         }
     }
 }

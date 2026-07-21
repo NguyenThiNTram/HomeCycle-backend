@@ -96,6 +96,23 @@ namespace HomeCycle.API
                 };
             });
 
+            // Config CORS
+            builder.Services.AddCors(options =>
+            {
+                //options.AddPolicy("AllowSpecificOrigins", policy =>
+                //{
+                //    policy.WithOrigins("https://domaincuaban.com", "http://localhost:3000") // Thay bằng domain của bạn
+                //          .WithMethods("GET", "POST") // Chỉ cho phép GET và POST
+                //          .AllowAnyHeader();
+                //});
+                options.AddPolicy("AllowAll", policy =>
+                {
+                    policy.AllowAnyOrigin()
+                          .AllowAnyMethod()
+                          .AllowAnyHeader();
+                });
+            });
+
             builder.Services.AddAuthorization();
 
             var app = builder.Build();
@@ -117,7 +134,7 @@ namespace HomeCycle.API
             if (!app.Environment.IsProduction()) // Hoặc if (app.Environment.IsDevelopment() && !Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER").Equals("true"))
             {
                 // Tốt nhất nếu chạy Docker hoàn toàn thì comment hẳn dòng dưới này lại:
-                // app.UseHttpsRedirection();
+                app.UseHttpsRedirection();
             }
 
             app.UseAuthentication();

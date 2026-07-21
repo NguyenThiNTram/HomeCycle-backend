@@ -19,7 +19,11 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 ProductTypeName = entity.ProductTypeName,
                 Description = entity.Description,
                 IsActive = entity.IsActive,
-                CreatedAt = entity.CreatedAt
+                CreatedAt = entity.CreatedAt,
+
+                ProductAttributes = entity.Product_Attributes?
+                    .Select(attr => attr.ToDomain()) 
+                    .ToList() ?? new List<product_attribute>()
             };
         }
         public static Product_Type ToInfrastructure(this product_type entity)
@@ -32,7 +36,26 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 ProductTypeName = entity.ProductTypeName,
                 Description = entity.Description,
                 IsActive = entity.IsActive,
-                CreatedAt = entity.CreatedAt
+                CreatedAt = entity.CreatedAt,
+                Product_Attributes = entity.ProductAttributes.Select(attr => new Product_Attribute
+                {
+                    AttributeId = attr.AttributeId,
+                    ProductTypeId = attr.ProductTypeId,
+                    AttributeName = attr.AttributeName,
+                    DataType = attr.DataType,
+                    Unit = attr.Unit,
+                    DisplayOrder = attr.DisplayOrder,
+                    IsFilterable = attr.IsFilterable,
+                    IsRequired = attr.IsRequired,
+                    Product_Attribute_Options = attr.ProductAttributeOptions.Select(opt => new Product_Attribute_Option
+                    {
+                        OptionId = opt.OptionId,
+                        AttributeId = opt.AttributeId,
+                        OptionValue = opt.OptionValue,
+                        DisplayOrder = opt.DisplayOrder,
+                        IsDefault = opt.IsDefault
+                    }).ToList()
+                }).ToList()
             };
         }
     }

@@ -12,6 +12,7 @@ namespace HomeCycle.Application.Interfaces.Services.Auths
 {
     public interface IAuthService
     {
+        Task<Result<LoginResponseDto>> LoginAsync(LoginRequest request, CancellationToken cancellationToken = default);
         Task<Result<AuthResponse>> RegisterPersonalAsync(string email, RegisterPersonalRequest request, CancellationToken cancellationToken = default);
         Task<Result<LoginResponseDto>> LoginPersonalAsync(LoginPersonalRequest request, CancellationToken cancellationToken = default);
         Task<Result<LoginResponseDto>> RefreshTokenAsync(string refreshToken, CancellationToken cancellationToken = default);
@@ -20,7 +21,7 @@ namespace HomeCycle.Application.Interfaces.Services.Auths
         Task<Result<GoogleAuthResponseDto>> ExecuteGoogleLoginAsync(string idToken, CancellationToken cancellationToken = default);
 
         //otp
-        Task SendOtpAsync(string email);
+        Task<Result<string>> SendOtpAsync(string email);
         Task<Result<string>> VerifyOtpAsync(string email, string code);
     }
 }

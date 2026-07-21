@@ -1,4 +1,5 @@
 ﻿using HomeCycle.Domain.Entities;
+using HomeCycle.Domain.Enums;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -16,9 +17,9 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 ProductId = entity.ProductId,
                 PostId = entity.PostId,
                 CategoryId = entity.CategoryId,
+                BrandId = entity.BrandId,
                 ProductTypeId = entity.ProductTypeId,
                 ProductName = entity.ProductName,
-                BrandName = entity.BrandName,
                 SpaceUsage = entity.SpaceUsage,
                 ModelNumber = entity.ModelNumber,
                 OriginalPrice = entity.OriginalPrice,
@@ -26,7 +27,7 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 Width = entity.Width,
                 Height = entity.Height,
                 Weight = entity.Weight,
-                FunctionalityStatus = entity.FunctionalityStatus,
+                FunctionalityStatus = (FunctionalityStatus?)entity.FunctionalityStatus,
                 UsageDuration = entity.UsageDuration,
                 DamageLevel = entity.DamageLevel,
                 DetailDescription = entity.DetailDescription
@@ -40,8 +41,8 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 PostId = entity.PostId,
                 CategoryId = entity.CategoryId,
                 ProductTypeId = entity.ProductTypeId,
+                BrandId = entity.BrandId,
                 ProductName = entity.ProductName,
-                BrandName = entity.BrandName,
                 SpaceUsage = entity.SpaceUsage,
                 ModelNumber = entity.ModelNumber,
                 OriginalPrice = entity.OriginalPrice,
@@ -49,7 +50,7 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 Width = entity.Width,
                 Height = entity.Height,
                 Weight = entity.Weight,
-                FunctionalityStatus = entity.FunctionalityStatus,
+                FunctionalityStatus = (int?)entity.FunctionalityStatus,
                 UsageDuration = entity.UsageDuration,
                 DamageLevel = entity.DamageLevel,
                 DetailDescription = entity.DetailDescription

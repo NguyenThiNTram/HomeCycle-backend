@@ -1,8 +1,9 @@
-﻿using System;
+﻿using HomeCycle.Infrastructure.Persistences.Entities;
+using Microsoft.EntityFrameworkCore;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
-using Microsoft.EntityFrameworkCore;
 
 namespace HomeCycle.Infrastructure;
 
@@ -19,11 +20,11 @@ public partial class Product
 
     public Guid ProductTypeId { get; set; }
 
-    [StringLength(255)]
-    public string? ProductName { get; set; }
+    public Guid? BrandId { get; set; }
+
 
     [StringLength(255)]
-    public string? BrandName { get; set; }
+    public string? ProductName { get; set; }
 
     [StringLength(100)]
     public string? SpaceUsage { get; set; }
@@ -68,4 +69,8 @@ public partial class Product
 
     [InverseProperty("Product")]
     public virtual ICollection<Product_Attribute_Value> Product_Attribute_Values { get; set; } = new List<Product_Attribute_Value>();
+    
+    [ForeignKey("BrandId")]
+    [InverseProperty("Products")]
+    public virtual Brand? Brand { get; set; }
 }
