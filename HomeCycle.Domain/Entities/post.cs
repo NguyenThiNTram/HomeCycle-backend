@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using HomeCycle.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 
 namespace HomeCycle.Domain.Entities;
@@ -14,7 +15,7 @@ public class post
     public string? Description { get; set; }
     public int Quantity { get; set; }
     public int RemainingQuantity { get; set; }
-    public int? PostType { get; set; }
+    public PostType? PostType { get; set; }
     public decimal? BasePrice { get; set; }
     public string? StreetAddress { get; set; }
     public string? Ward { get; set; }

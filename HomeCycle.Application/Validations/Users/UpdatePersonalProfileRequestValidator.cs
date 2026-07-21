@@ -33,8 +33,8 @@ namespace HomeCycle.Application.Validations.Users
         public UpdateAvatarRequestValidator()
         {
             RuleFor(x => x.AvatarUrl)
-                .NotEmpty().WithMessage("The avatar field cannot be left blank.")
-                .Must(BeAValidUrl).WithMessage("Invalid avatar URL.");
+                .NotEmpty().WithMessage("The avatar field cannot be left blank.");
+                //.Must(BeAValidUrl).WithMessage("Invalid avatar URL.");
         }
 
         private bool BeAValidUrl(string url) => Uri.TryCreate(url, UriKind.Absolute, out _);
@@ -46,64 +46,63 @@ namespace HomeCycle.Application.Validations.Users
         {
             // Nếu bất kỳ field CCCD được nhập, thì yêu cầu RepresentativeCode và RepresentativeName không rỗng
             When(x =>
-                !string.IsNullOrWhiteSpace(x.RepresentativeCode) ||
-                !string.IsNullOrWhiteSpace(x.RepresentativeName) ||
-                x.RepresentativeDob.HasValue ||
-                !string.IsNullOrWhiteSpace(x.RepresentativeAddress) ||
-                !string.IsNullOrWhiteSpace(x.FrontIDCardImage) ||
-                !string.IsNullOrWhiteSpace(x.BackIDCardImage),
-                () =>
-                {
-                    RuleFor(x => x.RepresentativeCode)
-                        .NotEmpty()
-                        .MaximumLength(50);
+            !string.IsNullOrWhiteSpace(x.RepresentativeCode) ||
+            !string.IsNullOrWhiteSpace(x.RepresentativeName) ||
+            x.RepresentativeDob.HasValue ||
+            !string.IsNullOrWhiteSpace(x.RepresentativeAddress) ||
+            (x.FrontIDCardImage != null && x.FrontIDCardImage.Length > 0) || // ĐÃ SỬA: Kiểm tra file hợp lệ
+            (x.BackIDCardImage != null && x.BackIDCardImage.Length > 0),    // ĐÃ SỬA: Kiểm tra file hợp lệ
+            () =>
+            {
+                RuleFor(x => x.RepresentativeCode)
+                    .NotEmpty().WithMessage("Representative code is required.")
+                    .MaximumLength(50).WithMessage("Representative code must not exceed 50 characters.");
 
-                    RuleFor(x => x.RepresentativeName)
-                        .NotEmpty()
-                        .MaximumLength(255);
+                RuleFor(x => x.RepresentativeName)
+                    .NotEmpty().WithMessage("Representative name is required.")
+                    .MaximumLength(255).WithMessage("Representative name must not exceed 255 characters.");
 
-                    RuleFor(x => x.RepresentativeAddress)
-                        .NotEmpty()
-                        .MaximumLength(500);
+                RuleFor(x => x.RepresentativeAddress)
+                    .NotEmpty().WithMessage("Representative address is required.")
+                    .MaximumLength(500).WithMessage("Representative address must not exceed 500 characters.");
 
-                    RuleFor(x => x.FrontIDCardImage)
-                        .NotEmpty()
-                        .MaximumLength(1000);
+                // ĐÃ SỬA: Thay thế quy tắc chuỗi thành quy tắc kiểm tra File ảnh bắt buộc
+                RuleFor(x => x.FrontIDCardImage)
+                    .NotNull().WithMessage("Front ID Card Image file is required.");
 
-                    RuleFor(x => x.BackIDCardImage)
-                        .NotEmpty()
-                        .MaximumLength(1000);
-                });
+                RuleFor(x => x.BackIDCardImage)
+                    .NotNull().WithMessage("Back ID Card Image file is required.");
+            });
         }
-    }
     }
 
     public class UpdateBankAccountRequestValidator : AbstractValidator<UpdateBankAccountRequest>
     {
         public UpdateBankAccountRequestValidator()
         {
-        When(x =>
-            !string.IsNullOrWhiteSpace(x.BankCode) ||
-            !string.IsNullOrWhiteSpace(x.BankName) ||
-            !string.IsNullOrWhiteSpace(x.AccountNumber) ||
-            !string.IsNullOrWhiteSpace(x.AccountName),
-            () =>
-            {
-                RuleFor(x => x.BankCode)
-                    .NotEmpty()
-                    .MaximumLength(50);
+            When(x =>
+                !string.IsNullOrWhiteSpace(x.BankCode) ||
+                !string.IsNullOrWhiteSpace(x.BankName) ||
+                !string.IsNullOrWhiteSpace(x.AccountNumber) ||
+                !string.IsNullOrWhiteSpace(x.AccountName),
+                () =>
+                {
+                    RuleFor(x => x.BankCode)
+                        .NotEmpty()
+                        .MaximumLength(50);
 
-                RuleFor(x => x.BankName)
-                    .NotEmpty()
-                    .MaximumLength(255);
-                    
-                RuleFor(x => x.AccountNumber)
-                    .NotEmpty()
-                    .MaximumLength(50);
+                    RuleFor(x => x.BankName)
+                        .NotEmpty()
+                        .MaximumLength(255);
 
-                RuleFor(x => x.AccountName)
-                    .NotEmpty()
-                    .MaximumLength(255);
-            });
+                    RuleFor(x => x.AccountNumber)
+                        .NotEmpty()
+                        .MaximumLength(50);
+
+                    RuleFor(x => x.AccountName)
+                        .NotEmpty()
+                        .MaximumLength(255);
+                });
+        }
     }
 }

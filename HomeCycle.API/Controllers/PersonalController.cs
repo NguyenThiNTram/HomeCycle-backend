@@ -53,9 +53,10 @@ namespace HomeCycle.API.Controllers
 
         // update avt
         [HttpPatch("me/avatar")]
+        [Consumes("multipart/form-data")]
         //[ProducesResponseType(typeof(Result<string>), StatusCodes.Status200OK)]
         //[ProducesResponseType(typeof(Result), StatusCodes.Status400BadRequest)]
-        public async Task<IActionResult> UpdateAvatar([FromBody] UpdateAvatarRequest request, CancellationToken cancellationToken)
+        public async Task<IActionResult> UpdateAvatar([FromForm] UpdateAvatarRequest request, CancellationToken cancellationToken)
         {
             var userId = GetCurrentUserId();
             var result = await _personalProfileService.UpdateAvatarAsync(userId, request, cancellationToken);
@@ -70,7 +71,8 @@ namespace HomeCycle.API.Controllers
         [HttpPut("me/identity")]
         //[ProducesResponseType(typeof(Result), StatusCodes.Status200OK)]
         //[ProducesResponseType(typeof(Result), StatusCodes.Status400BadRequest)]
-        public async Task<IActionResult> UpdateIdentity([FromBody] UpdateIdCardRequest request, CancellationToken cancellationToken)
+        [Consumes("multipart/form-data")]
+        public async Task<IActionResult> UpdateIdentity([FromForm] UpdateIdCardRequest request, CancellationToken cancellationToken)
         {
             var userId = GetCurrentUserId();
             var result = await _personalProfileService.UpdateIdentityAsync(userId, request, cancellationToken);
@@ -104,7 +106,7 @@ namespace HomeCycle.API.Controllers
 
             if (userIdClaim == null || !Guid.TryParse(userIdClaim.Value, out var userId))
             {
-                throw new UnauthorizedAccessException("Không thể xác thực danh tính người dùng từ Token.");
+                throw new UnauthorizedAccessException("Cannot authenticate user identity from Token.");
             }
 
             return userId;

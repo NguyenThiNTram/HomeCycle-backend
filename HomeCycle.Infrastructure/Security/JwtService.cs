@@ -80,7 +80,7 @@ namespace HomeCycle.Infrastructure.Security
                 issuer: jwtSection["Issuer"],
                 audience: jwtSection["Audience"],
                 claims: claims,
-                expires: DateTime.UtcNow.AddMinutes(15), // Short-lived: 15 phút
+                expires: DateTime.UtcNow.AddMinutes(60), // Short-lived: 15 phút
                 signingCredentials: creds);
 
             return new JwtSecurityTokenHandler().WriteToken(token);

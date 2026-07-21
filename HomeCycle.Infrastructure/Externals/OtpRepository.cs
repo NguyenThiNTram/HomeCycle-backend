@@ -1,4 +1,4 @@
-﻿using HomeCycle.Application.Interfaces.Repositories;
+﻿using HomeCycle.Application.Interfaces.Security;
 using HomeCycle.Domain.Entities;
 using HomeCycle.Infrastructure.DbContexts;
 using HomeCycle.Infrastructure.Persistences.Mappers;

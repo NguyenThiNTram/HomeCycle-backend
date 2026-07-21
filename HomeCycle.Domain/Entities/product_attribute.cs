@@ -28,4 +28,6 @@ public class product_attribute
         this.AttributeId = AttributeId;
         this.ProductTypeId = ProductTypeId;
     }
+
+    public ICollection<product_attribute_option> ProductAttributeOptions { get; set; } = new List<product_attribute_option>();
 }

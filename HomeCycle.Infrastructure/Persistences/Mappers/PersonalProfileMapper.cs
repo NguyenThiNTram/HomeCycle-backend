@@ -45,7 +45,7 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 RepresentativeAddress = entity.RepresentativeAddress,
                 FrontIDCardImage = entity.FrontIDCardImage,
                 BackIDCardImage = entity.BackIDCardImage,
-                VerificationStatus = (int)entity.VerificationStatus,
+                VerificationStatus = (int?)entity.VerificationStatus,
                 VerifiedBy = entity.VerifiedBy,
                 VerifiedAt = entity.VerifiedAt,
                 ReputationScore = entity.ReputationScore,

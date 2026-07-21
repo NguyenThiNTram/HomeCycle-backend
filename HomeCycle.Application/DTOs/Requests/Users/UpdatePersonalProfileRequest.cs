@@ -8,6 +8,7 @@ using System.Text;
 using System.Threading.Tasks;
 using static System.Net.Mime.MediaTypeNames;
 using static System.Runtime.InteropServices.JavaScript.JSType;
+using Microsoft.AspNetCore.Http;
 
 namespace HomeCycle.Application.DTOs.Requests.Users
 {
@@ -20,7 +21,8 @@ namespace HomeCycle.Application.DTOs.Requests.Users
     }
     public class UpdateAvatarRequest
     {
-        public string AvatarUrl { get; set; } = null!;
+        //public string AvatarUrl { get; set; } = null!;
+        public IFormFile AvatarUrl { get; set; } = null!;
     }
 
     public class UpdateIdCardRequest
@@ -29,8 +31,8 @@ namespace HomeCycle.Application.DTOs.Requests.Users
         public string? RepresentativeName { get; set; }
         public DateOnly? RepresentativeDob { get; set; }
         public string? RepresentativeAddress { get; set; }
-        public string FrontIDCardImage { get; set; } = null!; // Firebase url
-        public string BackIDCardImage { get; set; } = null!;  // Firebase url
+        public IFormFile FrontIDCardImage { get; set; } = null!; // Firebase url
+        public IFormFile BackIDCardImage { get; set; } = null!;  // Firebase url
     }
 
     public class UpdateBankAccountRequest

@@ -41,9 +41,16 @@ namespace HomeCycle.Infrastructure.Repositories.Users
         public async Task UpdateAsync(personal_profile profile, CancellationToken cancellationToken = default)
         {
             var entity = profile.ToInfrastructure();
+            var localEntry = _db.Personal_Profiles.Local.FirstOrDefault(x => x.PersonalProfileId == entity.PersonalProfileId);
+
+            if (localEntry != null)
+            {
+                // Trục xuất thực thể cũ ra khỏi Change Tracker để nhường chỗ cho thực thể cập nhật
+                _db.Entry(localEntry).State = EntityState.Detached;
+            }
 
             _db.Personal_Profiles.Update(entity);
-            await _db.SaveChangesAsync(cancellationToken);
+            //await _db.SaveChangesAsync(cancellationToken);
         }
 
         public async Task<bool> ExistsByUserIdAsync( Guid userId, CancellationToken cancellationToken = default)

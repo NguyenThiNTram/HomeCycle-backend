@@ -20,7 +20,7 @@ namespace HomeCycle.Application.Interfaces.Services.Auths
         Task<Result<GoogleAuthResponseDto>> ExecuteGoogleLoginAsync(string idToken, CancellationToken cancellationToken = default);
 
         //otp
-        Task SendOtpAsync(string email);
+        Task<Result<string>> SendOtpAsync(string email);
         Task<Result<string>> VerifyOtpAsync(string email, string code);
     }
 }

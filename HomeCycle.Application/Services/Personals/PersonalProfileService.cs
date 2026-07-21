@@ -7,11 +7,13 @@ using HomeCycle.Application.DTOs.Responses.Users;
 using HomeCycle.Application.Interfaces.Generics;
 using HomeCycle.Application.Interfaces.Repositories.Banks;
 using HomeCycle.Application.Interfaces.Repositories.Users;
+using HomeCycle.Application.Interfaces.Services.Externals;
 using HomeCycle.Application.Interfaces.Services.Users;
 using HomeCycle.Domain.Entities;
 using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -26,6 +28,7 @@ namespace HomeCycle.Application.Services.Personals
         private readonly IUnitOfWork _unitOfWork;
         private readonly IMapper _mapper;
         private readonly ILogger<PersonalProfileService> _logger;
+        private readonly IFileStorageService _fileStorageService;
 
         private readonly IValidator<UpdatePersonalProfileRequest> _updateProfileValidator;
         private readonly IValidator<UpdateAvatarRequest> _updateAvatarValidator;
@@ -39,6 +42,7 @@ namespace HomeCycle.Application.Services.Personals
             IUnitOfWork unitOfWork,
             IMapper mapper,
             ILogger<PersonalProfileService> logger,
+            IFileStorageService fileStorageService,
             IValidator<UpdatePersonalProfileRequest> updateProfileValidator,
             IValidator<UpdateAvatarRequest> updateAvatarValidator,
             IValidator<UpdateIdCardRequest> updateIdCardValidator,
@@ -54,6 +58,7 @@ namespace HomeCycle.Application.Services.Personals
             _updateAvatarValidator = updateAvatarValidator;
             _updateIdCardValidator = updateIdCardValidator;
             _updateBankAccountValidator = updateBankAccountValidator;
+            _fileStorageService = fileStorageService;
         }
 
         public async Task<Result<PersonalProfileResponse>> GetMyProfileAsync(Guid userId, CancellationToken cancellationToken = default)
@@ -90,7 +95,18 @@ namespace HomeCycle.Application.Services.Personals
             if (user is null)
                 return Result<string>.Fail(ProfileErrors.UserNotFound);
 
-            user.AvatarUrl = file.AvatarUrl.Trim();
+            //user.AvatarUrl = file.AvatarUrl.Trim();
+
+            // 2. Đọc file stream và upload lên Firebase
+            string storedFileName;
+            using (var stream = file.AvatarUrl.OpenReadStream())
+            {
+                // Truyền đầy đủ: Stream, Tên file gốc (để lấy Extension), và Folder định danh nghiệp vụ
+                storedFileName = await _fileStorageService.UploadFileAsync(
+                    stream,
+                    file.AvatarUrl.FileName,
+                    "avatars");
+            }
 
             await _userRepository.UpdateAsync(user, cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -108,7 +124,7 @@ namespace HomeCycle.Application.Services.Personals
             }
 
             var user = await _userRepository.GetByIdAsync(userId, cancellationToken);
-            if (user is null) return Result.Fail(AuthErrors.InvalidCredential);
+            if (user is null) return Result.Fail(ProfileErrors.UserNotFound);
 
             var bank = await _bankAccountRepository.GetByUserIdAsync(userId, cancellationToken);
 
@@ -143,25 +159,54 @@ namespace HomeCycle.Application.Services.Personals
             if (!validationResult.IsValid)
             {
                 var errors = string.Join(", ", validationResult.Errors.Select(x => x.ErrorMessage));
-                return Result<PersonalProfileResponse>.Fail(ValidationErrors.InvalidRequest(errors));
+                return Result.Fail(ValidationErrors.InvalidRequest(errors));
             }
 
             var user = await _userRepository.GetByIdAsync(userId, cancellationToken);
             if (user is null)
-                return Result<PersonalProfileResponse>.Fail(ProfileErrors.UserNotFound);
+                return Result.Fail(ProfileErrors.UserNotFound);
 
             var profile = await _personalProfileRepository.GetByUserIdAsync(userId, cancellationToken);
             if (profile is null)
-                return Result<PersonalProfileResponse>.Fail(ProfileErrors.ProfileNotFound);
+                return Result.Fail(ProfileErrors.ProfileNotFound);
+
+            string? frontUploadedUrl = null;
+            string? backUploadedUrl = null;
+
+            if (request.FrontIDCardImage != null && request.FrontIDCardImage.Length > 0)
+            {
+                using (var stream = request.FrontIDCardImage.OpenReadStream())
+                {
+                    frontUploadedUrl = await _fileStorageService.UploadFileAsync(
+                        stream,
+                        request.FrontIDCardImage.FileName,
+                        $"identities/{userId}/front_id_card");
+                }
+            }
+
+            if (request.BackIDCardImage != null && request.BackIDCardImage.Length > 0)
+            {
+                using (var stream = request.BackIDCardImage.OpenReadStream())
+                {
+                    backUploadedUrl = await _fileStorageService.UploadFileAsync(
+                        stream,
+                        request.BackIDCardImage.FileName,
+                        $"identities/{userId}/back_id_card");
+                }
+            }
 
             _mapper.Map(request, profile);
 
+            // 5. Gán thủ công các đường dẫn URL vừa lấy từ Firebase Storage vào thực thể hồ sơ
+            if (!string.IsNullOrEmpty(frontUploadedUrl)) profile.FrontIDCardImage = frontUploadedUrl;
+            if (!string.IsNullOrEmpty(backUploadedUrl)) profile.BackIDCardImage = backUploadedUrl;
+
             // Đổi CCCD => cần kiểm duyệt lại, reset trạng thái xác minh
-            profile.VerificationStatus = 0; // 0 = chờ duyệt
+            profile.VerificationStatus = 0;
             profile.VerifiedBy = null;
             profile.VerifiedAt = null;
 
-            //await _personalProfileRepository.UpdateAsync(profile, cancellationToken);
+            await _personalProfileRepository.UpdateAsync(profile, cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
             var bankAccount = await _bankAccountRepository.GetByUserIdAsync(userId, cancellationToken);
@@ -174,23 +219,24 @@ namespace HomeCycle.Application.Services.Personals
             if (!validationResult.IsValid)
             {
                 var errors = string.Join(", ", validationResult.Errors.Select(x => x.ErrorMessage));
-                return Result<PersonalProfileResponse>.Fail(ValidationErrors.InvalidRequest(errors));
+                return Result.Fail(ValidationErrors.InvalidRequest(errors));
             }
 
             var user = await _userRepository.GetByIdAsync(userId, cancellationToken);
             if (user is null)
-                return Result<PersonalProfileResponse>.Fail(ProfileErrors.UserNotFound);
+                return Result.Fail(ProfileErrors.UserNotFound);
 
             var profile = await _personalProfileRepository.GetByUserIdAsync(userId, cancellationToken);
             if (profile is null)
-                return Result<PersonalProfileResponse>.Fail(ProfileErrors.ProfileNotFound);
+                return Result.Fail(ProfileErrors.ProfileNotFound);
 
             // Cập nhật user
             _mapper.Map(request, user);
             _mapper.Map(request, profile);
 
-            //await _userRepository.UpdateAsync(user, cancellationToken);
-            //await _personalProfileRepository.UpdateAsync(profile, cancellationToken);
+            await _userRepository.UpdateAsync(user, cancellationToken);
+            await _personalProfileRepository.UpdateAsync(profile, cancellationToken);
+
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
             return Result.Success();

@@ -12,8 +12,11 @@ using HomeCycle.Application.Interfaces.Repositories.Banks;
 using HomeCycle.Application.Interfaces.Repositories.Users;
 using HomeCycle.Application.Interfaces.Security;
 using HomeCycle.Application.Interfaces.Services.Auths;
+using HomeCycle.Application.Interfaces.Services.Externals;
 using HomeCycle.Domain.Entities;
 using HomeCycle.Domain.Enums;
+using MathNet.Numerics.Statistics.Mcmc;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json.Linq;
@@ -41,8 +44,9 @@ namespace HomeCycle.Application.Services.Auths
         private readonly IEmailService _emailService;
         private readonly IBankAccountRepository _bankAccountRepository;
         private readonly ILogger<AuthService> _logger;
+        private readonly IFileStorageService _fileStorageService;
 
-        public AuthService(IUserRepository userRepository, IUnitOfWork unitOfWork, IPasswordHasher passwordHasher, IJwtService jwtService, IMapper mapper, IConfiguration configuration, IValidator<RegisterPersonalRequest> validator, IValidator<LoginPersonalRequest> loginValidator, IPersonalProfileRepository personalProfileRepository, IOtpRepository otpRepository, IEmailService emailService, IBankAccountRepository bankAccountRepository, ILogger<AuthService> logger)
+        public AuthService(IUserRepository userRepository, IUnitOfWork unitOfWork, IPasswordHasher passwordHasher, IJwtService jwtService, IMapper mapper, IConfiguration configuration, IValidator<RegisterPersonalRequest> validator, IValidator<LoginPersonalRequest> loginValidator, IPersonalProfileRepository personalProfileRepository, IOtpRepository otpRepository, IEmailService emailService, IBankAccountRepository bankAccountRepository, ILogger<AuthService> logger, IFileStorageService fileStorageService)
         {
             _userRepository = userRepository;
             _unitOfWork = unitOfWork;
@@ -57,6 +61,7 @@ namespace HomeCycle.Application.Services.Auths
             _emailService = emailService;
             _bankAccountRepository = bankAccountRepository;
             _logger = logger;
+            _fileStorageService = fileStorageService;
         }
 
         public async Task<Result<LoginResponseDto>> LoginPersonalAsync(LoginPersonalRequest request, CancellationToken cancellationToken = default)
@@ -116,10 +121,19 @@ namespace HomeCycle.Application.Services.Auths
             var normalizedEmail = email.Trim().ToLower();
 
             var googleAvatar = _jwtService.GetAvatarFromRegistrationToken(registrationToken);
+            string? finalAvatarUrl = googleAvatar;
 
-            var finalAvatarUrl = !string.IsNullOrWhiteSpace(request.AvatarUrl)
-                ? request.AvatarUrl
-                : googleAvatar;
+            // xử lý avatar (Lưu vào thư mục "avatars")
+            if (request.AvatarUrl != null)
+            {
+                using var stream = request.AvatarUrl.OpenReadStream();
+                var storedFileName = await _fileStorageService.UploadFileAsync(stream, request.AvatarUrl.FileName, "avatars");
+                finalAvatarUrl = _fileStorageService.GetFileUrl(storedFileName, "avatars");
+            }
+
+            // xử lý CCCD/CMND (Lưu vào thư mục bảo mật "legal-documents")
+            //var frontIdCardUrl = await UploadFileHelperAsync(request.FrontIDCardImage, "legal-documents", cancellationToken);
+            //var backIdCardUrl = await UploadFileHelperAsync(request.BackIDCardImage, "legal-documents", cancellationToken);
 
             var emailExists = await _userRepository.ExistsByEmailAsync(normalizedEmail, cancellationToken);
             if (emailExists)
@@ -159,6 +173,29 @@ namespace HomeCycle.Application.Services.Auths
 
                 await _userRepository.AddAsync(newUser, cancellationToken);
 
+                string? frontIdCardUrl = null;
+                string? backIdCardUrl = null;
+
+                if (request.FrontIDCardImage != null)
+                {
+                    using var stream = request.FrontIDCardImage.OpenReadStream();
+
+                    frontIdCardUrl = await _fileStorageService.UploadFileAsync(
+                        stream,
+                        request.FrontIDCardImage.FileName,
+                        $"identities/{newUser.UserId}/front_id_card");
+                }
+
+                if (request.BackIDCardImage != null)
+                {
+                    using var stream = request.BackIDCardImage.OpenReadStream();
+
+                    backIdCardUrl = await _fileStorageService.UploadFileAsync(
+                        stream,
+                        request.BackIDCardImage.FileName,
+                        $"identities/{newUser.UserId}/back_id_card");
+                }
+
                 var personalProfile = new personal_profile
                 {
                     PersonalProfileId = Guid.NewGuid(),
@@ -168,8 +205,9 @@ namespace HomeCycle.Application.Services.Auths
                     RepresentativeName = request.RepresentativeName?.Trim(),
                     RepresentativeDob = request.RepresentativeDob,
                     RepresentativeAddress = request.RepresentativeAddress?.Trim(),
-                    FrontIDCardImage = request.FrontIDCardImage,
-                    BackIDCardImage = request.BackIDCardImage,
+                    FrontIDCardImage = frontIdCardUrl,
+                    BackIDCardImage = backIdCardUrl,
+                    VerificationStatus = 0,
                     CreatedAt = now
                 };
 
@@ -212,9 +250,10 @@ namespace HomeCycle.Application.Services.Auths
                     }
                 });
             }
-            catch
+            catch (Exception ex)
             {
                 await _unitOfWork.RollbackTransactionAsync();
+                Console.WriteLine(ex.ToString());
                 throw;
             }
         }
@@ -328,14 +367,21 @@ namespace HomeCycle.Application.Services.Auths
             }
         }
 
-        public async Task SendOtpAsync(string email)
+        public async Task<Result<string>> SendOtpAsync(string email)
         {
+            var normalizedEmail = email.Trim().ToLower();
+
+            var emailExists = await _userRepository.ExistsByEmailAsync(normalizedEmail);
+
+            if (emailExists)
+                return Result<string>.Fail(AuthErrors.EmailExists);
+
             var otpCode =Random.Shared.Next(100000, 999999).ToString();
 
             var otp = new otp
             {
                 OtpId = Guid.NewGuid(),
-                Email = email,
+                Email = normalizedEmail,
                 Code = otpCode,
                 Purpose = "Register",
                 IsUsed = false,
@@ -344,7 +390,9 @@ namespace HomeCycle.Application.Services.Auths
             };
 
             await _otpRepository.AddAsync(otp);
-            await _emailService.SendOtpEmailAsync(email, otpCode);
+            await _emailService.SendOtpEmailAsync(normalizedEmail, otpCode);
+
+            return Result<string>.Success("OTP has been sent successfully.");
         }
 
         public async Task<Result<string>> VerifyOtpAsync(string email, string code)
@@ -367,6 +415,23 @@ namespace HomeCycle.Application.Services.Auths
             // Trả token này về cho Frontend
             return Result<string>.Success(registrationToken);
             //return true;
+        }
+
+        //-----------------------------------------------------------------------------------------------------
+        // HELPER METHODS
+        //-----------------------------------------------------------------------------------------------------
+        private async Task<string?> UploadFileHelperAsync(IFormFile? file, string folderName, CancellationToken cancellationToken = default)
+        {
+            if (file == null || file.Length == 0) return null;
+
+            // Kích hoạt luồng đọc stream an toàn
+            using var stream = file.OpenReadStream();
+
+            // Gọi Storage Service với folder tương ứng theo nghiệp vụ SRS
+            var storedFileName = await _fileStorageService.UploadFileAsync(stream, file.FileName, folderName);
+
+            // Trả về Full URL hiển thị trực tiếp
+            return _fileStorageService.GetFileUrl(storedFileName, folderName);
         }
     }
 }

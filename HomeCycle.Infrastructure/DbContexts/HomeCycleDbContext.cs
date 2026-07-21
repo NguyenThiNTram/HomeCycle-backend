@@ -1,7 +1,8 @@
-﻿using System;
-using System.Collections.Generic;
-using HomeCycle.Infrastructure;
+﻿using HomeCycle.Infrastructure;
+using HomeCycle.Infrastructure.Persistences.Entities;
 using Microsoft.EntityFrameworkCore;
+using System;
+using System.Collections.Generic;
 
 namespace HomeCycle.Infrastructure.DbContexts;
 
@@ -19,6 +20,8 @@ public partial class HomeCycleDbContext : DbContext
     public virtual DbSet<Audit_Log> Audit_Logs { get; set; }
 
     public virtual DbSet<Bank_Account> Bank_Accounts { get; set; }
+
+    public DbSet<Brand> Brands { get; set; }
 
     public virtual DbSet<Business_Document> Business_Documents { get; set; }
 
@@ -114,6 +117,12 @@ public partial class HomeCycleDbContext : DbContext
             .HasPostgresExtension("extensions", "uuid-ossp")
             .HasPostgresExtension("vault", "supabase_vault");
 
+        // Ép EF Core luôn luôn chỉ làm việc với schema public
+        modelBuilder.HasDefaultSchema("public");
+        // Giữ nguyên dòng quét Fluent API hiện tại
+        modelBuilder.ApplyConfigurationsFromAssembly(typeof(HomeCycleDbContext).Assembly);
+
+
         modelBuilder.Entity<Agreement_Form>(entity =>
         {
             entity.HasKey(e => e.AgreementId).HasName("Agreement_Form_pkey");
@@ -169,6 +178,16 @@ public partial class HomeCycleDbContext : DbContext
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()");
 
             entity.HasOne(d => d.User).WithMany(p => p.Bank_Accounts).HasConstraintName("fk_bank_user");
+        });
+
+        modelBuilder.Entity<Brand>(entity =>
+        {
+            entity.ToTable("Brand");
+            entity.HasKey(e => e.BrandId);
+            entity.Property(e => e.BrandName).HasMaxLength(255).IsRequired();
+
+            // Chỉ mục Unique không phân biệt hoa thường ở tầng DB
+            entity.HasIndex(e => e.BrandName).IsUnique();
         });
 
         modelBuilder.Entity<Business_Document>(entity =>
@@ -516,6 +535,12 @@ public partial class HomeCycleDbContext : DbContext
             entity.HasOne(d => d.ProductType).WithMany(p => p.Products)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("fk_product_type");
+
+            entity.HasOne(d => d.Brand).WithMany(p => p.Products)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasForeignKey(d => d.BrandId)
+                .OnDelete(DeleteBehavior.SetNull)
+                .HasConstraintName("fk_product_brand");
         });
 
         modelBuilder.Entity<Product_Attribute>(entity =>

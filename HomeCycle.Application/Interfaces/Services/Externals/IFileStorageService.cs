@@ -8,8 +8,7 @@ namespace HomeCycle.Application.Interfaces.Services.Externals
 {
     public interface IFileStorageService
     {
-        // Hàm nhận vào một Stream file và tên file, trả về URL
-        Task<string> UploadFileAsync(Stream fileStream, string fileName);
-        string GetFileUrl(string storedFileName);
+        Task<string> UploadFileAsync(Stream fileStream, string originalFileName, string folderName, bool overwrite = false);
+        string GetFileUrl(string storedFileName, string folderName);
     }
 }
