@@ -48,7 +48,7 @@ namespace HomeCycle.API.Controllers
         //    return Ok(result.Data);
         //}
 
-        [HttpPost("/Personal/Register")]
+        [HttpPost("Personal/Register")]
         public async Task<IActionResult> RegisterPersonal(
             [FromHeader(Name = "X-Registration-Token")] string registrationToken, // Lấy token từ Header
             [FromForm] RegisterPersonalRequest request,
