@@ -22,8 +22,10 @@ public class business_profile
     public string? OperatingScope { get; set; }
     public int BusinessModel { get; set; }
     public int Status { get; set; }
-    public Guid? CurrentModeratorId { get; set; }
     public int ReputationScore { get; set; }
+    public Guid? VerifiedBy { get; set; }
+    public DateTime? VerifiedAt { get; set; }
+    public string? RejectReason { get; set; }
 
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }

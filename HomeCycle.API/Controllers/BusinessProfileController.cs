@@ -9,6 +9,7 @@ namespace HomeCycle.API.Controllers
 {
     [Route("api/business-profiles")]
     [ApiController]
+    [Authorize]
     public class BusinessProfileController : ControllerBase
     {
         private readonly IBusinessProfileService _businessProfileService;
@@ -19,7 +20,6 @@ namespace HomeCycle.API.Controllers
         }
 
         [HttpGet("registration-detail")]
-        [Authorize]
         public async Task<IActionResult> GetRegistrationDetail(CancellationToken cancellationToken)
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
@@ -36,7 +36,6 @@ namespace HomeCycle.API.Controllers
         }
 
         [HttpPost("submit")]
-        [Authorize]
         public async Task<IActionResult> SubmitBusinessProfile(
             [FromBody] SubmitBusinessProfileRequest request,
             CancellationToken cancellationToken)
@@ -77,7 +76,6 @@ namespace HomeCycle.API.Controllers
 
             return result.IsSuccess ? Ok(new { success = true, data = result.Data }) : BadRequest(result.Error);
         }
-
         private Guid GetCurrentUserId()
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;

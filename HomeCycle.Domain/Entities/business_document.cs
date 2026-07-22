@@ -13,14 +13,8 @@ public class business_document
     public int DocumentType { get; set; }
     public string DocumentUrl { get; set; }
 
-    public int Status { get; set; }
-    public Guid? VerifiedBy { get; set; }
-    public DateTime? VerifiedAt { get; set; }
-
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
-
-    public string? RejectReason { get; set; }
 
     public business_document()
     {

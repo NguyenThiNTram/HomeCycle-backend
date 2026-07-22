@@ -19,28 +19,86 @@ namespace HomeCycle.API.Controllers
             _moderatorService = moderatorService;
         }
 
-        [HttpPost("business-profile/{userId}/review")]
+        [HttpPost("business-profiles/review")]
         public async Task<IActionResult> ReviewBusinessProfile(
-            [FromRoute] Guid userId,
             [FromBody] ReviewBusinessProfileRequest request,
             CancellationToken cancellationToken)
         {
-            var moderatorIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            if (string.IsNullOrEmpty(moderatorIdClaim))
-                return Unauthorized(new { success = false, message = "Phiên làm việc quản trị của bạn không hợp lệ." });
+            var moderatorId = GetCurrentUserId();
+            if (moderatorId == Guid.Empty)
+                return Unauthorized(new { success = false, message = "Phiên làm việc không hợp lệ." });
 
-            var moderatorId = Guid.Parse(moderatorIdClaim);
-
-            var result = await _moderatorService.ReviewBusinessProfileAsync(
-                moderatorId,
-                userId,
-                request,
-                cancellationToken);
+            var result = await _moderatorService.ReviewBusinessProfileAsync(moderatorId, request, cancellationToken);
 
             if (!result.IsSuccess)
-                return BadRequest(new { success = false, message = result.Error.Message });
+            {
+                return BadRequest(new
+                {
+                    success = false,
+                    code = result.Error.Code,
+                    message = result.Error.Message
+                });
+            }
 
-            return Ok(new { success = true, message = result.Data });
+            return Ok(new
+            {
+                success = true,
+                message = result.Data
+            });
+        }
+
+        [HttpGet("business-profiles/{id}")]
+        public async Task<IActionResult> GetBusinessProfileDetail(
+            [FromRoute] Guid profileId,
+            CancellationToken cancellationToken)
+        {
+            var result = await _moderatorService.GetBusinessProfileDetailForModeratorAsync(profileId, cancellationToken);
+
+            if (!result.IsSuccess)
+            {
+                return BadRequest(new
+                {
+                    success = false,
+                    code = result.Error.Code,
+                    message = result.Error.Message
+                });
+            }
+
+            return Ok(new
+            {
+                success = true,
+                data = result.Data
+            });
+        }
+
+        [HttpGet("business-profiles/pending")]
+        public async Task<IActionResult> GetPendingBusinessProfiles(
+            [FromQuery] string? keyword,
+            CancellationToken cancellationToken)
+        {
+            var result = await _moderatorService.GetPendingBusinessProfilesAsync(keyword, cancellationToken);
+
+            if (!result.IsSuccess)
+            {
+                return BadRequest(new
+                {
+                    success = false,
+                    code = result.Error.Code,
+                    message = result.Error.Message
+                });
+            }
+
+            return Ok(new
+            {
+                success = true,
+                data = result.Data
+            });
+        }
+
+        private Guid GetCurrentUserId()
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            return Guid.TryParse(userIdClaim, out var userId) ? userId : Guid.Empty;
         }
     }
 }

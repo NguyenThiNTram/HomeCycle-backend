@@ -8,9 +8,8 @@ namespace HomeCycle.Domain.Enums
 {
     public enum BusinessProfileStatus
     {
-        Pending = 0,    
-        InReview = 1,   
-        Approved = 2,   
-        Rejected = 3   
+        Pending = 0,     
+        Approved = 1,   
+        Rejected = 2   
     }
 }

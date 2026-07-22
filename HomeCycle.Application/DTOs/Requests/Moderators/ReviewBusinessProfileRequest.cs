@@ -8,14 +8,9 @@ namespace HomeCycle.Application.DTOs.Requests.Moderators
 {
     public class ReviewBusinessProfileRequest
     {
+        public Guid BusinessProfileId { get; set; }
         public bool IsApproved { get; set; }
-        public List<ReviewDocumentDto> DocumentReviews { get; set; } = new();
+        public string? RejectReason { get; set; }
     }
 
-    public class ReviewDocumentDto
-    {
-        public Guid DocumentId { get; set; }
-        public bool IsApproved { get; set; } 
-        public string? RejectReason { get; set; } 
-    }
 }

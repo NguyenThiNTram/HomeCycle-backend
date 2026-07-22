@@ -20,8 +20,9 @@ namespace HomeCycle.Application.DTOs.Responses.Profiles
         public string? OperatingScope { get; set; }
         public int BusinessModel { get; set; } 
         public int Status { get; set; } 
+        public string? RejectReason { get; set; }   
 
-     
+
         public string BankCode { get; set; } = null!;
         public string BankName { get; set; } = null!;
         public string AccountNumber { get; set; } = null!;
@@ -38,8 +39,6 @@ namespace HomeCycle.Application.DTOs.Responses.Profiles
         public Guid BusinessDocumentId { get; set; }
         public int DocumentType { get; set; } 
         public string DocumentUrl { get; set; } = null!;
-        public int Status { get; set; } 
-        public string? RejectReason { get; set; } 
     }
 
     public class BusinessRegistrationServiceAreaDto

@@ -186,8 +186,6 @@ public partial class HomeCycleDbContext : DbContext
             entity.HasOne(d => d.BusinessProfile).WithMany(p => p.Business_Documents)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("fk_business_doc_profile");
-
-            entity.HasOne(d => d.VerifiedByNavigation).WithMany(p => p.Business_Documents).HasConstraintName("fk_business_doc_verified_by");
         });
 
         modelBuilder.Entity<Business_Procurement_Preference>(entity =>
@@ -256,12 +254,10 @@ public partial class HomeCycleDbContext : DbContext
             entity.HasOne(d => d.User).WithOne(p => p.Business_Profile)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("fk_business_user");
-
-            entity.HasOne(d => d.CurrentModeratorNavigation)
-                .WithMany() 
-                .HasForeignKey(d => d.CurrentModeratorId)
-                .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("fk_business_moderator");
+            entity.HasOne(e => e.VerifiedByUser)
+                .WithMany()
+                .HasForeignKey(e => e.VerifiedBy)
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<Business_Service_Area>(entity =>

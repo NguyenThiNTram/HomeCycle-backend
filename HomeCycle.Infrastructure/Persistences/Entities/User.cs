@@ -47,9 +47,6 @@ public partial class User
     [InverseProperty("User")]
     public virtual ICollection<Bank_Account> Bank_Accounts { get; set; } = new List<Bank_Account>();
 
-    [InverseProperty("VerifiedByNavigation")]
-    public virtual ICollection<Business_Document> Business_Documents { get; set; } = new List<Business_Document>();
-
     [InverseProperty("User")]
     public virtual Business_Profile? Business_Profile { get; set; }
 

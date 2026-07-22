@@ -17,12 +17,8 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 BusinessProfileId = entity.BusinessProfileId,
                 DocumentType = entity.DocumentType,
                 DocumentUrl = entity.DocumentUrl,
-                Status = entity.Status,
-                VerifiedBy = entity.VerifiedBy,
-                VerifiedAt = entity.VerifiedAt,
                 CreatedAt = entity.CreatedAt,
                 UpdatedAt = entity.UpdatedAt,
-                RejectReason = entity.RejectReason
             };
         }
 
@@ -34,12 +30,8 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 BusinessProfileId = entity.BusinessProfileId,
                 DocumentType = entity.DocumentType,
                 DocumentUrl = entity.DocumentUrl,
-                Status = entity.Status,
-                VerifiedBy = entity.VerifiedBy,
-                VerifiedAt = entity.VerifiedAt,
                 CreatedAt = entity.CreatedAt,
                 UpdatedAt = entity.UpdatedAt,
-                RejectReason = entity.RejectReason
             };
         }
     }

@@ -84,7 +84,6 @@ namespace HomeCycle.Application.Services.Profiles
                         OperatingScope = request.OperatingScope?.Trim(),
                         BusinessModel = request.BusinessModel,
                         Status = (int)BusinessProfileStatus.Pending, 
-                        CurrentModeratorId = null,
                         ReputationScore = 100,
                         CreatedAt = now,
                         UpdatedAt = now
@@ -176,12 +175,8 @@ namespace HomeCycle.Application.Services.Profiles
                     BusinessProfileId = targetProfileId,
                     DocumentType = docDto.DocumentType, 
                     DocumentUrl = docDto.DocumentUrl.Trim(),
-                    Status = (int)DocumentStatus.Pending,
-                    VerifiedBy = null,
-                    VerifiedAt = null, 
                     CreatedAt = now,
                     UpdatedAt = now,
-                    RejectReason = null
                 }).ToList();
                 await _businessDocumentRepository.AddRangeAsync(businessDocs, cancellationToken);
 
@@ -232,8 +227,7 @@ namespace HomeCycle.Application.Services.Profiles
 
             var bankAccount = await _bankAccountRepository.GetByUserIdAsync(userId, cancellationToken);
 
-           var documents = await _businessDocumentRepository.GetByProfileIdAsync(profile.BusinessProfileId, cancellationToken);
-            var productTypes = await _businessProductTypeRepository.GetByProfileIdAsync(profile.BusinessProfileId, cancellationToken);
+            var documents = await _businessDocumentRepository.GetByProfileIdAsync(profile.BusinessProfileId, cancellationToken);
             var serviceAreas = await _businessServiceAreaRepository.GetByProfileIdAsync(profile.BusinessProfileId, cancellationToken);
 
 
@@ -251,7 +245,7 @@ namespace HomeCycle.Application.Services.Profiles
                 OperatingScope = profile.OperatingScope,
                 BusinessModel = profile.BusinessModel, 
                 Status = profile.Status,
-
+                RejectReason = profile.RejectReason,
 
                 BankCode = bankAccount?.BankCode ?? string.Empty,
                 BankName = bankAccount?.BankName ?? string.Empty,
@@ -263,8 +257,6 @@ namespace HomeCycle.Application.Services.Profiles
                     BusinessDocumentId = doc.BusinessDocumentId,
                     DocumentType = doc.DocumentType,
                     DocumentUrl = doc.DocumentUrl ?? string.Empty,
-                    Status = doc.Status,
-                    RejectReason = doc.RejectReason 
                 }).ToList(),
 
 
@@ -283,56 +275,76 @@ namespace HomeCycle.Application.Services.Profiles
 
         public async Task<Result> SaveProcurementPreferenceAsync(Guid userId, SubmitBusinessSurveyRequest request, CancellationToken cancellationToken)
         {
-            var businessProfile = await _businessProfileRepository.GetByUserIdAsync(userId);
+            var businessProfile = await _businessProfileRepository.GetByUserIdAsync(userId, cancellationToken); 
             if (businessProfile == null)
-                return Result.Fail(new Error("BusinessProfile.NotFound", "Không tìm thấy hồ sơ doanh nghiệp tương ứng.")); 
+                return Result.Fail(new Error("BusinessProfile.NotFound", "Không tìm thấy hồ sơ doanh nghiệp tương ứng."));
+
             Guid businessProfileId = businessProfile.BusinessProfileId;
-            var domainPreference = await _preferenceRepository.GetByBusinessProfileIdAsync(businessProfileId, cancellationToken);
 
-            if (domainPreference == null)
+            await _unitOfWork.BeginTransactionAsync(); 
+            try
             {
-                var newPreference = new business_procurement_preference
+                // 1. Lưu / Cập nhật Khảo sát nhu cầu (Preference)
+                var domainPreference = await _preferenceRepository.GetByBusinessProfileIdAsync(businessProfileId, cancellationToken); 
+
+                if (domainPreference == null)
                 {
-                    PreferenceId = Guid.NewGuid(),
-                    BusinessProfileId = businessProfileId,
-                    TargetCities = request.TargetCities,
-                    AcceptableDamageLevels = request.AcceptableDamageLevels,
-                    AcceptableFunctionalityStatuses = request.AcceptableFunctionalityStatuses,
-                    ProcurementScales = request.ProcurementScales,
-                    CreatedAt = DateTime.UtcNow
-                };
-                await _preferenceRepository.AddAsync(newPreference, cancellationToken);
-            }
-            else
-            {
-                domainPreference.TargetCities = request.TargetCities;
-                domainPreference.AcceptableDamageLevels = request.AcceptableDamageLevels;
-                domainPreference.AcceptableFunctionalityStatuses = request.AcceptableFunctionalityStatuses;
-                domainPreference.ProcurementScales = request.ProcurementScales;
-                domainPreference.UpdatedAt = DateTime.UtcNow;
-
-                _preferenceRepository.Update(domainPreference);
-            }
-
-            await _businessProductTypeRepository.DeleteAllByProfileIdAsync(businessProfileId);
-
-            var newProductTypes = new List<business_product_type>();
-            int priority = 1;
-            foreach (var typeId in request.ProductTypeIds)
-            {
-                newProductTypes.Add(new business_product_type
+                    var newPreference = new business_procurement_preference
+                    {
+                        PreferenceId = Guid.NewGuid(), 
+                        BusinessProfileId = businessProfileId, 
+                        TargetCities = request.TargetCities, 
+                        AcceptableDamageLevels = request.AcceptableDamageLevels, 
+                        AcceptableFunctionalityStatuses = request.AcceptableFunctionalityStatuses, 
+                        ProcurementScales = request.ProcurementScales, 
+                        CreatedAt = DateTime.UtcNow 
+                    };
+                    await _preferenceRepository.AddAsync(newPreference, cancellationToken); 
+                }
+                else
                 {
-                    BusinessProductTypeId = Guid.NewGuid(),
-                    BusinessProfileId = businessProfileId,
-                    ProductTypeId = typeId,
-                    Priority = priority++,
-                    CreatedAt = DateTime.UtcNow
-                });
-            }
-            await _businessProductTypeRepository.AddRangeAsync(newProductTypes);
+                    domainPreference.TargetCities = request.TargetCities; 
+                    domainPreference.AcceptableDamageLevels = request.AcceptableDamageLevels; 
+                    domainPreference.AcceptableFunctionalityStatuses = request.AcceptableFunctionalityStatuses; 
+                    domainPreference.ProcurementScales = request.ProcurementScales; 
+                    domainPreference.UpdatedAt = DateTime.UtcNow; 
 
-            await _unitOfWork.SaveChangesAsync();
-            return Result.Success();
+                    _preferenceRepository.Update(domainPreference); 
+                }
+
+                // 2. Dọn sạch danh mục loại sản phẩm cũ & Chèn danh mục mới
+                await _businessProductTypeRepository.DeleteAllByProfileIdAsync(businessProfileId, cancellationToken); 
+
+                if (request.ProductTypeIds != null && request.ProductTypeIds.Any())
+                {
+                    var newProductTypes = new List<business_product_type>();
+                    int priority = 1;
+                    foreach (var typeId in request.ProductTypeIds) 
+                    {
+                        newProductTypes.Add(new business_product_type
+                        {
+                            BusinessProductTypeId = Guid.NewGuid(), 
+                            BusinessProfileId = businessProfileId, 
+                            ProductTypeId = typeId, 
+                            Priority = priority++, 
+                            CreatedAt = DateTime.UtcNow 
+                        });
+                    }
+                    await _businessProductTypeRepository.AddRangeAsync(newProductTypes, cancellationToken); 
+                }
+
+                // 3. Commit DB
+                await _unitOfWork.SaveChangesAsync(cancellationToken); 
+                await _unitOfWork.CommitTransactionAsync(); 
+
+                return Result.Success(); 
+            }
+            catch (Exception ex)
+            {
+                await _unitOfWork.RollbackTransactionAsync(); 
+                _logger.LogError(ex, "Lỗi xảy ra khi lưu khảo sát nhu cầu thu mua cho UserId: {UserId}", userId);
+                throw;
+            }
         }
 
         public async Task<Result<BusinessSurveyDetailResponse>> GetProcurementPreferenceAsync(Guid userId, CancellationToken cancellationToken)
@@ -364,7 +376,7 @@ namespace HomeCycle.Application.Services.Profiles
 
         public async Task<Result<BusinessOnboardingStatus>> GetOnboardingStatusAsync(Guid userId, CancellationToken cancellationToken)
         {
-            var profile = await _businessProfileRepository.GetByUserIdAsync(userId);
+            var profile = await _businessProfileRepository.GetByUserIdAsync(userId, cancellationToken);
 
             if (profile == null)
                 return Result<BusinessOnboardingStatus>.Success(BusinessOnboardingStatus.MissingProfile);
@@ -385,6 +397,9 @@ namespace HomeCycle.Application.Services.Profiles
             return Result<BusinessOnboardingStatus>.Success(BusinessOnboardingStatus.Completed);
         }
 
+       
 
+     
     }
-}   
+}
+

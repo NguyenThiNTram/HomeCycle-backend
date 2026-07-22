@@ -46,9 +46,10 @@ public partial class Business_Profile
 
     public int Status { get; set; }
 
-    public Guid? CurrentModeratorId { get; set; }
-
     public int ReputationScore { get; set; }
+    public Guid? VerifiedBy { get; set; }
+    public DateTime? VerifiedAt { get; set; }
+    public string? RejectReason { get; set; }
 
     public DateTime CreatedAt { get; set; }
 
@@ -67,6 +68,6 @@ public partial class Business_Profile
     [InverseProperty("Business_Profile")]
     public virtual User User { get; set; } = null!;
 
-    [ForeignKey("CurrentModeratorId")]
-    public virtual User? CurrentModeratorNavigation { get; set; }
+    [ForeignKey("VerifiedBy")]
+    public virtual User? VerifiedByUser { get; set; }
 }
