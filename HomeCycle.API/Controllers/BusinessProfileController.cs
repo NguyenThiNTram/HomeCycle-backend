@@ -1,4 +1,6 @@
-﻿using HomeCycle.Application.DTOs.Requests.Profiles;
+﻿using HomeCycle.Application.DTOs.Requests.Banks;
+using HomeCycle.Application.DTOs.Requests.Profiles;
+using HomeCycle.Application.DTOs.Requests.Users;
 using HomeCycle.Application.Interfaces.Services.Profiles;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
@@ -75,6 +77,118 @@ namespace HomeCycle.API.Controllers
             var result = await _businessProfileService.GetProcurementPreferenceAsync(userId, cancellationToken);
 
             return result.IsSuccess ? Ok(new { success = true, data = result.Data }) : BadRequest(result.Error);
+        }
+
+        [HttpGet]
+        public async Task<IActionResult> GetBusinessProfile(CancellationToken cancellationToken)
+        {
+            var userId = GetCurrentUserId();
+            var result = await _businessProfileService.GetBusinessProfileAsync(userId, cancellationToken);
+
+            if (!result.IsSuccess)
+                return BadRequest(result);
+
+            return Ok(result);
+        }
+
+        [HttpPut]
+        public async Task<IActionResult> UpdateBusinessProfile(
+            [FromBody] UpdateApprovedBusinessProfileRequest request,
+            CancellationToken cancellationToken)
+        {
+            var userId = GetCurrentUserId();
+            var result = await _businessProfileService.UpdateApprovedBusinessProfileAsync(userId, request, cancellationToken);
+
+            if (!result.IsSuccess)
+                return BadRequest(result);
+
+            return Ok(result);
+        }
+
+        [HttpPut("documents")]
+        public async Task<IActionResult> UpdateDocuments(
+            [FromBody] UpdateBusinessDocumentsRequest request,
+            CancellationToken cancellationToken)
+        {
+            var userId = GetCurrentUserId();
+            var result = await _businessProfileService.UpdateBusinessDocumentsAsync(userId, request, cancellationToken);
+
+            if (!result.IsSuccess)
+                return BadRequest(result);
+
+            return Ok(result);
+        }
+
+
+        [HttpPut("username")]
+        public async Task<IActionResult> UpdateUsername(
+            [FromBody] UpdateUsernameRequest request,
+            CancellationToken cancellationToken)
+        {
+            var userId = GetCurrentUserId();
+            var result = await _businessProfileService.UpdateUsernameAsync(userId, request, cancellationToken);
+
+            if (!result.IsSuccess)
+                return BadRequest(result);
+
+            return Ok(result);
+        }
+
+        [HttpPut("phone-number")]
+        public async Task<IActionResult> UpdatePhoneNumber(
+            [FromBody] UpdatePhoneNumberRequest request,
+            CancellationToken cancellationToken)
+        {
+            var userId = GetCurrentUserId();
+            var result = await _businessProfileService.UpdatePhoneNumberAsync(userId, request, cancellationToken);
+
+            if (!result.IsSuccess)
+                return BadRequest(result);
+
+            return Ok(result);
+        }
+
+
+        [HttpPut("avatar")]
+        public async Task<IActionResult> UpdateAvatar(
+            [FromBody] UpdateAvatarRequest request,
+            CancellationToken cancellationToken)
+        {
+            var userId = GetCurrentUserId();
+            var result = await _businessProfileService.UpdateAvatarAsync(userId, request, cancellationToken);
+
+            if (!result.IsSuccess)
+                return BadRequest(result);
+
+            return Ok(result);
+        }
+
+        [HttpPut("bank-account")]
+        public async Task<IActionResult> UpdateBankAccount(
+            [FromBody] UpdateBankAccountRequest request,
+            CancellationToken cancellationToken)
+        {
+            var userId = GetCurrentUserId();
+            var result = await _businessProfileService.UpdateBankAccountAsync(userId, request, cancellationToken);
+
+            if (!result.IsSuccess)
+                return BadRequest(result);
+
+            return Ok(result);
+        }
+
+        [HttpPut("service-areas")]
+        public async Task<IActionResult> UpdateServiceAreas(
+            [FromBody] UpdateBusinessServiceAreasRequest request,
+            CancellationToken cancellationToken)
+        {
+            var userId = GetCurrentUserId();
+            var result = await _businessProfileService.UpdateBusinessServiceAreasAsync(userId, request, cancellationToken);
+
+            if (!result.IsSuccess)
+                return BadRequest(result);
+
+            return Ok(result);
         }
         private Guid GetCurrentUserId()
         {

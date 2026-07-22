@@ -8,52 +8,54 @@ namespace HomeCycle.Application.DTOs.Responses.Profiles
 {
     public class BusinessProfileDetailDto
     {
-        public UserSummaryDto UserInfo { get; set; } = null!;
+        // 1. Thông tin Tài khoản User
+        public Guid UserId { get; set; }
+        public string Username { get; set; } = string.Empty;
+        public string Email { get; set; } = string.Empty;
+        public string? PhoneNumber { get; set; }
+        public string? AvatarUrl { get; set; }
+
+        // 2. Thông tin Hồ sơ Doanh nghiệp (business_profile)
         public Guid BusinessProfileId { get; set; }
-        public string? BusinessName { get; set; }
+        public string BusinessName { get; set; } = string.Empty;
         public string? FullName { get; set; }
         public string? BusinessDescription { get; set; }
-        public string? TaxCode { get; set; }
-        public string? BusinessAddress { get; set; }
-        public string? Ward { get; set; }
-        public string? City { get; set; }
-        public string IdentityNumber { get; set; } = null!;
+        public string TaxCode { get; set; } = string.Empty;
+        public string BusinessAddress { get; set; } = string.Empty;
+        public string Ward { get; set; } = string.Empty;
+        public string City { get; set; } = string.Empty;
+        public string IdentityNumber { get; set; } = string.Empty;
         public string? OperatingScope { get; set; }
         public int BusinessModel { get; set; }
         public int Status { get; set; }
         public int ReputationScore { get; set; }
-        public DateTime CreatedAt { get; set; }
 
-        public List<BusinessDocumentDto> Documents { get; set; } = new();
-        public List<BankAccountSummaryDto> Banks { get; set; } = new();
+        // 3. Thông tin Liên kết (Tài khoản ngân hàng, Giấy tờ, Khu vực hoạt động)
+        public BankAccountDto? BankAccount { get; set; }
+        public List<BusinessDocumentResponseDto> Documents { get; set; } = new();
+        public List<BusinessServiceAreaResponseDto> ServiceAreas { get; set; } = new();
     }
 
-    public class UserSummaryDto
+    public class BankAccountDto
     {
-        public Guid UserId { get; set; }
-        public string Username { get; set; } = null!;
-        public string Email { get; set; } = null!;
-        public string? PhoneNumber { get; set; }
-        public string? AvatarUrl { get; set; }
-        public int Role { get; set; }
-        public int Status { get; set; }
+        public string BankCode { get; set; } = string.Empty;
+        public string BankName { get; set; } = string.Empty;
+        public string AccountNumber { get; set; } = string.Empty;
+        public string AccountName { get; set; } = string.Empty;
+        public int VerifyStatus { get; set; }
     }
 
-    public class BusinessDocumentDto
+    public class BusinessDocumentResponseDto
     {
         public Guid BusinessDocumentId { get; set; }
         public int DocumentType { get; set; }
-        public string DocumentUrl { get; set; } = null!;
-        public DateTime CreatedAt { get; set; }
+        public string DocumentUrl { get; set; } = string.Empty;
     }
 
-    public class BankAccountSummaryDto
+    public class BusinessServiceAreaResponseDto
     {
-        public Guid UserBankId { get; set; }
-        public string? BankCode { get; set; }
-        public string? BankName { get; set; }
-        public string? AccountNumber { get; set; }
-        public string? AccountName { get; set; }
-        public int? VerifyStatus { get; set; }
+        public string City { get; set; } = string.Empty;
+        public string District { get; set; } = string.Empty;
+        public string Ward { get; set; } = string.Empty;
     }
 }

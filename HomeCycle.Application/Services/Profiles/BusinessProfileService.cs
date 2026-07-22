@@ -1,10 +1,14 @@
-﻿using HomeCycle.Application.Commons.Errors;
+﻿using FluentValidation;
+using HomeCycle.Application.Commons.Errors;
 using HomeCycle.Application.Commons.Results;
+using HomeCycle.Application.DTOs.Requests.Banks;
 using HomeCycle.Application.DTOs.Requests.Profiles;
+using HomeCycle.Application.DTOs.Requests.Users;
 using HomeCycle.Application.DTOs.Responses.Profiles;
 using HomeCycle.Application.Interfaces.Generics;
 using HomeCycle.Application.Interfaces.Repositories.Banks;
 using HomeCycle.Application.Interfaces.Repositories.Profiles;
+using HomeCycle.Application.Interfaces.Repositories.Users;
 using HomeCycle.Application.Interfaces.Services.Profiles;
 using HomeCycle.Domain.Entities;
 using HomeCycle.Domain.Enums;
@@ -25,8 +29,18 @@ namespace HomeCycle.Application.Services.Profiles
         private readonly IBusinessProductTypeRepository _businessProductTypeRepository;
         private readonly IBusinessServiceAreaRepository _businessServiceAreaRepository;
         private readonly IBankAccountRepository _bankAccountRepository;
+        private readonly IUserRepository _userRepository;
         private readonly IUnitOfWork _unitOfWork;
         private readonly ILogger<BusinessProfileService> _logger;
+        private readonly IValidator<SubmitBusinessProfileRequest> _profileValidator;
+        private readonly IValidator<SubmitBusinessSurveyRequest> _surveyValidator;
+        private readonly IValidator<UpdateUsernameRequest> _updateUsernameValidator;
+        private readonly IValidator<UpdatePhoneNumberRequest> _updatePhoneValidator;
+        private readonly IValidator<UpdateAvatarRequest> _updateAvatarValidator;
+        private readonly IValidator<UpdateBankAccountRequest> _updateBankValidator;
+        private readonly IValidator<UpdateApprovedBusinessProfileRequest> _updateBusinessProfileValidator;
+        private readonly IValidator<UpdateBusinessDocumentsRequest> _updateDocumentsValidator;
+        private readonly IValidator<UpdateBusinessServiceAreasRequest> _updateServiceAreasValidator;
 
         public BusinessProfileService(
             IBusinessProfileRepository businessProfileRepository,
@@ -35,8 +49,18 @@ namespace HomeCycle.Application.Services.Profiles
             IBusinessProductTypeRepository businessProductTypeRepository,
             IBusinessServiceAreaRepository businessServiceAreaRepository,
             IBankAccountRepository bankAccountRepository,
+            IUserRepository userRepository,
             IUnitOfWork unitOfWork,
-            ILogger<BusinessProfileService> logger)
+            ILogger<BusinessProfileService> logger,
+            IValidator<SubmitBusinessProfileRequest> profileValidator,
+            IValidator<SubmitBusinessSurveyRequest> surveyValidator,
+            IValidator<UpdateUsernameRequest> updateUsernameValidator,
+            IValidator<UpdatePhoneNumberRequest> updatePhoneValidator,
+            IValidator<UpdateAvatarRequest> updateAvatarValidator,
+            IValidator<UpdateBankAccountRequest> updateBankValidator,
+            IValidator<UpdateApprovedBusinessProfileRequest> updateBusinessProfileValidator,
+            IValidator<UpdateBusinessDocumentsRequest> updateDocumentsValidator,
+            IValidator<UpdateBusinessServiceAreasRequest> updateServiceAreasValidator)
         {
             _businessProfileRepository = businessProfileRepository;
             _businessDocumentRepository = businessDocumentRepository;
@@ -44,8 +68,18 @@ namespace HomeCycle.Application.Services.Profiles
             _businessProductTypeRepository = businessProductTypeRepository;
             _businessServiceAreaRepository = businessServiceAreaRepository;
             _bankAccountRepository = bankAccountRepository;
+            _userRepository = userRepository;
             _unitOfWork = unitOfWork;
             _logger = logger;
+            _profileValidator = profileValidator;
+            _surveyValidator = surveyValidator;
+            _updateUsernameValidator = updateUsernameValidator;
+            _updatePhoneValidator = updatePhoneValidator;
+            _updateAvatarValidator = updateAvatarValidator;
+            _updateBankValidator = updateBankValidator;
+            _updateBusinessProfileValidator = updateBusinessProfileValidator;
+            _updateDocumentsValidator = updateDocumentsValidator;
+            _updateServiceAreasValidator = updateServiceAreasValidator;
         }
 
         public async Task<Result<string>> SubmitBusinessProfileAsync(
@@ -53,6 +87,14 @@ namespace HomeCycle.Application.Services.Profiles
             SubmitBusinessProfileRequest request,
             CancellationToken cancellationToken = default)
         {
+
+            var validationResult = await _profileValidator.ValidateAsync(request, cancellationToken);
+            if (!validationResult.IsValid)
+            {
+                var errorMessage = string.Join(" | ", validationResult.Errors.Select(e => e.ErrorMessage));
+                return Result<string>.Fail(ValidationErrors.InvalidRequest(errorMessage));
+            }
+
             var now = DateTime.UtcNow;
 
             // 1. TRUY VẤN KIỂM TRA HỒ SƠ DOANH NGHIỆP HIỆN TẠI
@@ -275,6 +317,13 @@ namespace HomeCycle.Application.Services.Profiles
 
         public async Task<Result> SaveProcurementPreferenceAsync(Guid userId, SubmitBusinessSurveyRequest request, CancellationToken cancellationToken)
         {
+            var validationResult = await _surveyValidator.ValidateAsync(request, cancellationToken);
+            if (!validationResult.IsValid)
+            {
+                var errorMessage = string.Join(" | ", validationResult.Errors.Select(e => e.ErrorMessage));
+                return Result.Fail(ValidationErrors.InvalidRequest(errorMessage));
+            }
+
             var businessProfile = await _businessProfileRepository.GetByUserIdAsync(userId, cancellationToken); 
             if (businessProfile == null)
                 return Result.Fail(new Error("BusinessProfile.NotFound", "Không tìm thấy hồ sơ doanh nghiệp tương ứng."));
@@ -397,9 +446,295 @@ namespace HomeCycle.Application.Services.Profiles
             return Result<BusinessOnboardingStatus>.Success(BusinessOnboardingStatus.Completed);
         }
 
-       
+        public async Task<Result<BusinessProfileDetailDto>> GetBusinessProfileAsync(
+            Guid userId,
+            CancellationToken cancellationToken = default)
+        {
+            var user = await _userRepository.GetByIdAsync(userId, cancellationToken);
+            if (user == null)
+                return Result<BusinessProfileDetailDto>.Fail(new Error("User.NotFound", "Không tìm thấy người dùng."));
 
-     
+            var profile = await _businessProfileRepository.GetByUserIdAsync(userId, cancellationToken);
+            if (profile == null)
+                return Result<BusinessProfileDetailDto>.Fail(new Error("BusinessProfile.NotFound", "Chưa có hồ sơ doanh nghiệp."));
+
+            var bankAccount = await _bankAccountRepository.GetByUserIdAsync(userId, cancellationToken);
+            var documents = await _businessDocumentRepository.GetByProfileIdAsync(profile.BusinessProfileId, cancellationToken);
+            var serviceAreas = await _businessServiceAreaRepository.GetByProfileIdAsync(profile.BusinessProfileId, cancellationToken);
+
+            var detail = new BusinessProfileDetailDto
+            {
+                BusinessProfileId = profile.BusinessProfileId,
+                UserId = user.UserId,
+                Username = user.Username,
+                Email = user.Email,
+                PhoneNumber = user.PhoneNumber,
+                AvatarUrl = user.AvatarUrl,
+
+                BusinessName = profile.BusinessName ?? string.Empty,
+                FullName = profile.FullName,
+                BusinessDescription = profile.BusinessDescription,
+                TaxCode = profile.TaxCode ?? string.Empty,
+                BusinessAddress = profile.BusinessAddress ?? string.Empty,
+                Ward = profile.Ward ?? string.Empty,
+                City = profile.City ?? string.Empty,
+                IdentityNumber = profile.IdentityNumber ?? string.Empty,
+                OperatingScope = profile.OperatingScope,
+                BusinessModel = profile.BusinessModel,
+                Status = profile.Status,
+                ReputationScore = profile.ReputationScore,
+
+                BankAccount = bankAccount != null ? new BankAccountDto
+                {
+                    BankCode = bankAccount.BankCode ?? string.Empty,
+                    BankName = bankAccount.BankName ?? string.Empty,
+                    AccountNumber = bankAccount.AccountNumber ?? string.Empty,
+                    AccountName = bankAccount.AccountName ?? string.Empty,
+                    VerifyStatus = bankAccount.VerifyStatus ?? 0
+                } : null,
+
+                Documents = documents.Select(d => new BusinessDocumentResponseDto
+                {
+                    BusinessDocumentId = d.BusinessDocumentId,
+                    DocumentType = d.DocumentType,
+                    DocumentUrl = d.DocumentUrl ?? string.Empty
+                }).ToList(),
+
+                ServiceAreas = serviceAreas.Select(sa => new BusinessServiceAreaResponseDto
+                {
+                    City = sa.City ?? string.Empty,
+                    District = sa.District ?? string.Empty,
+                    Ward = sa.Ward ?? string.Empty
+                }).ToList()
+            };
+
+            return Result<BusinessProfileDetailDto>.Success(detail);
+        }
+
+        public async Task<Result> UpdateUsernameAsync(Guid userId, UpdateUsernameRequest request, CancellationToken cancellationToken = default)
+        {
+            var valResult = await _updateUsernameValidator.ValidateAsync(request, cancellationToken);
+            if (!valResult.IsValid)
+                return Result.Fail(ValidationErrors.InvalidRequest(string.Join(" | ", valResult.Errors.Select(e => e.ErrorMessage))));
+
+            var cleanUsername = request.Username.Trim();
+
+            var isTaken = await _userRepository.ExistsByUsernameAsync(cleanUsername, userId, cancellationToken);
+            if (isTaken)
+                return Result.Fail(new Error("User.UsernameExists", "Tên đăng nhập này đã được sử dụng."));
+
+            var user = await _userRepository.GetByIdAsync(userId, cancellationToken);
+            if (user == null)
+                return Result.Fail(new Error("User.NotFound", "Không tìm thấy thông tin người dùng."));
+
+            user.Username = cleanUsername;
+            _userRepository.Update(user);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+            return Result.Success();
+        }
+
+
+        public async Task<Result> UpdatePhoneNumberAsync(Guid userId, UpdatePhoneNumberRequest request, CancellationToken cancellationToken = default)
+        {
+            var valResult = await _updatePhoneValidator.ValidateAsync(request, cancellationToken);
+            if (!valResult.IsValid)
+                return Result.Fail(ValidationErrors.InvalidRequest(string.Join(" | ", valResult.Errors.Select(e => e.ErrorMessage))));
+
+            var user = await _userRepository.GetByIdAsync(userId, cancellationToken);
+            if (user == null)
+                return Result.Fail(new Error("User.NotFound", "Không tìm thấy thông tin người dùng."));
+
+            user.PhoneNumber = request.PhoneNumber.Trim();
+            _userRepository.Update(user);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+            return Result.Success();
+        }
+
+
+        public async Task<Result> UpdateAvatarAsync(Guid userId, UpdateAvatarRequest request, CancellationToken cancellationToken = default)
+        {
+            var valResult = await _updateAvatarValidator.ValidateAsync(request, cancellationToken);
+            if (!valResult.IsValid)
+                return Result.Fail(ValidationErrors.InvalidRequest(string.Join(" | ", valResult.Errors.Select(e => e.ErrorMessage))));
+
+            var user = await _userRepository.GetByIdAsync(userId, cancellationToken);
+            if (user == null)
+                return Result.Fail(new Error("User.NotFound", "Không tìm thấy thông tin người dùng."));
+
+            user.AvatarUrl = request.AvatarUrl.Trim();
+            _userRepository.Update(user);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+            return Result.Success();
+        }
+
+        public async Task<Result> UpdateBankAccountAsync(Guid userId, UpdateBankAccountRequest request, CancellationToken cancellationToken = default)
+        {
+            var valResult = await _updateBankValidator.ValidateAsync(request, cancellationToken);
+            if (!valResult.IsValid)
+                return Result.Fail(ValidationErrors.InvalidRequest(string.Join(" | ", valResult.Errors.Select(e => e.ErrorMessage))));
+
+            var existingBank = await _bankAccountRepository.GetByUserIdAsync(userId, cancellationToken);
+
+            if (existingBank != null)
+            {
+                existingBank.BankCode = request.BankCode.Trim();
+                existingBank.BankName = request.BankName.Trim();
+                existingBank.AccountNumber = request.AccountNumber.Trim();
+                existingBank.AccountName = request.AccountName.Trim().ToUpper();
+                existingBank.VerifyStatus = (int)BankVerifyStatus.Unverified;
+
+                _bankAccountRepository.Update(existingBank);
+            }
+            else
+            {
+                var newBank = new bank_account
+                {
+                    UserBankId = Guid.NewGuid(),
+                    UserId = userId,
+                    BankCode = request.BankCode.Trim(),
+                    BankName = request.BankName.Trim(),
+                    AccountNumber = request.AccountNumber.Trim(),
+                    AccountName = request.AccountName.Trim().ToUpper(),
+                    VerifyStatus = (int)BankVerifyStatus.Unverified,
+                    CreatedAt = DateTime.UtcNow
+                };
+                await _bankAccountRepository.AddAsync(newBank, cancellationToken);
+            }
+
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            return Result.Success();
+        }
+
+        public async Task<Result> UpdateApprovedBusinessProfileAsync(Guid userId, UpdateApprovedBusinessProfileRequest request, CancellationToken cancellationToken = default)
+        {
+            var valResult = await _updateBusinessProfileValidator.ValidateAsync(request, cancellationToken);
+            if (!valResult.IsValid)
+                return Result.Fail(ValidationErrors.InvalidRequest(string.Join(" | ", valResult.Errors.Select(e => e.ErrorMessage))));
+
+            var profile = await _businessProfileRepository.GetByUserIdAsync(userId, cancellationToken);
+            if (profile == null)
+                return Result.Fail(new Error("BusinessProfile.NotFound", "Không tìm thấy hồ sơ doanh nghiệp."));
+
+            profile.BusinessName = request.BusinessName.Trim();
+            profile.FullName = request.FullName?.Trim();
+            profile.BusinessDescription = request.BusinessDescription?.Trim();
+            profile.TaxCode = request.TaxCode.Trim();
+            profile.BusinessAddress = request.BusinessAddress.Trim();
+            profile.Ward = request.Ward.Trim();
+            profile.City = request.City.Trim();
+            profile.IdentityNumber = request.IdentityNumber.Trim();
+            profile.OperatingScope = request.OperatingScope?.Trim();
+            profile.UpdatedAt = DateTime.UtcNow;
+
+            _businessProfileRepository.Update(profile);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+            return Result.Success();
+        }
+
+        public async Task<Result> UpdateBusinessDocumentsAsync(Guid userId, UpdateBusinessDocumentsRequest request, CancellationToken cancellationToken = default)
+        {
+            var valResult = await _updateDocumentsValidator.ValidateAsync(request, cancellationToken);
+            if (!valResult.IsValid)
+                return Result.Fail(ValidationErrors.InvalidRequest(string.Join(" | ", valResult.Errors.Select(e => e.ErrorMessage))));
+
+            var profile = await _businessProfileRepository.GetByUserIdAsync(userId, cancellationToken);
+            if (profile == null)
+                return Result.Fail(new Error("BusinessProfile.NotFound", "Không tìm thấy hồ sơ doanh nghiệp."));
+
+            await _unitOfWork.BeginTransactionAsync();
+            try
+            {
+                await _businessDocumentRepository.DeleteAllByProfileIdAsync(profile.BusinessProfileId, cancellationToken);
+
+                var now = DateTime.UtcNow;
+                var newDocs = request.Documents.Select(d => new business_document
+                {
+                    BusinessDocumentId = Guid.NewGuid(),
+                    BusinessProfileId = profile.BusinessProfileId,
+                    DocumentType = d.DocumentType,
+                    DocumentUrl = d.DocumentUrl.Trim(),
+                    CreatedAt = now,
+                    UpdatedAt = now
+                }).ToList();
+
+                await _businessDocumentRepository.AddRangeAsync(newDocs, cancellationToken);
+
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+                await _unitOfWork.CommitTransactionAsync();
+
+                return Result.Success();
+            }
+            catch (Exception ex)
+            {
+                await _unitOfWork.RollbackTransactionAsync();
+                _logger.LogError(ex, "Lỗi xảy ra khi cập nhật tài liệu cho BusinessProfileId: {ProfileId}", profile.BusinessProfileId);
+                throw;
+            }
+        }
+
+        public async Task<Result> UpdateBusinessServiceAreasAsync(
+            Guid userId,
+            UpdateBusinessServiceAreasRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            // 1. Validate Input Payload
+            var valResult = await _updateServiceAreasValidator.ValidateAsync(request, cancellationToken);
+            if (!valResult.IsValid)
+                return Result.Fail(ValidationErrors.InvalidRequest(string.Join(" | ", valResult.Errors.Select(e => e.ErrorMessage))));
+
+            // 2. Check Profile Existence
+            var profile = await _businessProfileRepository.GetByUserIdAsync(userId, cancellationToken);
+            if (profile == null)
+                return Result.Fail(new Error("BusinessProfile.NotFound", "Không tìm thấy hồ sơ doanh nghiệp."));
+
+            // 3. Rào chắn Nghiệp vụ: Chỉ Enterprise mới được đăng ký Service Areas
+            if (profile.BusinessModel != (int)BusinessModel.Enterprise)
+            {
+                return Result.Fail(new Error("BusinessProfile.InvalidModel", "Mô hình kinh doanh của bạn không hỗ trợ cấu hình khu vực thu gom mở rộng."));
+            }
+
+            // 4. Transaction Wipe & Bulk Re-insert
+            await _unitOfWork.BeginTransactionAsync();
+            try
+            {
+                // Xoá danh sách địa bàn thu gom cũ
+                await _businessServiceAreaRepository.DeleteAllByProfileIdAsync(profile.BusinessProfileId, cancellationToken);
+
+                // Chèn danh sách địa bàn thu gom mới
+                if (request.ServiceAreas != null && request.ServiceAreas.Any())
+                {
+                    var now = DateTime.UtcNow;
+                    var serviceAreas = request.ServiceAreas.Select(sa => new business_service_area
+                    {
+                        BusinessServiceAreaId = Guid.NewGuid(),
+                        BusinessProfileId = profile.BusinessProfileId,
+                        City = sa.City.Trim(),
+                        District = sa.District.Trim(),
+                        Ward = sa.Ward.Trim(),
+                        Priority = 0,
+                        CreatedAt = now
+                    }).ToList();
+
+                    await _businessServiceAreaRepository.AddRangeAsync(serviceAreas, cancellationToken);
+                }
+
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+                await _unitOfWork.CommitTransactionAsync();
+
+                return Result.Success();
+            }
+            catch (Exception ex)
+            {
+                await _unitOfWork.RollbackTransactionAsync();
+                _logger.LogError(ex, "Lỗi xảy ra khi cập nhật khu vực hoạt động cho BusinessProfileId: {ProfileId}", profile.BusinessProfileId);
+                throw;
+            }
+        }
+
     }
 }
 

@@ -90,5 +90,17 @@ namespace HomeCycle.Infrastructure.Repositories.Users
         {
             _db.Refresh_Tokens.Update(token.ToInfrastructure());
         }
+
+        public async Task<bool> ExistsByUsernameAsync(string username, Guid excludeUserId, CancellationToken cancellationToken = default)
+        {
+            return await _db.Users
+               .AnyAsync(x => x.Username.ToLower() == username.ToLower() && x.UserId != excludeUserId, cancellationToken);
+        }
+
+        public void Update(user user)
+        {
+            var entity = user.ToInfrastructure();
+            _db.Users.Update(entity);
+        }
     }
 }

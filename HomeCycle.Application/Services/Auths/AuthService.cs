@@ -394,9 +394,10 @@ namespace HomeCycle.Application.Services.Auths
             var validationResult = await _registerBusinessValidator.ValidateAsync(request, cancellationToken);
             if (!validationResult.IsValid)
             {
-                var firstError = validationResult.Errors.First();
-                return Result<LoginResponseDto>.Fail(
-                    new Error("Auth.ValidationError", firstError.ErrorMessage));
+                // Gom toàn bộ thông báo lỗi thành một chuỗi duy nhất
+                var errorMessage = string.Join(" | ", validationResult.Errors.Select(e => e.ErrorMessage));
+
+                return Result<LoginResponseDto>.Fail(ValidationErrors.InvalidRequest(errorMessage));
             }
 
             // 2. Verify Session Registration Token

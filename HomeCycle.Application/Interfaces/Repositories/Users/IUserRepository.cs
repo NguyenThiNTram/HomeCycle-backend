@@ -25,5 +25,8 @@ namespace HomeCycle.Application.Interfaces.Repositories.Users
         Task AddRefreshTokenAsync(refresh_token token, CancellationToken cancellationToken = default);
         Task<refresh_token?> GetRefreshTokenAsync(string token, CancellationToken cancellationToken = default);
         void UpdateRefreshToken(refresh_token token);
+
+        Task<bool> ExistsByUsernameAsync(string username, Guid excludeUserId, CancellationToken cancellationToken = default);
+        void Update(user user);
     }
 }
