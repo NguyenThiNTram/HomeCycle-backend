@@ -137,6 +137,9 @@ namespace HomeCycle.API
                 app.UseHttpsRedirection();
             }
 
+            app.UseRouting(); // Thêm dòng này nếu cần định tuyến chính xác
+            app.UseCors("AllowAll");
+
             app.UseAuthentication();
             app.UseAuthorization();
 
