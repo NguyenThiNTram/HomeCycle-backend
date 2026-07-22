@@ -16,6 +16,12 @@ namespace HomeCycle.API
         {
             var builder = WebApplication.CreateBuilder(args);
 
+            builder.WebHost.ConfigureKestrel(options =>
+            {
+                options.ListenAnyIP(8081); // Mở cổng 8081 cho thiết bị Mobile kết nối
+                options.ListenAnyIP(5173); // Mở cổng 5173 cho Website kết nối
+            });
+
             // Add services to the container.
 
             builder.Services.AddControllers();
@@ -99,12 +105,6 @@ namespace HomeCycle.API
             // Config CORS
             builder.Services.AddCors(options =>
             {
-                //options.AddPolicy("AllowSpecificOrigins", policy =>
-                //{
-                //    policy.WithOrigins("https://domaincuaban.com", "http://localhost:3000") // Thay bằng domain của bạn
-                //          .WithMethods("GET", "POST") // Chỉ cho phép GET và POST
-                //          .AllowAnyHeader();
-                //});
                 options.AddPolicy("AllowAll", policy =>
                 {
                     policy.AllowAnyOrigin()
