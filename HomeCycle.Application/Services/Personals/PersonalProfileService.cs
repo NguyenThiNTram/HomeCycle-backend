@@ -145,7 +145,7 @@ namespace HomeCycle.Application.Services.Personals
             {
                 // Đã có
                 _mapper.Map(request, bank);
-                //await _bankAccountRepository.UpdateAsync(bank, cancellationToken);
+                await _bankAccountRepository.UpdateAsync(bank, cancellationToken);
             }
 
             await _unitOfWork.SaveChangesAsync(cancellationToken);
