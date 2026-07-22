@@ -105,6 +105,7 @@ namespace HomeCycle.API
             // Config CORS
             builder.Services.AddCors(options =>
             {
+
                 options.AddPolicy("AllowAll", policy =>
                 {
                     policy.AllowAnyOrigin()
@@ -136,6 +137,9 @@ namespace HomeCycle.API
                 // Tốt nhất nếu chạy Docker hoàn toàn thì comment hẳn dòng dưới này lại:
                 app.UseHttpsRedirection();
             }
+
+            app.UseRouting(); // Thêm dòng này nếu cần định tuyến chính xác
+            app.UseCors("AllowAll");
 
             app.UseAuthentication();
             app.UseAuthorization();
