@@ -36,6 +36,21 @@ namespace HomeCycle.Infrastructure.Repositories.Users
             var entity = await _db.Personal_Profiles.FirstOrDefaultAsync(x => x.UserId == userId, cancellationToken);
 
             return entity?.ToDomain();
+            //Console.WriteLine("======> AFTER QUERY <======");
+
+            //if (entity == null)
+            //{
+            //    Console.WriteLine("======> ENTITY NULL <======");
+            //    return null;
+            //}
+
+            //Console.WriteLine($"======> ENTITY FULLNAME: {entity.FullName} <======");
+
+            //var domain = entity.ToDomain();
+
+            //Console.WriteLine("======> AFTER TODOMAIN <======");
+
+            //return domain;
         }
 
         public async Task UpdateAsync(personal_profile profile, CancellationToken cancellationToken = default)

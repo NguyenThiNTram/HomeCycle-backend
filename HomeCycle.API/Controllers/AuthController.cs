@@ -1,7 +1,9 @@
 ﻿using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Requests.Auths;
+using HomeCycle.Application.DTOs.Requests.Users;
 using HomeCycle.Application.DTOs.Responses.Auths;
 using HomeCycle.Application.Interfaces.Services.Auths;
+using HomeCycle.Application.Interfaces.Services.Users;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
@@ -15,11 +17,13 @@ namespace HomeCycle.API.Controllers
     {
         private readonly IAuthService _authService;
         private readonly IEmailService _emailService;
+        private readonly IUserService _userService;
 
-        public AuthController(IAuthService authService, IEmailService emailService)
+        public AuthController(IAuthService authService, IEmailService emailService, IUserService userService)
         {
             _authService = authService;
             _emailService = emailService;
+            _userService = userService;
         }
 
         [HttpPost("login")]
@@ -48,7 +52,7 @@ namespace HomeCycle.API.Controllers
         //    return Ok(result.Data);
         //}
 
-        [HttpPost("/Personal/Register")]
+        [HttpPost("Personal/Register")]
         public async Task<IActionResult> RegisterPersonal(
             [FromHeader(Name = "X-Registration-Token")] string registrationToken, // Lấy token từ Header
             [FromForm] RegisterPersonalRequest request,
