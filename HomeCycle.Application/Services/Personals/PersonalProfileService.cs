@@ -95,18 +95,17 @@ namespace HomeCycle.Application.Services.Personals
             if (user is null)
                 return Result<string>.Fail(ProfileErrors.UserNotFound);
 
-            //user.AvatarUrl = file.AvatarUrl.Trim();
-
             // 2. Đọc file stream và upload lên Firebase
             string storedFileName;
             using (var stream = file.AvatarUrl.OpenReadStream())
             {
-                // Truyền đầy đủ: Stream, Tên file gốc (để lấy Extension), và Folder định danh nghiệp vụ
                 storedFileName = await _fileStorageService.UploadFileAsync(
                     stream,
                     file.AvatarUrl.FileName,
                     "avatars");
             }
+
+            user.AvatarUrl = storedFileName;
 
             await _userRepository.UpdateAsync(user, cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -205,6 +204,8 @@ namespace HomeCycle.Application.Services.Personals
             profile.VerificationStatus = 0;
             profile.VerifiedBy = null;
             profile.VerifiedAt = null;
+
+            _logger.LogInformation("Front={Front}, Back={Back}", profile.FrontIDCardImage, profile.BackIDCardImage);
 
             await _personalProfileRepository.UpdateAsync(profile, cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);

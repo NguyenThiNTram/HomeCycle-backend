@@ -36,27 +36,14 @@ namespace HomeCycle.Infrastructure.Repositories.Users
             var entity = await _db.Personal_Profiles.FirstOrDefaultAsync(x => x.UserId == userId, cancellationToken);
 
             return entity?.ToDomain();
-            //Console.WriteLine("======> AFTER QUERY <======");
-
-            //if (entity == null)
-            //{
-            //    Console.WriteLine("======> ENTITY NULL <======");
-            //    return null;
-            //}
-
-            //Console.WriteLine($"======> ENTITY FULLNAME: {entity.FullName} <======");
-
-            //var domain = entity.ToDomain();
-
-            //Console.WriteLine("======> AFTER TODOMAIN <======");
-
-            //return domain;
         }
 
         public async Task UpdateAsync(personal_profile profile, CancellationToken cancellationToken = default)
         {
+            Console.WriteLine(profile.FrontIDCardImage);
             var entity = profile.ToInfrastructure();
             var localEntry = _db.Personal_Profiles.Local.FirstOrDefault(x => x.PersonalProfileId == entity.PersonalProfileId);
+            Console.WriteLine(entity.FrontIDCardImage);
 
             if (localEntry != null)
             {
@@ -64,6 +51,8 @@ namespace HomeCycle.Infrastructure.Repositories.Users
                 _db.Entry(localEntry).State = EntityState.Detached;
             }
 
+            Console.WriteLine(entity.FrontIDCardImage);
+            Console.WriteLine(entity.BackIDCardImage);
             _db.Personal_Profiles.Update(entity);
             //await _db.SaveChangesAsync(cancellationToken);
         }

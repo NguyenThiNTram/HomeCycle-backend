@@ -24,7 +24,8 @@ namespace HomeCycle.Infrastructure.Repositories.Banks
         {
             var entity = bankAccount.ToInfrastructure();
             _db.Bank_Accounts.Add(entity);
-            return _db.SaveChangesAsync(cancellationToken);
+            //return _db.SaveChangesAsync(cancellationToken);
+            return Task.CompletedTask;
         }
 
         public async Task<bank_account?> GetByUserIdAsync(Guid userId, CancellationToken cancellationToken = default)
@@ -34,11 +35,23 @@ namespace HomeCycle.Infrastructure.Repositories.Banks
             return entity?.ToDomain();
         }
 
-        public async Task UpdateAsync(bank_account account, CancellationToken cancellationToken = default)
+        public Task UpdateAsync(bank_account account, CancellationToken cancellationToken = default)
         {
             var entity = account.ToInfrastructure();
+
+            var localEntry = _db.Bank_Accounts.Local.FirstOrDefault(x => x.UserBankId == entity.UserBankId);
+            if (localEntry != null)
+            {
+                _db.Entry(localEntry).State = EntityState.Detached;
+            }
+
             _db.Bank_Accounts.Update(entity);
-            await _db.SaveChangesAsync(cancellationToken);
+            return Task.CompletedTask;
+
+            //var entity = account.ToInfrastructure();
+            //_db.Bank_Accounts.Update(entity);
+            ////await _db.SaveChangesAsync(cancellationToken);
+            //return Task.CompletedTask;
         }
     }
 }
