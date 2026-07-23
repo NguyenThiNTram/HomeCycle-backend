@@ -79,15 +79,31 @@ namespace HomeCycle.Infrastructure.Externals
                 : $"{folderName}/{Guid.NewGuid()}{extension}";
 
 
-            var storageObject = await _storageClient.UploadObjectAsync(
+            //var storageObject = await _storageClient.UploadObjectAsync(
+            //    bucket: _bucketName,
+            //    objectName: objectName,
+            //    contentType: "image/jpeg", // Hoặc dựa vào extension để map mime-type
+            //    source: fileStream
+            //);
+            string contentType = extension switch
+            {
+                ".png" => "image/png",
+                ".webp" => "image/webp",
+                ".gif" => "image/gif",
+                ".pdf" => "application/pdf",
+                _ => "image/jpeg"
+            };
+
+            await _storageClient.UploadObjectAsync(
                 bucket: _bucketName,
                 objectName: objectName,
-                contentType: "image/jpeg", // Hoặc dựa vào extension để map mime-type
+                contentType: contentType,
                 source: fileStream
             );
 
             // Trả về đường dẫn ảnh public
-            return $"https://googleapis.com{_bucketName}/o/{Uri.EscapeDataString(objectName)}?alt=media";
+            //return $"https://googleapis.com{_bucketName}/o/{Uri.EscapeDataString(objectName)}?alt=media";
+            return GetFileUrl(objectName, string.Empty);
         }
 
         public string GetFileUrl(string storedFileName, string folderName)
@@ -95,9 +111,12 @@ namespace HomeCycle.Infrastructure.Externals
             if (string.IsNullOrEmpty(storedFileName)) return string.Empty;
 
             // Kết hợp thư mục và tên file thành đường dẫn đầy đủ trong Storage (vd: avatars/cd0bba05-db5e.jpg)
+            //string fullPath = string.IsNullOrEmpty(folderName)
+            //    ? storedFileName
+            //    : $"{folderName}/{storedFileName}";
             string fullPath = string.IsNullOrEmpty(folderName)
                 ? storedFileName
-                : $"{folderName}/{storedFileName}";
+                : $"{folderName.TrimEnd('/')}/{storedFileName.TrimStart('/')}";
 
             // Mã hóa toàn bộ đường dẫn để đảm bảo URL hợp lệ (tự động biến / thành %2F và xử lý khoảng trắng, ký tự lạ)
             string escapedPath = Uri.EscapeDataString(fullPath);

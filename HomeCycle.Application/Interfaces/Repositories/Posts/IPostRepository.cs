@@ -23,6 +23,8 @@ namespace HomeCycle.Application.Interfaces.Repositories.Posts
 
         Task<PagedResult<post>> SearchAsync(PostSearchRequest request, CancellationToken cancellationToken = default);
 
+        Task<int> CountActiveByOwnerAsync(Guid ownerId, CancellationToken cancellationToken = default);
+
         Task<bool> DeleteAsync(Guid postId, CancellationToken cancellationToken = default);
 
         Task<bool> UpdateStatusAsync(Guid postId, PostStatus status, CancellationToken cancellationToken = default);

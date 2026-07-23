@@ -17,6 +17,7 @@ using HomeCycle.Application.Services.Personals;
 using HomeCycle.Application.Services.Posts;
 using HomeCycle.Application.Services.Products;
 using HomeCycle.Application.Validations.Auths;
+using HomeCycle.Application.Validations.Users;
 using HomeCycle.Infrastructure.DbContexts;
 using HomeCycle.Infrastructure.Externals;
 using HomeCycle.Infrastructure.Repositories.Banks;
@@ -61,6 +62,7 @@ namespace HomeCycle.Infrastructure
             services.AddAutoMapper(cfg => cfg.AddMaps(typeof(MappingProfile).Assembly));
 
             // register FluentValidation
+            // do nằm chung 1 application nên chỉ cần gọi 1 lần là đủ, không cần gọi nhiều lần
             services.AddValidatorsFromAssemblyContaining<RegisterPersonalRequestValidator>();
             services.AddValidatorsFromAssembly(typeof(LoginRequestValidator).Assembly);
 
@@ -73,6 +75,7 @@ namespace HomeCycle.Infrastructure
             // register Repositories
             services.AddScoped<IUserRepository, UserRepository>();
             services.AddScoped<IPersonalProfileRepository, PersonalProfileRepository>();
+            services.AddScoped<IBusinessProfileRepository, BusinessProfileRepository>();
             services.AddScoped<ICategoryRepository, CategoryRepository>();
             services.AddScoped<IBankAccountRepository, BankAccountRepository>();
             services.AddScoped<IProductAttributeOptionRepository, ProductAttributeOptionRepository>();
@@ -89,6 +92,7 @@ namespace HomeCycle.Infrastructure
 
             // register Services
             services.AddScoped<IAuthService, AuthService>();
+            services.AddScoped<IUserService, UserService>();
             services.AddScoped<IPersonalProfileService, PersonalProfileService>();
             services.AddScoped<ICategoryService, CategoryService>();
             services.AddScoped<IBrandService, BrandService>();

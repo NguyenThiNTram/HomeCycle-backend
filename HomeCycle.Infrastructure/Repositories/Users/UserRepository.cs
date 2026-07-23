@@ -91,7 +91,7 @@ namespace HomeCycle.Infrastructure.Repositories.Users
             _db.Refresh_Tokens.Update(token.ToInfrastructure());
         }
 
-        public async Task UpdateAsync(user user, CancellationToken cancellationToken = default)
+        public Task UpdateAsync(user user, CancellationToken cancellationToken = default)
         {
             var entity = user.ToInfrastructure();
             var localEntry = _db.Users.Local.FirstOrDefault(x => x.UserId == entity.UserId);
@@ -102,7 +102,9 @@ namespace HomeCycle.Infrastructure.Repositories.Users
                 _db.Entry(localEntry).State = EntityState.Detached;
             }
             _db.Users.Update(entity);
-            await _db.SaveChangesAsync(cancellationToken);
+
+            //await _db.SaveChangesAsync(cancellationToken);
+            return Task.CompletedTask;
         }
     }
 }

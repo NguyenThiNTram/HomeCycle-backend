@@ -22,7 +22,7 @@ public class post
     public string? City { get; set; }
 
     public int? DeliveryMethod { get; set; }
-    public string? PriorityLevel { get; set; }
+    public PriorityLevel? PriorityLevel { get; set; }
 
     public int? Status { get; set; }
 

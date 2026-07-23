@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using System.Reflection;
 using System.Security.Claims;
 using System.Text;
 using System.Text.Json.Serialization;
@@ -16,10 +17,21 @@ namespace HomeCycle.API
         {
             var builder = WebApplication.CreateBuilder(args);
 
-            builder.WebHost.ConfigureKestrel(options =>
+            // Cấu hình Kestrel lắng nghe cổng 8081 (HTTP thường)
+            //builder.WebHost.ConfigureKestrel(options =>
+            //{
+            //    options.ListenAnyIP(8081);
+            //});
+
+            // Config CORS
+            builder.Services.AddCors(options =>
             {
-                options.ListenAnyIP(8081); // Mở cổng 8081 cho thiết bị Mobile kết nối
-                options.ListenAnyIP(5173); // Mở cổng 5173 cho Website kết nối
+                options.AddPolicy("AllowAll", policy =>
+                {
+                    policy.AllowAnyOrigin()
+                          .AllowAnyMethod()
+                          .AllowAnyHeader();
+                });
             });
 
             // Add services to the container.
@@ -68,6 +80,13 @@ namespace HomeCycle.API
                         Array.Empty<string>()
                     }
                 });
+
+                var xmlFile = $"{Assembly.GetExecutingAssembly().GetName().Name}.xml";
+                var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
+                if (File.Exists(xmlPath))
+                {
+                    options.IncludeXmlComments(xmlPath);
+                }
             });
 
             //Khai báo DI
@@ -102,27 +121,9 @@ namespace HomeCycle.API
                 };
             });
 
-            // Config CORS
-            builder.Services.AddCors(options =>
-            {
-                options.AddPolicy("AllowAll", policy =>
-                {
-                    policy.AllowAnyOrigin()
-                          .AllowAnyMethod()
-                          .AllowAnyHeader();
-                });
-            });
-
             builder.Services.AddAuthorization();
 
             var app = builder.Build();
-
-            // Configure the HTTP request pipeline
-            //if (app.Environment.IsDevelopment())
-            //{
-            //    app.UseSwagger();
-            //    app.UseSwaggerUI();
-            //}
 
             app.UseSwagger();
             app.UseSwaggerUI(c =>
@@ -137,7 +138,7 @@ namespace HomeCycle.API
                 app.UseHttpsRedirection();
             }
 
-            app.UseRouting(); // Thêm dòng này nếu cần định tuyến chính xác
+            app.UseRouting();
             app.UseCors("AllowAll");
 
             app.UseAuthentication();

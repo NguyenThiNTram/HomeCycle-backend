@@ -4,6 +4,7 @@ using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Requests.Posts;
 using HomeCycle.Application.DTOs.Responses.Posts;
 using HomeCycle.Application.Interfaces.Services.Posts;
+using HomeCycle.Application.Interfaces.Services.Products;
 using HomeCycle.Domain.Enums;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
@@ -17,6 +18,7 @@ namespace HomeCycle.API.Controllers
     public class PostsController : ControllerBase
     {
         private readonly IPostService _postService;
+        private readonly IProductAttributeService _productAttributeService;
 
         public PostsController(IPostService postService)
         {
@@ -134,12 +136,28 @@ namespace HomeCycle.API.Controllers
             return Ok(result.Value);
         }
 
-        [HttpGet("search")]
+        [HttpPost("search")]
         //[AllowAnonymous]
         //[ProducesResponseType(typeof(PagedResult<PostResponse>), StatusCodes.Status200OK)]
-        public async Task<IActionResult> Search([FromQuery] PostSearchRequest request, CancellationToken cancellationToken)
+        //[ProducesResponseType(StatusCodes.Status400BadRequest)]
+        public async Task<IActionResult> Search([FromBody] PostSearchRequest request,
+                    CancellationToken cancellationToken)
         {
             var result = await _postService.SearchAsync(request, cancellationToken);
+
+            if (!result.IsSuccess)
+                return BadRequest(result.Error);
+
+            return Ok(result.Value);
+        }
+
+        [HttpGet("~/api/product-types/{productTypeId:guid}/filterable-attributes")]
+        //[AllowAnonymous]
+        //[ProducesResponseType(typeof(IReadOnlyList<AttributeFilterOptionResponse>), StatusCodes.Status200OK)]
+        public async Task<IActionResult> GetFilterableAttributes(
+             Guid productTypeId, CancellationToken cancellationToken)
+        {
+            var result = await _productAttributeService.GetFilterableAttributesAsync(productTypeId, cancellationToken);
             return Ok(result.Value);
         }
 

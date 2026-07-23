@@ -40,8 +40,10 @@ namespace HomeCycle.Infrastructure.Repositories.Users
 
         public async Task UpdateAsync(personal_profile profile, CancellationToken cancellationToken = default)
         {
+            Console.WriteLine(profile.FrontIDCardImage);
             var entity = profile.ToInfrastructure();
             var localEntry = _db.Personal_Profiles.Local.FirstOrDefault(x => x.PersonalProfileId == entity.PersonalProfileId);
+            Console.WriteLine(entity.FrontIDCardImage);
 
             if (localEntry != null)
             {
@@ -49,6 +51,8 @@ namespace HomeCycle.Infrastructure.Repositories.Users
                 _db.Entry(localEntry).State = EntityState.Detached;
             }
 
+            Console.WriteLine(entity.FrontIDCardImage);
+            Console.WriteLine(entity.BackIDCardImage);
             _db.Personal_Profiles.Update(entity);
             //await _db.SaveChangesAsync(cancellationToken);
         }
