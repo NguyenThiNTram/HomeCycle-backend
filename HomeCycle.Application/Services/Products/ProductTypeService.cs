@@ -25,7 +25,6 @@ namespace HomeCycle.Application.Services.Products
         private readonly IProductAttributeOptionRepository _productAttributeOptionRepository;
         private readonly IUnitOfWork _unitOfWork;
         private readonly IMapper _mapper;
-        private readonly ILogger<ProductTypeService> _logger;
 
         private readonly IValidator<CreateProductTypeRequest> _createValidator;
         private readonly IValidator<UpdateProductTypeRequest> _updateValidator;
@@ -37,8 +36,7 @@ namespace HomeCycle.Application.Services.Products
             IUnitOfWork unitOfWork,
             IMapper mapper,
             IValidator<CreateProductTypeRequest> createValidator,
-            IValidator<UpdateProductTypeRequest> updateValidator,
-            ILogger<ProductTypeService> logger)
+            IValidator<UpdateProductTypeRequest> updateValidator)
         {
             _productTypeRepository = productTypeRepository;
             _productAttributeRepository = productAttributeRepository;
@@ -47,7 +45,6 @@ namespace HomeCycle.Application.Services.Products
             _mapper = mapper;
             _createValidator = createValidator;
             _updateValidator = updateValidator;
-            _logger = logger;
         }
 
         public async Task<Result<ProductTypeResponse>> CreateAsync(CreateProductTypeRequest request, CancellationToken cancellationToken = default)
@@ -79,7 +76,7 @@ namespace HomeCycle.Application.Services.Products
                 var domainAttribute = new product_attribute(attributeId, productType.ProductTypeId)
                 {
                     AttributeName = attrDto.AttributeName.Trim(),
-                    DataType = attrDto.DataType,
+                    DataType = (Domain.Enums.DataType?)attrDto.DataType,
                     Unit = attrDto.Unit?.Trim(),
                     DisplayOrder = attrDto.DisplayOrder,
                     IsFilterable = attrDto.IsFilterable,
@@ -95,8 +92,8 @@ namespace HomeCycle.Application.Services.Products
                         new product_attribute_option(optionId, attributeId)
                         {
                             OptionValue = optDto.OptionValue.Trim(),
-                            DisplayOrder = optDto.DisplayOrder,
-                            IsDefault = optDto.IsDefault
+                            DisplayOrder = optDto.DisplayOrder
+                            //IsDefault = optDto.IsDefault
                         });
                 }
 
@@ -115,127 +112,148 @@ namespace HomeCycle.Application.Services.Products
         {
             var validation = await _updateValidator.ValidateAsync(request, cancellationToken);
             if (!validation.IsValid)
-            {
-                var errors = string.Join(", ", validation.Errors.Select(x => x.ErrorMessage));
-                return Result<ProductTypeResponse>.Fail(ValidationErrors.InvalidRequest(errors));
-            }
+                return Result<ProductTypeResponse>.Fail(
+                    ValidationErrors.InvalidRequest(string.Join(", ", validation.Errors.Select(e => e.ErrorMessage))));
 
-            var aggregate = await _productTypeRepository.AggregateUpdateAsync(productTypeId, cancellationToken);
-            if (aggregate is null)
+            var existing = await _productTypeRepository.GetByIdAsync(productTypeId, cancellationToken);
+            if (existing is null)
                 return Result<ProductTypeResponse>.Fail(ProductTypeErrors.ProductTypeNotFound);
 
-            var exists = await _productTypeRepository.ExistsByNameAsync(aggregate.CategoryId, request.ProductTypeName, cancellationToken);
-
-            if (exists && !aggregate.ProductTypeName!.Equals(request.ProductTypeName.Trim(), StringComparison.OrdinalIgnoreCase))
-            {
+            var exists = await _productTypeRepository.ExistsByNameAsync(existing.CategoryId, request.ProductTypeName, cancellationToken);
+            if (exists && !existing.ProductTypeName!.Equals(request.ProductTypeName.Trim(), StringComparison.OrdinalIgnoreCase))
                 return Result<ProductTypeResponse>.Fail(ProductTypeErrors.ProductTypeAlreadyExists);
-            }
 
-            aggregate.ProductTypeName = request.ProductTypeName.Trim();
-            aggregate.Description = request.Description?.Trim();
-            aggregate.IsActive = request.IsActive;
+            existing.ProductTypeName = request.ProductTypeName.Trim();
+            existing.Description = request.Description?.Trim();
+            existing.IsActive = request.IsActive;
 
-            // ==========================================
-            // KỸ THUẬT GRAPH DIFFING (BẢO VỆ ĐỒ THỊ DỮ LIỆU)
-            // ==========================================
-
-            // --- BƯỚC A: XỬ LÝ TẦNG PRODUCT_ATTRIBUTE ---
-            var incomingAttrIds = request.Attributes.Where(a => a.AttributeId.HasValue).Select(a => a.AttributeId!.Value).ToHashSet();
-
-            // Lọc ra các Attribute bị xóa (Có trong DB cũ nhưng không có trong Request mới)
-            var attributesToRemove = aggregate.ProductAttributes.Where(a => !incomingAttrIds.Contains(a.AttributeId)).ToList();
-            foreach (var attr in attributesToRemove)
-            {
-                aggregate.ProductAttributes.Remove(attr);
-            }
-
-            // Duyệt danh sách Request để Xử lý Cập nhật hoặc Thêm mới Attribute
-            foreach (var attrDto in request.Attributes)
-            {
-                if (attrDto.AttributeId.HasValue) // Tình huống: Cập nhật Attribute đang có
-                {
-                    var existingAttr = aggregate.ProductAttributes.FirstOrDefault(a => a.AttributeId == attrDto.AttributeId.Value);
-                    if (existingAttr != null)
-                    {
-                        // Cập nhật các trường dữ liệu cơ bản
-                        existingAttr.AttributeName = attrDto.AttributeName.Trim();
-                        existingAttr.DataType = attrDto.DataType;
-                        existingAttr.Unit = attrDto.Unit?.Trim();
-                        existingAttr.DisplayOrder = attrDto.DisplayOrder;
-                        existingAttr.IsFilterable = attrDto.IsFilterable;
-                        existingAttr.IsRequired = attrDto.IsRequired;
-
-                        // --- BƯỚC B: XỬ LÝ TẦNG CON CỦA ATTRIBUTE (PRODUCT_ATTRIBUTE_OPTION) ---
-                        var incomingOptIds = attrDto.Options.Where(o => o.OptionId.HasValue).Select(o => o.OptionId!.Value).ToHashSet();
-
-                        // Xóa các Option không còn xuất hiện trong Request DTO
-                        var optionsToRemove = existingAttr.ProductAttributeOptions.Where(o => !incomingOptIds.Contains(o.OptionId)).ToList();
-                        foreach (var opt in optionsToRemove)
-                        {
-                            existingAttr.ProductAttributeOptions.Remove(opt);
-                        }
-
-                        // Cập nhật hoặc Thêm mới Option
-                        foreach (var optDto in attrDto.Options)
-                        {
-                            if (optDto.OptionId.HasValue) // Cập nhật Option cũ
-                            {
-                                var existingOpt = existingAttr.ProductAttributeOptions.FirstOrDefault(o => o.OptionId == optDto.OptionId.Value);
-                                if (existingOpt != null)
-                                {
-                                    existingOpt.OptionValue = optDto.OptionValue.Trim();
-                                    existingOpt.DisplayOrder = optDto.DisplayOrder;
-                                    existingOpt.IsDefault = optDto.IsDefault;
-                                }
-                            }
-                            else // Thêm Option mới vào Attribute đang tồn tại
-                            {
-                                existingAttr.ProductAttributeOptions.Add(
-                                    new product_attribute_option(Guid.NewGuid(), existingAttr.AttributeId)
-                                    {
-                                        OptionValue = optDto.OptionValue.Trim(),
-                                        DisplayOrder = optDto.DisplayOrder,
-                                        IsDefault = optDto.IsDefault
-                                    });
-                            }
-                        }
-                    }
-                }
-                else // Tình huống: Thêm mới hoàn toàn một Attribute kèm Option
-                {
-                    var newAttrId = Guid.NewGuid();
-                    var newAttribute = new product_attribute(newAttrId, aggregate.ProductTypeId)
-                    {
-                        AttributeName = attrDto.AttributeName.Trim(),
-                        DataType = attrDto.DataType,
-                        Unit = attrDto.Unit?.Trim(),
-                        DisplayOrder = attrDto.DisplayOrder,
-                        IsFilterable = attrDto.IsFilterable,
-                        IsRequired = attrDto.IsRequired,
-                        ProductAttributeOptions = new List<product_attribute_option>()
-                    };
-
-                    foreach (var optDto in attrDto.Options)
-                    {
-                        newAttribute.ProductAttributeOptions.Add(
-                            new product_attribute_option(Guid.NewGuid(), newAttrId)
-                            {
-                                OptionValue = optDto.OptionValue.Trim(),
-                                DisplayOrder = optDto.DisplayOrder,
-                                IsDefault = optDto.IsDefault
-                            });
-                    }
-
-                    aggregate.ProductAttributes.Add(newAttribute);
-                }
-            }
-
-            await _productTypeRepository.AggregateUpdateAsync(productTypeId, cancellationToken);
+            await _productTypeRepository.UpdateAsync(existing, cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-            var response = _mapper.Map<ProductTypeResponse>(aggregate);
-            return Result<ProductTypeResponse>.Success(response);
+            return Result<ProductTypeResponse>.Success(_mapper.Map<ProductTypeResponse>(existing));
         }
+
+        //public async Task<Result<ProductTypeResponse>> UpdateAsync(Guid productTypeId, UpdateProductTypeRequest request, CancellationToken cancellationToken = default)
+        //{
+        //    var validation = await _updateValidator.ValidateAsync(request, cancellationToken);
+        //    if (!validation.IsValid)
+        //    {
+        //        var errors = string.Join(", ", validation.Errors.Select(x => x.ErrorMessage));
+        //        return Result<ProductTypeResponse>.Fail(ValidationErrors.InvalidRequest(errors));
+        //    }
+
+        //    var aggregate = await _productTypeRepository.AggregateUpdateAsync(productTypeId, cancellationToken);
+        //    if (aggregate is null)
+        //        return Result<ProductTypeResponse>.Fail(ProductTypeErrors.ProductTypeNotFound);
+
+        //    var exists = await _productTypeRepository.ExistsByNameAsync(aggregate.CategoryId, request.ProductTypeName, cancellationToken);
+
+        //    if (exists && !aggregate.ProductTypeName!.Equals(request.ProductTypeName.Trim(), StringComparison.OrdinalIgnoreCase))
+        //    {
+        //        return Result<ProductTypeResponse>.Fail(ProductTypeErrors.ProductTypeAlreadyExists);
+        //    }
+
+        //    aggregate.ProductTypeName = request.ProductTypeName.Trim();
+        //    aggregate.Description = request.Description?.Trim();
+        //    aggregate.IsActive = request.IsActive;
+
+        //    // ==========================================
+        //    // KỸ THUẬT GRAPH DIFFING (BẢO VỆ ĐỒ THỊ DỮ LIỆU)
+        //    // ==========================================
+
+        //    // --- BƯỚC A: XỬ LÝ TẦNG PRODUCT_ATTRIBUTE ---
+        //    var incomingAttrIds = request.Attributes.Where(a => a.AttributeId.HasValue).Select(a => a.AttributeId!.Value).ToHashSet();
+
+        //    // Lọc ra các Attribute bị xóa (Có trong DB cũ nhưng không có trong Request mới)
+        //    var attributesToRemove = aggregate.ProductAttributes.Where(a => !incomingAttrIds.Contains(a.AttributeId)).ToList();
+        //    foreach (var attr in attributesToRemove)
+        //        aggregate.ProductAttributes.Remove(attr);
+
+        //    // Duyệt danh sách Request để Xử lý Cập nhật hoặc Thêm mới Attribute
+        //    foreach (var attrDto in request.Attributes)
+        //    {
+        //        if (attrDto.AttributeId.HasValue) // Tình huống: Cập nhật Attribute đang có
+        //        {
+        //            var existingAttr = aggregate.ProductAttributes.FirstOrDefault(a => a.AttributeId == attrDto.AttributeId.Value);
+        //            if (existingAttr != null)
+        //            {
+        //                // Cập nhật các trường dữ liệu cơ bản
+        //                existingAttr.AttributeName = attrDto.AttributeName.Trim();
+        //                existingAttr.DataType = (Domain.Enums.DataType?)attrDto.DataType;
+        //                existingAttr.Unit = attrDto.Unit?.Trim();
+        //                existingAttr.DisplayOrder = attrDto.DisplayOrder;
+        //                existingAttr.IsFilterable = attrDto.IsFilterable;
+        //                existingAttr.IsRequired = attrDto.IsRequired;
+
+        //                // --- BƯỚC B: XỬ LÝ TẦNG CON CỦA ATTRIBUTE (PRODUCT_ATTRIBUTE_OPTION) ---
+        //                var incomingOptIds = attrDto.Options.Where(o => o.OptionId.HasValue).Select(o => o.OptionId!.Value).ToHashSet();
+
+        //                // Xóa các Option không còn xuất hiện trong Request DTO
+        //                var optionsToRemove = existingAttr.ProductAttributeOptions.Where(o => !incomingOptIds.Contains(o.OptionId)).ToList();
+        //                foreach (var opt in optionsToRemove)
+        //                    existingAttr.ProductAttributeOptions.Remove(opt);
+
+        //                // Cập nhật hoặc Thêm mới Option
+        //                foreach (var optDto in attrDto.Options)
+        //                {
+        //                    if (optDto.OptionId.HasValue) // Cập nhật Option cũ
+        //                    {
+        //                        var existingOpt = existingAttr.ProductAttributeOptions.FirstOrDefault(o => o.OptionId == optDto.OptionId.Value);
+        //                        if (existingOpt != null)
+        //                        {
+        //                            existingOpt.OptionValue = optDto.OptionValue.Trim();
+        //                            existingOpt.DisplayOrder = optDto.DisplayOrder;
+        //                            existingOpt.IsDefault = optDto.IsDefault;
+        //                        }
+        //                    }
+        //                    else // Thêm Option mới vào Attribute đang tồn tại
+        //                    {
+        //                        existingAttr.ProductAttributeOptions.Add(
+        //                            new product_attribute_option(Guid.NewGuid(), existingAttr.AttributeId)
+        //                            {
+        //                                OptionValue = optDto.OptionValue.Trim(),
+        //                                DisplayOrder = optDto.DisplayOrder,
+        //                                IsDefault = optDto.IsDefault
+        //                            });
+        //                    }
+        //                }
+        //            }
+        //        }
+        //        else // Tình huống: Thêm mới hoàn toàn một Attribute kèm Option
+        //        {
+        //            var newAttrId = Guid.NewGuid();
+        //            var newAttribute = new product_attribute(newAttrId, aggregate.ProductTypeId)
+        //            {
+        //                AttributeName = attrDto.AttributeName.Trim(),
+        //                DataType = (Domain.Enums.DataType?)attrDto.DataType,
+        //                Unit = attrDto.Unit?.Trim(),
+        //                DisplayOrder = attrDto.DisplayOrder,
+        //                IsFilterable = attrDto.IsFilterable,
+        //                IsRequired = attrDto.IsRequired,
+        //                ProductAttributeOptions = new List<product_attribute_option>()
+        //            };
+
+        //            foreach (var optDto in attrDto.Options)
+        //            {
+        //                newAttribute.ProductAttributeOptions.Add(
+        //                    new product_attribute_option(Guid.NewGuid(), newAttrId)
+        //                    {
+        //                        OptionValue = optDto.OptionValue.Trim(),
+        //                        DisplayOrder = optDto.DisplayOrder,
+        //                        IsDefault = optDto.IsDefault
+        //                    });
+        //            }
+
+        //            aggregate.ProductAttributes.Add(newAttribute);
+        //        }
+        //    }
+
+        //    await _productTypeRepository.AggregateUpdateAsync(productTypeId, cancellationToken);
+        //    await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        //    var response = _mapper.Map<ProductTypeResponse>(aggregate);
+        //    return Result<ProductTypeResponse>.Success(response);
+        //}
 
         public async Task<Result<bool>> DeleteAsync(Guid productTypeId, CancellationToken cancellationToken = default)
         {
@@ -269,6 +287,18 @@ namespace HomeCycle.Application.Services.Products
         {
             var types = await _productTypeRepository.GetByCategoryIdAsync(categoryId, cancellationToken);
             return Result<IEnumerable<product_type>>.Success(types);
+        }
+
+        public async Task<Result<ProductTypePostingSchemaResponse>> GetPostingSchemaAsync(Guid productTypeId, CancellationToken cancellationToken = default)
+        {
+            var productType = await _productTypeRepository.GetWithAttributesAndOptionsAsync(productTypeId, cancellationToken);
+
+            if (productType is null)
+                return Result<ProductTypePostingSchemaResponse>.Fail(ProductTypeErrors.ProductTypeNotFound);
+
+            var response = _mapper.Map<ProductTypePostingSchemaResponse>(productType);
+
+            return Result<ProductTypePostingSchemaResponse>.Success(response);
         }
 
         public async Task<Result<ProductTypeDetailResponse>> GetByIdAsync(Guid productTypeId, CancellationToken cancellationToken = default)

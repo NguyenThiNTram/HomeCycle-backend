@@ -13,7 +13,6 @@ public class product_attribute_option
 
     public string? OptionValue { get; set; }
     public int? DisplayOrder { get; set; }
-    public bool IsDefault { get; set; }
 
     public product_attribute_option()
     {

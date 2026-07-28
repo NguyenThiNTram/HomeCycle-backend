@@ -10,7 +10,7 @@ namespace HomeCycle.Application.DTOs.Requests.Products
     {
         public string OptionValue { get; set; } = null!;
         public int? DisplayOrder { get; set; }
-        public bool IsDefault { get; set; }
+        //public bool IsDefault { get; set; }
     }
 
     public class UpdateAttributeOptionRequest
@@ -18,6 +18,6 @@ namespace HomeCycle.Application.DTOs.Requests.Products
         public Guid? OptionId { get; set; } // Nếu Null => Thêm mới tùy chọn
         public string OptionValue { get; set; } = null!;
         public int DisplayOrder { get; set; }
-        public bool IsDefault { get; set; }
+        //public bool IsDefault { get; set; }
     }
 }

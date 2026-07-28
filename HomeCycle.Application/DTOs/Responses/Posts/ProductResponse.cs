@@ -26,7 +26,7 @@ namespace HomeCycle.Application.DTOs.Responses.Posts
 
         public string? ProductName { get; set; }
 
-        public string? SpaceUsage { get; set; }
+        public SpaceUsage? SpaceUsage { get; set; }
 
         public string? ModelNumber { get; set; }
 
@@ -44,7 +44,7 @@ namespace HomeCycle.Application.DTOs.Responses.Posts
 
         public int? UsageDuration { get; set; }
 
-        public int? DamageLevel { get; set; }
+        public DamageLevel? DamageLevel { get; set; }
 
         public string? DetailDescription { get; set; }
 

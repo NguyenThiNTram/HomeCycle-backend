@@ -725,8 +725,7 @@ namespace HomeCycle.Infrastructure.Migrations
                     OptionId = table.Column<Guid>(type: "uuid", nullable: false),
                     AttributeId = table.Column<Guid>(type: "uuid", nullable: false),
                     OptionValue = table.Column<string>(type: "character varying(255)", maxLength: 255, nullable: true),
-                    DisplayOrder = table.Column<int>(type: "integer", nullable: true),
-                    IsDefault = table.Column<bool>(type: "boolean", nullable: false, defaultValue: false)
+                    DisplayOrder = table.Column<int>(type: "integer", nullable: true)
                 },
                 constraints: table =>
                 {

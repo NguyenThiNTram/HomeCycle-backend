@@ -35,8 +35,9 @@ namespace HomeCycle.Application.Validations.Products
                 .WithMessage("Tên sản phẩm mong muốn không được vượt quá 255 ký tự.");
 
             RuleFor(x => x.SpaceUsage)
-                .MaximumLength(255)
-                .WithMessage("Mô tả không gian sử dụng không được vượt quá 255 ký tự.");
+                .IsInEnum()
+                .When(x => x.SpaceUsage.HasValue)
+                .WithMessage("Không gian sử dụng (SpaceUsage) không hợp lệ.");
 
             RuleFor(x => x.FunctionalityStatus)
                 .IsInEnum()
@@ -49,9 +50,9 @@ namespace HomeCycle.Application.Validations.Products
                 .WithMessage("Thời gian đã sử dụng phải lớn hơn hoặc bằng 0 tháng.");
 
             RuleFor(x => x.DamageLevel)
-                .InclusiveBetween(0, 100)
+                .IsInEnum()
                 .When(x => x.DamageLevel.HasValue)
-                .WithMessage("Mức độ hư hại (DamageLevel) phải nằm trong khoảng từ 0% đến 100%.");
+                .WithMessage("Mức độ hư hại (DamageLevel) không hợp lệ.");
 
             // Tái sử dụng Validator cho danh sách các thuộc tính sản phẩm đính kèm
             RuleForEach(x => x.AttributeValues)

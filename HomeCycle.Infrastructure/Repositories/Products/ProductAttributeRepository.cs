@@ -26,6 +26,25 @@ namespace HomeCycle.Infrastructure.Repositories.Products
             await _db.Product_Attributes.AddAsync(infraAttr, cancellationToken);
         }
 
+        public async Task UpdateAsync(product_attribute entity, CancellationToken cancellationToken = default)
+        {
+            var infra = entity.ToInfrastructure();
+            var tracked = await _db.Product_Attributes.FindAsync(new object[] { infra.AttributeId }, cancellationToken);
+            if (tracked != null)
+                _db.Entry(tracked).CurrentValues.SetValues(infra);
+            else
+                _db.Product_Attributes.Update(infra);
+        }
+
+        public async Task<bool> DeleteAsync(Guid attributeId, CancellationToken cancellationToken = default)
+        {
+            var entity = await _db.Product_Attributes.FindAsync(new object[] { attributeId }, cancellationToken);
+            if (entity is null) return false;
+
+            _db.Product_Attributes.Remove(entity); // Cascade sẽ tự xóa Option con nếu DB config ON DELETE CASCADE, nếu không, cần xóa Option trước — xem lưu ý bên dưới.
+            return true;
+        }
+
         public async Task<bool> ExistsByNameAsync(Guid productTypeId, string attributeName, CancellationToken cancellationToken = default)
         {
             return await _db.Product_Attributes.AnyAsync(

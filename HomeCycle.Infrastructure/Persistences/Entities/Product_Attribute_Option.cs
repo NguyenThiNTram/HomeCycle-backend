@@ -20,8 +20,6 @@ public partial class Product_Attribute_Option
 
     public int? DisplayOrder { get; set; }
 
-    public bool IsDefault { get; set; }
-
     [ForeignKey("AttributeId")]
     [InverseProperty("Product_Attribute_Options")]
     public virtual Product_Attribute Attribute { get; set; } = null!;

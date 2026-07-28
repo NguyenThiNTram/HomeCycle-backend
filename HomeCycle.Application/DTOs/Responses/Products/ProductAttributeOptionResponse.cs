@@ -11,6 +11,6 @@ namespace HomeCycle.Application.DTOs.Responses.Products
         public Guid OptionId { get; set; }
         public string? OptionValue { get; set; }
         public int? DisplayOrder { get; set; }
-        public bool IsDefault { get; set; }
+        //public bool IsDefault { get; set; }
     }
 }

@@ -42,7 +42,7 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                     AttributeId = attr.AttributeId,
                     ProductTypeId = attr.ProductTypeId,
                     AttributeName = attr.AttributeName,
-                    DataType = attr.DataType,
+                    DataType = (int?)attr.DataType,
                     Unit = attr.Unit,
                     DisplayOrder = attr.DisplayOrder,
                     IsFilterable = attr.IsFilterable,
@@ -52,8 +52,7 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                         OptionId = opt.OptionId,
                         AttributeId = opt.AttributeId,
                         OptionValue = opt.OptionValue,
-                        DisplayOrder = opt.DisplayOrder,
-                        IsDefault = opt.IsDefault
+                        DisplayOrder = opt.DisplayOrder
                     }).ToList()
                 }).ToList()
             };

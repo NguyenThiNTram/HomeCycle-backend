@@ -87,9 +87,6 @@ namespace HomeCycle.Infrastructure
             services.AddScoped<IMediaRepository, MediaRepository>();
             services.AddScoped<IProductAttributeValueRepository, ProductAttributeValueRepository>();
 
-
-
-
             // register Services
             services.AddScoped<IAuthService, AuthService>();
             services.AddScoped<IUserService, UserService>();
@@ -97,9 +94,11 @@ namespace HomeCycle.Infrastructure
             services.AddScoped<ICategoryService, CategoryService>();
             services.AddScoped<IBrandService, BrandService>();
             services.AddScoped<IProductTypeService, ProductTypeService>();
+            services.AddScoped<IProductAttributeService, ProductAttributeService>();
             services.AddScoped<IPostService, PostService>();
             services.AddScoped<IProductService, ProductService>();
             services.AddScoped<IMediaService, MediaService>();
+            services.AddScoped<IProductAttributeOptionService, ProductAttributeOptionService>();
 
             return services;
         }

@@ -1,4 +1,5 @@
-﻿using System;
+﻿using HomeCycle.Domain.Enums;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -9,11 +10,12 @@ namespace HomeCycle.Application.DTOs.Requests.Products
     public class CreateAttributeRequest
     {
         public string AttributeName { get; set; } = null!;
-        public int DataType { get; set; }
+        public DataType DataType { get; set; }
         public string? Unit { get; set; }
         public int? DisplayOrder { get; set; }
         public bool IsFilterable { get; set; }
         public bool IsRequired { get; set; }
+        public InputMode? InputMode { get; set; }
         public List<CreateAttributeOptionRequest> Options { get; set; } = new();
     }
 
@@ -21,11 +23,12 @@ namespace HomeCycle.Application.DTOs.Requests.Products
     {
         public Guid? AttributeId { get; set; } // Nếu Null => Thêm mới thuộc tính
         public string AttributeName { get; set; } = null!;
-        public int DataType { get; set; }
+        public DataType DataType { get; set; }
         public string? Unit { get; set; }
         public int? DisplayOrder { get; set; }
         public bool IsFilterable { get; set; }
+        public InputMode? InputMode { get; set; }
         public bool IsRequired { get; set; }
-        public List<UpdateAttributeOptionRequest> Options { get; set; } = new();
+        //public List<UpdateAttributeOptionRequest> Options { get; set; } = new();
     }
 }

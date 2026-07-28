@@ -15,4 +15,11 @@ namespace HomeCycle.Application.DTOs.Requests.Media
         public int DisplayOrder { get; set; } = 1;
         //public bool IsPrimary { get; set; } = false;
     }
+
+    public sealed class UpdatePostMediaRequest
+    {
+        public List<Guid> RetainedMediaIds { get; set; } = [];
+
+        public List<IFormFile> NewFiles { get; set; } = [];
+    }
 }

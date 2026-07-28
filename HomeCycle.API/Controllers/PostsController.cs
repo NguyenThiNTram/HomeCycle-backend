@@ -18,7 +18,6 @@ namespace HomeCycle.API.Controllers
     public class PostsController : ControllerBase
     {
         private readonly IPostService _postService;
-        private readonly IProductAttributeService _productAttributeService;
 
         public PostsController(IPostService postService)
         {
@@ -151,15 +150,7 @@ namespace HomeCycle.API.Controllers
             return Ok(result.Value);
         }
 
-        [HttpGet("~/api/product-types/{productTypeId:guid}/filterable-attributes")]
-        //[AllowAnonymous]
-        //[ProducesResponseType(typeof(IReadOnlyList<AttributeFilterOptionResponse>), StatusCodes.Status200OK)]
-        public async Task<IActionResult> GetFilterableAttributes(
-             Guid productTypeId, CancellationToken cancellationToken)
-        {
-            var result = await _productAttributeService.GetFilterableAttributesAsync(productTypeId, cancellationToken);
-            return Ok(result.Value);
-        }
+       
 
         [HttpPatch("{id:guid}/close")]
         //[Authorize(Roles = "Personal,Business")]

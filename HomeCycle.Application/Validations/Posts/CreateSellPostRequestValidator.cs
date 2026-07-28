@@ -82,21 +82,21 @@ namespace HomeCycle.Application.Validations.Posts
                 }
 
                 var dataType = (DataType)dbAttr.DataType;
-                bool isCompatible = (dataType, attrReq.InputType) switch
-                {
-                    (DataType.Text, InputType.TextBox) => true,
-                    (DataType.Text, InputType.Dropdown) => true,
-                    (DataType.Text, InputType.RadioButton) => true,
-                    (DataType.Number, InputType.NumberBox) => true,
-                    (DataType.Boolean, InputType.CheckBox) => true,
-                    _ => false
-                };
+                //bool isCompatible = (dataType, attrReq.InputType) switch
+                //{
+                //    (DataType.Text, InputType.TextBox) => true,
+                //    (DataType.Text, InputType.Dropdown) => true,
+                //    (DataType.Text, InputType.RadioButton) => true,
+                //    (DataType.Number, InputType.NumberBox) => true,
+                //    (DataType.Boolean, InputType.CheckBox) => true,
+                //    _ => false
+                //};
 
-                if (!isCompatible)
-                {
-                    context.AddFailure("Product.AttributeValues", $"Thuộc tính '{dbAttr.AttributeName}' (Kiểu {dataType}) không tương thích với InputType '{attrReq.InputType}'.");
-                    continue;
-                }
+                //if (!isCompatible)
+                //{
+                //    context.AddFailure("Product.AttributeValues", $"Thuộc tính '{dbAttr.AttributeName}' (Kiểu {dataType}) không tương thích với InputType '{attrReq.InputType}'.");
+                //    continue;
+                //}
 
                 if (attrReq.OptionId.HasValue)
                 {

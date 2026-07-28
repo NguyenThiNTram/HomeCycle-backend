@@ -168,16 +168,40 @@ namespace HomeCycle.Application.Mappings
                 .ForMember(x => x.ProductId, opt => opt.Ignore())
                 .ForMember(x => x.PostId, opt => opt.Ignore());
 
-            //CreateMap<UpdatePostRequest, post>()
-            //    .ForMember(x => x.PostId, opt => opt.Ignore())
-            //    .ForMember(x => x.OwnerId, opt => opt.Ignore())
-            //    .ForMember(dest => dest.PostType, opt => opt.Ignore())
-            //    .ForMember(x => x.CreatedAt, opt => opt.Ignore())
-            //    .ForMember(x => x.UpdatedAt, opt => opt.Ignore())
-            //    .ForMember(x => x.Status, opt => opt.Ignore())
-            //    .ForMember(x => x.IsBusinessPosting, opt => opt.Ignore())
-            //    .ForMember(x => x.RemainingQuantity, opt => opt.Ignore());
+            CreateMap<CreateAttributeRequest, product_attribute>()
+                .ForMember(
+                    destination => destination.AttributeId,
+                    option => option.Ignore())
+                .ForMember(
+                    destination => destination.ProductTypeId,
+                    option => option.Ignore())
+                .ForMember(
+                    destination => destination.AttributeName,
+                    option => option.MapFrom(source => source.AttributeName.Trim()))
+                .ForMember(
+                    destination => destination.Unit,
+                    option => option.MapFrom(source =>
+                        string.IsNullOrWhiteSpace(source.Unit)
+                            ? null
+                            : source.Unit.Trim()));
+            CreateMap<UpdateAttributeRequest, product_attribute>()
+                .ForMember(dest => dest.AttributeId, opt => opt.Ignore())
+                .ForMember(dest => dest.ProductTypeId, opt => opt.Ignore());
 
+            CreateMap<CreateAttributeOptionRequest, product_attribute_option>()
+                .ForMember(
+                    destination => destination.OptionId,
+                    option => option.Ignore())
+                .ForMember(
+                    destination => destination.AttributeId,
+                    option => option.Ignore())
+                .ForMember(
+                    destination => destination.OptionValue,
+                    option => option.MapFrom(source => source.OptionValue.Trim()));
+
+            CreateMap<product_attribute, ProductAttributeResponse>();
+
+            CreateMap<product_attribute_option, ProductAttributeOptionResponse>();
 
         }
     }

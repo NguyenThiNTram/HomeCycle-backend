@@ -36,6 +36,20 @@ namespace HomeCycle.Infrastructure.Repositories.Products
                 .ToListAsync(cancellationToken);
         }
 
+        public async Task<bool> ExistsByAttributeIdAsync(Guid attributeId, CancellationToken cancellationToken = default)
+        {
+            return await _db.Product_Attribute_Values.AnyAsync(
+                x => x.AttributeId == attributeId, 
+                cancellationToken);
+        }
+
+        public async Task<bool> ExistsByOptionIdAsync(Guid optionId, CancellationToken cancellationToken = default)
+        {
+            return await _db.Product_Attribute_Values.AnyAsync(
+                x => x.OptionId == optionId, 
+                cancellationToken);
+        }
+
         public async Task RemoveByProductIdAsync(Guid productId, CancellationToken cancellationToken = default)
         {
             var existing = await _db.Product_Attribute_Values

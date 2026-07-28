@@ -22,13 +22,13 @@ namespace HomeCycle.Application.DTOs.Requests.Products
 
         public string? ProductName { get; set; }
 
-        public string? SpaceUsage { get; set; }
+        public SpaceUsage? SpaceUsage { get; set; }
 
         public FunctionalityStatus? FunctionalityStatus { get; set; }
 
         public int? UsageDuration { get; set; }
 
-        public int? DamageLevel { get; set; }
+        public DamageLevel? DamageLevel { get; set; }
 
         //public List<CreateAttributeRequest> Attributes { get; set; } = new();
         //tham chiếu attribute có sẵn + giá trị mong muốn, tái dùng đúng type đã có

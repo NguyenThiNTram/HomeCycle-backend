@@ -26,6 +26,7 @@ namespace HomeCycle.Application.Interfaces.Services.Products
 
         Task<Result<ProductResponse>> GetDetailByPostIdAsync(Guid postId, CancellationToken cancellationToken = default);
         Task<Result<ProductResponse>> GetDetailAsync(Guid productId, CancellationToken cancellationToken = default);
+
     }
 
 }
