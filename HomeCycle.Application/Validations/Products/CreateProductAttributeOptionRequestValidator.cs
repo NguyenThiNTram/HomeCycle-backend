@@ -12,13 +12,14 @@ namespace HomeCycle.Application.Validations.Products
     {
         public CreateProductAttributeOptionRequestValidator()
         {
-            RuleFor(x => x.OptionValue)
-                .NotEmpty().WithMessage("Giá trị lựa chọn không được để trống.")
-                .MaximumLength(255).WithMessage("Giá trị lựa chọn không được vượt quá 255 ký tự.");
 
-            RuleFor(x => x.DisplayOrder)
-                .GreaterThanOrEqualTo(0).When(x => x.DisplayOrder.HasValue)
-                .WithMessage("Thứ tự hiển thị không được âm.");
+                    RuleFor(x => x.OptionValue)
+                        .NotEmpty().WithMessage("Giá trị lựa chọn không được để trống.")
+                        .MaximumLength(255).WithMessage("Giá trị lựa chọn không được vượt quá 255 ký tự.");
+
+                    RuleFor(x => x.DisplayOrder)
+                        .GreaterThanOrEqualTo(0).When(x => x.DisplayOrder.HasValue)
+                        .WithMessage("Thứ tự hiển thị không được âm.");
         }
     }
 
@@ -26,6 +27,7 @@ namespace HomeCycle.Application.Validations.Products
     {
         public UpdateProductAttributeOptionRequestValidator()
         {
+
             RuleFor(x => x.OptionValue)
                .NotEmpty().WithMessage("Giá trị lựa chọn không được để trống.")
                .MaximumLength(255).WithMessage("Giá trị lựa chọn không được vượt quá 255 ký tự.");

@@ -71,7 +71,7 @@ namespace HomeCycle.Application.Services.Posts
             var validation = await _createSellValidator.ValidateAsync(request, cancellationToken);
             if (!validation.IsValid)
                 return Result<PostResponse>.Fail(
-                    ValidationErrors.InvalidRequest(string.Join(", ", validation.Errors.Select(e => e.ErrorMessage))));
+                    ValidationErrors.InvalidRequest(string.Join("\n", validation.Errors.Select(e => e.ErrorMessage))));
 
             if (request.Medias == null || !request.Medias.Any())
             {
@@ -90,12 +90,12 @@ namespace HomeCycle.Application.Services.Posts
             post.UpdatedAt = now;
             post.RemainingQuantity = request.Quantity;
             post.Status = (int)PostStatus.Pending;
+            post.ExpiryDate = now.AddMonths(12);
 
             try
             {
                 await _unitOfWork.BeginTransactionAsync(cancellationToken);
                 await _postRepository.AddAsync(post, cancellationToken);
-                await _unitOfWork.SaveChangesAsync(cancellationToken); // Post phải tồn tại trước do FK Product.PostId
 
                 var productResult = await _productService.PrepareForCreateAsync(post.PostId, request.Product, cancellationToken);
                 if (!productResult.IsSuccess)
@@ -138,7 +138,7 @@ namespace HomeCycle.Application.Services.Posts
             var validation = await _createBuyValidator.ValidateAsync(request, cancellationToken);
             if (!validation.IsValid)
                 return Result<PostResponse>.Fail(
-                    ValidationErrors.InvalidRequest(string.Join(", ", validation.Errors.Select(e => e.ErrorMessage))));
+                    ValidationErrors.InvalidRequest(string.Join("\n", validation.Errors.Select(e => e.ErrorMessage))));
 
             var now = DateTime.UtcNow;
             var post = _mapper.Map<post>(request);
@@ -156,7 +156,6 @@ namespace HomeCycle.Application.Services.Posts
             {
                 await _unitOfWork.BeginTransactionAsync(cancellationToken);
                 await _postRepository.AddAsync(post, cancellationToken);
-                await _unitOfWork.SaveChangesAsync(cancellationToken);
 
                 var productResult = await _productService.PrepareForRequirementAsync(post.PostId, request.Requirement, cancellationToken);
                 if (!productResult.IsSuccess)
@@ -199,12 +198,12 @@ namespace HomeCycle.Application.Services.Posts
             var validation = await _updateSellValidator.ValidateAsync(request, cancellationToken);
             if (!validation.IsValid)
                 return Result<PostResponse>.Fail(
-                    ValidationErrors.InvalidRequest(string.Join(", ", validation.Errors.Select(e => e.ErrorMessage))));
+                    ValidationErrors.InvalidRequest(string.Join("\n", validation.Errors.Select(e => e.ErrorMessage))));
 
             var existing = await _postRepository.GetByIdAsync(postId, cancellationToken);
 
             var checkError = ValidateOwnershipAndComputeRemaining(
-                existing, ownerId, PostType.Sell, request.Quantity, out int newRemainingQuantity);
+                existing, ownerId, PostType.Sell, request.Quantity ?? existing.Quantity, out int newRemainingQuantity);
             if (checkError is not null)
                 return Result<PostResponse>.Fail(checkError);
 
@@ -255,7 +254,7 @@ namespace HomeCycle.Application.Services.Posts
             var validation = await _updateBuyValidator.ValidateAsync(request, cancellationToken);
             if (!validation.IsValid)
                 return Result<PostResponse>.Fail(
-                    ValidationErrors.InvalidRequest(string.Join(", ", validation.Errors.Select(e => e.ErrorMessage))));
+                    ValidationErrors.InvalidRequest(string.Join("\n", validation.Errors.Select(e => e.ErrorMessage))));
 
             var existing = await _postRepository.GetByIdAsync(postId, cancellationToken);
 
@@ -318,17 +317,18 @@ namespace HomeCycle.Application.Services.Posts
 
             var response = _mapper.Map<PostDetailResponse>(entity);
 
-            var productTask = _productService.GetDetailByPostIdAsync(postId, cancellationToken);
-            var mediaTask = _mediaService.GetByTargetAsync(postId, PostMediaTargetType, cancellationToken);
+            var productResult = await _productService.GetDetailByPostIdAsync(postId, cancellationToken);
+
+            var mediaResult =  await _mediaService.GetByTargetAsync(postId, PostMediaTargetType, cancellationToken);
 
             //await Task.WhenAll(productTask, mediaTask);
 
-            var productResult = await _productService.GetDetailByPostIdAsync(postId, cancellationToken);
+            //var productResult = await _productService.GetDetailByPostIdAsync(postId, cancellationToken);
 
-            if (!productResult.IsSuccess || productResult.Value is null)
+            if (!productResult.IsSuccess || productResult.Data is null)
                 return Result<PostDetailResponse>.Fail(ProductErrors.ProductNotFound);
 
-            var mediaResult = await _mediaService.GetByTargetAsync(postId, PostMediaTargetType, cancellationToken);
+            //var mediaResult = await _mediaService.GetByTargetAsync(postId, PostMediaTargetType, cancellationToken);
 
             if (!mediaResult.IsSuccess)
                 return Result<PostDetailResponse>.Fail(mediaResult.Error!);
@@ -365,7 +365,7 @@ namespace HomeCycle.Application.Services.Posts
             var validation = await _searchValidator.ValidateAsync(request, cancellationToken);
             if (!validation.IsValid)
                 return Result<PagedResult<PostResponse>>.Fail(
-                    ValidationErrors.InvalidRequest(string.Join(", ", validation.Errors.Select(e => e.ErrorMessage))));
+                    ValidationErrors.InvalidRequest(string.Join("\n", validation.Errors.Select(e => e.ErrorMessage))));
 
             var paged = await _postRepository.SearchAsync(request, cancellationToken);
 
@@ -459,6 +459,24 @@ namespace HomeCycle.Application.Services.Posts
                 return PostErrors.InvalidUpdateQuantity(soldQuantity, newQuantity);
 
             return null;
+        }
+
+        private static DateTime EnsureUtc(DateTime value)
+        {
+            return value.Kind switch
+            {
+                DateTimeKind.Utc => value,
+
+                DateTimeKind.Local => value.ToUniversalTime(),
+
+                // Request hiện gửi dạng có Z, ví dụ:
+                // 2026-12-30T11:59:27.458Z
+                // nên có thể xem giá trị này là UTC.
+                DateTimeKind.Unspecified =>
+                    DateTime.SpecifyKind(value, DateTimeKind.Utc),
+
+                _ => throw new ArgumentOutOfRangeException(nameof(value))
+            };
         }
 
     }

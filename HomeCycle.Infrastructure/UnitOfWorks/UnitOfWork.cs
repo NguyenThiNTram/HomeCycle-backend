@@ -47,38 +47,97 @@ namespace HomeCycle.Infrastructure.UnitOfWorks
         // Quản lý Transaction thủ công khi gọi nhiều API/Service phức tạp
         // Dùng khi lưu dữ liệu làm nhiều đợt
         // Chỉ khi nào bước x thành công và dùng lệnh _currentTransaction.Commit(), dữ liệu mới thực sự được lưu vào Database
-        public async Task BeginTransactionAsync() => _currentTransaction = await _db.Database.BeginTransactionAsync();
-        public async Task CommitTransactionAsync() => await _currentTransaction!.CommitAsync();
-        public async Task RollbackTransactionAsync() => await _currentTransaction!.RollbackAsync();
+        //public async Task BeginTransactionAsync() => _currentTransaction = await _db.Database.BeginTransactionAsync();
+        //public async Task CommitTransactionAsync() => await _currentTransaction!.CommitAsync();
+        //public async Task RollbackTransactionAsync() => await _currentTransaction!.RollbackAsync();
+
+        //public async Task BeginTransactionAsync(CancellationToken cancellationToken = default)
+        //{
+        //    if (_transactionCount == 0)
+        //        _currentTransaction = await _db.Database.BeginTransactionAsync(cancellationToken);
+
+        //    _transactionCount++;
+        //}
+
+        //public async Task CommitTransactionAsync(CancellationToken cancellationToken = default)
+        //{
+        //    _transactionCount--;
+        //    if (_transactionCount == 0 && _currentTransaction is not null)
+        //    {
+        //        await _currentTransaction.CommitAsync(cancellationToken);
+        //        await _currentTransaction.DisposeAsync();
+        //        _currentTransaction = null;
+        //    }
+        //}
+
+        //public async Task RollbackTransactionAsync(CancellationToken cancellationToken = default)
+        //{
+        //    _transactionCount = 0;
+        //    if (_currentTransaction is not null)
+        //    {
+        //        await _currentTransaction.RollbackAsync(cancellationToken);
+        //        await _currentTransaction.DisposeAsync();
+        //        _currentTransaction = null;
+        //    }
+        //}
 
         public async Task BeginTransactionAsync(CancellationToken cancellationToken = default)
         {
-            if (_transactionCount == 0)
-                _currentTransaction = await _db.Database.BeginTransactionAsync(cancellationToken);
+            if (_currentTransaction is not null)
+            {
+                throw new InvalidOperationException(
+                    "UnitOfWork đang có một transaction chưa được hoàn tất.");
+            }
 
-            _transactionCount++;
+            if (_db.Database.CurrentTransaction is not null)
+            {
+                throw new InvalidOperationException(
+                    "DbContext đang tham gia một transaction khác.");
+            }
+
+            _currentTransaction = await _db.Database.BeginTransactionAsync(cancellationToken);
         }
 
         public async Task CommitTransactionAsync(CancellationToken cancellationToken = default)
         {
-            _transactionCount--;
-            if (_transactionCount == 0 && _currentTransaction is not null)
+            if (_currentTransaction is null)
+            {
+                throw new InvalidOperationException(
+                    "Không có transaction đang hoạt động để commit.");
+            }
+
+            try
             {
                 await _currentTransaction.CommitAsync(cancellationToken);
-                await _currentTransaction.DisposeAsync();
-                _currentTransaction = null;
+            }
+            finally
+            {
+                await DisposeCurrentTransactionAsync();
             }
         }
 
         public async Task RollbackTransactionAsync(CancellationToken cancellationToken = default)
         {
-            _transactionCount = 0;
-            if (_currentTransaction is not null)
+            if (_currentTransaction is null)
+                return;
+
+            try
             {
                 await _currentTransaction.RollbackAsync(cancellationToken);
-                await _currentTransaction.DisposeAsync();
-                _currentTransaction = null;
             }
+            finally
+            {
+                await DisposeCurrentTransactionAsync();
+            }
+        }
+
+        private async Task DisposeCurrentTransactionAsync()
+        {
+            if (_currentTransaction is null)
+                return;
+
+            await _currentTransaction.DisposeAsync();
+            _currentTransaction = null;
         }
 
         public void Dispose()

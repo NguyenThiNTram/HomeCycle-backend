@@ -8,7 +8,7 @@ namespace HomeCycle.Application.DTOs.Requests.Posts
 {
     public class AttributeFilterRequest
     {
-        public Guid AttributeId { get; set; }
+        public Guid? AttributeId { get; set; }
 
         /// Attribute có Option (Dropdown/RadioButton) — chọn nhiều Option cùng lúc (OR logic)
         public List<Guid>? OptionIds { get; set; }

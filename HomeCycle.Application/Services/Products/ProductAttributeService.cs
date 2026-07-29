@@ -84,27 +84,6 @@ namespace HomeCycle.Application.Services.Products
 
             var createdOptions = new List<product_attribute_option>();
 
-            if (request.DataType == DataType.Option)
-            {
-                foreach (var optionRequest in request.Options)
-                {
-                    // Map dữ liệu Option từ request
-                    var option = _mapper.Map<product_attribute_option>(
-                        optionRequest);
-
-                    // Gán khóa chính và khóa ngoại
-                    option.OptionId = Guid.NewGuid();
-                    option.AttributeId = attributeId;
-
-                    await _optionRepository.AddAsync(
-                        option,
-                        cancellationToken);
-
-                    createdOptions.Add(option);
-                }
-            }
-
-            // Kiểm tra xem InputMode có yêu cầu/cho phép lưu danh sách Option hay không
             if ((request.InputMode == InputMode.OptionOnly || request.InputMode == InputMode.OptionOrCustom)
                 && request.Options is { Count: > 0 })
             {
