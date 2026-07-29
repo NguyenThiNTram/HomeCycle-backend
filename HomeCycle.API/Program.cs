@@ -1,15 +1,16 @@
-﻿using HomeCycle.Infrastructure;
+﻿using HomeCycle.API.Middlewares;
+using HomeCycle.Infrastructure;
 using HomeCycle.Infrastructure.DbContexts;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
-using System.Reflection;
+using Microsoft.OpenApi.Models;
 using Swashbuckle.AspNetCore.Annotations;
+using System.Reflection;
 using System.Security.Claims;
 using System.Text;
 using System.Text.Json.Serialization;
-using Microsoft.OpenApi.Models;
 
 namespace HomeCycle.API
 {
@@ -43,9 +44,16 @@ namespace HomeCycle.API
             // read enums to text
             builder.Services.AddControllers().AddJsonOptions(options =>
             {
-                options.JsonSerializerOptions.Converters.Add(
-                    new JsonStringEnumConverter()
-                );
+                options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
+            });
+
+            //builder.Services.AddControllers(options =>
+            //{
+            //    options.ModelBinderProviders.Insert(0, new JsonModelBinderProvider());
+            //});
+            builder.Services.AddControllers(options =>
+            {
+                options.ModelBinderProviders.Insert(0, new JsonModelBinderProvider());
             });
 
             builder.Services.AddEndpointsApiExplorer();

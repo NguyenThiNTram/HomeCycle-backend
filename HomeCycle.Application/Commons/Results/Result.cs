@@ -22,8 +22,6 @@ namespace HomeCycle.Application.Commons.Results
     }
     public class Result<T> : Result
     {
-        public readonly object Value;
-
         public T? Data { get; }
 
         private Result(bool isSuccess, T? data, Error error) : base(isSuccess, error)

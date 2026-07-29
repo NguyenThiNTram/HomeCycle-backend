@@ -7,7 +7,6 @@ using HomeCycle.Application.DTOs.Responses.Posts;
 using HomeCycle.Application.Interfaces.Generics;
 using HomeCycle.Application.Interfaces.Repositories.Products;
 using HomeCycle.Application.Interfaces.Services.Products;
-using HomeCycle.Application.Validations.Products;
 using HomeCycle.Domain.Entities;
 using System;
 using System.Collections.Generic;
@@ -26,7 +25,6 @@ namespace HomeCycle.Application.Services.Products
         private readonly IBrandRepository _brandRepository;
         private readonly IValidator<ProductRequest> _productRequestValidator;
         private readonly IValidator<ProductRequirementRequest> _productRequirementValidator;
-        private readonly IValidator<ProductAttributeValueRequest> _attributeValueValidator;
         private readonly IMapper _mapper;
         private readonly IUnitOfWork _unitOfWork;
 
@@ -38,7 +36,6 @@ namespace HomeCycle.Application.Services.Products
             IBrandRepository brandRepository,
             IValidator<ProductRequest> productRequestValidator,
             IValidator<ProductRequirementRequest> productRequirementValidator,
-            IValidator<ProductAttributeValueRequest> attributeValueValidator,
             IMapper mapper,
             IUnitOfWork unitOfWork)
         {
@@ -49,7 +46,6 @@ namespace HomeCycle.Application.Services.Products
             _brandRepository = brandRepository;
             _productRequestValidator = productRequestValidator;
             _productRequirementValidator = productRequirementValidator;
-            _attributeValueValidator = attributeValueValidator;
             _mapper = mapper;
             _unitOfWork = unitOfWork;
         }
@@ -63,7 +59,7 @@ namespace HomeCycle.Application.Services.Products
             {
                 return Result<product>.Fail(
                     ValidationErrors.InvalidRequest(
-                        string.Join(", ", validation.Errors.Select(e => e.ErrorMessage))));
+                        string.Join("\n", validation.Errors.Select(e => e.ErrorMessage))));
             }
 
             var referenceError = await ValidateReferencesAsync(
@@ -71,46 +67,40 @@ namespace HomeCycle.Application.Services.Products
             if (referenceError is not null)
                 return Result<product>.Fail(referenceError);
 
-            var attributeError = await ValidateAttributeValuesAsync(request.AttributeValues?.ToList(), cancellationToken);
-            if (attributeError is not null) return Result<product>.Fail(attributeError);
-
-            //if (request.AttributeValues != null && request.AttributeValues.Any())
-            //{
-            //    foreach (var attrReq in request.AttributeValues)
-            //    {
-            //        var attrValidation = await _attributeValueValidator.ValidateAsync(attrReq, cancellationToken);
-            //        if (!attrValidation.IsValid)
-            //        {
-            //            return Result<product>.Fail(
-            //                ValidationErrors.InvalidRequest(
-            //                    string.Join(", ", attrValidation.Errors.Select(e => e.ErrorMessage))));
-            //        }
-            //    }
-            //}
-
             var entity = _mapper.Map<product>(request);
 
             entity.ProductId = Guid.NewGuid();
             entity.PostId = postId;
 
-            try
-            {
-                await _unitOfWork.BeginTransactionAsync();
+            //try
+            //{
+            //    await _unitOfWork.BeginTransactionAsync();
 
-                await _productRepository.AddAsync(entity, cancellationToken);
+            //    await _productRepository.AddAsync(entity, cancellationToken);
 
-                await SaveAttributeValuesAsync(entity.ProductId, request.AttributeValues.ToList(), cancellationToken);
+            //    await SaveAttributeValuesAsync(entity.ProductId, request.AttributeValues.ToList(), cancellationToken);
 
-                await _unitOfWork.SaveChangesAsync(cancellationToken);
-                await _unitOfWork.CommitTransactionAsync();
+            //    await _unitOfWork.SaveChangesAsync(cancellationToken);
+            //    await _unitOfWork.CommitTransactionAsync();
 
-                return Result<product>.Success(entity);
-            }
-            catch
-            {
-                await _unitOfWork.RollbackTransactionAsync();
-                throw;
-            }
+            //    return Result<product>.Success(entity);
+            //}
+            //catch
+            //{
+            //    await _unitOfWork.RollbackTransactionAsync();
+            //    throw;
+            //}
+
+            await _productRepository.AddAsync(
+                entity,
+                cancellationToken);
+
+            await SaveAttributeValuesAsync(
+                entity.ProductId,
+                request.AttributeValues?.ToList(),
+                cancellationToken);
+
+            return Result<product>.Success(entity);
         }
 
         public async Task<Result<product>> PrepareForUpdateAsync(Guid postId, ProductRequest request,
@@ -121,7 +111,7 @@ namespace HomeCycle.Application.Services.Products
             {
                 return Result<product>.Fail(
                     ValidationErrors.InvalidRequest(
-                        string.Join(", ", validation.Errors.Select(e => e.ErrorMessage))));
+                        string.Join("\n", validation.Errors.Select(e => e.ErrorMessage))));
             }
 
             var existing = await _productRepository.GetByPostIdAsync(postId, cancellationToken);
@@ -134,9 +124,6 @@ namespace HomeCycle.Application.Services.Products
                 request.CategoryId, request.ProductTypeId, request.BrandId, cancellationToken);
             if (referenceError is not null)
                 return Result<product>.Fail(referenceError);
-
-            var attributeError = await ValidateAttributeValuesAsync(request.AttributeValues?.ToList(), cancellationToken);
-            if (attributeError is not null) return Result<product>.Fail(attributeError);
 
             bool isProductTypeChanged = existing.ProductTypeId != request.ProductTypeId;
 
@@ -192,25 +179,34 @@ namespace HomeCycle.Application.Services.Products
             //    await _unitOfWork.RollbackTransactionAsync();
             //    throw;
             //}
-            try
-            {
-                await _unitOfWork.BeginTransactionAsync();
+            //try
+            //{
+            //    await _unitOfWork.BeginTransactionAsync();
 
-                _mapper.Map(request, existing);
-                await _productRepository.UpdateAsync(existing, cancellationToken);
+            //    _mapper.Map(request, existing);
+            //    await _productRepository.UpdateAsync(existing, cancellationToken);
 
-                await UpdateAttributeValuesAsync(existing.ProductId, request.AttributeValues?.ToList(), cancellationToken);
+            //    await UpdateAttributeValuesAsync(existing.ProductId, request.AttributeValues?.ToList(), cancellationToken);
 
-                await _unitOfWork.SaveChangesAsync(cancellationToken);
-                await _unitOfWork.CommitTransactionAsync();
+            //    await _unitOfWork.SaveChangesAsync(cancellationToken);
+            //    await _unitOfWork.CommitTransactionAsync();
 
-                return Result<product>.Success(existing);
-            }
-            catch
-            {
-                await _unitOfWork.RollbackTransactionAsync();
-                throw;
-            }
+            //    return Result<product>.Success(existing);
+            //}
+            //catch
+            //{
+            //    await _unitOfWork.RollbackTransactionAsync();
+            //    throw;
+            //}
+
+            _mapper.Map(request, existing);
+
+            await _productRepository.UpdateAsync(existing, cancellationToken);
+
+            await UpdateAttributeValuesAsync(existing.ProductId, request.AttributeValues?.ToList(),
+                cancellationToken);
+
+            return Result<product>.Success(existing);
         }
 
         //Buy
@@ -222,7 +218,7 @@ namespace HomeCycle.Application.Services.Products
             {
                 return Result<product>.Fail(
                     ValidationErrors.InvalidRequest(
-                        string.Join(", ", validation.Errors.Select(x => x.ErrorMessage))));
+                        string.Join("\n", validation.Errors.Select(x => x.ErrorMessage))));
             }
 
             var referenceError = await ValidateReferencesAsync(
@@ -230,32 +226,39 @@ namespace HomeCycle.Application.Services.Products
             if (referenceError is not null)
                 return Result<product>.Fail(referenceError);
 
-            var attributeError = await ValidateAttributeValuesAsync(request.AttributeValues, cancellationToken);
-            if (attributeError is not null)
-                return Result<product>.Fail(attributeError);
-
             var entity = _mapper.Map<product>(request);
 
             entity.ProductId = Guid.NewGuid();
             entity.PostId = postId;
 
-            try
-            {
-                await _unitOfWork.BeginTransactionAsync();
-                await _productRepository.AddAsync(entity, cancellationToken);
+            //try
+            //{
+            //    await _unitOfWork.BeginTransactionAsync();
+            //    await _productRepository.AddAsync(entity, cancellationToken);
 
-                await SaveAttributeValuesAsync(entity.ProductId, request.AttributeValues, cancellationToken);
+            //    await SaveAttributeValuesAsync(entity.ProductId, request.AttributeValues, cancellationToken);
 
-                await _unitOfWork.SaveChangesAsync(cancellationToken);
-                await _unitOfWork.CommitTransactionAsync();
+            //    await _unitOfWork.SaveChangesAsync(cancellationToken);
+            //    await _unitOfWork.CommitTransactionAsync();
 
-                return Result<product>.Success(entity);
-            }
-            catch
-            {
-                await _unitOfWork.RollbackTransactionAsync();
-                throw;
-            }
+            //    return Result<product>.Success(entity);
+            //}
+            //catch
+            //{
+            //    await _unitOfWork.RollbackTransactionAsync();
+            //    throw;
+            //}
+
+            await _productRepository.AddAsync(
+                entity,
+                cancellationToken);
+
+            await SaveAttributeValuesAsync(
+                entity.ProductId,
+                request.AttributeValues,
+                cancellationToken);
+
+            return Result<product>.Success(entity);
         }
 
         public async Task<Result<product>> UpdateForRequirementAsync(Guid postId, ProductRequirementRequest request, CancellationToken cancellationToken = default)
@@ -266,7 +269,7 @@ namespace HomeCycle.Application.Services.Products
             {
                 return Result<product>.Fail(
                     ValidationErrors.InvalidRequest(
-                        string.Join(", ", validation.Errors.Select(x => x.ErrorMessage))));
+                        string.Join("\n", validation.Errors.Select(x => x.ErrorMessage))));
             }
 
             var existing = await _productRepository.GetByPostIdAsync(postId, cancellationToken);
@@ -279,30 +282,42 @@ namespace HomeCycle.Application.Services.Products
             if (referenceError is not null)
                 return Result<product>.Fail(referenceError);
 
-            var attributeError = await ValidateAttributeValuesAsync(request.AttributeValues, cancellationToken);
-            if (attributeError is not null)
-                return Result<product>.Fail(attributeError);
+            //try
+            //{
+            //    await _unitOfWork.BeginTransactionAsync();
 
-            try
-            {
-                await _unitOfWork.BeginTransactionAsync();
+            //    _mapper.Map(request, existing);
 
-                _mapper.Map(request, existing);
+            //    await _productRepository.UpdateAsync(existing, cancellationToken);
+            //    await _attributeValueRepository.RemoveByProductIdAsync(existing.ProductId, cancellationToken);
+            //    await SaveAttributeValuesAsync(existing.ProductId, request.AttributeValues, cancellationToken);
 
-                await _productRepository.UpdateAsync(existing, cancellationToken);
-                await _attributeValueRepository.RemoveByProductIdAsync(existing.ProductId, cancellationToken);
-                await SaveAttributeValuesAsync(existing.ProductId, request.AttributeValues, cancellationToken);
+            //    await _unitOfWork.SaveChangesAsync(cancellationToken);
+            //    await _unitOfWork.CommitTransactionAsync();
 
-                await _unitOfWork.SaveChangesAsync(cancellationToken);
-                await _unitOfWork.CommitTransactionAsync();
+            //    return Result<product>.Success(existing);
+            //}
+            //catch
+            //{
+            //    await _unitOfWork.RollbackTransactionAsync();
+            //    throw;
+            //}
+            _mapper.Map(request, existing);
 
-                return Result<product>.Success(existing);
-            }
-            catch
-            {
-                await _unitOfWork.RollbackTransactionAsync();
-                throw;
-            }
+            await _productRepository.UpdateAsync(
+                existing,
+                cancellationToken);
+
+            await _attributeValueRepository.RemoveByProductIdAsync(
+                existing.ProductId,
+                cancellationToken);
+
+            await SaveAttributeValuesAsync(
+                existing.ProductId,
+                request.AttributeValues,
+                cancellationToken);
+
+            return Result<product>.Success(existing);
         }
 
         public async Task<Result<ProductResponse>> GetDetailByPostIdAsync(Guid postId, CancellationToken cancellationToken = default)
@@ -345,25 +360,6 @@ namespace HomeCycle.Application.Services.Products
                 var brand = await _brandRepository.GetByIdAsync(brandId.Value, cancellationToken);
                 if (brand is null)
                     return ProductErrors.InvalidBrand;
-            }
-
-            return null;
-        }
-
-        private async Task<Error?> ValidateAttributeValuesAsync(List<ProductAttributeValueRequest>? attributeValues,
-            CancellationToken cancellationToken)
-        {
-            if (attributeValues is null || !attributeValues.Any())
-                return null;
-
-            foreach (var attrReq in attributeValues)
-            {
-                var attrValidation = await _attributeValueValidator.ValidateAsync(attrReq, cancellationToken);
-                if (!attrValidation.IsValid)
-                {
-                    return ValidationErrors.InvalidRequest(
-                        string.Join(", ", attrValidation.Errors.Select(e => e.ErrorMessage)));
-                }
             }
 
             return null;

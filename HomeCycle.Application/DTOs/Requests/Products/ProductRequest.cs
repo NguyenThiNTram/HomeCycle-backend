@@ -1,4 +1,5 @@
 ﻿using HomeCycle.Domain.Enums;
+using Microsoft.AspNetCore.Mvc;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -39,7 +40,7 @@ namespace HomeCycle.Application.DTOs.Requests.Products
 
         public string? DetailDescription { get; set; }
 
-        public IList<ProductAttributeValueRequest> AttributeValues { get; set; }
+        public List<ProductAttributeValueRequest> AttributeValues { get; set; }
             = new List<ProductAttributeValueRequest>();
     }
 }

@@ -14,9 +14,9 @@ namespace HomeCycle.Application.DTOs.Requests.Posts
         public ProductRequest Product { get; set; } = default!;
     }
 
-    public class UpdateSellPostRequest : CreatePostRequest
+    public class UpdateSellPostRequest : UpdatePostRequest
     {
-        public decimal BasePrice { get; set; }
+        public decimal? BasePrice { get; set; }
         public ProductRequest Product { get; set; } = default!;
     }
 }
