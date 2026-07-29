@@ -129,7 +129,18 @@ namespace HomeCycle.Application.Validations.Posts
             IProductAttributeRepository attributeRepository,
             IProductAttributeOptionRepository optionRepository)
         {
-            Include(new CreatePostRequestValidator());
+            RuleFor(x => x.Quantity)
+                .GreaterThan(0).When(x => x.Quantity.HasValue)
+                .WithMessage("Số lượng phải lớn hơn 0.");
+
+            RuleFor(x => x.StreetAddress)
+                .MaximumLength(500).WithMessage("Địa chỉ không được vượt quá 500 ký tự.");
+
+            RuleFor(x => x.Ward)
+                .MaximumLength(255).WithMessage("Phường/Xã không được vượt quá 255 ký tự.");
+
+            RuleFor(x => x.City)
+                .MaximumLength(255).WithMessage("Thành phố/Tỉnh không được vượt quá 255 ký tự.");
 
             RuleFor(x => x.BasePrice)
                 .GreaterThanOrEqualTo(0).WithMessage("Giá bán phải lớn hơn hoặc bằng 0.");

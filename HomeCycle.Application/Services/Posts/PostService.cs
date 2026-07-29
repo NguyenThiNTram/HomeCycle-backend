@@ -203,7 +203,7 @@ namespace HomeCycle.Application.Services.Posts
             var existing = await _postRepository.GetByIdAsync(postId, cancellationToken);
 
             var checkError = ValidateOwnershipAndComputeRemaining(
-                existing, ownerId, PostType.Sell, request.Quantity, out int newRemainingQuantity);
+                existing, ownerId, PostType.Sell, request.Quantity ?? existing.Quantity, out int newRemainingQuantity);
             if (checkError is not null)
                 return Result<PostResponse>.Fail(checkError);
 
