@@ -33,9 +33,7 @@ namespace HomeCycle.Infrastructure.Repositories.Posts
         {
             return await _db.Media
                 .AsNoTracking()
-                .Where(x =>
-                    x.TargetId == targetId &&
-                    x.TargetType == targetType)
+                .Where(x => x.TargetId == targetId && x.TargetType == targetType)
                 .OrderBy(x => x.DisplayOrder)
                 .Select(x => x.ToDomain())
                 .ToListAsync(cancellationToken);

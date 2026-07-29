@@ -212,32 +212,34 @@ namespace HomeCycle.Infrastructure.Repositories.Posts
             }
 
             // ---------- SORT ----------
-            var sortBy = request.SortBy ?? PostSortBy.Newest;
 
-            var orderedQuery = query.OrderByDescending(x => x.PriorityLevel);   // KHÔNG cast, để var tự suy luận đúng kiểu
+            IOrderedQueryable<post> orderedQuery = (IOrderedQueryable<post>)query.OrderByDescending(x => x.PriorityLevel);
 
-            orderedQuery = sortBy switch
+            query = request.SortBy switch
             {
-                PostSortBy.PriceAsc => orderedQuery.ThenBy(x => x.BasePrice == null).ThenBy(x => x.BasePrice),
-                PostSortBy.PriceDesc => orderedQuery.ThenBy(x => x.BasePrice == null).ThenByDescending(x => x.BasePrice),
-                PostSortBy.Oldest => orderedQuery.ThenBy(x => x.CreatedAt),
-                _ => orderedQuery.ThenByDescending(x => x.CreatedAt)
+                PostSortBy.PriceAsc => query.OrderBy(x => x.BasePrice == null).ThenBy(x => x.BasePrice),
+
+                PostSortBy.PriceDesc => query.OrderBy(x => x.BasePrice == null).ThenByDescending(x => x.BasePrice),
+
+                PostSortBy.Oldest => query.OrderBy(x => x.CreatedAt),
+
+                _ => query.OrderByDescending(x => x.CreatedAt)
             };
 
-            var totalCount = await orderedQuery.CountAsync(cancellationToken);
+            var totalCount = await query.CountAsync(cancellationToken);
 
-            var items = await orderedQuery
-                .Skip((request.PageNumber - 1) * request.PageSize)
-                .Take(request.PageSize)
-                .ToListAsync(cancellationToken);
+                var items = await query
+                    .Skip((request.PageNumber - 1) * request.PageSize)
+                    .Take(request.PageSize)
+                    .ToListAsync(cancellationToken);
 
-            return new PagedResult<post>
-            {
-                Items = items.Select(x => x.ToDomain()).ToList(),
-                PageNumber = request.PageNumber,
-                PageSize = request.PageSize,
-                TotalCount = totalCount
-            };
+                return new PagedResult<post>
+                {
+                    Items = items.Select(x => x.ToDomain()).ToList(),
+                    PageNumber = request.PageNumber,
+                    PageSize = request.PageSize,
+                    TotalCount = totalCount
+                };
         }
 
         public async Task<int> CountActiveByOwnerAsync(Guid ownerId, CancellationToken cancellationToken = default)

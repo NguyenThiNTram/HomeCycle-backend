@@ -15,7 +15,6 @@ namespace HomeCycle.API.Controllers
 {
     [Route("api/posts")]
     [ApiController]
-    [Authorize]
     public class PostsController : ControllerBase
     {
         private readonly IPostService _postService;
@@ -25,22 +24,14 @@ namespace HomeCycle.API.Controllers
             _postService = postService;
         }
 
-        //private Guid CurrentUserId =>
-        //    Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
-        private Guid CurrentUserId
-        {
-            get
-            {
-                var claim = User.FindFirstValue(ClaimTypes.NameIdentifier);
-                if (string.IsNullOrEmpty(claim) || !Guid.TryParse(claim, out var userId))
-                    throw new UnauthorizedAccessException("Token không hợp lệ hoặc thiếu thông tin định danh người dùng.");
-
-                return userId;
-            }
-        }
+        private Guid CurrentUserId =>
+            Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
 
         [HttpPost("create/sell")]
         //[Authorize(Roles = "Personal")]
+        //[ProducesResponseType(typeof(PostResponse), StatusCodes.Status201Created)]
+        //[ProducesResponseType(StatusCodes.Status400BadRequest)]
+        //[ProducesResponseType(StatusCodes.Status401Unauthorized)]
         [Consumes("multipart/form-data")]
         public async Task<IActionResult> CreateSellPost(
             [FromForm] CreateSellPostRequest request,
@@ -48,7 +39,7 @@ namespace HomeCycle.API.Controllers
         {
             var result = await _postService.CreateSellPostAsync(CurrentUserId, request, cancellationToken);
 
-            if (!result.IsSuccess || result.Data is not PostResponse response)
+            if (!result.IsSuccess || result.Value is not PostResponse response)
                 return BadRequest(result.Error);
 
             return CreatedAtAction(
@@ -60,6 +51,9 @@ namespace HomeCycle.API.Controllers
 
         [HttpPost("create/buy")]
         //[Authorize(Roles = "Business")]
+        //[ProducesResponseType(typeof(PostResponse), StatusCodes.Status201Created)]
+        //[ProducesResponseType(StatusCodes.Status400BadRequest)]
+        //[ProducesResponseType(StatusCodes.Status401Unauthorized)]
         [Consumes("multipart/form-data")]
         public async Task<IActionResult> CreateBuyPost(
             [FromForm] CreateBuyPostRequest request,
@@ -67,7 +61,7 @@ namespace HomeCycle.API.Controllers
         {
             var result = await _postService.CreateBuyPostAsync(CurrentUserId, request, cancellationToken);
 
-            if (!result.IsSuccess || result.Data is not PostResponse response)
+            if (!result.IsSuccess || result.Value is not PostResponse response)
                 return BadRequest(result.Error);
 
             return CreatedAtAction(
@@ -77,8 +71,12 @@ namespace HomeCycle.API.Controllers
             );
         }
 
-        [HttpPut("update/sell/{postId:guid}")]
+        [HttpPut("update/sell/{id:guid}")]
         //[Authorize(Roles = "Personal,Business")]
+        //[ProducesResponseType(typeof(PostResponse), StatusCodes.Status200OK)]
+        //[ProducesResponseType(StatusCodes.Status400BadRequest)]
+        //[ProducesResponseType(StatusCodes.Status403Forbidden)]
+        //[ProducesResponseType(StatusCodes.Status404NotFound)]
         [Consumes("multipart/form-data")]
         public async Task<IActionResult> UpdateSellPost(
             Guid postId,
@@ -90,11 +88,15 @@ namespace HomeCycle.API.Controllers
             if (!result.IsSuccess)
                 return MapErrorToResponse(result.Error!);
 
-            return Ok(result.Data);
+            return Ok(result.Value);
         }
 
         [HttpPut("update/buy/{postId:guid}")]
         [Consumes("multipart/form-data")]
+        //[ProducesResponseType(typeof(PostResponse), StatusCodes.Status200OK)]
+        //[ProducesResponseType(StatusCodes.Status400BadRequest)]
+        //[ProducesResponseType(StatusCodes.Status403Forbidden)]
+        //[ProducesResponseType(StatusCodes.Status404NotFound)]
         public async Task<IActionResult> UpdateBuyPost(
             Guid postId,
             [FromForm] UpdateBuyPostRequest request,
@@ -105,11 +107,13 @@ namespace HomeCycle.API.Controllers
             if (!result.IsSuccess)
                 return MapErrorToResponse(result.Error!);
 
-            return Ok(result.Data);
+            return Ok(result.Value);
         }
 
         [HttpGet("get-by-id/{id:guid}")]
         //[AllowAnonymous]
+        //[ProducesResponseType(typeof(PostDetailResponse), StatusCodes.Status200OK)]
+        //[ProducesResponseType(StatusCodes.Status404NotFound)]
         public async Task<IActionResult> GetById(Guid id, CancellationToken cancellationToken)
         {
             var result = await _postService.GetDetailAsync(id, cancellationToken);
@@ -119,19 +123,22 @@ namespace HomeCycle.API.Controllers
                 return NotFound(result.Error);
             }
 
-            return Ok(result.Data);
+            return Ok(result.Value);
         }
 
         [HttpGet("get-all")]
         //[AllowAnonymous]
+        //[ProducesResponseType(typeof(PagedResult<PostResponse>), StatusCodes.Status200OK)]
         public async Task<IActionResult> GetAll([FromQuery] PaginationRequest request, CancellationToken cancellationToken)
         {
             var result = await _postService.GetAllAsync(request, cancellationToken);
-            return Ok(result.Data);
+            return Ok(result.Value);
         }
 
         [HttpPost("search")]
         //[AllowAnonymous]
+        //[ProducesResponseType(typeof(PagedResult<PostResponse>), StatusCodes.Status200OK)]
+        //[ProducesResponseType(StatusCodes.Status400BadRequest)]
         public async Task<IActionResult> Search([FromBody] PostSearchRequest request,
                     CancellationToken cancellationToken)
         {
@@ -140,12 +147,12 @@ namespace HomeCycle.API.Controllers
             if (!result.IsSuccess)
                 return BadRequest(result.Error);
 
-            return Ok(result.Data);
+            return Ok(result.Value);
         }
 
        
 
-        [HttpPatch("{postId:guid}/close")]
+        [HttpPatch("{id:guid}/close")]
         //[Authorize(Roles = "Personal,Business")]
         //[ProducesResponseType(StatusCodes.Status200OK)]
         //[ProducesResponseType(StatusCodes.Status403Forbidden)]
@@ -153,8 +160,7 @@ namespace HomeCycle.API.Controllers
         public async Task<IActionResult> Close(Guid postId, CancellationToken cancellationToken)
         {
             var result = await _postService.CloseAsync(CurrentUserId, postId, cancellationToken);
-            // TẠM THỜI — xóa sau khi xác nhận
-            Console.WriteLine($"IsSuccess={result.IsSuccess}, Value is null={result.Data == null}");
+
             if (!result.IsSuccess)
                 return MapErrorToResponse(result.Error!);
 

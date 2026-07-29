@@ -18,21 +18,11 @@ namespace HomeCycle.Application.DTOs.Requests.Posts
         public string? Ward { get; set; }
         public string? City { get; set; }
         public DeliveryMethod DeliveryMethod { get; set; }
-        public PriorityLevel? PriorityLevel { get; set; }
+        public string? PriorityLevel { get; set; }
         //public bool IsBusinessPosting { get; set; }
-        //public DateTime? ExpiryDate { get; set; }
+        public DateTime? ExpiryDate { get; set; }
+
         //public IList<MediaRequest> Medias { get; set; } = new List<MediaRequest>();
-        public List<IFormFile>? Medias { get; set; }
-    }
-    public class UpdatePostRequest
-    {
-        public string? Description { get; set; }
-        public int? Quantity { get; set; }
-        public string? StreetAddress { get; set; }
-        public string? Ward { get; set; }
-        public string? City { get; set; }
-        public DeliveryMethod? DeliveryMethod { get; set; }
-        public PriorityLevel? PriorityLevel { get; set; }
         public List<IFormFile>? Medias { get; set; }
     }
 }
