@@ -49,7 +49,7 @@ namespace HomeCycle.Application.DTOs.Requests.Posts
         public string? Ward { get; set; }
 
         // ============ SORT ============
-        public PostSortBy? SortBy { get; set; } = PostSortBy.Newest;
+        public PostSortBy SortBy { get; set; } = PostSortBy.Newest;
 
         // ============ DYNAMIC FILTER — AttributeFilters ============
         public List<AttributeFilterRequest> AttributeFilters { get; set; } = new();
