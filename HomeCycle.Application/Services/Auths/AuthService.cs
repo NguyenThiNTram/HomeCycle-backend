@@ -182,8 +182,9 @@ namespace HomeCycle.Application.Services.Auths
             if (request.AvatarUrl != null)
             {
                 using var stream = request.AvatarUrl.OpenReadStream();
-                var storedFileName = await _fileStorageService.UploadFileAsync(stream, request.AvatarUrl.FileName, "avatars");
-                finalAvatarUrl = _fileStorageService.GetFileUrl(storedFileName, "avatars");
+                var uploadedAvatarUrl = await _fileStorageService.UploadFileAsync(stream, request.AvatarUrl.FileName, "avatars");
+                //finalAvatarUrl = _fileStorageService.GetFileUrl(storedFileName, "avatars");
+                finalAvatarUrl = uploadedAvatarUrl;
             }
 
             // xử lý CCCD/CMND (Lưu vào thư mục bảo mật "legal-documents")

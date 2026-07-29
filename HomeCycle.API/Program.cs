@@ -3,11 +3,13 @@ using HomeCycle.Infrastructure.DbContexts;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
-using Microsoft.OpenApi.Models;
+using Microsoft.OpenApi;
 using System.Reflection;
+using Swashbuckle.AspNetCore.Annotations;
 using System.Security.Claims;
 using System.Text;
 using System.Text.Json.Serialization;
+using Microsoft.OpenApi.Models;
 
 namespace HomeCycle.API
 {
@@ -57,6 +59,9 @@ namespace HomeCycle.API
                     Title = "HomeCycle API",
                     Version = "v1"
                 });
+
+                // Kích hoạt đọc thuộc tính [SwaggerOperation] từ Swashbuckle.AspNetCore.Annotations
+                options.EnableAnnotations();
 
                 options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
                 {

@@ -17,8 +17,7 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 OptionId = entity.OptionId,
                 AttributeId = entity.AttributeId,
                 OptionValue = entity.OptionValue,
-                DisplayOrder = entity.DisplayOrder,
-                IsDefault = entity.IsDefault
+                DisplayOrder = entity.DisplayOrder
             };
         }
         public static Product_Attribute_Option ToInfrastructure(this product_attribute_option entity)
@@ -29,8 +28,7 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 OptionId = entity.OptionId,
                 AttributeId = entity.AttributeId,
                 OptionValue = entity.OptionValue,
-                DisplayOrder = entity.DisplayOrder,
-                IsDefault = entity.IsDefault
+                DisplayOrder = entity.DisplayOrder
             };
         }
     }

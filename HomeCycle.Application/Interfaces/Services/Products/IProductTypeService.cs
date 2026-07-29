@@ -21,7 +21,7 @@ namespace HomeCycle.Application.Interfaces.Services.Products
 
         Task<Result<ProductTypeDetailResponse>> GetByIdAsync(Guid productTypeId, CancellationToken cancellationToken = default);
         Task<Result<IEnumerable<product_type>>> GetByCategoryIdAsync(Guid categoryId, CancellationToken cancellationToken = default);
-
+        Task<Result<ProductTypePostingSchemaResponse>> GetPostingSchemaAsync(Guid productTypeId, CancellationToken cancellationToken = default);
         Task<Result<PagedResult<ProductTypeResponse>>> GetAllAsync(PaginationRequest request, CancellationToken cancellationToken = default);
 
         Task<Result<PagedResult<ProductTypeResponse>>> SearchAsync(ProductTypeSearchRequest request, CancellationToken cancellationToken = default);

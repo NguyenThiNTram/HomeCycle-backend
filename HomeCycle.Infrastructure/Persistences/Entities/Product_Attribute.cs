@@ -29,6 +29,8 @@ public partial class Product_Attribute
 
     public bool IsRequired { get; set; }
 
+    public int? InputMode { get; set; }
+
     [ForeignKey("ProductTypeId")]
     [InverseProperty("Product_Attributes")]
     public virtual Product_Type ProductType { get; set; } = null!;

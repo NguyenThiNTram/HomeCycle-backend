@@ -21,7 +21,7 @@ namespace HomeCycle.Application.DTOs.Requests.Products
         public string? Description { get; set; }
         public bool IsActive { get; set; }
 
-        public List<UpdateAttributeRequest> Attributes { get; set; } = new();
+        //public List<UpdateAttributeRequest> Attributes { get; set; } = new();
     }
 
     public class ProductTypeSearchRequest : PaginationRequest

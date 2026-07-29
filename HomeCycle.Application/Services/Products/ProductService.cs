@@ -71,42 +71,22 @@ namespace HomeCycle.Application.Services.Products
             if (referenceError is not null)
                 return Result<product>.Fail(referenceError);
 
-            if (request.AttributeValues != null && request.AttributeValues.Any())
-            {
-                foreach (var attrReq in request.AttributeValues)
-                {
-                    var attrValidation = await _attributeValueValidator.ValidateAsync(attrReq, cancellationToken);
-                    if (!attrValidation.IsValid)
-                    {
-                        return Result<product>.Fail(
-                            ValidationErrors.InvalidRequest(
-                                string.Join(", ", attrValidation.Errors.Select(e => e.ErrorMessage))));
-                    }
-                }
-            }
+            var attributeError = await ValidateAttributeValuesAsync(request.AttributeValues?.ToList(), cancellationToken);
+            if (attributeError is not null) return Result<product>.Fail(attributeError);
 
-            //var productId = Guid.NewGuid();
-
-            //var entity = new product
+            //if (request.AttributeValues != null && request.AttributeValues.Any())
             //{
-            //    ProductId = productId,
-            //    PostId = postId,
-            //    CategoryId = request.CategoryId,
-            //    ProductTypeId = request.ProductTypeId,
-            //    BrandId = request.BrandId,
-            //    ProductName = request.ProductName,
-            //    SpaceUsage = request.SpaceUsage,
-            //    ModelNumber = request.ModelNumber,
-            //    OriginalPrice = request.OriginalPrice,
-            //    Length = request.Length,
-            //    Width = request.Width,
-            //    Height = request.Height,
-            //    Weight = request.Weight,
-            //    FunctionalityStatus = request.FunctionalityStatus,
-            //    UsageDuration = request.UsageDuration,
-            //    DamageLevel = request.DamageLevel,
-            //    DetailDescription = request.DetailDescription
-            //};
+            //    foreach (var attrReq in request.AttributeValues)
+            //    {
+            //        var attrValidation = await _attributeValueValidator.ValidateAsync(attrReq, cancellationToken);
+            //        if (!attrValidation.IsValid)
+            //        {
+            //            return Result<product>.Fail(
+            //                ValidationErrors.InvalidRequest(
+            //                    string.Join(", ", attrValidation.Errors.Select(e => e.ErrorMessage))));
+            //        }
+            //    }
+            //}
 
             var entity = _mapper.Map<product>(request);
 
@@ -116,27 +96,8 @@ namespace HomeCycle.Application.Services.Products
             try
             {
                 await _unitOfWork.BeginTransactionAsync();
+
                 await _productRepository.AddAsync(entity, cancellationToken);
-
-                //if (request.AttributeValues.Any())
-                //{
-                //    var values = request.AttributeValues.Select(x =>
-                //        new product_attribute_value
-                //        {
-                //            ProductId = entity.ProductId,
-                //            AttributeId = x.AttributeId,
-                //            OptionId = x.OptionId,
-
-                //            InputType = x.InputType,
-
-                //            ValueBoolean = x.ValueBoolean,
-                //            ValueText = x.ValueText,
-                //            ValueNumber = x.ValueNumber
-                //        });
-
-                //    await _attributeValueRepository
-                //        .AddRangeAsync(values, cancellationToken);
-                //}
 
                 await SaveAttributeValuesAsync(entity.ProductId, request.AttributeValues.ToList(), cancellationToken);
 
@@ -174,63 +135,71 @@ namespace HomeCycle.Application.Services.Products
             if (referenceError is not null)
                 return Result<product>.Fail(referenceError);
 
-            if (request.AttributeValues != null && request.AttributeValues.Any())
-            {
-                foreach (var attrReq in request.AttributeValues)
-                {
-                    var attrValidation = await _attributeValueValidator.ValidateAsync(attrReq, cancellationToken);
-                    if (!attrValidation.IsValid)
-                    {
-                        return Result<product>.Fail(
-                            ValidationErrors.InvalidRequest(
-                                string.Join(", ", attrValidation.Errors.Select(e => e.ErrorMessage))));
-                    }
-                }
-            }
+            var attributeError = await ValidateAttributeValuesAsync(request.AttributeValues?.ToList(), cancellationToken);
+            if (attributeError is not null) return Result<product>.Fail(attributeError);
 
+            bool isProductTypeChanged = existing.ProductTypeId != request.ProductTypeId;
+
+
+            //if (request.AttributeValues != null && request.AttributeValues.Any())
+            //{
+            //    foreach (var attrReq in request.AttributeValues)
+            //    {
+            //        var attrValidation = await _attributeValueValidator.ValidateAsync(attrReq, cancellationToken);
+            //        if (!attrValidation.IsValid)
+            //        {
+            //            return Result<product>.Fail(
+            //                ValidationErrors.InvalidRequest(
+            //                    string.Join(", ", attrValidation.Errors.Select(e => e.ErrorMessage))));
+            //        }
+            //    }
+            //}
+
+            //try
+            //{
+            //    await _unitOfWork.BeginTransactionAsync();
+
+            //    _mapper.Map(request, existing);
+
+            //    await _productRepository.UpdateAsync(existing, cancellationToken);
+            //    await _attributeValueRepository.RemoveByProductIdAsync(existing.ProductId, cancellationToken);
+
+            //    if (request.AttributeValues.Any())
+            //    {
+            //        var values = request.AttributeValues.Select(x =>
+            //            new product_attribute_value
+            //            {
+            //                ProductId = existing.ProductId,
+            //                AttributeId = x.AttributeId,
+            //                OptionId = x.OptionId,
+            //                ValueBoolean = x.ValueBoolean,
+            //                ValueText = x.ValueText,
+            //                ValueNumber = x.ValueNumber
+            //            });
+
+            //        await _attributeValueRepository.AddRangeAsync(values, cancellationToken);
+            //    }
+
+            //    await SaveAttributeValuesAsync(existing.ProductId, request.AttributeValues.ToList(), cancellationToken);
+
+            //    await _unitOfWork.SaveChangesAsync(cancellationToken);
+            //    await _unitOfWork.CommitTransactionAsync();
+
+            //    return Result<product>.Success(existing);
+            //}
+            //catch
+            //{
+            //    await _unitOfWork.RollbackTransactionAsync();
+            //    throw;
+            //}
             try
             {
                 await _unitOfWork.BeginTransactionAsync();
 
-                //existing.CategoryId = request.CategoryId;
-                //existing.ProductTypeId = request.ProductTypeId;
-                //existing.BrandId = request.BrandId;
-                //existing.ProductName = request.ProductName;
-                //existing.SpaceUsage = request.SpaceUsage;
-                //existing.ModelNumber = request.ModelNumber;
-                //existing.OriginalPrice = request.OriginalPrice;
-                //existing.Length = request.Length;
-                //existing.Width = request.Width;
-                //existing.Height = request.Height;
-                //existing.Weight = request.Weight;
-                //existing.FunctionalityStatus = request.FunctionalityStatus;
-                //existing.UsageDuration = request.UsageDuration;
-                //existing.DamageLevel = request.DamageLevel;
-                //existing.DetailDescription = request.DetailDescription;
-
                 _mapper.Map(request, existing);
-
                 await _productRepository.UpdateAsync(existing, cancellationToken);
-                await _attributeValueRepository.RemoveByProductIdAsync(existing.ProductId, cancellationToken);
 
-                if (request.AttributeValues.Any())
-                {
-                    var values = request.AttributeValues.Select(x =>
-                        new product_attribute_value
-                        {
-                            ProductId = existing.ProductId,
-                            AttributeId = x.AttributeId,
-                            OptionId = x.OptionId,
-                            InputType = x.InputType,
-                            ValueBoolean = x.ValueBoolean,
-                            ValueText = x.ValueText,
-                            ValueNumber = x.ValueNumber
-                        });
-
-                    await _attributeValueRepository.AddRangeAsync(values, cancellationToken);
-                }
-
-                await SaveAttributeValuesAsync(existing.ProductId, request.AttributeValues.ToList(), cancellationToken);
+                await UpdateAttributeValuesAsync(existing.ProductId, request.AttributeValues?.ToList(), cancellationToken);
 
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync();
@@ -336,9 +305,7 @@ namespace HomeCycle.Application.Services.Products
             }
         }
 
-        public async Task<Result<ProductResponse>> GetDetailByPostIdAsync(
-            Guid postId,
-            CancellationToken cancellationToken = default)
+        public async Task<Result<ProductResponse>> GetDetailByPostIdAsync(Guid postId, CancellationToken cancellationToken = default)
         {
             var entity = await _productRepository.GetDetailByPostIdAsync(postId, cancellationToken);
             if (entity is null)
@@ -362,10 +329,7 @@ namespace HomeCycle.Application.Services.Products
             return Result<ProductResponse>.Success(response);
         }
 
-        private async Task<Error?> ValidateReferencesAsync(
-            Guid categoryId,
-            Guid productTypeId,
-            Guid? brandId,
+        private async Task<Error?> ValidateReferencesAsync(Guid categoryId, Guid productTypeId, Guid? brandId,
             CancellationToken cancellationToken)
         {
             var category = await _categoryRepository.GetByIdAsync(categoryId, cancellationToken);
@@ -386,8 +350,7 @@ namespace HomeCycle.Application.Services.Products
             return null;
         }
 
-        private async Task<Error?> ValidateAttributeValuesAsync(
-            List<ProductAttributeValueRequest>? attributeValues,
+        private async Task<Error?> ValidateAttributeValuesAsync(List<ProductAttributeValueRequest>? attributeValues,
             CancellationToken cancellationToken)
         {
             if (attributeValues is null || !attributeValues.Any())
@@ -406,9 +369,7 @@ namespace HomeCycle.Application.Services.Products
             return null;
         }
 
-        /// <summary>
-        /// Lưu tập thuộc tính động của sản phẩm
-        /// </summary>
+        // Lưu tập thuộc tính động của sản phẩm
         private async Task SaveAttributeValuesAsync(
             Guid productId,
             List<ProductAttributeValueRequest>? attributeValues,
@@ -422,13 +383,22 @@ namespace HomeCycle.Application.Services.Products
                 ProductId = productId,
                 AttributeId = x.AttributeId,
                 OptionId = x.OptionId,
-                InputType = x.InputType,
                 ValueBoolean = x.ValueBoolean,
                 ValueText = x.ValueText,
                 ValueNumber = x.ValueNumber
             });
 
             await _attributeValueRepository.AddRangeAsync(values, cancellationToken);
+        }
+
+        private async Task UpdateAttributeValuesAsync(
+            Guid productId, List<ProductAttributeValueRequest>? attributeValues, CancellationToken cancellationToken)
+        {
+            // 1. Xóa toàn bộ thuộc tính cũ theo ProductId
+            await _attributeValueRepository.RemoveByProductIdAsync(productId, cancellationToken);
+
+            // 2. Thêm lại danh sách thuộc tính mới (nếu có)
+            await SaveAttributeValuesAsync(productId, attributeValues, cancellationToken);
         }
     }
 }

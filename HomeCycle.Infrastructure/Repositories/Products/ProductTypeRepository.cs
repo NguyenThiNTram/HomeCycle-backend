@@ -90,6 +90,19 @@ namespace HomeCycle.Infrastructure.Repositories.Products
             return dbTypes.Select(x => x.ToDomain());
         }
 
+        public async Task<product_type?> GetWithAttributesAndOptionsAsync(Guid productTypeId, CancellationToken cancellationToken = default)
+        {
+            var entity = await _db.Product_Types
+                .AsNoTracking()
+                .Include(x => x.Product_Attributes)
+                    .ThenInclude(x => x.Product_Attribute_Options)
+                .FirstOrDefaultAsync(
+                    x => x.ProductTypeId == productTypeId,
+                    cancellationToken);
+
+            return entity?.ToDomain();
+        }
+
         public async Task<product_type?> GetByIdAsync(Guid productTypeId, CancellationToken cancellationToken = default)
         {
             var entity = await _db.Product_Types

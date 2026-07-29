@@ -17,7 +17,7 @@ public class product
 
     public string? ProductName { get; set; }
     //public string? BrandName { get; set; }
-    public string? SpaceUsage { get; set; }
+    public SpaceUsage? SpaceUsage { get; set; }
     public string? ModelNumber { get; set; }
     public decimal? OriginalPrice { get; set; }
 
@@ -28,7 +28,7 @@ public class product
 
     public FunctionalityStatus? FunctionalityStatus { get; set; }
     public int? UsageDuration { get; set; }
-    public int? DamageLevel { get; set; }
+    public DamageLevel? DamageLevel { get; set; }
     public string? DetailDescription { get; set; }
 
     public product()

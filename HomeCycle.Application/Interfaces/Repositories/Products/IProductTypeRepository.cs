@@ -15,6 +15,7 @@ namespace HomeCycle.Application.Interfaces.Repositories.Products
         Task UpdateAsync(product_type entity, CancellationToken cancellationToken);
         Task<product_type?> AggregateUpdateAsync(Guid productTypeId, CancellationToken cancellationToken = default);
         Task<product_type?> GetByIdAsync(Guid productTypeId, CancellationToken cancellationToken = default);
+        Task<product_type?> GetWithAttributesAndOptionsAsync(Guid productTypeId, CancellationToken cancellationToken = default);
         Task<IEnumerable<product_type>> GetByCategoryIdAsync(Guid categoryId, CancellationToken cancellationToken);
         Task<bool> ExistsByNameAsync(Guid categoryId, string productTypeName, CancellationToken cancellationToken = default);
         Task<PagedResult<product_type>> GetAllAsync(PaginationRequest request, CancellationToken cancellationToken = default);

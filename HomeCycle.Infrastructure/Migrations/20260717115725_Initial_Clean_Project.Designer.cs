@@ -1571,10 +1571,10 @@ namespace HomeCycle.Infrastructure.Migrations
                     b.Property<int?>("DisplayOrder")
                         .HasColumnType("integer");
 
-                    b.Property<bool>("IsDefault")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
-                        .HasDefaultValue(false);
+                    //b.Property<bool>("IsDefault")
+                    //    .ValueGeneratedOnAdd()
+                    //    .HasColumnType("boolean")
+                    //    .HasDefaultValue(false);
 
                     b.Property<string>("OptionValue")
                         .HasMaxLength(255)

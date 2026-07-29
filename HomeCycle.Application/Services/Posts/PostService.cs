@@ -16,6 +16,8 @@ using HomeCycle.Domain.Enums;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Management;
+using System.Reflection.Metadata;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -101,24 +103,6 @@ namespace HomeCycle.Application.Services.Posts
                     await _unitOfWork.RollbackTransactionAsync(cancellationToken);
                     return Result<PostResponse>.Fail(productResult.Error!);
                 }
-
-                //if (request.Medias != null && request.Medias.Count > 0)
-                //{
-                //    var mediaResult = await _mediaService.UploadRawFilesAsync(
-                //        new DirectUploadMediaRequest
-                //        {
-                //            TargetId = post.PostId,
-                //            TargetType = PostMediaTargetType,
-                //            TargetFolder = PostMediaFolder,
-                //            Medias = (List<MediaRequest>)request.Medias
-                //        });
-
-                //    if (!mediaResult.IsSuccess)
-                //    {
-                //        await _unitOfWork.RollbackTransactionAsync(cancellationToken);
-                //        return Result<PostResponse>.Fail(mediaResult.Error!);
-                //    }
-                //}
 
                 var mediaResult = await _mediaService.UploadAndSaveMediaAsync(
                     targetId: post.PostId,
@@ -220,7 +204,7 @@ namespace HomeCycle.Application.Services.Posts
             var existing = await _postRepository.GetByIdAsync(postId, cancellationToken);
 
             var checkError = ValidateOwnershipAndComputeRemaining(
-                existing, ownerId, request.Quantity, out int newRemainingQuantity);
+                existing, ownerId, PostType.Sell, request.Quantity, out int newRemainingQuantity);
             if (checkError is not null)
                 return Result<PostResponse>.Fail(checkError);
 
@@ -276,7 +260,7 @@ namespace HomeCycle.Application.Services.Posts
             var existing = await _postRepository.GetByIdAsync(postId, cancellationToken);
 
             var checkError = ValidateOwnershipAndComputeRemaining(
-                existing, ownerId, request.Quantity, out int newRemainingQuantity);
+                existing, ownerId, PostType.Buy, request.Quantity, out int newRemainingQuantity);
             if (checkError is not null)
                 return Result<PostResponse>.Fail(checkError);
 
@@ -337,19 +321,22 @@ namespace HomeCycle.Application.Services.Posts
             var productTask = _productService.GetDetailByPostIdAsync(postId, cancellationToken);
             var mediaTask = _mediaService.GetByTargetAsync(postId, PostMediaTargetType, cancellationToken);
 
-            await Task.WhenAll(productTask, mediaTask);
+            //await Task.WhenAll(productTask, mediaTask);
 
-            var productResult = await productTask;
-            if (productResult.IsSuccess && productResult.Value is ProductResponse productData)
-            {
-                response.Product = productData;
-            }
+            var productResult = await _productService.GetDetailByPostIdAsync(postId, cancellationToken);
 
-            var mediaResult = await mediaTask;
-            if (mediaResult.IsSuccess && mediaResult.Value is IReadOnlyList<MediaResponse> mediaData)
-            {
-                response.Medias = mediaData;
-            }
+            if (!productResult.IsSuccess || productResult.Value is null)
+                return Result<PostDetailResponse>.Fail(ProductErrors.ProductNotFound);
+
+            var mediaResult = await _mediaService.GetByTargetAsync(postId, PostMediaTargetType, cancellationToken);
+
+            if (!mediaResult.IsSuccess)
+                return Result<PostDetailResponse>.Fail(mediaResult.Error!);
+
+            response.Product = productResult.Data;
+            //response.Medias = mediaResult.Value ?? [];
+            response.Medias = mediaResult.Data ?? [];
+
 
             return Result<PostDetailResponse>.Success(response);
         }
@@ -382,7 +369,7 @@ namespace HomeCycle.Application.Services.Posts
 
             var paged = await _postRepository.SearchAsync(request, cancellationToken);
 
-            var mappedItems = _mapper.Map<List<PostResponse>>(paged.Items);
+            //var mappedItems = _mapper.Map<List<PostResponse>>(paged.Items);
 
             var response = new PagedResult<PostResponse>
             {
@@ -445,7 +432,7 @@ namespace HomeCycle.Application.Services.Posts
         }
 
         private Error? ValidateOwnershipAndComputeRemaining(
-            post? existing, Guid ownerId, int newQuantity, out int newRemainingQuantity)
+            post? existing, Guid ownerId, PostType postType, int newQuantity, out int newRemainingQuantity)
         {
             newRemainingQuantity = 0;
 
@@ -454,6 +441,9 @@ namespace HomeCycle.Application.Services.Posts
 
             if (existing.OwnerId != ownerId)
                 return PostErrors.Forbidden;
+
+            if (existing.PostType != postType)
+                return PostErrors.InvalidPostType;
 
             if (existing.Status == (int)PostStatus.Deleted || existing.Status == (int)PostStatus.Closed)
                 return PostErrors.PostAlreadyClosedOrDeleted;

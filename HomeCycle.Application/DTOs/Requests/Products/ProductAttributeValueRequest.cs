@@ -11,7 +11,7 @@ namespace HomeCycle.Application.DTOs.Requests.Products
     {
         public Guid AttributeId { get; set; }
         public Guid? OptionId { get; set; }
-        public InputType? InputType { get; set; }
+        //public InputType? InputType { get; set; } ////này do FE nhập
         public bool? ValueBoolean { get; set; }
         public string? ValueText { get; set; }
         public decimal? ValueNumber { get; set; }

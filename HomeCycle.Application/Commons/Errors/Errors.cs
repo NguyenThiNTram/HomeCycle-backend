@@ -59,6 +59,13 @@ namespace HomeCycle.Application.Commons.Errors
         public static readonly Error ProductTypeAlreadyExists = new("PRODUCT_TYPE_ALREADY_EXISTS", "Product type already exists.");
 
         public static readonly Error CategoryNotFound = new("CATEGORY_NOT_FOUND", "Category does not exist.");
+
+        public static readonly Error AttributeAlreadyExists = new("ATTRIBUTE_ALREADY_EXISTS", "Attribute already exists.");
+        public static readonly Error AttributeNotFound = new("ATTRIBUTE_NOT_FOUND", "Attribute does not exist.");
+        public static readonly Error AttributeInUse = new("ATTRIBUTE_ALREADY_IN_USE", "Attribute already in use.");
+        public static readonly Error CannotChangeDataTypeInUse = new("DATA_TYPE_CANNOT_CHANGE_IN_USE", "Cannot change the data because in used");
+        public static readonly Error CannotChangeInputModeInUse = new("INPUT_MODE_CANNOT_CHANGE_IN_USE", "Cannot change the Input Mode because in used");
+
     }
 
     public static class ProductAttributeErrors
@@ -76,6 +83,7 @@ namespace HomeCycle.Application.Commons.Errors
         public static readonly Error OptionNotFound = new("ATTRIBUTE_OPTION_NOT_FOUND", "Attribute option does not exist.");
 
         public static readonly Error OptionAlreadyExists = new("ATTRIBUTE_OPTION_ALREADY_EXISTS", "Attribute option already exists.");
+        public static readonly Error OptionInUse = new("ATTRIBUTE_OPTION_ALREADY_IN_USE", "Attribute option already in use.");
     }
 
     public static class ProductErrors

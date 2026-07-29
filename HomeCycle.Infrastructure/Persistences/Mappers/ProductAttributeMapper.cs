@@ -1,4 +1,5 @@
 ﻿using HomeCycle.Domain.Entities;
+using HomeCycle.Domain.Enums;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -17,11 +18,12 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 AttributeId = entity.AttributeId,
                 ProductTypeId = entity.ProductTypeId,
                 AttributeName = entity.AttributeName,
-                DataType = entity.DataType,
+                DataType = (DataType?)entity.DataType,
                 Unit = entity.Unit,
                 DisplayOrder = entity.DisplayOrder,
                 IsFilterable = entity.IsFilterable,
                 IsRequired = entity.IsRequired,
+                InputMode = (InputMode?)entity.InputMode,
 
                 ProductAttributeOptions = entity.Product_Attribute_Options?
                     .Select(opt => opt.ToDomain())
@@ -36,11 +38,12 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 AttributeId = entity.AttributeId,
                 ProductTypeId = entity.ProductTypeId,
                 AttributeName = entity.AttributeName,
-                DataType = entity.DataType,
+                DataType = (int?)entity.DataType,
                 Unit = entity.Unit,
                 DisplayOrder = entity.DisplayOrder,
                 IsFilterable = entity.IsFilterable,
                 IsRequired = entity.IsRequired,
+                InputMode = (int?)entity.InputMode,
 
                 Product_Attribute_Options = entity.ProductAttributeOptions?
                     .Select(opt => opt.ToInfrastructure())

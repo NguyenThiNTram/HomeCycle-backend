@@ -20,7 +20,7 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 BrandId = entity.BrandId,
                 ProductTypeId = entity.ProductTypeId,
                 ProductName = entity.ProductName,
-                SpaceUsage = entity.SpaceUsage,
+                SpaceUsage = (SpaceUsage?)entity.SpaceUsage,
                 ModelNumber = entity.ModelNumber,
                 OriginalPrice = entity.OriginalPrice,
                 Length = entity.Length,
@@ -29,7 +29,7 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 Weight = entity.Weight,
                 FunctionalityStatus = (FunctionalityStatus?)entity.FunctionalityStatus,
                 UsageDuration = entity.UsageDuration,
-                DamageLevel = entity.DamageLevel,
+                DamageLevel = (DamageLevel?)entity.DamageLevel,
                 DetailDescription = entity.DetailDescription
             };
         }
@@ -43,7 +43,7 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 ProductTypeId = entity.ProductTypeId,
                 BrandId = entity.BrandId,
                 ProductName = entity.ProductName,
-                SpaceUsage = entity.SpaceUsage,
+                SpaceUsage = (int?)entity.SpaceUsage,
                 ModelNumber = entity.ModelNumber,
                 OriginalPrice = entity.OriginalPrice,
                 Length = entity.Length,
@@ -52,7 +52,7 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 Weight = entity.Weight,
                 FunctionalityStatus = (int?)entity.FunctionalityStatus,
                 UsageDuration = entity.UsageDuration,
-                DamageLevel = entity.DamageLevel,
+                DamageLevel = (int?)entity.DamageLevel,
                 DetailDescription = entity.DetailDescription
             };
         }

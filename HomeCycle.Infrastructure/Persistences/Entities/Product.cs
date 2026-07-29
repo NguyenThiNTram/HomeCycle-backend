@@ -27,7 +27,7 @@ public partial class Product
     public string? ProductName { get; set; }
 
     [StringLength(100)]
-    public string? SpaceUsage { get; set; }
+    public int? SpaceUsage { get; set; }
 
     [StringLength(100)]
     public string? ModelNumber { get; set; }

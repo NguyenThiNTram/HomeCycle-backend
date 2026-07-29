@@ -31,8 +31,6 @@ namespace HomeCycle.Application.DTOs.Responses.Posts
 
         public PostStatus? Status { get; set; }
 
-        public bool IsBusinessPosting { get; set; }
-
         public string? StreetAddress { get; set; }
 
         public string? Ward { get; set; }

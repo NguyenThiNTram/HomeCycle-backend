@@ -516,6 +516,10 @@ public partial class HomeCycleDbContext : DbContext
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()");
             entity.Property(e => e.IsBusinessPosting).HasDefaultValue(false);
             entity.Property(e => e.UpdatedAt).HasDefaultValueSql("now()");
+
+            //---
+            entity.Property(x => x.PostType).HasConversion<int>();
+            entity.Property(x => x.Status).HasConversion<int>();
         });
 
         modelBuilder.Entity<Product>(entity =>
@@ -561,7 +565,6 @@ public partial class HomeCycleDbContext : DbContext
             entity.HasKey(e => e.OptionId).HasName("Product_Attribute_Option_pkey");
 
             entity.Property(e => e.OptionId).ValueGeneratedNever();
-            entity.Property(e => e.IsDefault).HasDefaultValue(false);
 
             entity.HasOne(d => d.Attribute).WithMany(p => p.Product_Attribute_Options)
                 .OnDelete(DeleteBehavior.ClientSetNull)
