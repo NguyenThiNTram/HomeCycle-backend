@@ -461,23 +461,5 @@ namespace HomeCycle.Application.Services.Posts
             return null;
         }
 
-        private static DateTime EnsureUtc(DateTime value)
-        {
-            return value.Kind switch
-            {
-                DateTimeKind.Utc => value,
-
-                DateTimeKind.Local => value.ToUniversalTime(),
-
-                // Request hiện gửi dạng có Z, ví dụ:
-                // 2026-12-30T11:59:27.458Z
-                // nên có thể xem giá trị này là UTC.
-                DateTimeKind.Unspecified =>
-                    DateTime.SpecifyKind(value, DateTimeKind.Utc),
-
-                _ => throw new ArgumentOutOfRangeException(nameof(value))
-            };
-        }
-
     }
 }
