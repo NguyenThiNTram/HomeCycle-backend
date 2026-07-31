@@ -1,4 +1,4 @@
-﻿using AutoMapper;
+using AutoMapper;
 using FluentValidation;
 using HomeCycle.Application.Commons.Errors;
 using HomeCycle.Application.Commons.Results;
@@ -70,25 +70,6 @@ namespace HomeCycle.Application.Services.Products
             entity.ProductId = Guid.NewGuid();
             entity.PostId = postId;
 
-            //try
-            //{
-            //    await _unitOfWork.BeginTransactionAsync();
-
-            //    await _productRepository.AddAsync(entity, cancellationToken);
-
-            //    await SaveAttributeValuesAsync(entity.ProductId, request.AttributeValues.ToList(), cancellationToken);
-
-            //    await _unitOfWork.SaveChangesAsync(cancellationToken);
-            //    await _unitOfWork.CommitTransactionAsync();
-
-            //    return Result<product>.Success(entity);
-            //}
-            //catch
-            //{
-            //    await _unitOfWork.RollbackTransactionAsync();
-            //    throw;
-            //}
-
             await _productRepository.AddAsync(
                 entity,
                 cancellationToken);
@@ -124,78 +105,6 @@ namespace HomeCycle.Application.Services.Products
                 return Result<product>.Fail(referenceError);
 
             bool isProductTypeChanged = existing.ProductTypeId != request.ProductTypeId;
-
-
-            //if (request.AttributeValues != null && request.AttributeValues.Any())
-            //{
-            //    foreach (var attrReq in request.AttributeValues)
-            //    {
-            //        var attrValidation = await _attributeValueValidator.ValidateAsync(attrReq, cancellationToken);
-            //        if (!attrValidation.IsValid)
-            //        {
-            //            return Result<product>.Fail(
-            //                ValidationErrors.InvalidRequest(
-            //                    string.Join(", ", attrValidation.Errors.Select(e => e.ErrorMessage))));
-            //        }
-            //    }
-            //}
-
-            //try
-            //{
-            //    await _unitOfWork.BeginTransactionAsync();
-
-            //    _mapper.Map(request, existing);
-
-            //    await _productRepository.UpdateAsync(existing, cancellationToken);
-            //    await _attributeValueRepository.RemoveByProductIdAsync(existing.ProductId, cancellationToken);
-
-            //    if (request.AttributeValues.Any())
-            //    {
-            //        var values = request.AttributeValues.Select(x =>
-            //            new product_attribute_value
-            //            {
-            //                ProductId = existing.ProductId,
-            //                AttributeId = x.AttributeId,
-            //                OptionId = x.OptionId,
-            //                ValueBoolean = x.ValueBoolean,
-            //                ValueText = x.ValueText,
-            //                ValueNumber = x.ValueNumber
-            //            });
-
-            //        await _attributeValueRepository.AddRangeAsync(values, cancellationToken);
-            //    }
-
-            //    await SaveAttributeValuesAsync(existing.ProductId, request.AttributeValues.ToList(), cancellationToken);
-
-            //    await _unitOfWork.SaveChangesAsync(cancellationToken);
-            //    await _unitOfWork.CommitTransactionAsync();
-
-            //    return Result<product>.Success(existing);
-            //}
-            //catch
-            //{
-            //    await _unitOfWork.RollbackTransactionAsync();
-            //    throw;
-            //}
-            //try
-            //{
-            //    await _unitOfWork.BeginTransactionAsync();
-
-            //    _mapper.Map(request, existing);
-            //    await _productRepository.UpdateAsync(existing, cancellationToken);
-
-            //    await UpdateAttributeValuesAsync(existing.ProductId, request.AttributeValues?.ToList(), cancellationToken);
-
-            //    await _unitOfWork.SaveChangesAsync(cancellationToken);
-            //    await _unitOfWork.CommitTransactionAsync();
-
-            //    return Result<product>.Success(existing);
-            //}
-            //catch
-            //{
-            //    await _unitOfWork.RollbackTransactionAsync();
-            //    throw;
-            //}
 
             _mapper.Map(request, existing);
 

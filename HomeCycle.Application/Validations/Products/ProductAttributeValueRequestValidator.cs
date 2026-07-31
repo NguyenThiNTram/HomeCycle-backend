@@ -82,13 +82,9 @@ namespace HomeCycle.Application.Validations.Products
                     .WithMessage("Numeric value must be greater than or equal to 0.");
             });
 
-            RuleFor(x => x).Custom((request, context) =>
-            {
-                if (!HaveOnlyOneValue(request))
-                {
-                    context.AddFailure($"Thuộc tính '{request.AttributeId}' chỉ được phép điền 1 trong 4 trường: OptionId, ValueText, ValueNumber, ValueBoolean.");
-                }
-            });
+            RuleFor(x => x)
+                .Must(HaveOnlyOneValue)
+                .WithMessage("Only one value type (OptionId, ValueText, ValueNumber, ValueBoolean) is allowed.");
         }
 
         private static bool HaveOnlyOneValue(ProductAttributeValueRequest request)
