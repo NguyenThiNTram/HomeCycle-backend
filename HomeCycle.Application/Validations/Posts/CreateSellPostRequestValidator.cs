@@ -70,11 +70,9 @@ namespace HomeCycle.Application.Validations.Posts
                 context.AddFailure("Product.AttributeValues", $"Thuộc tính '{dupId}' bị gửi lặp lại nhiều lần.");
             }
 
-            // Lấy danh sách Attribute định nghĩa từ DB
             var definedAttributes = await _attributeRepository.GetByProductTypeAsync(productTypeId);
             var definedAttributeMap = definedAttributes.ToDictionary(x => x.AttributeId);
 
-            // B. Validate từng thuộc tính client gửi lên
             foreach (var attrReq in attributeRequests)
             {
                 if (!definedAttributeMap.TryGetValue(attrReq.AttributeId, out var dbAttr))
@@ -136,32 +134,14 @@ namespace HomeCycle.Application.Validations.Posts
                 }
             }
 
-            // C. Kiểm tra các thuộc tính BẮT BUỘC (IsRequired = true)
-            var submittedAttributeMap = attributeRequests
-                .GroupBy(x => x.AttributeId)
-                .ToDictionary(g => g.Key, g => g.First());
+            var submittedAttributeIds = attributeRequests.Select(x => x.AttributeId).ToHashSet();
+            var missingRequiredAttributes = definedAttributes
+                .Where(x => x.IsRequired && !submittedAttributeIds.Contains(x.AttributeId))
+                .ToList();
 
-            var requiredAttributes = definedAttributes.Where(x => x.IsRequired).ToList();
-
-            foreach (var reqAttr in requiredAttributes)
+            foreach (var missingAttr in missingRequiredAttributes)
             {
-                // 1. Kiểm tra xem Client có gửi AttributeId này lên không
-                if (!submittedAttributeMap.TryGetValue(reqAttr.AttributeId, out var submittedValue))
-                {
-                    context.AddFailure("Product.AttributeValues", $"Thuộc tính bắt buộc '{reqAttr.AttributeName}' chưa được điền.");
-                    continue;
-                }
-
-                // 2. Kiểm tra xem ít nhất 1 trong các ô dữ liệu có được truyền giá trị thực hay không
-                bool hasValue = submittedValue.OptionId.HasValue
-                             || submittedValue.ValueBoolean.HasValue
-                             || submittedValue.ValueNumber.HasValue
-                             || !string.IsNullOrWhiteSpace(submittedValue.ValueText);
-
-                if (!hasValue)
-                {
-                    context.AddFailure("Product.AttributeValues", $"Thuộc tính bắt buộc '{reqAttr.AttributeName}' chưa được điền.");
-                }
+                context.AddFailure("Product.AttributeValues", $"Thuộc tính bắt buộc '{missingAttr.AttributeName}' chưa được điền.");
             }
         }
     }
@@ -172,18 +152,7 @@ namespace HomeCycle.Application.Validations.Posts
             IProductAttributeRepository attributeRepository,
             IProductAttributeOptionRepository optionRepository)
         {
-            RuleFor(x => x.Quantity)
-                .GreaterThan(0).When(x => x.Quantity.HasValue)
-                .WithMessage("Số lượng phải lớn hơn 0.");
-
-            RuleFor(x => x.StreetAddress)
-                .MaximumLength(500).WithMessage("Địa chỉ không được vượt quá 500 ký tự.");
-
-            RuleFor(x => x.Ward)
-                .MaximumLength(255).WithMessage("Phường/Xã không được vượt quá 255 ký tự.");
-
-            RuleFor(x => x.City)
-                .MaximumLength(255).WithMessage("Thành phố/Tỉnh không được vượt quá 255 ký tự.");
+            Include(new CreatePostRequestValidator());
 
             RuleFor(x => x.BasePrice)
                 .GreaterThanOrEqualTo(0).WithMessage("Giá bán phải lớn hơn hoặc bằng 0.");

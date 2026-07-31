@@ -21,7 +21,7 @@ namespace HomeCycle.Application.DTOs.Requests.Products
 
     public class UpdateAttributeRequest
     {
-        //public Guid? AttributeId { get; set; } // Nếu Null => Thêm mới thuộc tính
+        public Guid? AttributeId { get; set; } // Nếu Null => Thêm mới thuộc tính
         public string AttributeName { get; set; } = null!;
         public DataType DataType { get; set; }
         public string? Unit { get; set; }
