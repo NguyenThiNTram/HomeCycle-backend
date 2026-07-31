@@ -15,7 +15,6 @@ namespace HomeCycle.Application.Validations.Posts
 {
     public class CreatePostRequestValidator : AbstractValidator<CreatePostRequest>
     {
-
         public CreatePostRequestValidator()
         {
             RuleFor(x => x.Quantity)
