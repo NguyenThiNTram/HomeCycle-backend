@@ -214,12 +214,26 @@ namespace HomeCycle.Application.Mappings
                 .ForMember(dest => dest.Status, opt => opt.Ignore())
                 .ForMember(dest => dest.CreatedAt, opt => opt.Ignore())
                 .ForMember(dest => dest.UpdatedAt, opt => opt.Ignore())
-                .Include<CreateSellPostRequest, post>()   // ← khai báo lớp con kế thừa map này
-                .Include<CreateBuyPostRequest, post>()
-                .Include<UpdateBuyPostRequest, post>();
+                // Chỉ include các DTO kế thừa CreatePostRequest
+                .Include<CreateSellPostRequest, post>()
+                .Include<CreateBuyPostRequest, post>();
 
             CreateMap<CreateSellPostRequest, post>();
             CreateMap<CreateBuyPostRequest, post>();
+
+            CreateMap<UpdatePostRequest, post>()
+                .ForMember(dest => dest.PostId, opt => opt.Ignore())
+                .ForMember(dest => dest.OwnerId, opt => opt.Ignore())
+                .ForMember(dest => dest.PostType, opt => opt.Ignore())
+                .ForMember(dest => dest.BasePrice, opt => opt.Ignore())
+                .ForMember(dest => dest.RemainingQuantity, opt => opt.Ignore())
+                .ForMember(dest => dest.Status, opt => opt.Ignore())
+                .ForMember(dest => dest.CreatedAt, opt => opt.Ignore())
+                .ForMember(dest => dest.UpdatedAt, opt => opt.Ignore())
+                //.ForAllMembers(opt => opt.Condition((src, dest, srcMember) => srcMember != null))
+                .Include<UpdateSellPostRequest, post>()
+                .Include<UpdateBuyPostRequest, post>();
+
             CreateMap<UpdateSellPostRequest, post>();
             CreateMap<UpdateBuyPostRequest, post>();
 

@@ -420,12 +420,9 @@ namespace HomeCycle.Application.Services.Posts
             if (existing.OwnerId != ownerId)
                 return Result<bool>.Fail(PostErrors.Forbidden);
 
-            var updated = await _postRepository.UpdateStatusAsync(postId, PostStatus.Deleted, cancellationToken);
-            if (!updated)
+            var deleted = await _postRepository.DeleteAsync(postId, cancellationToken);
+            if (!deleted)
                 return Result<bool>.Fail(PostErrors.NotFound);
-
-            existing.Status = (int)PostStatus.Deleted;
-            existing.UpdatedAt = DateTime.UtcNow;
 
             await _unitOfWork.SaveChangesAsync(cancellationToken);
             return Result<bool>.Success(true);
