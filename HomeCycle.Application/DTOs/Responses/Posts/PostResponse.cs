@@ -14,6 +14,7 @@ namespace HomeCycle.Application.DTOs.Responses.Posts
         public Guid PostId { get; set; }
 
         public Guid OwnerId { get; set; }
+        public string? ProductName { get; set; }
 
         public string? Description { get; set; }
 

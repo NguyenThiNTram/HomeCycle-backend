@@ -85,6 +85,7 @@ namespace HomeCycle.Application.Services.Posts
             post.PostId = Guid.NewGuid();
             post.OwnerId = ownerId;
             post.PostType = (int)PostType.Sell;
+            post.ProductName = request.Product?.ProductName;
             post.BasePrice = request.BasePrice;
             post.CreatedAt = now;
             post.UpdatedAt = now;
@@ -146,6 +147,7 @@ namespace HomeCycle.Application.Services.Posts
             post.PostId = Guid.NewGuid();
             post.OwnerId = ownerId;
             post.PostType = PostType.Buy;
+            post.ProductName = request.Requirement?.ProductName;
             post.BasePrice = request.ExpectedPrice;
             post.CreatedAt = now;
             post.UpdatedAt = now;
@@ -209,6 +211,7 @@ namespace HomeCycle.Application.Services.Posts
 
             _mapper.Map(request, existing);
             existing!.BasePrice = request.BasePrice;
+            existing.ProductName = request.Product?.ProductName;
             existing.RemainingQuantity = newRemainingQuantity;
             existing.UpdatedAt = DateTime.UtcNow;
 
@@ -265,6 +268,7 @@ namespace HomeCycle.Application.Services.Posts
 
             _mapper.Map(request, existing);
             existing!.BasePrice = request.ExpectedPrice;
+            existing.ProductName = request.Requirement?.ProductName;
             existing.RemainingQuantity = newRemainingQuantity;
             existing.UpdatedAt = DateTime.UtcNow;
 
