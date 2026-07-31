@@ -9,6 +9,7 @@ using HomeCycle.Application.Interfaces.Generics;
 using HomeCycle.Application.Interfaces.Repositories.Products;
 using HomeCycle.Application.Interfaces.Services.Products;
 using HomeCycle.Domain.Entities;
+using HomeCycle.Domain.Enums;
 using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
@@ -77,6 +78,7 @@ namespace HomeCycle.Application.Services.Products
                 {
                     AttributeName = attrDto.AttributeName.Trim(),
                     DataType = (Domain.Enums.DataType?)attrDto.DataType,
+                    InputMode = (Domain.Enums.InputMode?)attrDto.InputMode,
                     Unit = attrDto.Unit?.Trim(),
                     DisplayOrder = attrDto.DisplayOrder,
                     IsFilterable = attrDto.IsFilterable,
@@ -84,17 +86,17 @@ namespace HomeCycle.Application.Services.Products
                     ProductAttributeOptions = new List<product_attribute_option>()
                 };
 
-                foreach (var optDto in attrDto.Options)
+                if (attrDto.InputMode is InputMode.OptionOnly or InputMode.OptionOrCustom)
                 {
-                    var optionId = Guid.NewGuid();
-
-                    domainAttribute.ProductAttributeOptions.Add(
-                        new product_attribute_option(optionId, attributeId)
-                        {
-                            OptionValue = optDto.OptionValue.Trim(),
-                            DisplayOrder = optDto.DisplayOrder
-                            //IsDefault = optDto.IsDefault
-                        });
+                    foreach (var optDto in attrDto.Options ?? [])
+                    {
+                        domainAttribute.ProductAttributeOptions.Add(
+                            new product_attribute_option(Guid.NewGuid(), attributeId)
+                            {
+                                OptionValue = optDto.OptionValue.Trim(),
+                                DisplayOrder = optDto.DisplayOrder
+                            });
+                    }
                 }
 
                 productType.ProductAttributes.Add(domainAttribute);

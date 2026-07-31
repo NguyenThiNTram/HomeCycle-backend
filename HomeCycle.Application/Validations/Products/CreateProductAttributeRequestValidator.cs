@@ -35,7 +35,13 @@ namespace HomeCycle.Application.Validations.Products
             When(x => x.InputMode == InputMode.OptionOnly || x.InputMode == InputMode.OptionOrCustom, () =>
             {
                 RuleFor(x => x.Options)
-                    .NotEmpty().WithMessage("Danh sách tùy chọn (Options) không được để trống khi chọn chế độ OptionOnly hoặc OptionOrCustom.");
+                    .NotEmpty().WithMessage("Danh sách tùy chọn (Options) không được để trống khi chọn chế độ OptionOnly hoặc OptionOrCustom.")
+                    .Must(options =>
+                        options!
+                            .Select(o => o.OptionValue.Trim())
+                            .Distinct(StringComparer.OrdinalIgnoreCase)
+                            .Count() == options.Count)
+                    .WithMessage("Các giá trị Option không được trùng nhau.");
 
                 // Validate từng Option con trong danh sách
                 RuleForEach(x => x.Options)

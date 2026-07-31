@@ -43,6 +43,7 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                     ProductTypeId = attr.ProductTypeId,
                     AttributeName = attr.AttributeName,
                     DataType = (int?)attr.DataType,
+                    InputMode = (int?)attr.InputMode,
                     Unit = attr.Unit,
                     DisplayOrder = attr.DisplayOrder,
                     IsFilterable = attr.IsFilterable,

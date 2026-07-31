@@ -17,6 +17,5 @@ namespace HomeCycle.Application.Interfaces.Repositories.Products
         Task<product_attribute?> GetByIdAsync(Guid attributeId, CancellationToken cancellationToken = default);
         Task<IReadOnlyList<product_attribute>> GetByProductTypeAsync(Guid productTypeId, CancellationToken cancellationToken = default);
         Task<bool> ExistsByNameAsync(Guid productTypeId, string attributeName, CancellationToken cancellationToken = default);
-
     }
 }

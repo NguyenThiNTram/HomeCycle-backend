@@ -252,7 +252,7 @@ namespace HomeCycle.Application.Mappings
                 .ForMember(x => x.BasePrice, opt => opt.Ignore());
 
             CreateMap<UpdateSellPostRequest, post>()
-                .IncludeBase<CreatePostRequest, post>()
+                .IncludeBase<UpdatePostRequest, post>()
                 .ForMember(dest => dest.PostId, opt => opt.Ignore())
                 .ForMember(dest => dest.OwnerId, opt => opt.Ignore())
                 .ForMember(dest => dest.PostType, opt => opt.Ignore())

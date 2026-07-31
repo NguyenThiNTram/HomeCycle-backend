@@ -52,14 +52,9 @@ namespace HomeCycle.Infrastructure.Repositories.Products
 
         public async Task RemoveByProductIdAsync(Guid productId, CancellationToken cancellationToken = default)
         {
-            var existing = await _db.Product_Attribute_Values
+            await _db.Product_Attribute_Values
                 .Where(x => x.ProductId == productId)
-                .ToListAsync(cancellationToken);
-
-            if (existing.Count > 0)
-            {
-                _db.Product_Attribute_Values.RemoveRange(existing);
-            }
+                .ExecuteDeleteAsync(cancellationToken);
         }
     }
 }
