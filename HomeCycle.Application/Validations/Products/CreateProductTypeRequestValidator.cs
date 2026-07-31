@@ -10,7 +10,7 @@ namespace HomeCycle.Application.Validations.Products
 {
     public class CreateProductTypeRequestValidator : AbstractValidator<CreateProductTypeRequest>
     {
-        public CreateProductTypeRequestValidator()
+        public CreateProductTypeRequestValidator(IValidator<CreateAttributeRequest> attributeValidator)
         {
             RuleFor(x => x.CategoryId)
                 .NotEmpty();
@@ -21,6 +21,9 @@ namespace HomeCycle.Application.Validations.Products
 
             RuleFor(x => x.Description)
                 .MaximumLength(1000);
+
+            RuleForEach(x => x.Attributes)
+                .SetValidator(new CreateProductAttributeRequestValidator());
         }
     }
 

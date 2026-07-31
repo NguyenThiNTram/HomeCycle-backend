@@ -2,6 +2,7 @@
 using HomeCycle.Application.Interfaces.Services.Products;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Swashbuckle.AspNetCore.Annotations;
 
 namespace HomeCycle.API.Controllers
 {
@@ -17,6 +18,10 @@ namespace HomeCycle.API.Controllers
         }
 
         [HttpGet]
+        [SwaggerOperation(
+            Summary = "Lấy danh sách thương hiệu",
+            Description = "Trả về danh sách tất cả thương hiệu có hỗ trợ tìm kiếm và phân trang."
+        )]
         public async Task<IActionResult> GetBrands([FromQuery] BrandSearchRequest request, CancellationToken cancellationToken)
         {
             var result = await _brandService.SearchAsync(request, cancellationToken);
@@ -24,6 +29,10 @@ namespace HomeCycle.API.Controllers
         }
 
         [HttpGet("active")]
+        [SwaggerOperation(
+            Summary = "Lấy danh sách thương hiệu đang hoạt động",
+            Description = "Trả về danh sách thương hiệu đang hoạt động (IsActive = true)."
+        )]
         public async Task<IActionResult> GetActiveBrands([FromQuery] BrandSearchRequest request, CancellationToken cancellationToken)
         {
             var result = await _brandService.GetActiveAsync(request, cancellationToken);
@@ -31,6 +40,10 @@ namespace HomeCycle.API.Controllers
         }
 
         [HttpGet("{id:guid}")]
+        [SwaggerOperation(
+            Summary = "Lấy thông tin thương hiệu theo ID",
+            Description = "Trả về chi tiết thông tin của một thương hiệu theo ID."
+        )]
         public async Task<IActionResult> GetBrand(Guid id, CancellationToken cancellationToken)
         {
             var result = await _brandService.GetByIdAsync(id, cancellationToken);
@@ -41,6 +54,10 @@ namespace HomeCycle.API.Controllers
         }
 
         [HttpPost]
+        [SwaggerOperation(
+            Summary = "Tạo thương hiệu mới",
+            Description = "Tạo mới một thương hiệu sản phẩm trong hệ thống."
+        )]
         //[Authorize(Roles = "Admin")]
         public async Task<IActionResult> CreateBrand([FromBody] CreateBrandRequest request, CancellationToken cancellationToken)
         {
@@ -52,6 +69,10 @@ namespace HomeCycle.API.Controllers
         }
 
         [HttpPut("{id:guid}")]
+        [SwaggerOperation(
+            Summary = "Cập nhật thương hiệu",
+            Description = "Cập nhật thông tin tên, mô tả hoặc trạng thái của thương hiệu theo ID."
+        )]
         //[Authorize(Roles = "Admin")]
         public async Task<IActionResult> UpdateBrand(Guid id, [FromBody] UpdateBrandRequest request, CancellationToken cancellationToken)
         {
@@ -63,6 +84,10 @@ namespace HomeCycle.API.Controllers
         }
 
         [HttpDelete("{id:guid}")]
+        [SwaggerOperation(
+            Summary = "Xóa thương hiệu",
+            Description = "Xóa (hoặc vô hiệu hóa) một thương hiệu khỏi hệ thống theo ID."
+        )]
         //[Authorize(Roles = "Admin")]
         public async Task<IActionResult> DeleteBrand(Guid id, CancellationToken cancellationToken)
         {

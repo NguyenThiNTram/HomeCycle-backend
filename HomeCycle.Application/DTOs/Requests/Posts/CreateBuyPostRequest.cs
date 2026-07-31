@@ -13,7 +13,7 @@ namespace HomeCycle.Application.DTOs.Requests.Posts
         public ProductRequirementRequest Requirement { get; set; } = default!;
     }
 
-    public class UpdateBuyPostRequest : CreatePostRequest
+    public class UpdateBuyPostRequest : UpdatePostRequest
     {
         public decimal ExpectedPrice { get; set; }
         public ProductRequirementRequest Requirement { get; set; } = default!;

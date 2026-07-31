@@ -81,30 +81,56 @@ namespace HomeCycle.Application.Validations.Posts
                     continue;
                 }
 
-                var dataType = (DataType)dbAttr.DataType;
-                //bool isCompatible = (dataType, attrReq.InputType) switch
-                //{
-                //    (DataType.Text, InputType.TextBox) => true,
-                //    (DataType.Text, InputType.Dropdown) => true,
-                //    (DataType.Text, InputType.RadioButton) => true,
-                //    (DataType.Number, InputType.NumberBox) => true,
-                //    (DataType.Boolean, InputType.CheckBox) => true,
-                //    _ => false
-                //};
+                var inputMode = dbAttr.InputMode;
+                var dataType = (DataType)(dbAttr.DataType ?? 0);
 
-                //if (!isCompatible)
-                //{
-                //    context.AddFailure("Product.AttributeValues", $"Thuộc tính '{dbAttr.AttributeName}' (Kiểu {dataType}) không tương thích với InputType '{attrReq.InputType}'.");
-                //    continue;
-                //}
+                bool hasOption = attrReq.OptionId.HasValue;
+                bool hasCustom = attrReq.ValueBoolean.HasValue
+                              || attrReq.ValueNumber.HasValue
+                              || !string.IsNullOrWhiteSpace(attrReq.ValueText);
 
-                if (attrReq.OptionId.HasValue)
+                // 1. Kiểm tra Option thuộc Attribute nếu client có chọn Option
+                if (hasOption)
                 {
                     var option = await _optionRepository.GetByIdAsync(attrReq.OptionId.Value);
                     if (option is null || option.AttributeId != dbAttr.AttributeId)
                     {
                         context.AddFailure("Product.AttributeValues", $"Tùy chọn đã chọn không hợp lệ cho thuộc tính '{dbAttr.AttributeName}'.");
                     }
+                }
+
+                // 2. Kiểm tra ràng buộc theo InputMode
+                switch (inputMode)
+                {
+                    case InputMode.OptionOnly:
+                        if (!hasOption)
+                            context.AddFailure("Product.AttributeValues", $"Thuộc tính '{dbAttr.AttributeName}' chỉ được chọn từ danh sách tùy chọn, không nhập tay.");
+                        else if (hasCustom)
+                            context.AddFailure("Product.AttributeValues", $"Thuộc tính '{dbAttr.AttributeName}' không được phép nhập giá trị tự do khi chọn từ danh sách.");
+                        break;
+
+                    case InputMode.CustomOnly:
+                        if (hasOption)
+                            context.AddFailure("Product.AttributeValues", $"Thuộc tính '{dbAttr.AttributeName}' không cho phép chọn tùy chọn, chỉ được nhập tay.");
+                        else if (!hasCustom)
+                            context.AddFailure("Product.AttributeValues", $"Thuộc tính '{dbAttr.AttributeName}' phải nhập giá trị.");
+                        break;
+
+                    case InputMode.OptionOrCustom:
+                        if (hasOption && hasCustom)
+                            context.AddFailure("Product.AttributeValues", $"Thuộc tính '{dbAttr.AttributeName}' chỉ được điền 1 trong 2: chọn tùy chọn HOẶC nhập tay.");
+                        break;
+                }
+
+                // 3. Kiểm tra giá trị nhập tay khớp DataType (Text/Number/Boolean)
+                if (hasCustom)
+                {
+                    bool matchesDataType = (dataType == DataType.Text && !string.IsNullOrWhiteSpace(attrReq.ValueText))
+                        || (dataType == DataType.Number && attrReq.ValueNumber.HasValue)
+                        || (dataType == DataType.Boolean && attrReq.ValueBoolean.HasValue);
+
+                    if (!matchesDataType)
+                        context.AddFailure("Product.AttributeValues", $"Giá trị nhập tay của thuộc tính '{dbAttr.AttributeName}' không đúng kiểu dữ liệu ({dataType}).");
                 }
             }
 

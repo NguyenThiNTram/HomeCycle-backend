@@ -5,6 +5,7 @@ using HomeCycle.Application.Interfaces.Services.Users;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Swashbuckle.AspNetCore.Annotations;
 using System.Security.Claims;
 
 namespace HomeCycle.API.Controllers
@@ -23,6 +24,10 @@ namespace HomeCycle.API.Controllers
 
         // Lấy thông tin profile
         [HttpGet("me")]
+        [SwaggerOperation(
+            Summary = "Lấy thông tin cá nhân",
+            Description = "Trả về thông tin chi tiết hồ sơ cá nhân của người dùng hiện tại."
+        )]
         //[ProducesResponseType(typeof(Result<PersonalProfileResponse>), StatusCodes.Status200OK)]
         //[ProducesResponseType(typeof(Result), StatusCodes.Status404NotFound)]
         public async Task<IActionResult> GetMyProfile(CancellationToken cancellationToken)
@@ -38,6 +43,10 @@ namespace HomeCycle.API.Controllers
 
         // update thông tin
         [HttpPut("me/profile")]
+        [SwaggerOperation(
+            Summary = "Cập nhật thông tin cá nhân",
+            Description = "Cập nhật thông tin hồ sơ cá nhân của người dùng hiện tại."
+        )]
         //[ProducesResponseType(typeof(Result), StatusCodes.Status200OK)]
         //[ProducesResponseType(typeof(Result), StatusCodes.Status400BadRequest)]
         public async Task<IActionResult> UpdateProfile([FromBody] UpdatePersonalProfileRequest request, CancellationToken cancellationToken)
@@ -53,6 +62,10 @@ namespace HomeCycle.API.Controllers
 
         // update avt
         [HttpPatch("me/avatar")]
+        [SwaggerOperation(
+            Summary = "Cập nhật ảnh đại diện",
+            Description = "Cập nhật ảnh đại diện (avatar) cho người dùng hiện tại."
+        )]
         [Consumes("multipart/form-data")]
         //[ProducesResponseType(typeof(Result<string>), StatusCodes.Status200OK)]
         //[ProducesResponseType(typeof(Result), StatusCodes.Status400BadRequest)]
@@ -69,6 +82,10 @@ namespace HomeCycle.API.Controllers
 
         // update giấy tờ
         [HttpPut("me/identity")]
+        [SwaggerOperation(
+            Summary = "Cập nhật giấy tờ tùy thân",
+            Description = "Cập nhật thông tin giấy tờ tùy thân (CMND/CCCD) của người dùng hiện tại."
+        )]
         //[ProducesResponseType(typeof(Result), StatusCodes.Status200OK)]
         //[ProducesResponseType(typeof(Result), StatusCodes.Status400BadRequest)]
         [Consumes("multipart/form-data")]
@@ -85,6 +102,10 @@ namespace HomeCycle.API.Controllers
 
         // update bank
         [HttpPut("me/bank")]
+        [SwaggerOperation(
+            Summary = "Cập nhật thông tin ngân hàng",
+            Description = "Cập nhật thông tin tài khoản ngân hàng của người dùng hiện tại."
+        )]
         //[ProducesResponseType(typeof(Result), StatusCodes.Status200OK)]
         //[ProducesResponseType(typeof(Result), StatusCodes.Status400BadRequest)]
         public async Task<IActionResult> UpdateBank([FromBody] UpdateBankAccountRequest request, CancellationToken cancellationToken)

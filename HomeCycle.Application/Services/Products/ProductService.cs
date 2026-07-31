@@ -1,4 +1,4 @@
-﻿using AutoMapper;
+using AutoMapper;
 using FluentValidation;
 using HomeCycle.Application.Commons.Errors;
 using HomeCycle.Application.Commons.Results;
@@ -7,8 +7,8 @@ using HomeCycle.Application.DTOs.Responses.Posts;
 using HomeCycle.Application.Interfaces.Generics;
 using HomeCycle.Application.Interfaces.Repositories.Products;
 using HomeCycle.Application.Interfaces.Services.Products;
-using HomeCycle.Application.Validations.Products;
 using HomeCycle.Domain.Entities;
+using HomeCycle.Domain.Enums;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -26,9 +26,7 @@ namespace HomeCycle.Application.Services.Products
         private readonly IBrandRepository _brandRepository;
         private readonly IValidator<ProductRequest> _productRequestValidator;
         private readonly IValidator<ProductRequirementRequest> _productRequirementValidator;
-        private readonly IValidator<ProductAttributeValueRequest> _attributeValueValidator;
         private readonly IMapper _mapper;
-        private readonly IUnitOfWork _unitOfWork;
 
         public ProductService(
             IProductRepository productRepository,
@@ -38,9 +36,7 @@ namespace HomeCycle.Application.Services.Products
             IBrandRepository brandRepository,
             IValidator<ProductRequest> productRequestValidator,
             IValidator<ProductRequirementRequest> productRequirementValidator,
-            IValidator<ProductAttributeValueRequest> attributeValueValidator,
-            IMapper mapper,
-            IUnitOfWork unitOfWork)
+            IMapper mapper)
         {
             _productRepository = productRepository;
             _attributeValueRepository = attributeValueRepository;
@@ -49,9 +45,7 @@ namespace HomeCycle.Application.Services.Products
             _brandRepository = brandRepository;
             _productRequestValidator = productRequestValidator;
             _productRequirementValidator = productRequirementValidator;
-            _attributeValueValidator = attributeValueValidator;
             _mapper = mapper;
-            _unitOfWork = unitOfWork;
         }
 
         //Sell
@@ -63,54 +57,29 @@ namespace HomeCycle.Application.Services.Products
             {
                 return Result<product>.Fail(
                     ValidationErrors.InvalidRequest(
-                        string.Join(", ", validation.Errors.Select(e => e.ErrorMessage))));
+                        string.Join("\n", validation.Errors.Select(e => e.ErrorMessage))));
             }
 
-            var referenceError = await ValidateReferencesAsync(
-                request.CategoryId, request.ProductTypeId, request.BrandId, cancellationToken);
+            var referenceError = await ValidateProductDataAsync(
+                request.CategoryId, request.ProductTypeId, request.BrandId, request.AttributeValues, cancellationToken);
             if (referenceError is not null)
                 return Result<product>.Fail(referenceError);
-
-            var attributeError = await ValidateAttributeValuesAsync(request.AttributeValues?.ToList(), cancellationToken);
-            if (attributeError is not null) return Result<product>.Fail(attributeError);
-
-            //if (request.AttributeValues != null && request.AttributeValues.Any())
-            //{
-            //    foreach (var attrReq in request.AttributeValues)
-            //    {
-            //        var attrValidation = await _attributeValueValidator.ValidateAsync(attrReq, cancellationToken);
-            //        if (!attrValidation.IsValid)
-            //        {
-            //            return Result<product>.Fail(
-            //                ValidationErrors.InvalidRequest(
-            //                    string.Join(", ", attrValidation.Errors.Select(e => e.ErrorMessage))));
-            //        }
-            //    }
-            //}
 
             var entity = _mapper.Map<product>(request);
 
             entity.ProductId = Guid.NewGuid();
             entity.PostId = postId;
 
-            try
-            {
-                await _unitOfWork.BeginTransactionAsync();
+            await _productRepository.AddAsync(
+                entity,
+                cancellationToken);
 
-                await _productRepository.AddAsync(entity, cancellationToken);
+            await SaveAttributeValuesAsync(
+                entity.ProductId,
+                request.AttributeValues?.ToList(),
+                cancellationToken);
 
-                await SaveAttributeValuesAsync(entity.ProductId, request.AttributeValues.ToList(), cancellationToken);
-
-                await _unitOfWork.SaveChangesAsync(cancellationToken);
-                await _unitOfWork.CommitTransactionAsync();
-
-                return Result<product>.Success(entity);
-            }
-            catch
-            {
-                await _unitOfWork.RollbackTransactionAsync();
-                throw;
-            }
+            return Result<product>.Success(entity);
         }
 
         public async Task<Result<product>> PrepareForUpdateAsync(Guid postId, ProductRequest request,
@@ -121,7 +90,7 @@ namespace HomeCycle.Application.Services.Products
             {
                 return Result<product>.Fail(
                     ValidationErrors.InvalidRequest(
-                        string.Join(", ", validation.Errors.Select(e => e.ErrorMessage))));
+                        string.Join("\n", validation.Errors.Select(e => e.ErrorMessage))));
             }
 
             var existing = await _productRepository.GetByPostIdAsync(postId, cancellationToken);
@@ -130,87 +99,21 @@ namespace HomeCycle.Application.Services.Products
                 return Result<product>.Fail(ProductErrors.ProductNotFound);
             }
 
-            var referenceError = await ValidateReferencesAsync(
-                request.CategoryId, request.ProductTypeId, request.BrandId, cancellationToken);
+            var referenceError = await ValidateProductDataAsync(
+                request.CategoryId, request.ProductTypeId, request.BrandId, request.AttributeValues, cancellationToken);
             if (referenceError is not null)
                 return Result<product>.Fail(referenceError);
 
-            var attributeError = await ValidateAttributeValuesAsync(request.AttributeValues?.ToList(), cancellationToken);
-            if (attributeError is not null) return Result<product>.Fail(attributeError);
-
             bool isProductTypeChanged = existing.ProductTypeId != request.ProductTypeId;
 
+            _mapper.Map(request, existing);
 
-            //if (request.AttributeValues != null && request.AttributeValues.Any())
-            //{
-            //    foreach (var attrReq in request.AttributeValues)
-            //    {
-            //        var attrValidation = await _attributeValueValidator.ValidateAsync(attrReq, cancellationToken);
-            //        if (!attrValidation.IsValid)
-            //        {
-            //            return Result<product>.Fail(
-            //                ValidationErrors.InvalidRequest(
-            //                    string.Join(", ", attrValidation.Errors.Select(e => e.ErrorMessage))));
-            //        }
-            //    }
-            //}
+            await _productRepository.UpdateAsync(existing, cancellationToken);
 
-            //try
-            //{
-            //    await _unitOfWork.BeginTransactionAsync();
+            await UpdateAttributeValuesAsync(existing.ProductId, request.AttributeValues?.ToList(),
+                cancellationToken);
 
-            //    _mapper.Map(request, existing);
-
-            //    await _productRepository.UpdateAsync(existing, cancellationToken);
-            //    await _attributeValueRepository.RemoveByProductIdAsync(existing.ProductId, cancellationToken);
-
-            //    if (request.AttributeValues.Any())
-            //    {
-            //        var values = request.AttributeValues.Select(x =>
-            //            new product_attribute_value
-            //            {
-            //                ProductId = existing.ProductId,
-            //                AttributeId = x.AttributeId,
-            //                OptionId = x.OptionId,
-            //                ValueBoolean = x.ValueBoolean,
-            //                ValueText = x.ValueText,
-            //                ValueNumber = x.ValueNumber
-            //            });
-
-            //        await _attributeValueRepository.AddRangeAsync(values, cancellationToken);
-            //    }
-
-            //    await SaveAttributeValuesAsync(existing.ProductId, request.AttributeValues.ToList(), cancellationToken);
-
-            //    await _unitOfWork.SaveChangesAsync(cancellationToken);
-            //    await _unitOfWork.CommitTransactionAsync();
-
-            //    return Result<product>.Success(existing);
-            //}
-            //catch
-            //{
-            //    await _unitOfWork.RollbackTransactionAsync();
-            //    throw;
-            //}
-            try
-            {
-                await _unitOfWork.BeginTransactionAsync();
-
-                _mapper.Map(request, existing);
-                await _productRepository.UpdateAsync(existing, cancellationToken);
-
-                await UpdateAttributeValuesAsync(existing.ProductId, request.AttributeValues?.ToList(), cancellationToken);
-
-                await _unitOfWork.SaveChangesAsync(cancellationToken);
-                await _unitOfWork.CommitTransactionAsync();
-
-                return Result<product>.Success(existing);
-            }
-            catch
-            {
-                await _unitOfWork.RollbackTransactionAsync();
-                throw;
-            }
+            return Result<product>.Success(existing);
         }
 
         //Buy
@@ -222,40 +125,29 @@ namespace HomeCycle.Application.Services.Products
             {
                 return Result<product>.Fail(
                     ValidationErrors.InvalidRequest(
-                        string.Join(", ", validation.Errors.Select(x => x.ErrorMessage))));
+                        string.Join("\n", validation.Errors.Select(x => x.ErrorMessage))));
             }
 
-            var referenceError = await ValidateReferencesAsync(
-                request.CategoryId, request.ProductTypeId, request.BrandId, cancellationToken);
+            var referenceError = await ValidateProductDataAsync(
+                request.CategoryId, request.ProductTypeId, request.BrandId, request.AttributeValues, cancellationToken);
             if (referenceError is not null)
                 return Result<product>.Fail(referenceError);
-
-            var attributeError = await ValidateAttributeValuesAsync(request.AttributeValues, cancellationToken);
-            if (attributeError is not null)
-                return Result<product>.Fail(attributeError);
 
             var entity = _mapper.Map<product>(request);
 
             entity.ProductId = Guid.NewGuid();
             entity.PostId = postId;
 
-            try
-            {
-                await _unitOfWork.BeginTransactionAsync();
-                await _productRepository.AddAsync(entity, cancellationToken);
+            await _productRepository.AddAsync(
+                entity,
+                cancellationToken);
 
-                await SaveAttributeValuesAsync(entity.ProductId, request.AttributeValues, cancellationToken);
+            await SaveAttributeValuesAsync(
+                entity.ProductId,
+                request.AttributeValues,
+                cancellationToken);
 
-                await _unitOfWork.SaveChangesAsync(cancellationToken);
-                await _unitOfWork.CommitTransactionAsync();
-
-                return Result<product>.Success(entity);
-            }
-            catch
-            {
-                await _unitOfWork.RollbackTransactionAsync();
-                throw;
-            }
+            return Result<product>.Success(entity);
         }
 
         public async Task<Result<product>> UpdateForRequirementAsync(Guid postId, ProductRequirementRequest request, CancellationToken cancellationToken = default)
@@ -266,7 +158,7 @@ namespace HomeCycle.Application.Services.Products
             {
                 return Result<product>.Fail(
                     ValidationErrors.InvalidRequest(
-                        string.Join(", ", validation.Errors.Select(x => x.ErrorMessage))));
+                        string.Join("\n", validation.Errors.Select(x => x.ErrorMessage))));
             }
 
             var existing = await _productRepository.GetByPostIdAsync(postId, cancellationToken);
@@ -274,35 +166,27 @@ namespace HomeCycle.Application.Services.Products
             if (existing is null)
                 return Result<product>.Fail(ProductErrors.ProductNotFound);
 
-            var referenceError = await ValidateReferencesAsync(
-                 request.CategoryId, request.ProductTypeId, request.BrandId, cancellationToken);
+            var referenceError = await ValidateProductDataAsync(
+                 request.CategoryId, request.ProductTypeId, request.BrandId, request.AttributeValues, cancellationToken);
             if (referenceError is not null)
                 return Result<product>.Fail(referenceError);
 
-            var attributeError = await ValidateAttributeValuesAsync(request.AttributeValues, cancellationToken);
-            if (attributeError is not null)
-                return Result<product>.Fail(attributeError);
+            _mapper.Map(request, existing);
 
-            try
-            {
-                await _unitOfWork.BeginTransactionAsync();
+            await _productRepository.UpdateAsync(
+                existing,
+                cancellationToken);
 
-                _mapper.Map(request, existing);
+            await _attributeValueRepository.RemoveByProductIdAsync(
+                existing.ProductId,
+                cancellationToken);
 
-                await _productRepository.UpdateAsync(existing, cancellationToken);
-                await _attributeValueRepository.RemoveByProductIdAsync(existing.ProductId, cancellationToken);
-                await SaveAttributeValuesAsync(existing.ProductId, request.AttributeValues, cancellationToken);
+            await SaveAttributeValuesAsync(
+                existing.ProductId,
+                request.AttributeValues,
+                cancellationToken);
 
-                await _unitOfWork.SaveChangesAsync(cancellationToken);
-                await _unitOfWork.CommitTransactionAsync();
-
-                return Result<product>.Success(existing);
-            }
-            catch
-            {
-                await _unitOfWork.RollbackTransactionAsync();
-                throw;
-            }
+            return Result<product>.Success(existing);
         }
 
         public async Task<Result<ProductResponse>> GetDetailByPostIdAsync(Guid postId, CancellationToken cancellationToken = default)
@@ -329,44 +213,185 @@ namespace HomeCycle.Application.Services.Products
             return Result<ProductResponse>.Success(response);
         }
 
-        private async Task<Error?> ValidateReferencesAsync(Guid categoryId, Guid productTypeId, Guid? brandId,
-            CancellationToken cancellationToken)
+        private static Error? ValidateAttributeValues(product_type productType, IEnumerable<ProductAttributeValueRequest>? attributeValues)
         {
-            var category = await _categoryRepository.GetByIdAsync(categoryId, cancellationToken);
-            if (category is null)
-                return ProductErrors.InvalidCategory;
+            var requests = attributeValues?.ToList()
+                ?? new List<ProductAttributeValueRequest>();
 
-            var productType = await _productTypeRepository.GetByIdAsync(productTypeId, cancellationToken);
-            if (productType is null || productType.CategoryId != categoryId)
-                return ProductErrors.InvalidProductType;
+            var attributes = productType.ProductAttributes?.ToList()
+                ?? new List<product_attribute>();
 
-            if (brandId.HasValue)
+            var attributeById = attributes.ToDictionary(x => x.AttributeId);
+
+            // Tiêu chí 2: Không cho gửi trùng AttributeId
+            var duplicatedAttribute = requests
+                .GroupBy(x => x.AttributeId)
+                .FirstOrDefault(group => group.Count() > 1);
+
+            if (duplicatedAttribute is not null)
             {
-                var brand = await _brandRepository.GetByIdAsync(brandId.Value, cancellationToken);
-                if (brand is null)
-                    return ProductErrors.InvalidBrand;
+                return ValidationErrors.InvalidRequest(
+                    $"Thuộc tính {duplicatedAttribute.Key} đang được gửi nhiều lần.");
+            }
+
+            // Tiêu chí 1: Attribute phải thuộc ProductType
+            foreach (var request in requests)
+            {
+                if (!attributeById.ContainsKey(request.AttributeId))
+                {
+                    return ValidationErrors.InvalidRequest(
+                        $"Thuộc tính {request.AttributeId} không thuộc loại sản phẩm đã chọn.");
+                }
+            }
+
+            // Tiêu chí 3: Phải gửi đủ thuộc tính bắt buộc
+            var providedAttributeIds = requests
+                .Select(x => x.AttributeId)
+                .ToHashSet();
+
+            var missingRequiredAttributes = attributes
+                .Where(x =>
+                    x.IsRequired &&
+                    !providedAttributeIds.Contains(x.AttributeId))
+                .ToList();
+
+            if (missingRequiredAttributes.Count > 0)
+            {
+                var missingNames = string.Join(
+                    ", ",
+                    missingRequiredAttributes.Select(x =>
+                        x.AttributeName ?? x.AttributeId.ToString()));
+
+                return ValidationErrors.InvalidRequest(
+                    $"Thiếu các thuộc tính bắt buộc: {missingNames}.");
+            }
+
+            foreach (var request in requests)
+            {
+                var attribute = attributeById[request.AttributeId];
+
+                var hasOption = request.OptionId.HasValue;
+
+                // ValueText = "" vẫn được xem là có truyền field,
+                // sau đó sẽ bị từ chối do không có nội dung hợp lệ.
+                var hasText = request.ValueText is not null;
+                var hasNumber = request.ValueNumber.HasValue;
+                var hasBoolean = request.ValueBoolean.HasValue;
+
+                var customValueCount =
+                    (hasText ? 1 : 0) +
+                    (hasNumber ? 1 : 0) +
+                    (hasBoolean ? 1 : 0);
+
+                // Tiêu chí 4, 5, 6
+                var matchesInputMode = attribute.InputMode switch
+                {
+                    InputMode.OptionOnly =>
+                        hasOption && customValueCount == 0,
+
+                    InputMode.CustomOnly =>
+                        !hasOption && customValueCount == 1,
+
+                    InputMode.OptionOrCustom =>
+                        (hasOption && customValueCount == 0) ||
+                        (!hasOption && customValueCount == 1),
+
+                    _ => false
+                };
+
+                if (!matchesInputMode)
+                {
+                    return ValidationErrors.InvalidRequest(
+                        $"Giá trị của thuộc tính " +
+                        $"'{attribute.AttributeName ?? attribute.AttributeId.ToString()}' " +
+                        $"không phù hợp với InputMode '{attribute.InputMode}'.");
+                }
+
+                // Tiêu chí 7: Option phải thuộc chính Attribute
+                if (hasOption)
+                {
+                    var optionBelongsToAttribute =
+                        attribute.ProductAttributeOptions?.Any(
+                            option => option.OptionId == request.OptionId.Value)
+                        == true;
+
+                    if (!optionBelongsToAttribute)
+                    {
+                        return ValidationErrors.InvalidRequest(
+                            $"Option {request.OptionId} không thuộc thuộc tính " +
+                            $"'{attribute.AttributeName ?? attribute.AttributeId.ToString()}'.");
+                    }
+
+                    // Chọn OptionId thì không cần kiểm tra DataType,
+                    // vì không có custom value.
+                    continue;
+                }
+
+                // Tiêu chí 8: Custom value phải khớp DataType
+                var matchesDataType = attribute.DataType switch
+                {
+                    DataType.Text =>
+                        !string.IsNullOrWhiteSpace(request.ValueText) &&
+                        !request.ValueNumber.HasValue &&
+                        !request.ValueBoolean.HasValue,
+
+                    DataType.Number =>
+                        request.ValueText is null &&
+                        request.ValueNumber.HasValue &&
+                        !request.ValueBoolean.HasValue,
+
+                    DataType.Boolean =>
+                        request.ValueText is null &&
+                        !request.ValueNumber.HasValue &&
+                        request.ValueBoolean.HasValue,
+
+                    _ => false
+                };
+
+                if (!matchesDataType)
+                {
+                    return ValidationErrors.InvalidRequest(
+                        $"Giá trị của thuộc tính " +
+                        $"'{attribute.AttributeName ?? attribute.AttributeId.ToString()}' " +
+                        $"không đúng DataType '{attribute.DataType}'.");
+                }
             }
 
             return null;
         }
 
-        private async Task<Error?> ValidateAttributeValuesAsync(List<ProductAttributeValueRequest>? attributeValues,
-            CancellationToken cancellationToken)
+        private async Task<Error?> ValidateProductDataAsync(Guid categoryId, Guid productTypeId, Guid? brandId, IEnumerable<ProductAttributeValueRequest>? attributeValues, CancellationToken cancellationToken)
         {
-            if (attributeValues is null || !attributeValues.Any())
-                return null;
+            // 1. Kiểm tra Category
+            var category = await _categoryRepository.GetByIdAsync(
+                categoryId,
+                cancellationToken);
 
-            foreach (var attrReq in attributeValues)
+            if (category is null)
+                return ProductErrors.InvalidCategory;
+
+            // Phải load cả Attribute và Option để validation
+            var productType =
+                await _productTypeRepository.GetWithAttributesAndOptionsAsync(
+                    productTypeId,
+                    cancellationToken);
+
+            if (productType is null || productType.CategoryId != categoryId)
+                return ProductErrors.InvalidProductType;
+
+            // 2. Kiểm tra Brand
+            if (brandId.HasValue)
             {
-                var attrValidation = await _attributeValueValidator.ValidateAsync(attrReq, cancellationToken);
-                if (!attrValidation.IsValid)
-                {
-                    return ValidationErrors.InvalidRequest(
-                        string.Join(", ", attrValidation.Errors.Select(e => e.ErrorMessage)));
-                }
+                var brand = await _brandRepository.GetByIdAsync(
+                    brandId.Value,
+                    cancellationToken);
+
+                if (brand is null)
+                    return ProductErrors.InvalidBrand;
             }
 
-            return null;
+            // 3. Kiểm tra toàn bộ AttributeValue
+            return ValidateAttributeValues(productType, attributeValues);
         }
 
         // Lưu tập thuộc tính động của sản phẩm
@@ -383,10 +408,13 @@ namespace HomeCycle.Application.Services.Products
                 ProductId = productId,
                 AttributeId = x.AttributeId,
                 OptionId = x.OptionId,
-                ValueBoolean = x.ValueBoolean,
-                ValueText = x.ValueText,
-                ValueNumber = x.ValueNumber
-            });
+                ValueText = x.ValueText?.Trim(),
+                ValueNumber = x.ValueNumber,
+                ValueBoolean = x.ValueBoolean
+            }).ToList();
+
+            if (values.Count == 0)
+                return;
 
             await _attributeValueRepository.AddRangeAsync(values, cancellationToken);
         }
@@ -400,5 +428,7 @@ namespace HomeCycle.Application.Services.Products
             // 2. Thêm lại danh sách thuộc tính mới (nếu có)
             await SaveAttributeValuesAsync(productId, attributeValues, cancellationToken);
         }
+
+
     }
 }

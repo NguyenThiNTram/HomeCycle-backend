@@ -254,8 +254,7 @@ namespace HomeCycle.Infrastructure.Repositories.Posts
             var dbPost = await _db.Posts.FindAsync(new object[] { postId }, cancellationToken);
             if (dbPost == null) return false;
 
-            dbPost.Status = (int)PostStatus.Deleted;
-            dbPost.UpdatedAt = DateTime.UtcNow;
+            _db.Posts.Remove(dbPost);
             return true;
         }
     }

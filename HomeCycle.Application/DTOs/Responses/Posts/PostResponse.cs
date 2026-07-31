@@ -17,9 +17,9 @@ namespace HomeCycle.Application.DTOs.Responses.Posts
 
         public string? Description { get; set; }
 
-        public int Quantity { get; set; }
+        public int? Quantity { get; set; }
 
-        public int RemainingQuantity { get; set; }
+        public int? RemainingQuantity { get; set; }
 
         public PostType? PostType { get; set; }
 

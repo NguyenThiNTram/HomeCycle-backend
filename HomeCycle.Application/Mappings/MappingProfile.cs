@@ -144,12 +144,72 @@ namespace HomeCycle.Application.Mappings
             CreateMap<MediaRequest, media>();
 
             CreateMap<CreatePostRequest, post>()
-                .ForMember(x => x.PostId, opt => opt.Ignore())
-                .ForMember(x => x.OwnerId, opt => opt.Ignore())
-                .ForMember(x => x.CreatedAt, opt => opt.Ignore())
-                .ForMember(x => x.UpdatedAt, opt => opt.Ignore())
-                .ForMember(x => x.RemainingQuantity, opt => opt.Ignore())
-                .ForMember(x => x.Status, opt => opt.Ignore());
+                .ForMember(dest => dest.PostId, opt => opt.Ignore())
+                .ForMember(dest => dest.OwnerId, opt => opt.Ignore())
+                .ForMember(dest => dest.PostType, opt => opt.Ignore())
+                .ForMember(dest => dest.BasePrice, opt => opt.Ignore())
+                .ForMember(dest => dest.RemainingQuantity, opt => opt.Ignore())
+                .ForMember(dest => dest.Status, opt => opt.Ignore())
+                .ForMember(dest => dest.CreatedAt, opt => opt.Ignore())
+                .ForMember(dest => dest.UpdatedAt, opt => opt.Ignore())
+                // Chỉ include các DTO kế thừa CreatePostRequest
+                .Include<CreateSellPostRequest, post>()
+                .Include<CreateBuyPostRequest, post>();
+
+            CreateMap<CreateSellPostRequest, post>();
+            CreateMap<CreateBuyPostRequest, post>();
+
+            CreateMap<UpdatePostRequest, post>()
+                .ForMember(dest => dest.PostId, opt => opt.Ignore())
+                .ForMember(dest => dest.OwnerId, opt => opt.Ignore())
+                .ForMember(dest => dest.PostType, opt => opt.Ignore())
+                .ForMember(dest => dest.BasePrice, opt => opt.Ignore())
+                .ForMember(dest => dest.RemainingQuantity, opt => opt.Ignore())
+                .ForMember(dest => dest.Status, opt => opt.Ignore())
+                .ForMember(dest => dest.CreatedAt, opt => opt.Ignore())
+                .ForMember(dest => dest.UpdatedAt, opt => opt.Ignore())
+                //.ForAllMembers(opt => opt.Condition((src, dest, srcMember) => srcMember != null))
+                .Include<UpdateSellPostRequest, post>()
+                .Include<UpdateBuyPostRequest, post>();
+
+            CreateMap<UpdateSellPostRequest, post>();
+            CreateMap<UpdateBuyPostRequest, post>();
+
+            CreateMap<post, PostResponse>();
+
+            CreateMap<post, PostDetailResponse>()
+                .ForMember(dest => dest.Product, opt => opt.Ignore())
+                .ForMember(dest => dest.Medias, opt => opt.Ignore());
+
+            CreateMap<CreateSellPostRequest, post>()
+                .ForMember(dest => dest.PostType, opt => opt.Ignore())
+                .ForMember(x => x.BasePrice, opt => opt.Ignore());
+
+            CreateMap<CreateBuyPostRequest, post>()
+                .ForMember(x => x.PostType, opt => opt.Ignore())
+                .ForMember(x => x.BasePrice, opt => opt.Ignore());
+
+            CreateMap<UpdateSellPostRequest, post>()
+                .IncludeBase<UpdatePostRequest, post>()
+                .ForMember(dest => dest.PostId, opt => opt.Ignore())
+                .ForMember(dest => dest.OwnerId, opt => opt.Ignore())
+                .ForMember(dest => dest.PostType, opt => opt.Ignore())
+                .ForMember(dest => dest.Status, opt => opt.Ignore())
+                .ForMember(dest => dest.RemainingQuantity, opt => opt.Ignore())
+                .ForMember(dest => dest.CreatedAt, opt => opt.Ignore())
+                .ForMember(x => x.BasePrice, opt => opt.Ignore())
+                .ForMember(dest => dest.UpdatedAt, opt => opt.Ignore());
+
+            CreateMap<UpdateBuyPostRequest, post>()
+                .ForMember(x => x.PostType, opt => opt.Ignore())
+                .ForMember(x => x.BasePrice, opt => opt.Ignore());
+
+            CreateMap<ProductRequest, product>()
+                .ForMember(dest => dest.ProductId, opt => opt.Ignore())
+                .ForMember(dest => dest.PostId, opt => opt.Ignore());
+
+            CreateMap<post, PostResponse>();
+            CreateMap<post, PostDetailResponse>();
 
 
             CreateMap<ProductRequest, product>()

@@ -260,7 +260,7 @@ namespace HomeCycle.Application.Services.Posts
             var existing = await _postRepository.GetByIdAsync(postId, cancellationToken);
 
             var checkError = ValidateOwnershipAndComputeRemaining(
-                existing, ownerId, PostType.Buy, request.Quantity, out int newRemainingQuantity);
+                existing, ownerId, PostType.Buy, (int)request.Quantity, out int newRemainingQuantity);
             if (checkError is not null)
                 return Result<PostResponse>.Fail(checkError);
 
@@ -420,12 +420,9 @@ namespace HomeCycle.Application.Services.Posts
             if (existing.OwnerId != ownerId)
                 return Result<bool>.Fail(PostErrors.Forbidden);
 
-            var updated = await _postRepository.UpdateStatusAsync(postId, PostStatus.Deleted, cancellationToken);
-            if (!updated)
+            var deleted = await _postRepository.DeleteAsync(postId, cancellationToken);
+            if (!deleted)
                 return Result<bool>.Fail(PostErrors.NotFound);
-
-            existing.Status = (int)PostStatus.Deleted;
-            existing.UpdatedAt = DateTime.UtcNow;
 
             await _unitOfWork.SaveChangesAsync(cancellationToken);
             return Result<bool>.Success(true);

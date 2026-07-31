@@ -65,7 +65,10 @@ namespace HomeCycle.Application.Services.Products
 
             var normalizedAttributeName = request.AttributeName.Trim();
 
-            var isDuplicate = await _attributeRepository.ExistsByNameAsync(productTypeId, request.AttributeName, cancellationToken);
+            var isDuplicate = await _attributeRepository.ExistsByNameAsync(
+                productTypeId,
+                normalizedAttributeName,
+                cancellationToken);
             if (isDuplicate)
                 return Result<ProductAttributeResponse>.Fail(ProductTypeErrors.AttributeAlreadyExists);
 
@@ -146,14 +149,6 @@ namespace HomeCycle.Application.Services.Products
             // đổi DataType sẽ khiến dữ liệu cũ (VD: ValueNumber) trở nên vô nghĩa so với DataType mới.
             // Xem mục cảnh báo bên dưới.
 
-            //existing.AttributeName = request.AttributeName.Trim();
-            //existing.DataType = request.DataType;
-            //existing.Unit = request.Unit?.Trim();
-            //existing.DisplayOrder = request.DisplayOrder;
-            //existing.IsFilterable = request.IsFilterable;
-            //existing.IsRequired = request.IsRequired;
-            //existing.InputMode = request.InputMode;
-
             // Chặn sửa DataType/InputMode khi Attribute đã có dữ liệu sử dụng
             var inUse = await _attributeValueRepository.ExistsByAttributeIdAsync(attributeId, cancellationToken);
             if (inUse)
@@ -173,7 +168,25 @@ namespace HomeCycle.Application.Services.Products
             await _attributeRepository.UpdateAsync(existing, cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-            return Result<ProductAttributeResponse>.Success(_mapper.Map<ProductAttributeResponse>(existing));
+            var response = _mapper.Map<ProductAttributeResponse>(existing);
+
+            if (HasOptionsMode(existing.InputMode))
+            {
+                var options = await _optionRepository.GetByAttributeAsync(
+                    attributeId,
+                    cancellationToken);
+
+                response.Options = _mapper
+                    .Map<List<ProductAttributeOptionResponse>>(options)
+                    .OrderBy(x => x.DisplayOrder)
+                    .ToList();
+            }
+            else
+            {
+                response.Options = [];
+            }
+
+            return Result<ProductAttributeResponse>.Success(response);
         }
 
         public async Task<Result<ProductAttributeResponse>> GetByIdAsync(Guid attributeId, CancellationToken cancellationToken = default)
@@ -187,9 +200,7 @@ namespace HomeCycle.Application.Services.Products
 
             var response = _mapper.Map<ProductAttributeResponse>(attribute);
 
-            var dataType = (DataType)(attribute.DataType ?? 0);
-
-            if (dataType == DataType.Option)
+            if (HasOptionsMode(attribute.InputMode))
             {
                 var options = await _optionRepository.GetByAttributeAsync(
                     attributeId,
@@ -246,19 +257,22 @@ namespace HomeCycle.Application.Services.Products
                     Unit = attr.Unit
                 };
 
-                // Chỉ Attribute có Option (Dropdown/RadioButton) mới cần load Option —
-                // Number/Boolean/Text tự do không có Option nên bỏ qua để tránh query thừa.
-                var options = await _optionRepository.GetByAttributeAsync(attr.AttributeId, cancellationToken);
-                if (options.Count > 0)
+                // Chỉ Attribute có chế độ nhập Option (Dropdown/RadioButton) mới cần load Option —
+                // CustomOnly (nhập tay Text/Number/Boolean) không có Option nên bỏ qua để tránh query thừa.
+                if (HasOptionsMode(attr.InputMode))
                 {
-                    response.Options = options
-                        .OrderBy(o => o.DisplayOrder)
-                        .Select(o => new AttributeOptionItem
-                        {
-                            OptionId = o.OptionId,
-                            OptionValue = o.OptionValue ?? string.Empty
-                        })
-                        .ToList();
+                    var options = await _optionRepository.GetByAttributeAsync(attr.AttributeId, cancellationToken);
+                    if (options.Count > 0)
+                    {
+                        response.Options = options
+                            .OrderBy(o => o.DisplayOrder)
+                            .Select(o => new AttributeOptionItem
+                            {
+                                OptionId = o.OptionId,
+                                OptionValue = o.OptionValue ?? string.Empty
+                            })
+                            .ToList();
+                    }
                 }
 
                 result.Add(response);
@@ -274,8 +288,6 @@ namespace HomeCycle.Application.Services.Products
 
             foreach (var attr in attributes.OrderBy(x => x.DisplayOrder))
             {
-                var dataType = (DataType)(attr.DataType ?? 0);
-
                 var response = new ProductAttributeResponse
                 {
                     AttributeId = attr.AttributeId,
@@ -288,8 +300,8 @@ namespace HomeCycle.Application.Services.Products
                     InputMode = attr.InputMode
                 };
 
-                // Chỉ query Option khi DataType = Option — tránh query DB thừa cho Text/Number/Boolean
-                if (dataType == DataType.Option)
+                // Chỉ query Option khi InputMode cho phép chọn từ danh sách (OptionOnly/OptionOrCustom)
+                if (HasOptionsMode(attr.InputMode))
                 {
                     var options = await _optionRepository.GetByAttributeAsync(attr.AttributeId, cancellationToken);
                     response.Options = options
@@ -308,6 +320,11 @@ namespace HomeCycle.Application.Services.Products
             }
 
             return result;
+        }
+
+        private static bool HasOptionsMode(InputMode? inputMode)
+        {
+            return inputMode == InputMode.OptionOnly || inputMode == InputMode.OptionOrCustom;
         }
     }
 }
