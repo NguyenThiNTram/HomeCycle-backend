@@ -100,6 +100,50 @@ namespace HomeCycle.Infrastructure.Repositories.Posts
             };
         }
 
+        public async Task<PagedResult<post>> GetAllByOwnerAsync(Guid ownerId, PaginationRequest request, CancellationToken cancellationToken = default)
+        {
+            var query = _db.Posts
+                .AsNoTracking()
+                .Where(x => x.OwnerId == ownerId)
+                .OrderByDescending(x => x.CreatedAt);
+
+            var totalCount = await query.CountAsync(cancellationToken);
+
+            var items = await query
+                .Skip((request.PageNumber - 1) * request.PageSize)
+                .Take(request.PageSize)
+                .ToListAsync(cancellationToken);
+
+            return new PagedResult<post>
+            {
+                Items = items.Select(x => x.ToDomain()).ToList(),
+                PageNumber = request.PageNumber,
+                PageSize = request.PageSize,
+                TotalCount = totalCount
+            };
+        }
+
+        public async Task<post?> GetDetailByOwnerAsync(Guid ownerId, Guid postId, CancellationToken cancellationToken = default)
+        {
+            var entity = await _db.Posts.AsNoTracking()
+                .Include(x => x.Product)
+                    .ThenInclude(x => x.Category)
+                .Include(x => x.Product)
+                    .ThenInclude(x => x.ProductType)
+                .Include(x => x.Product)
+                    .ThenInclude(x => x.Brand)
+                .Include(x => x.Product)
+                    .ThenInclude(x => x.Product_Attribute_Values)
+                        .ThenInclude(x => x.Attribute)
+                .Include(x => x.Product)
+                    .ThenInclude(x => x.Product_Attribute_Values)
+                        .ThenInclude(x => x.Option)
+                .FirstOrDefaultAsync(
+                    x => x.PostId == postId && x.OwnerId == ownerId, cancellationToken);
+
+            return entity?.ToDomain();
+        }
+
         public async Task<PagedResult<post>> SearchAsync(PostSearchRequest request, CancellationToken cancellationToken = default)
         {
             var query = _db.Posts

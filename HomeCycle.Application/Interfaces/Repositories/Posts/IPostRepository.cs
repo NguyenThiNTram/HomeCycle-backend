@@ -21,6 +21,10 @@ namespace HomeCycle.Application.Interfaces.Repositories.Posts
 
         Task<PagedResult<post>> GetAllAsync(PaginationRequest request, CancellationToken cancellationToken = default);
 
+        Task<PagedResult<post>> GetAllByOwnerAsync(Guid ownerId, PaginationRequest request, CancellationToken cancellationToken = default);
+
+        Task<post?> GetDetailByOwnerAsync(Guid ownerId, Guid postId, CancellationToken cancellationToken = default);
+
         Task<PagedResult<post>> SearchAsync(PostSearchRequest request, CancellationToken cancellationToken = default);
 
         Task<int> CountActiveByOwnerAsync(Guid ownerId, CancellationToken cancellationToken = default);
