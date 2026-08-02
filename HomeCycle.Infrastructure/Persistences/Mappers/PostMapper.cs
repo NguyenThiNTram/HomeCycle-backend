@@ -17,6 +17,7 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
             {
                 PostId = entity.PostId,
                 OwnerId = entity.OwnerId,
+                ProductName = entity.Product?.ProductName,
                 Description = entity.Description,
                 Quantity = entity.Quantity,
                 RemainingQuantity = entity.RemainingQuantity,

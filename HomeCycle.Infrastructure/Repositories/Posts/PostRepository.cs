@@ -50,6 +50,7 @@ namespace HomeCycle.Infrastructure.Repositories.Posts
         {
             var entity = await _db.Posts
                 .AsNoTracking()
+                .Include(x => x.Product)
                 .FirstOrDefaultAsync(x => x.PostId == postId, cancellationToken);
 
             return entity?.ToDomain();
@@ -78,7 +79,10 @@ namespace HomeCycle.Infrastructure.Repositories.Posts
 
         public async Task<PagedResult<post>> GetAllAsync(PaginationRequest request, CancellationToken cancellationToken = default)
         {
-            var query = _db.Posts.AsNoTracking().OrderByDescending(x => x.CreatedAt);
+            var query = _db.Posts
+                .AsNoTracking()
+                .Include(x => x.Product)
+                .OrderByDescending(x => x.CreatedAt);
 
             var totalCount = await query.CountAsync(cancellationToken);
 
