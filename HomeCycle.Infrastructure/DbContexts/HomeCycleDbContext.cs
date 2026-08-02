@@ -528,21 +528,35 @@ public partial class HomeCycleDbContext : DbContext
 
             entity.Property(e => e.ProductId).ValueGeneratedNever();
 
-            entity.HasOne(d => d.Category).WithMany(p => p.Products)
+            entity.HasOne(d => d.Category)
+                .WithMany(p => p.Products)
+                .HasForeignKey(e => e.CategoryId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("fk_product_category");
 
-            entity.HasOne(d => d.Post).WithOne(p => p.Product)
-                .OnDelete(DeleteBehavior.ClientSetNull)
+            //entity.HasOne(d => d.Post).WithOne(p => p.Product)
+            //    .OnDelete(DeleteBehavior.ClientSetNull)
+            //    .HasForeignKey<Product>(x => x.PostId)
+            //    .OnDelete(DeleteBehavior.Cascade)
+            //    .HasConstraintName("fk_product_post");
+
+            // Post bị xóa → Product thuộc Post cũng bị xóa
+            entity.HasOne(e => e.Post)
+                .WithOne(e => e.Product)
+                .HasForeignKey<Product>(e => e.PostId)
+                .OnDelete(DeleteBehavior.Cascade)
                 .HasConstraintName("fk_product_post");
 
-            entity.HasOne(d => d.ProductType).WithMany(p => p.Products)
+            entity.HasOne(d => d.ProductType)
+                .WithMany(p => p.Products)
+                .HasForeignKey(e => e.ProductTypeId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("fk_product_type");
 
-            entity.HasOne(d => d.Brand).WithMany(p => p.Products)
-                .OnDelete(DeleteBehavior.ClientSetNull)
+            entity.HasOne(d => d.Brand)
+                .WithMany(p => p.Products)
                 .HasForeignKey(d => d.BrandId)
+                //.OnDelete(DeleteBehavior.ClientSetNull)
                 .OnDelete(DeleteBehavior.SetNull)
                 .HasConstraintName("fk_product_brand");
         });
@@ -555,8 +569,11 @@ public partial class HomeCycleDbContext : DbContext
             entity.Property(e => e.IsFilterable).HasDefaultValue(false);
             entity.Property(e => e.IsRequired).HasDefaultValue(false);
 
-            entity.HasOne(d => d.ProductType).WithMany(p => p.Product_Attributes)
-                .OnDelete(DeleteBehavior.ClientSetNull)
+            entity.HasOne(d => d.ProductType)
+                .WithMany(p => p.Product_Attributes)
+                .HasForeignKey(e => e.ProductTypeId)
+                //.OnDelete(DeleteBehavior.ClientSetNull)
+                .OnDelete(DeleteBehavior.Restrict)
                 .HasConstraintName("fk_attr_product_type");
         });
 
@@ -566,8 +583,11 @@ public partial class HomeCycleDbContext : DbContext
 
             entity.Property(e => e.OptionId).ValueGeneratedNever();
 
-            entity.HasOne(d => d.Attribute).WithMany(p => p.Product_Attribute_Options)
-                .OnDelete(DeleteBehavior.ClientSetNull)
+            entity.HasOne(d => d.Attribute)
+                .WithMany(p => p.Product_Attribute_Options)
+                .HasForeignKey(e => e.AttributeId)
+                //.OnDelete(DeleteBehavior.ClientSetNull)
+                .OnDelete(DeleteBehavior.Cascade)
                 .HasConstraintName("fk_attr_option");
         });
 
@@ -575,14 +595,28 @@ public partial class HomeCycleDbContext : DbContext
         {
             entity.HasKey(e => new { e.ProductId, e.AttributeId }).HasName("Product_Attribute_Value_pkey");
 
-            entity.HasOne(d => d.Attribute).WithMany(p => p.Product_Attribute_Values)
-                .OnDelete(DeleteBehavior.ClientSetNull)
+            entity.HasOne(d => d.Attribute)
+                .WithMany(p => p.Product_Attribute_Values)
+                //.OnDelete(DeleteBehavior.ClientSetNull)
+                .HasForeignKey(e => e.AttributeId)
+                .OnDelete(DeleteBehavior.Cascade)
                 .HasConstraintName("fk_pav_attribute");
 
-            entity.HasOne(d => d.Option).WithMany(p => p.Product_Attribute_Values).HasConstraintName("fk_pav_option");
+            entity.HasOne(d => d.Option)
+                .WithMany(p => p.Product_Attribute_Values)
+                .HasForeignKey(e => e.OptionId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("fk_pav_option");
 
-            entity.HasOne(d => d.Product).WithMany(p => p.Product_Attribute_Values)
-                .OnDelete(DeleteBehavior.ClientSetNull)
+            //entity.HasOne(d => d.Product).WithMany(p => p.Product_Attribute_Values)
+            //    .OnDelete(DeleteBehavior.ClientSetNull)
+            //    .OnDelete(DeleteBehavior.Cascade)
+            //    .HasConstraintName("fk_pav_product");
+
+            entity.HasOne(d => d.Product)
+                .WithMany(d => d.Product_Attribute_Values)
+                .HasForeignKey(d => d.ProductId)
+                .OnDelete(DeleteBehavior.Cascade)
                 .HasConstraintName("fk_pav_product");
         });
 
@@ -594,8 +628,11 @@ public partial class HomeCycleDbContext : DbContext
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()");
             entity.Property(e => e.IsActive).HasDefaultValue(true);
 
-            entity.HasOne(d => d.Category).WithMany(p => p.Product_Types)
-                .OnDelete(DeleteBehavior.ClientSetNull)
+            entity.HasOne(d => d.Category)
+                .WithMany(p => p.Product_Types)
+                .HasForeignKey(e => e.CategoryId)
+                //.OnDelete(DeleteBehavior.ClientSetNull)
+                .OnDelete(DeleteBehavior.Restrict)
                 .HasConstraintName("fk_product_type_category");
         });
 
