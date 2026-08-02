@@ -84,13 +84,13 @@ namespace HomeCycle.Application.Services.Posts
 
             post.PostId = Guid.NewGuid();
             post.OwnerId = ownerId;
-            post.PostType = (int)PostType.Sell;
+            post.PostType = PostType.Sell;
             post.ProductName = request.Product?.ProductName;
             post.BasePrice = request.BasePrice;
             post.CreatedAt = now;
             post.UpdatedAt = now;
             post.RemainingQuantity = request.Quantity;
-            post.Status = (int)PostStatus.Pending;
+            post.Status = PostStatus.Active;
             post.ExpiryDate = now.AddMonths(12);
 
             try
@@ -152,7 +152,7 @@ namespace HomeCycle.Application.Services.Posts
             post.CreatedAt = now;
             post.UpdatedAt = now;
             post.RemainingQuantity = request.Quantity;
-            post.Status = (int)PostStatus.Pending;
+            post.Status = PostStatus.Active;
 
             try
             {
@@ -316,7 +316,7 @@ namespace HomeCycle.Application.Services.Posts
             if (entity is null)
                 return Result<PostDetailResponse>.Fail(PostErrors.NotFound);
 
-            if (entity is null || entity.Status == (int)PostStatus.Deleted)
+            if (entity is null || entity.Status == PostStatus.Deleted)
                 return Result<PostDetailResponse>.Fail(PostErrors.NotFound);
 
             var response = _mapper.Map<PostDetailResponse>(entity);
@@ -386,7 +386,7 @@ namespace HomeCycle.Application.Services.Posts
             CancellationToken cancellationToken = default)
         {
             var entity = await _postRepository.GetDetailByOwnerAsync(ownerId, postId, cancellationToken);
-            if (entity is null || entity.Status == (int)PostStatus.Deleted)
+            if (entity is null || entity.Status == PostStatus.Deleted)
                 return Result<PostDetailResponse>.Fail(PostErrors.NotFound);
 
             var response = _mapper.Map<PostDetailResponse>(entity);
@@ -442,14 +442,40 @@ namespace HomeCycle.Application.Services.Posts
             if (existing.OwnerId != ownerId)
                 return Result<bool>.Fail(PostErrors.Forbidden);
 
-            if (existing.Status == (int)PostStatus.Closed)
+            if (existing.Status == PostStatus.Closed)
                 return Result<bool>.Fail(PostErrors.PostAlreadyClosedOrDeleted);
 
             var updated = await _postRepository.UpdateStatusAsync(postId, PostStatus.Closed, cancellationToken);
             if (!updated)
                 return Result<bool>.Fail(PostErrors.NotFound);
 
-            existing.Status = (int)PostStatus.Closed;
+            existing.Status = PostStatus.Closed;
+            existing.UpdatedAt = DateTime.UtcNow;
+
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            return Result<bool>.Success(true);
+        }
+
+        public async Task<Result<bool>> ReactivateAsync(
+            Guid ownerId,
+            Guid postId,
+            CancellationToken cancellationToken = default)
+        {
+            var existing = await _postRepository.GetByIdAsync(postId, cancellationToken);
+            if (existing is null)
+                return Result<bool>.Fail(PostErrors.NotFound);
+
+            if (existing.OwnerId != ownerId)
+                return Result<bool>.Fail(PostErrors.Forbidden);
+
+            if (existing.Status != PostStatus.Closed)
+                return Result<bool>.Fail(PostErrors.PostAlreadyClosedOrDeleted);
+
+            var updated = await _postRepository.UpdateStatusAsync(postId, PostStatus.Active, cancellationToken);
+            if (!updated)
+                return Result<bool>.Fail(PostErrors.NotFound);
+
+            existing.Status = PostStatus.Active;
             existing.UpdatedAt = DateTime.UtcNow;
 
             await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -490,7 +516,7 @@ namespace HomeCycle.Application.Services.Posts
             if (existing.PostType != postType)
                 return PostErrors.InvalidPostType;
 
-            if (existing.Status == (int)PostStatus.Deleted || existing.Status == (int)PostStatus.Closed)
+            if (existing.Status == PostStatus.Deleted || existing.Status == PostStatus.Closed)
                 return PostErrors.PostAlreadyClosedOrDeleted;
 
             // Spec: "Sửa hoặc xóa tin trong thời hạn cho phép"

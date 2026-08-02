@@ -66,7 +66,7 @@ namespace HomeCycle.Application.Services.Offers
             if (post is null)
                 return Result<OfferResponse>.Fail(OfferErrors.PostNotFound);
 
-            if (post.Status != (int)PostStatus.Active)
+            if (post.Status != PostStatus.Active)
                 return Result<OfferResponse>.Fail(OfferErrors.PostNotActive);
 
             if (post.OwnerId == userId)
@@ -216,7 +216,7 @@ namespace HomeCycle.Application.Services.Offers
             if (post is null)
                 return Result<OfferResponse>.Fail(OfferErrors.PostNotFound);
 
-            if (post.Status != (int)PostStatus.Active)
+            if (post.Status != PostStatus.Active)
                 return Result<OfferResponse>.Fail(OfferErrors.PostNotActive);
 
             if (request.OfferQuantity > post.RemainingQuantity)
@@ -343,7 +343,7 @@ namespace HomeCycle.Application.Services.Offers
             if (post is null)
                 return Result<OfferResponse>.Fail(OfferErrors.PostNotFound);
 
-            if (post.Status != (int)PostStatus.Active)
+            if (post.Status != PostStatus.Active)
                 return Result<OfferResponse>.Fail(OfferErrors.PostNotActive);
 
             if (offer.OfferQuantity > post.RemainingQuantity)
@@ -369,7 +369,7 @@ namespace HomeCycle.Application.Services.Offers
                 var newRemaining = post.RemainingQuantity - offer.OfferQuantity;
                 post.RemainingQuantity = newRemaining < 0 ? 0 : newRemaining;
                 if (post.RemainingQuantity == 0)
-                    post.Status = (int)PostStatus.Closed;
+                    post.Status = PostStatus.Closed;
                 await _postRepository.UpdateAsync(post, cancellationToken);
 
                 await _unitOfWork.SaveChangesAsync(cancellationToken);

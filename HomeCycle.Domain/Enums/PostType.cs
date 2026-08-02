@@ -8,7 +8,7 @@ namespace HomeCycle.Domain.Enums
 {
     public enum PostType
     {
-        Sell = 0,
-        Buy = 1
+        Sell = 1,
+        Buy = 2
     }
 }
