@@ -155,6 +155,34 @@ namespace HomeCycle.API.Controllers
             return Ok(result.Data);
         }
 
+        [HttpGet("get-all/by-user/{userId:guid}")]
+        [SwaggerOperation(
+            Summary = "Lấy danh sách bài đăng của người dùng",
+            Description = "Trả về danh sách bài đăng theo UserId có hỗ trợ phân trang."
+        )]
+        [AllowAnonymous]
+        public async Task<IActionResult> GetAllByUser(Guid userId, [FromQuery] PaginationRequest request, CancellationToken cancellationToken)
+        {
+            var result = await _postService.GetAllByOwnerAsync(userId, request, cancellationToken);
+            return Ok(result.Data);
+        }
+
+        [HttpGet("get-detail-by-user/{userId:guid}/{postId:guid}")]
+        [SwaggerOperation(
+            Summary = "Lấy chi tiết bài đăng của người dùng",
+            Description = "Trả về chi tiết bài đăng theo userId và postId."
+        )]
+        [AllowAnonymous]
+        public async Task<IActionResult> GetDetailByUser(Guid userId, Guid postId, CancellationToken cancellationToken)
+        {
+            var result = await _postService.GetDetailByOwnerAsync(userId, postId, cancellationToken);
+
+            if (!result.IsSuccess)
+                return NotFound(result.Error);
+
+            return Ok(result.Data);
+        }
+
         [HttpPost("search")]
         [SwaggerOperation(
             Summary = "Tìm kiếm bài đăng",

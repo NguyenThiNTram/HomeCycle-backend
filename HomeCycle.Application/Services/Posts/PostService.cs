@@ -362,6 +362,50 @@ namespace HomeCycle.Application.Services.Posts
             return Result<PagedResult<PostResponse>>.Success(response);
         }
 
+        public async Task<Result<PagedResult<PostResponse>>> GetAllByOwnerAsync(
+            Guid ownerId,
+            PaginationRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            var paged = await _postRepository.GetAllByOwnerAsync(ownerId, request, cancellationToken);
+
+            var response = new PagedResult<PostResponse>
+            {
+                Items = paged.Items.Select(x => _mapper.Map<PostResponse>(x)).ToList(),
+                PageNumber = paged.PageNumber,
+                PageSize = paged.PageSize,
+                TotalCount = paged.TotalCount
+            };
+
+            return Result<PagedResult<PostResponse>>.Success(response);
+        }
+
+        public async Task<Result<PostDetailResponse>> GetDetailByOwnerAsync(
+            Guid ownerId,
+            Guid postId,
+            CancellationToken cancellationToken = default)
+        {
+            var entity = await _postRepository.GetDetailByOwnerAsync(ownerId, postId, cancellationToken);
+            if (entity is null || entity.Status == (int)PostStatus.Deleted)
+                return Result<PostDetailResponse>.Fail(PostErrors.NotFound);
+
+            var response = _mapper.Map<PostDetailResponse>(entity);
+
+            var productResult = await _productService.GetDetailByPostIdAsync(postId, cancellationToken);
+            var mediaResult = await _mediaService.GetByTargetAsync(postId, PostMediaTargetType, cancellationToken);
+
+            if (!productResult.IsSuccess || productResult.Data is null)
+                return Result<PostDetailResponse>.Fail(ProductErrors.ProductNotFound);
+
+            if (!mediaResult.IsSuccess)
+                return Result<PostDetailResponse>.Fail(mediaResult.Error!);
+
+            response.Product = productResult.Data;
+            response.Medias = mediaResult.Data ?? [];
+
+            return Result<PostDetailResponse>.Success(response);
+        }
+
         public async Task<Result<PagedResult<PostResponse>>> SearchAsync(
             PostSearchRequest request,
             CancellationToken cancellationToken = default)
