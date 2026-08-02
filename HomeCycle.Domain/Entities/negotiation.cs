@@ -16,6 +16,8 @@ public partial class negotiation
 
     public decimal? FinalPrice { get; set; }
 
+    public int? FinalQuantity { get; set; }
+
     public DateTime? LastMessageAt { get; set; }
     public DateTime CreatedAt { get; set; }
 

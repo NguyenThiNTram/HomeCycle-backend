@@ -20,12 +20,6 @@ namespace HomeCycle.API
         {
             var builder = WebApplication.CreateBuilder(args);
 
-            // Cấu hình Kestrel lắng nghe cổng 8081 (HTTP thường)
-            //builder.WebHost.ConfigureKestrel(options =>
-            //{
-            //    options.ListenAnyIP(8081);
-            //});
-
             // Config CORS
             builder.Services.AddCors(options =>
             {
@@ -34,12 +28,14 @@ namespace HomeCycle.API
                     policy.AllowAnyOrigin()
                           .AllowAnyMethod()
                           .AllowAnyHeader();
+                          //.AllowCredentials(); // truyền Connection ID
                 });
             });
 
             // Add services to the container.
 
             builder.Services.AddControllers();
+            builder.Services.AddSignalR();
 
             // read enums to text
             builder.Services.AddControllers().AddJsonOptions(options =>
@@ -150,6 +146,10 @@ namespace HomeCycle.API
                 // Tốt nhất nếu chạy Docker hoàn toàn thì comment hẳn dòng dưới này lại:
                 app.UseHttpsRedirection();
             }
+
+            app.UseCors("SignalRPolicy");
+            app.UseWebSockets();
+            //app.MapHub<ChatHub>("/chatHub");
 
             app.UseRouting();
             app.UseCors("AllowAll");

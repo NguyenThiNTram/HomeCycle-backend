@@ -21,7 +21,13 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 InputType = (InputType?)entity.InputType,
                 ValueBoolean = entity.ValueBoolean,
                 ValueText = entity.ValueText,
-                ValueNumber = entity.ValueNumber
+                ValueNumber = entity.ValueNumber,
+                AttributeName = entity.Attribute?.AttributeName,
+                DataType = (DataType?)entity.Attribute?.DataType,
+                Unit = entity.Attribute?.Unit,
+                AttributeDisplayOrder = entity.Attribute?.DisplayOrder,
+                OptionValue = entity.Option?.OptionValue,
+                OptionDisplayOrder = entity.Option?.DisplayOrder
             };
         }
         public static Product_Attribute_Value ToInfrastructure(this product_attribute_value entity)

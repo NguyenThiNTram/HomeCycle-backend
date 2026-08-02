@@ -115,4 +115,36 @@ namespace HomeCycle.Application.Commons.Errors
                 "POST_INVALID_QUANTITY",
                 $"Số lượng cập nhật ({requestedQuantity}) không thể nhỏ hơn số lượng đã bán/giao dịch ({soldQuantity}).");
     }
+
+    public static class OfferErrors
+    {
+        public static readonly Error NotFound = new("OFFER_NOT_FOUND", "The offer is not found.");
+
+        public static readonly Error Forbidden = new("OFFER_FORBIDDEN", "You do not have permission to access this offer.");
+
+        public static readonly Error NotPending = new("OFFER_NOT_PENDING", "The offer is no longer in pending state.");
+
+        public static readonly Error PostNotFound = new("OFFER_POST_NOT_FOUND", "The post does not exist.");
+
+        public static readonly Error PostNotActive = new("OFFER_POST_NOT_ACTIVE", "The post is not active.");
+
+        public static readonly Error CannotOfferOwnPost = new("OFFER_CANNOT_OFFER_OWN_POST", "You cannot send an offer for your own post.");
+
+        public static readonly Error DuplicatePending = new("OFFER_DUPLICATE_PENDING", "You already have a pending offer for this post.");
+
+        public static Error PriceOutOfRange(decimal minPrice, decimal maxPrice)
+            => new("OFFER_PRICE_OUT_OF_RANGE",
+                   $"Offer price must be between {minPrice:N0} and {maxPrice:N0}.");
+
+        public static Error QuantityExceedsRemaining(int requested, int remaining)
+            => new("OFFER_QUANTITY_EXCEEDS_REMAINING",
+                   $"Offer quantity ({requested}) exceeds the remaining quantity ({remaining}).");
+    }
+
+    public static class NegotiationErrors
+    {
+        public static readonly Error NotFound = new("NEGOTIATION_NOT_FOUND", "The negotiation is not found.");
+
+        public static readonly Error NotOpen = new("NEGOTIATION_NOT_OPEN", "The negotiation is not in open state.");
+    }
 }

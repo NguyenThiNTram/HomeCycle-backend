@@ -19,6 +19,7 @@ public class message
     public int OfferQuantity { get; set; }
     public int? OfferStatus { get; set; }
 
+    public decimal? BasePriceSnapshot { get; set; }
 
     public string? MediaUrl { get; set; }
     public bool IsRead { get; set; }

@@ -18,6 +18,13 @@ public class product_attribute_value
     public string? ValueText { get; set; }
     public decimal? ValueNumber { get; set; }
 
+    public string? AttributeName { get; set; }
+    public Enums.DataType? DataType { get; set; }
+    public string? Unit { get; set; }
+    public string? OptionValue { get; set; }
+    public int? AttributeDisplayOrder { get; set; }
+    public int? OptionDisplayOrder { get; set; }
+
     public product_attribute_value()
     {
     }
