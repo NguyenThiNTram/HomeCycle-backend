@@ -19,6 +19,9 @@ namespace HomeCycle.Application.DTOs.Requests.Posts
         public string? City { get; set; }
         public DeliveryMethod DeliveryMethod { get; set; }
         public PriorityLevel? PriorityLevel { get; set; }
+        //public bool IsBusinessPosting { get; set; }
+        //public DateTime? ExpiryDate { get; set; }
+        //public IList<MediaRequest> Medias { get; set; } = new List<MediaRequest>();
         public List<IFormFile>? Medias { get; set; }
     }
     public class UpdatePostRequest

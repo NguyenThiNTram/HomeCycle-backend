@@ -130,7 +130,7 @@ namespace HomeCycle.API.Controllers
             Summary = "Lấy chi tiết bài đăng",
             Description = "Trả về chi tiết thông tin của một bài đăng theo ID."
         )]
-        [AllowAnonymous]
+        //[AllowAnonymous]
         public async Task<IActionResult> GetById(Guid id, CancellationToken cancellationToken)
         {
             var result = await _postService.GetDetailAsync(id, cancellationToken);
@@ -148,7 +148,7 @@ namespace HomeCycle.API.Controllers
             Summary = "Lấy danh sách bài đăng",
             Description = "Trả về danh sách tất cả bài đăng trong hệ thống có hỗ trợ phân trang."
         )]
-        [AllowAnonymous]
+        //[AllowAnonymous]
         public async Task<IActionResult> GetAll([FromQuery] PaginationRequest request, CancellationToken cancellationToken)
         {
             var result = await _postService.GetAllAsync(request, cancellationToken);
@@ -197,7 +197,7 @@ namespace HomeCycle.API.Controllers
         [HttpDelete("delete/{id:guid}")]
         [SwaggerOperation(
             Summary = "Xóa bài đăng",
-            Description = "Admin xóa bài đăng của người dùng hiện tại khỏi hệ thống."
+            Description = "Xóa bài đăng của người dùng hiện tại khỏi hệ thống."
         )]
         //[Authorize(Roles = "Personal,Business")]
         //[ProducesResponseType(StatusCodes.Status200OK)]

@@ -1402,9 +1402,9 @@ namespace HomeCycle.Infrastructure.Migrations
                     b.Property<int?>("PostType")
                         .HasColumnType("integer");
 
-                    b.Property<int?>("PriorityLevel")
+                    b.Property<string>("PriorityLevel")
                         .HasMaxLength(50)
-                        .HasColumnType("integer");
+                        .HasColumnType("character varying(50)");
 
                     b.Property<int>("Quantity")
                         .HasColumnType("integer");
@@ -1487,9 +1487,9 @@ namespace HomeCycle.Infrastructure.Migrations
                     b.Property<Guid>("ProductTypeId")
                         .HasColumnType("uuid");
 
-                    b.Property<int?>("SpaceUsage")
+                    b.Property<string>("SpaceUsage")
                         .HasMaxLength(100)
-                        .HasColumnType("integer");
+                        .HasColumnType("character varying(100)");
 
                     b.Property<int?>("UsageDuration")
                         .HasColumnType("integer");
@@ -1532,9 +1532,6 @@ namespace HomeCycle.Infrastructure.Migrations
                     b.Property<int?>("DisplayOrder")
                         .HasColumnType("integer");
 
-                    b.Property<int?>("InputMode")
-                        .HasColumnType("integer");
-
                     b.Property<bool>("IsFilterable")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
@@ -1570,6 +1567,11 @@ namespace HomeCycle.Infrastructure.Migrations
 
                     b.Property<int?>("DisplayOrder")
                         .HasColumnType("integer");
+
+                    //b.Property<bool>("IsDefault")
+                    //    .ValueGeneratedOnAdd()
+                    //    .HasColumnType("boolean")
+                    //    .HasDefaultValue(false);
 
                     b.Property<string>("OptionValue")
                         .HasMaxLength(255)
@@ -2505,7 +2507,6 @@ namespace HomeCycle.Infrastructure.Migrations
                     b.HasOne("HomeCycle.Infrastructure.Post", "Post")
                         .WithOne("Product")
                         .HasForeignKey("HomeCycle.Infrastructure.Product", "PostId")
-                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_product_post");
 
@@ -2551,20 +2552,17 @@ namespace HomeCycle.Infrastructure.Migrations
                     b.HasOne("HomeCycle.Infrastructure.Product_Attribute", "Attribute")
                         .WithMany("Product_Attribute_Values")
                         .HasForeignKey("AttributeId")
-                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_pav_attribute");
 
                     b.HasOne("HomeCycle.Infrastructure.Product_Attribute_Option", "Option")
                         .WithMany("Product_Attribute_Values")
                         .HasForeignKey("OptionId")
-                        .OnDelete(DeleteBehavior.Restrict)
                         .HasConstraintName("fk_pav_option");
 
                     b.HasOne("HomeCycle.Infrastructure.Product", "Product")
                         .WithMany("Product_Attribute_Values")
                         .HasForeignKey("ProductId")
-                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_pav_product");
 
