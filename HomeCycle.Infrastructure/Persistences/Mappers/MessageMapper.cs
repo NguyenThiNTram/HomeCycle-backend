@@ -21,6 +21,7 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 OfferPrice = entity.OfferPrice,
                 OfferQuantity = entity.OfferQuantity,
                 OfferStatus = entity.OfferStatus,
+                BasePriceSnapshot = entity.BasePriceSnapshot,
                 MediaUrl = entity.MediaUrl,
                 IsRead = entity.IsRead,
                 CreatedAt = entity.CreatedAt
@@ -38,6 +39,7 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 OfferPrice = entity.OfferPrice,
                 OfferQuantity = entity.OfferQuantity,
                 OfferStatus = entity.OfferStatus,
+                BasePriceSnapshot = entity.BasePriceSnapshot,
                 MediaUrl = entity.MediaUrl,
                 IsRead = entity.IsRead,
                 CreatedAt = entity.CreatedAt

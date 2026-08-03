@@ -26,7 +26,7 @@ public class post
     public int? DeliveryMethod { get; set; }
     public PriorityLevel? PriorityLevel { get; set; }
 
-    public int? Status { get; set; }
+    public PostStatus? Status { get; set; }
 
     public bool IsBusinessPosting { get; set; }
 

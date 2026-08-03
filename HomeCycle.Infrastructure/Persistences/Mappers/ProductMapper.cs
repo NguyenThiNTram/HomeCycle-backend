@@ -20,6 +20,9 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 BrandId = entity.BrandId,
                 ProductTypeId = entity.ProductTypeId,
                 ProductName = entity.ProductName,
+                CategoryName = entity.Category?.CategoryName,
+                ProductTypeName = entity.ProductType?.ProductTypeName,
+                BrandName = entity.Brand?.BrandName,
                 SpaceUsage = (SpaceUsage?)entity.SpaceUsage,
                 ModelNumber = entity.ModelNumber,
                 OriginalPrice = entity.OriginalPrice,
@@ -30,7 +33,10 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 FunctionalityStatus = (FunctionalityStatus?)entity.FunctionalityStatus,
                 UsageDuration = entity.UsageDuration,
                 DamageLevel = (DamageLevel?)entity.DamageLevel,
-                DetailDescription = entity.DetailDescription
+                DetailDescription = entity.DetailDescription,
+                Product_Attribute_Values = entity.Product_Attribute_Values?
+                    .Select(x => x.ToDomain())
+                    .ToList()
             };
         }
         public static Product ToInfrastructure(this product entity)

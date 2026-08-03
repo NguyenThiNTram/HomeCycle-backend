@@ -222,6 +222,21 @@ namespace HomeCycle.API.Controllers
             return NoContent();
         }
 
+        [HttpPatch("{postId:guid}/reactivate")]
+        [SwaggerOperation(
+            Summary = "Kích hoạt lại bài đăng",
+            Description = "Kích hoạt lại bài đăng đã bị đóng (Closed) của người dùng hiện tại."
+        )]
+        public async Task<IActionResult> Reactivate(Guid postId, CancellationToken cancellationToken)
+        {
+            var result = await _postService.ReactivateAsync(CurrentUserId, postId, cancellationToken);
+
+            if (!result.IsSuccess)
+                return MapErrorToResponse(result.Error!);
+
+            return NoContent();
+        }
+
         [HttpDelete("delete/{id:guid}")]
         [SwaggerOperation(
             Summary = "Xóa bài đăng",

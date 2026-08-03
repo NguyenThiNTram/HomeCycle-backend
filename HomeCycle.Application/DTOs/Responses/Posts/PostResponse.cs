@@ -1,5 +1,4 @@
 ﻿using HomeCycle.Application.DTOs.Responses.Media;
-using HomeCycle.Application.DTOs.Responses.Products;
 using HomeCycle.Domain.Enums;
 using System;
 using System.Collections.Generic;

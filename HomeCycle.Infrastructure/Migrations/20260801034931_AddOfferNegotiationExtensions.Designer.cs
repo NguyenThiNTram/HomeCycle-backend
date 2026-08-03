@@ -3,6 +3,7 @@ using System;
 using HomeCycle.Infrastructure.DbContexts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace HomeCycle.Infrastructure.Migrations
 {
     [DbContext(typeof(HomeCycleDbContext))]
-    partial class HomeCycleDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260801034931_AddOfferNegotiationExtensions")]
+    partial class AddOfferNegotiationExtensions
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -2512,7 +2515,6 @@ namespace HomeCycle.Infrastructure.Migrations
                     b.HasOne("HomeCycle.Infrastructure.Post", "Post")
                         .WithOne("Product")
                         .HasForeignKey("HomeCycle.Infrastructure.Product", "PostId")
-                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_product_post");
 
@@ -2558,20 +2560,17 @@ namespace HomeCycle.Infrastructure.Migrations
                     b.HasOne("HomeCycle.Infrastructure.Product_Attribute", "Attribute")
                         .WithMany("Product_Attribute_Values")
                         .HasForeignKey("AttributeId")
-                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_pav_attribute");
 
                     b.HasOne("HomeCycle.Infrastructure.Product_Attribute_Option", "Option")
                         .WithMany("Product_Attribute_Values")
                         .HasForeignKey("OptionId")
-                        .OnDelete(DeleteBehavior.Restrict)
                         .HasConstraintName("fk_pav_option");
 
                     b.HasOne("HomeCycle.Infrastructure.Product", "Product")
                         .WithMany("Product_Attribute_Values")
                         .HasForeignKey("ProductId")
-                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_pav_product");
 

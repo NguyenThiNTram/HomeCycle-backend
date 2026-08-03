@@ -3,6 +3,7 @@ using HomeCycle.Application.DTOs.Requests.Auths;
 using HomeCycle.Application.DTOs.Requests.Brands;
 using HomeCycle.Application.DTOs.Requests.Categories;
 using HomeCycle.Application.DTOs.Requests.Media;
+using HomeCycle.Application.DTOs.Requests.Offers;
 using HomeCycle.Application.DTOs.Requests.Posts;
 using HomeCycle.Application.DTOs.Requests.Products;
 using HomeCycle.Application.DTOs.Requests.Users;
@@ -10,6 +11,7 @@ using HomeCycle.Application.DTOs.Responses.Auths;
 using HomeCycle.Application.DTOs.Responses.Brands;
 using HomeCycle.Application.DTOs.Responses.Categories;
 using HomeCycle.Application.DTOs.Responses.Media;
+using HomeCycle.Application.DTOs.Responses.Offers;
 using HomeCycle.Application.DTOs.Responses.Posts;
 using HomeCycle.Application.DTOs.Responses.Products;
 using HomeCycle.Application.DTOs.Responses.Users;
@@ -279,7 +281,9 @@ namespace HomeCycle.Application.Mappings
                 .ForMember(dest => dest.ProductId, opt => opt.Ignore())
                 .ForMember(dest => dest.PostId, opt => opt.Ignore());
 
-            CreateMap<product, ProductResponse>();
+            CreateMap<product, ProductResponse>()
+                .ForMember(dest => dest.AttributeValues, opt => opt.MapFrom(src => src.Product_Attribute_Values));
+            CreateMap<product_attribute_value, ProductAttributeValueResponse>();
 
             CreateMap<ProductRequirementRequest, product>()
                 .ForMember(dest => dest.ProductId, opt => opt.Ignore())
@@ -317,6 +321,29 @@ namespace HomeCycle.Application.Mappings
 
             CreateMap<product_attribute, ProductAttributeResponse>();
             CreateMap<product_attribute_option, ProductAttributeOptionResponse>();
+
+            // product -> ProductResponse: map danh sách AttributeValues (navigation được nạp ở repository)
+            // (CreateMap<product, ProductResponse> đã khai báo ở phần PRODUCT phía trên)
+
+            // ==================== OFFER / NEGOTIATION / MESSAGE ====================
+
+            CreateMap<offer, OfferResponse>();
+
+            CreateMap<CreateOfferRequest, offer>()
+                .ForMember(dest => dest.OfferId, opt => opt.Ignore())
+                .ForMember(dest => dest.PostId, opt => opt.Ignore())
+                .ForMember(dest => dest.SenderId, opt => opt.Ignore())
+                .ForMember(dest => dest.ReceiverId, opt => opt.Ignore())
+                .ForMember(dest => dest.OfferStatus, opt => opt.Ignore())
+                .ForMember(dest => dest.CreatedAt, opt => opt.Ignore());
+
+            CreateMap<UpdateOfferRequest, offer>()
+                .ForMember(dest => dest.OfferId, opt => opt.Ignore())
+                .ForMember(dest => dest.PostId, opt => opt.Ignore())
+                .ForMember(dest => dest.SenderId, opt => opt.Ignore())
+                .ForMember(dest => dest.ReceiverId, opt => opt.Ignore())
+                .ForMember(dest => dest.OfferStatus, opt => opt.Ignore())
+                .ForMember(dest => dest.CreatedAt, opt => opt.Ignore());
 
         }
     }

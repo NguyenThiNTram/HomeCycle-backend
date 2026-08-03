@@ -2,18 +2,21 @@
 using HomeCycle.Application.Interfaces.Generics;
 using HomeCycle.Application.Interfaces.Repositories.Banks;
 using HomeCycle.Application.Interfaces.Repositories.Media;
+using HomeCycle.Application.Interfaces.Repositories.Offers;
 using HomeCycle.Application.Interfaces.Repositories.Posts;
 using HomeCycle.Application.Interfaces.Repositories.Products;
 using HomeCycle.Application.Interfaces.Repositories.Users;
 using HomeCycle.Application.Interfaces.Security;
 using HomeCycle.Application.Interfaces.Services.Auths;
 using HomeCycle.Application.Interfaces.Services.Externals;
+using HomeCycle.Application.Interfaces.Services.Offers;
 using HomeCycle.Application.Interfaces.Services.Posts;
 using HomeCycle.Application.Interfaces.Services.Products;
 using HomeCycle.Application.Interfaces.Services.Users;
 using HomeCycle.Application.Mappings;
 using HomeCycle.Application.Services.Auths;
 using HomeCycle.Application.Services.Personals;
+using HomeCycle.Application.Services.Offers;
 using HomeCycle.Application.Services.Posts;
 using HomeCycle.Application.Services.Products;
 using HomeCycle.Application.Validations.Auths;
@@ -21,6 +24,7 @@ using HomeCycle.Application.Validations.Users;
 using HomeCycle.Infrastructure.DbContexts;
 using HomeCycle.Infrastructure.Externals;
 using HomeCycle.Infrastructure.Repositories.Banks;
+using HomeCycle.Infrastructure.Repositories.Offers;
 using HomeCycle.Infrastructure.Repositories.Posts;
 using HomeCycle.Infrastructure.Repositories.Products;
 using HomeCycle.Infrastructure.Repositories.Users;
@@ -86,6 +90,9 @@ namespace HomeCycle.Infrastructure
             services.AddScoped<IPostRepository, PostRepository>();
             services.AddScoped<IMediaRepository, MediaRepository>();
             services.AddScoped<IProductAttributeValueRepository, ProductAttributeValueRepository>();
+            services.AddScoped<IOfferRepository, OfferRepository>();
+            services.AddScoped<INegotiationRepository, NegotiationRepository>();
+            services.AddScoped<IMessageRepository, MessageRepository>();
 
             // register Services
             services.AddScoped<IAuthService, AuthService>();
@@ -99,6 +106,7 @@ namespace HomeCycle.Infrastructure
             services.AddScoped<IProductService, ProductService>();
             services.AddScoped<IMediaService, MediaService>();
             services.AddScoped<IProductAttributeOptionService, ProductAttributeOptionService>();
+            services.AddScoped<IOfferService, OfferService>();
 
             return services;
         }

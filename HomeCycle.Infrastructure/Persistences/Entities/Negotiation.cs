@@ -28,6 +28,8 @@ public partial class Negotiation
     [Precision(18, 2)]
     public decimal? FinalPrice { get; set; }
 
+    public int? FinalQuantity { get; set; }
+
     public DateTime? LastMessageAt { get; set; }
 
     public DateTime CreatedAt { get; set; }

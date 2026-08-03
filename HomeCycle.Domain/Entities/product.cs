@@ -16,7 +16,9 @@ public class product
     public Guid? BrandId { get; set; }
 
     public string? ProductName { get; set; }
-    //public string? BrandName { get; set; }
+    public string? CategoryName { get; set; }
+    public string? ProductTypeName { get; set; }
+    public string? BrandName { get; set; }
     public SpaceUsage? SpaceUsage { get; set; }
     public string? ModelNumber { get; set; }
     public decimal? OriginalPrice { get; set; }
@@ -30,6 +32,8 @@ public class product
     public int? UsageDuration { get; set; }
     public DamageLevel? DamageLevel { get; set; }
     public string? DetailDescription { get; set; }
+
+    public ICollection<product_attribute_value> Product_Attribute_Values { get; set; } = new List<product_attribute_value>();
 
     public product()
     {
