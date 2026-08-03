@@ -25,6 +25,7 @@ namespace HomeCycle.Application.Services.Moderators
         private readonly IBusinessProfileRepository _businessProfileRepository;
         private readonly IBusinessDocumentRepository _businessDocumentRepository;
         private readonly IBusinessServiceAreaRepository _businessServiceAreaRepository;
+        private readonly IPersonalProfileRepository _personalProfileRepository;
         private readonly IBankAccountRepository _bankAccountRepository;
         private readonly IUserRepository _userRepository; 
         private readonly IEmailService _emailService;       
@@ -35,6 +36,7 @@ namespace HomeCycle.Application.Services.Moderators
             IBusinessProfileRepository businessProfileRepository,
             IBusinessDocumentRepository businessDocumentRepository,
             IBusinessServiceAreaRepository businessServiceAreaRepository,
+            IPersonalProfileRepository personalProfileRepository,
             IBankAccountRepository bankAccountRepository,
             IUserRepository userRepository,
             IEmailService emailService,
@@ -49,6 +51,7 @@ namespace HomeCycle.Application.Services.Moderators
             _emailService = emailService;
             _unitOfWork = unitOfWork;
             _logger = logger;
+            _personalProfileRepository = personalProfileRepository;
         }
 
         public async Task<Result<string>> ReviewBusinessProfileAsync(
@@ -225,6 +228,173 @@ namespace HomeCycle.Application.Services.Moderators
             }).ToList();
 
             return Result<List<PendingBusinessProfileSummaryDto>>.Success(response);
+        }
+
+        public async Task<Result<List<PendingPersonalVerificationSummaryDto>>>GetPendingPersonalVerificationsAsync(
+        string? keyword, CancellationToken cancellationToken = default)
+        {
+            var profiles =
+                await _personalProfileRepository.GetPendingVerificationAsync(
+                    keyword,
+                    cancellationToken);
+
+            var response = profiles.Select(profile =>
+                new PendingPersonalVerificationSummaryDto
+                {
+                    PersonalProfileId = profile.PersonalProfileId,
+                    RepresentativeName = profile.RepresentativeName,
+                    VerificationStatus =
+                        (VerifyStatus)profile.VerificationStatus,
+                    CreatedAt = profile.CreatedAt
+                }).ToList();
+
+            return Result<List<PendingPersonalVerificationSummaryDto>>
+                .Success(response);
+        }
+        public async Task<Result<PersonalIdentityVerificationDetailDto>>GetPersonalVerificationDetailAsync(
+        Guid personalProfileId, CancellationToken cancellationToken = default)
+        {
+            var profile = await _personalProfileRepository.GetByIdAsync(
+                personalProfileId,
+                cancellationToken);
+
+            if (profile is null)
+            {
+                return Result<PersonalIdentityVerificationDetailDto>.Fail(
+                    ValidationErrors.InvalidRequest("Không tìm thấy hồ sơ cá nhân."));
+            }
+
+            var user = await _userRepository.GetByIdAsync(
+                profile.UserId,
+                cancellationToken);
+
+            if (user is null || user.Role != UserRole.Personal)
+            {
+                return Result<PersonalIdentityVerificationDetailDto>.Fail(
+                    ValidationErrors.InvalidRequest(
+                        "Hồ sơ không thuộc tài khoản Personal."));
+            }
+
+            var response = new PersonalIdentityVerificationDetailDto
+            {
+                PersonalProfileId = profile.PersonalProfileId,
+                UserId = profile.UserId,
+
+                RepresentativeCode = profile.RepresentativeCode,
+                RepresentativeName = profile.RepresentativeName,
+                RepresentativeDob = profile.RepresentativeDob,
+                RepresentativeAddress = profile.RepresentativeAddress,
+
+                FrontIDCardImage = profile.FrontIDCardImage,
+                BackIDCardImage = profile.BackIDCardImage,
+
+                VerificationStatus = (VerifyStatus)profile.VerificationStatus,
+                VerificationRejectReason = profile.RejectReason,
+
+                VerifiedBy = profile.VerifiedBy,
+                VerifiedAt = profile.VerifiedAt,
+                CreatedAt = profile.CreatedAt
+            };
+
+            return Result<PersonalIdentityVerificationDetailDto>
+                .Success(response);
+        }
+        public async Task<Result<string>> ReviewPersonalIdentityAsync(Guid moderatorId, Guid personalProfileId, ReviewPersonalIdentityRequest request, CancellationToken cancellationToken = default)
+        {
+            if (request.Decision is not VerifyStatus.Verified
+                and not VerifyStatus.Rejected)
+            {
+                return Result<string>.Fail(
+                    ValidationErrors.InvalidRequest(
+                        "Chỉ được phê duyệt hoặc từ chối hồ sơ."));
+            }
+
+            if (request.Decision == VerifyStatus.Rejected &&
+                string.IsNullOrWhiteSpace(request.RejectReason))
+            {
+                return Result<string>.Fail(
+                    ValidationErrors.InvalidRequest(
+                        "Vui lòng nhập lý do từ chối."));
+            }
+
+            var profile = await _personalProfileRepository.GetByIdAsync(
+                personalProfileId,
+                cancellationToken);
+
+            if (profile is null)
+            {
+                return Result<string>.Fail(
+                    ValidationErrors.InvalidRequest(
+                        "Không tìm thấy hồ sơ cá nhân."));
+            }
+
+            var user = await _userRepository.GetByIdAsync(
+                profile.UserId,
+                cancellationToken);
+
+            if (user is null || user.Role != UserRole.Personal)
+            {
+                return Result<string>.Fail(
+                    ValidationErrors.InvalidRequest(
+                        "Chỉ được xác minh CCCD cho tài khoản Personal."));
+            }
+
+            if ((VerifyStatus)profile.VerificationStatus
+                != VerifyStatus.Pending)
+            {
+                return Result<string>.Fail(
+                    ValidationErrors.InvalidRequest(
+                        "Hồ sơ không còn ở trạng thái chờ duyệt."));
+            }
+
+            if (string.IsNullOrWhiteSpace(profile.RepresentativeCode) ||
+                string.IsNullOrWhiteSpace(profile.RepresentativeName) ||
+                profile.RepresentativeDob is null ||
+                string.IsNullOrWhiteSpace(profile.RepresentativeAddress) ||
+                string.IsNullOrWhiteSpace(profile.FrontIDCardImage) ||
+                string.IsNullOrWhiteSpace(profile.BackIDCardImage))
+            {
+                return Result<string>.Fail(
+                    ValidationErrors.InvalidRequest(
+                        "Thông tin hoặc hình ảnh CCCD chưa đầy đủ."));
+            }
+
+            var now = DateTime.UtcNow;
+
+            await _unitOfWork.BeginTransactionAsync();
+
+            try
+            {
+                profile.VerificationStatus = (VerifyStatus?)request.Decision;
+                profile.VerifiedBy = moderatorId;
+                profile.VerifiedAt = now;
+
+                profile.RejectReason =
+                    request.Decision == VerifyStatus.Rejected
+                        ? request.RejectReason!.Trim()
+                        : null;
+
+                await _personalProfileRepository.UpdateAsync(profile);
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+                await _unitOfWork.CommitTransactionAsync();
+            }
+            catch (Exception ex)
+            {
+                await _unitOfWork.RollbackTransactionAsync();
+
+                _logger.LogError(
+                    ex,
+                    "Moderator {ModeratorId} xử lý xác minh PersonalProfile {PersonalProfileId} thất bại.",
+                    moderatorId,
+                    personalProfileId);
+
+                throw;
+            }
+
+            return Result<string>.Success(
+                request.Decision == VerifyStatus.Verified
+                    ? "Căn cước công dân đã được xác minh."
+                    : "Căn cước công dân đã bị từ chối.");
         }
     }
 }

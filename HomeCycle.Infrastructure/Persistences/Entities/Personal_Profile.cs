@@ -36,6 +36,7 @@ public partial class Personal_Profile
     public string? BackIDCardImage { get; set; }
 
     public int? VerificationStatus { get; set; }
+    public string? RejectReason { get; set; }
 
     public Guid? VerifiedBy { get; set; }
 

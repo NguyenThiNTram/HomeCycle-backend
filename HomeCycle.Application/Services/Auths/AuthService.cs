@@ -282,7 +282,7 @@ namespace HomeCycle.Application.Services.Auths
                     RepresentativeAddress = request.RepresentativeAddress?.Trim(),
                     FrontIDCardImage = frontIdCardUrl,
                     BackIDCardImage = backIdCardUrl,
-                    VerificationStatus = 0,
+                    VerificationStatus = VerifyStatus.Pending,
                     CreatedAt = now
                 };
 
@@ -298,7 +298,7 @@ namespace HomeCycle.Application.Services.Auths
                         BankName = request.BankName?.Trim(),
                         AccountNumber = request.AccountNumber.Trim(),
                         AccountName = request.AccountName?.Trim(),
-                        VerifyStatus = 0,
+                        VerifyStatus = VerifyStatus.Verified,
                         CreatedAt = now
                     };
 

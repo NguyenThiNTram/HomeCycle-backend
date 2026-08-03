@@ -23,6 +23,7 @@ public class personal_profile
     public string? BackIDCardImage { get; set; }
 
     public VerifyStatus? VerificationStatus { get; set; }
+    public string? RejectReason { get; set; }
     public Guid? VerifiedBy { get; set; }
     public DateTime? VerifiedAt { get; set; }
 

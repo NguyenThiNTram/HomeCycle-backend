@@ -116,18 +116,5 @@ namespace HomeCycle.Infrastructure.Repositories.Users
             //await _db.SaveChangesAsync(cancellationToken);
             return Task.CompletedTask;
         }
-
-        //public void Update(user user)
-        //{
-        //    var entity = user.ToInfrastructure();
-        //    var localEntry = _db.Users.Local.FirstOrDefault(x => x.UserId == entity.UserId);
-
-        //    if (localEntry != null)
-        //    {
-        //        // Trục xuất thực thể cũ ra khỏi Change Tracker để nhường chỗ cho thực thể cập nhật
-        //        _db.Entry(localEntry).State = EntityState.Detached;
-        //    }
-        //    _db.Users.Update(entity);
-        //}
     }
 }

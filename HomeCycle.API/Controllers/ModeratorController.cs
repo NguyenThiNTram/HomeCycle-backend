@@ -9,7 +9,7 @@ namespace HomeCycle.API.Controllers
 {
     [Route("api/moderator")]
     [ApiController]
-    [Authorize(Roles = "Moderator")]
+    //[Authorize(Roles = "Moderator")]
     public class ModeratorController : ControllerBase
     {
         private readonly IModeratorService _moderatorService;
@@ -77,6 +77,87 @@ namespace HomeCycle.API.Controllers
             CancellationToken cancellationToken)
         {
             var result = await _moderatorService.GetPendingBusinessProfilesAsync(keyword, cancellationToken);
+
+            if (!result.IsSuccess)
+            {
+                return BadRequest(new
+                {
+                    success = false,
+                    code = result.Error.Code,
+                    message = result.Error.Message
+                });
+            }
+
+            return Ok(new
+            {
+                success = true,
+                data = result.Data
+            });
+        }
+
+        [HttpGet("personal-profiles/pending")]
+        public async Task<IActionResult> GetPending( [FromQuery] string? keyword,CancellationToken cancellationToken)
+        {
+            var result =
+                await _moderatorService
+                    .GetPendingPersonalVerificationsAsync(
+                        keyword,
+                        cancellationToken);
+
+            if (!result.IsSuccess)
+            {
+                return BadRequest(new
+                {
+                    success = false,
+                    code = result.Error.Code,
+                    message = result.Error.Message
+                });
+            }
+
+            return Ok(new
+            {
+                success = true,
+                data = result.Data
+            });
+        }
+
+        [HttpGet("personal-profiles/{personalProfileId:guid}")]
+        public async Task<IActionResult> GetDetail(
+            Guid personalProfileId,
+            CancellationToken cancellationToken)
+        {
+            var result =
+                await _moderatorService
+                    .GetPersonalVerificationDetailAsync(
+                        personalProfileId,
+                        cancellationToken);
+
+            if (!result.IsSuccess)
+            {
+                return BadRequest(new
+                {
+                    success = false,
+                    code = result.Error.Code,
+                    message = result.Error.Message
+                });
+            }
+
+            return Ok(result.Data);
+        }
+
+
+        [HttpPost("personal-profiles/{personalProfileId:guid}/review")]
+        public async Task<IActionResult> ReviewPersonalProfile(Guid personalProfileId,
+        [FromBody] ReviewPersonalIdentityRequest request,
+        CancellationToken cancellationToken)
+        {
+            var moderatorId = GetCurrentUserId();
+            if (moderatorId == Guid.Empty)
+                return Unauthorized(new { success = false, message = "Phiên làm việc không hợp lệ." });
+
+            var result = await _moderatorService.ReviewPersonalIdentityAsync(moderatorId, personalProfileId,
+                    request,
+                    cancellationToken);
 
             if (!result.IsSuccess)
             {

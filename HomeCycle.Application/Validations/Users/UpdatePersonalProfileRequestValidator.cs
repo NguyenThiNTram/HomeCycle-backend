@@ -29,26 +29,6 @@ namespace HomeCycle.Application.Validations.Users
         }
     }
 
-    //public class UpdateAvatarRequestValidator : AbstractValidator<UpdateAvatarRequest>
-    //{
-    //    public UpdateAvatarRequestValidator()
-    //    {
-    //        RuleFor(x => x.AvatarUrl)
-    //            .NotEmpty().WithMessage("The avatar field cannot be left blank.")
-    //            .Must(BeAValidUrl).WithMessage("Invalid avatar URL");
-    //    }
-
-    //    //private bool BeAValidUrl(IFormFile file)
-    //    //{
-    //    //    throw new NotImplementedException();
-    //    //}
-
-    //    private bool BeAValidUrl(IFormFile url)
-    //    {
-    //        return Uri.TryCreate(url, UriKind.Absolute, out _);
-    //    }
-    //}
-
     public class UpdateIdCardRequestValidator : AbstractValidator<UpdateIdCardRequest>
     {
         public UpdateIdCardRequestValidator()

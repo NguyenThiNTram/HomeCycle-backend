@@ -12,6 +12,7 @@ using HomeCycle.Application.Interfaces.Repositories.Users;
 using HomeCycle.Application.Interfaces.Services.Externals;
 using HomeCycle.Application.Interfaces.Services.Users;
 using HomeCycle.Domain.Entities;
+using HomeCycle.Domain.Enums;
 using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
@@ -136,7 +137,7 @@ namespace HomeCycle.Application.Services.Personals
                     UserBankId = Guid.NewGuid(),
                     UserId = userId,
                     CreatedAt = DateTime.UtcNow,
-                    VerifyStatus = 0
+                    VerifyStatus = VerifyStatus.Verified
                 };
 
                 _mapper.Map(request, bank);
@@ -203,7 +204,7 @@ namespace HomeCycle.Application.Services.Personals
             if (!string.IsNullOrEmpty(backUploadedUrl)) profile.BackIDCardImage = backUploadedUrl;
 
             // Đổi CCCD => cần kiểm duyệt lại, reset trạng thái xác minh
-            profile.VerificationStatus = 0;
+            profile.VerificationStatus = VerifyStatus.Pending;
             profile.VerifiedBy = null;
             profile.VerifiedAt = null;
 

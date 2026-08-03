@@ -35,6 +35,7 @@ namespace HomeCycle.Application.DTOs.Responses.Users
         public string? FrontIDCardImage { get; set; }
         public string? BackIDCardImage { get; set; }
         public VerifyStatus? VerificationStatus { get; set; }
+        public string? RejectReason { get; set; }
         public DateTime? VerifiedAt { get; set; }
         public int ReputationScore { get; set; }
         public BankAccountDto? BankAccount { get; set; }
