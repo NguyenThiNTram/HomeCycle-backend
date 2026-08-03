@@ -30,7 +30,7 @@ namespace HomeCycle.Application.Interfaces.Repositories.Users
 
         void UpdateRefreshToken(refresh_token token);
 
-        //void Update(user user);
-        
+        Task<bool> ExistsByUsernameAsync(string username, Guid excludeUserId, CancellationToken cancellationToken = default);
+        void Update(user user);
     }
 }

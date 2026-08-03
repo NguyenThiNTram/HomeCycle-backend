@@ -14,13 +14,18 @@ public class business_profile
     public string? BusinessName { get; set; }
     public string? BusinessDescription { get; set; }
     public string? TaxCode { get; set; }
+    public string IdentityNumber { get; set; }
+    public string? FullName { get; set; }
     public string? BusinessAddress { get; set; }
     public string? Ward { get; set; }
     public string? City { get; set; }
     public string? OperatingScope { get; set; }
-    public string? BusinessModel { get; set; }
-
+    public int BusinessModel { get; set; }
+    public int Status { get; set; }
     public int ReputationScore { get; set; }
+    public Guid? VerifiedBy { get; set; }
+    public DateTime? VerifiedAt { get; set; }
+    public string? RejectReason { get; set; }
 
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }

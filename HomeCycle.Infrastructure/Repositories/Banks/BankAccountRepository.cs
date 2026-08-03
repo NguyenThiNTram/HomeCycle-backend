@@ -53,5 +53,19 @@ namespace HomeCycle.Infrastructure.Repositories.Banks
             ////await _db.SaveChangesAsync(cancellationToken);
             //return Task.CompletedTask;
         }
+
+        public async Task<bank_account?> GetByUserIdAsync(Guid userId, CancellationToken cancellationToken = default)
+        {
+            var entity = await _db.Bank_Accounts
+                .FirstOrDefaultAsync(x => x.UserId == userId, cancellationToken);
+
+            return entity?.ToDomain();
+        }
+
+        public void Update(bank_account bankAccount)
+        {
+            var entity = bankAccount.ToInfrastructure();
+            _db.Bank_Accounts.Update(entity);
+        }
     }
 }

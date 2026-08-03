@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
+using System.Security.Claims;
 
 namespace HomeCycle.API.Controllers
 {
@@ -27,10 +28,6 @@ namespace HomeCycle.API.Controllers
         }
 
         [HttpPost("login")]
-        //[AllowAnonymous]
-        //[ProducesResponseType(typeof(LoginResponseDto), StatusCodes.Status200OK)]
-        //[ProducesResponseType(StatusCodes.Status400BadRequest)]
-        //[ProducesResponseType(StatusCodes.Status401Unauthorized)]
         public async Task<IActionResult> Login( [FromBody] LoginRequest request, CancellationToken cancellationToken)
         {
             var result = await _authService.LoginAsync(request, cancellationToken);
@@ -41,18 +38,7 @@ namespace HomeCycle.API.Controllers
             return Ok(result.Data);
         }
 
-        //[HttpPost("/Personal/Login")]
-        //public async Task<IActionResult> LoginPersonal([FromBody] LoginPersonalRequest request, CancellationToken cancellationToken)
-        //{
-        //    var result = await _authService.LoginPersonalAsync(request, cancellationToken);
-
-        //    if (!result.IsSuccess)
-        //        return BadRequest(result.Error);
-
-        //    return Ok(result.Data);
-        //}
-
-        [HttpPost("Personal/Register")]
+        [HttpPost("personal/register")]
         public async Task<IActionResult> RegisterPersonal(
             [FromHeader(Name = "X-Registration-Token")] string registrationToken, // Lấy token từ Header
             [FromForm] RegisterPersonalRequest request,
@@ -147,5 +133,41 @@ namespace HomeCycle.API.Controllers
                 RegistrationToken = result.Data
             });
         }
+
+        [HttpPost("business/register")]
+        public async Task<IActionResult> RegisterBusinessAccount(
+            [FromHeader(Name = "X-Registration-Token")] string registrationToken,
+            [FromBody] RegisterBusinessAccountRequest request,
+            CancellationToken cancellationToken)
+        {
+            if (string.IsNullOrWhiteSpace(registrationToken))
+            {
+                return Unauthorized(new
+                {
+                    success = false,
+                    message = "Registration session verification failed. Please provide 'X-Registration-Token' header."
+                });
+            }
+
+            var result = await _authService.RegisterBusinessAccountAsync(registrationToken, request, cancellationToken);
+
+            if (!result.IsSuccess)
+            {
+                return BadRequest(new
+                {
+                    success = false,
+                    code = result.Error.Code,
+                    message = result.Error.Message
+                });
+            }
+
+            return Ok(new
+            {
+                success = true,
+                message = result.Data.Message,
+                data = result.Data
+            });
+        }
+
     }
 }

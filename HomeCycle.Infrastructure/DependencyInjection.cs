@@ -1,6 +1,7 @@
 ﻿using FluentValidation;
 using HomeCycle.Application.Interfaces.Generics;
 using HomeCycle.Application.Interfaces.Repositories.Banks;
+using HomeCycle.Application.Interfaces.Repositories.Profiles;
 using HomeCycle.Application.Interfaces.Repositories.Media;
 using HomeCycle.Application.Interfaces.Repositories.Offers;
 using HomeCycle.Application.Interfaces.Repositories.Posts;
@@ -8,6 +9,8 @@ using HomeCycle.Application.Interfaces.Repositories.Products;
 using HomeCycle.Application.Interfaces.Repositories.Users;
 using HomeCycle.Application.Interfaces.Security;
 using HomeCycle.Application.Interfaces.Services.Auths;
+using HomeCycle.Application.Interfaces.Services.Moderators;
+using HomeCycle.Application.Interfaces.Services.Profiles;
 using HomeCycle.Application.Interfaces.Services.Externals;
 using HomeCycle.Application.Interfaces.Services.Offers;
 using HomeCycle.Application.Interfaces.Services.Posts;
@@ -19,11 +22,14 @@ using HomeCycle.Application.Services.Personals;
 using HomeCycle.Application.Services.Offers;
 using HomeCycle.Application.Services.Posts;
 using HomeCycle.Application.Services.Products;
+using HomeCycle.Application.Services.Moderators;
+using HomeCycle.Application.Services.Profiles;
 using HomeCycle.Application.Validations.Auths;
 using HomeCycle.Application.Validations.Users;
 using HomeCycle.Infrastructure.DbContexts;
 using HomeCycle.Infrastructure.Externals;
 using HomeCycle.Infrastructure.Repositories.Banks;
+using HomeCycle.Infrastructure.Repositories.Profiles;
 using HomeCycle.Infrastructure.Repositories.Offers;
 using HomeCycle.Infrastructure.Repositories.Posts;
 using HomeCycle.Infrastructure.Repositories.Products;
@@ -93,6 +99,11 @@ namespace HomeCycle.Infrastructure
             services.AddScoped<IOfferRepository, OfferRepository>();
             services.AddScoped<INegotiationRepository, NegotiationRepository>();
             services.AddScoped<IMessageRepository, MessageRepository>();
+            services.AddScoped<IBusinessProfileRepository, BusinessProfileRepository>();
+            services.AddScoped<IBusinessDocumentRepository, BusinessDocumentRepository>();
+            services.AddScoped<IBusinessProductTypeRepository, BusinessProductTypeRepository>();
+            services.AddScoped<IBusinessServiceAreaRepository, BusinessServiceAreaRepository>();
+            services.AddScoped<IBusinessProcurementPreferenceRepository, BusinessProcurementPreferenceRepository>();
 
             // register Services
             services.AddScoped<IAuthService, AuthService>();
@@ -107,6 +118,9 @@ namespace HomeCycle.Infrastructure
             services.AddScoped<IMediaService, MediaService>();
             services.AddScoped<IProductAttributeOptionService, ProductAttributeOptionService>();
             services.AddScoped<IOfferService, OfferService>();
+            services.AddScoped<IEmailService, EmailService>();
+            services.AddScoped<IBusinessProfileService, BusinessProfileService>();
+            services.AddScoped<IModeratorService, ModeratorService>();
 
             return services;
         }
