@@ -135,7 +135,10 @@ namespace HomeCycle.Application.Services.Moderators
             catch (Exception emailEx)
             {
                 // DB đã commit an toàn, chỉ log lỗi email chứ không throw hỏng response của client
-                _logger.LogError(emailEx, "Database đã commit thành công nhưng dịch vụ gửi Email thất bại cho User: {Email}", user.Email);
+                _logger.LogError(
+                    "Database đã commit thành công nhưng dịch vụ gửi Email thất bại cho User: {Email}. ErrorType: {ErrorType}",
+                    user.Email,
+                    emailEx.GetType().Name);
             }
 
             return Result<string>.Success(request.IsApproved
