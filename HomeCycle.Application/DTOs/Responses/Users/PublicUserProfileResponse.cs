@@ -1,4 +1,5 @@
-﻿using System;
+﻿using HomeCycle.Domain.Enums;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -30,6 +31,6 @@ namespace HomeCycle.Application.DTOs.Responses.Users
         public string? Ward { get; set; }
         public string? City { get; set; }
         public string? OperatingScope { get; set; }
-        public string? BusinessModel { get; set; }
+        public BusinessModel? BusinessModel { get; set; }
     }
 }

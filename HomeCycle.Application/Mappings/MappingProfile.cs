@@ -1,19 +1,23 @@
 ﻿using AutoMapper;
 using HomeCycle.Application.DTOs.Requests.Auths;
+using HomeCycle.Application.DTOs.Requests.Banks;
 using HomeCycle.Application.DTOs.Requests.Brands;
 using HomeCycle.Application.DTOs.Requests.Categories;
 using HomeCycle.Application.DTOs.Requests.Media;
 using HomeCycle.Application.DTOs.Requests.Offers;
 using HomeCycle.Application.DTOs.Requests.Posts;
 using HomeCycle.Application.DTOs.Requests.Products;
+using HomeCycle.Application.DTOs.Requests.Profiles;
 using HomeCycle.Application.DTOs.Requests.Users;
 using HomeCycle.Application.DTOs.Responses.Auths;
+using HomeCycle.Application.DTOs.Responses.Banks;
 using HomeCycle.Application.DTOs.Responses.Brands;
 using HomeCycle.Application.DTOs.Responses.Categories;
 using HomeCycle.Application.DTOs.Responses.Media;
 using HomeCycle.Application.DTOs.Responses.Offers;
 using HomeCycle.Application.DTOs.Responses.Posts;
 using HomeCycle.Application.DTOs.Responses.Products;
+using HomeCycle.Application.DTOs.Responses.Profiles;
 using HomeCycle.Application.DTOs.Responses.Users;
 using HomeCycle.Domain.Entities;
 using System;
@@ -73,6 +77,98 @@ namespace HomeCycle.Application.Mappings
                 .ForMember(d => d.UserBankId, o => o.Ignore())
                 .ForMember(d => d.UserId, o => o.Ignore())
                 .ForMember(d => d.CreatedAt, o => o.Ignore());
+
+            // ==================== BUSINESS PROFILE ====================
+
+            // Create — nộp hồ sơ lần đầu: request -> business_profile (bỏ field set tay sau đó)
+            CreateMap<SubmitBusinessProfileRequest, business_profile>()
+                .ForMember(dest => dest.BusinessProfileId, opt => opt.Ignore())
+                .ForMember(dest => dest.UserId, opt => opt.Ignore())
+                .ForMember(dest => dest.Status, opt => opt.Ignore())
+                .ForMember(dest => dest.ReputationScore, opt => opt.Ignore())
+                .ForMember(dest => dest.CreatedAt, opt => opt.Ignore())
+                .ForMember(dest => dest.UpdatedAt, opt => opt.Ignore())
+                .ForMember(dest => dest.RejectReason, opt => opt.Ignore())
+                .ForMember(dest => dest.BusinessName, opt => opt.MapFrom(src => src.BusinessName.Trim()))
+                .ForMember(dest => dest.FullName, opt => opt.MapFrom(src => src.FullName == null ? null : src.FullName.Trim()))
+                .ForMember(dest => dest.BusinessDescription, opt => opt.MapFrom(src => src.BusinessDescription == null ? null : src.BusinessDescription.Trim()))
+                .ForMember(dest => dest.TaxCode, opt => opt.MapFrom(src => src.TaxCode.Trim()))
+                .ForMember(dest => dest.BusinessAddress, opt => opt.MapFrom(src => src.BusinessAddress.Trim()))
+                .ForMember(dest => dest.Ward, opt => opt.MapFrom(src => src.Ward.Trim()))
+                .ForMember(dest => dest.City, opt => opt.MapFrom(src => src.City.Trim()))
+                .ForMember(dest => dest.IdentityNumber, opt => opt.MapFrom(src => src.IdentityNumber.Trim()))
+                .ForMember(dest => dest.OperatingScope, opt => opt.MapFrom(src => src.OperatingScope == null ? null : src.OperatingScope.Trim()));
+
+            // Resubmit — request -> business_profile hiện có, chỉ ghi đè field cho phép sửa
+            CreateMap<SubmitBusinessProfileRequest, business_profile>()
+                .ForMember(dest => dest.BusinessProfileId, opt => opt.Ignore())
+                .ForMember(dest => dest.UserId, opt => opt.Ignore())
+                .ForMember(dest => dest.Status, opt => opt.Ignore())
+                .ForMember(dest => dest.ReputationScore, opt => opt.Ignore())
+                .ForMember(dest => dest.CreatedAt, opt => opt.Ignore())
+                .ForMember(dest => dest.UpdatedAt, opt => opt.Ignore())
+                .ForMember(dest => dest.RejectReason, opt => opt.Ignore());
+
+            // SubmitBusinessProfileRequest chứa cả field ngân hàng (BankCode/BankName/AccountNumber/AccountName)
+            // -> map thẳng sang bank_account, AccountName cần .ToUpper() nên map riêng bằng MapFrom
+            CreateMap<SubmitBusinessProfileRequest, bank_account>()
+                .ForMember(dest => dest.UserBankId, opt => opt.Ignore())
+                .ForMember(dest => dest.UserId, opt => opt.Ignore())
+                .ForMember(dest => dest.VerifyStatus, opt => opt.Ignore())
+                .ForMember(dest => dest.CreatedAt, opt => opt.Ignore())
+                .ForMember(dest => dest.BankCode, opt => opt.MapFrom(src => src.BankCode.Trim()))
+                .ForMember(dest => dest.BankName, opt => opt.MapFrom(src => src.BankName.Trim()))
+                .ForMember(dest => dest.AccountNumber, opt => opt.MapFrom(src => src.AccountNumber.Trim()))
+                .ForMember(dest => dest.AccountName, opt => opt.MapFrom(src => src.AccountName.Trim().ToUpper()));
+
+            CreateMap<UpdateApprovedBusinessProfileRequest, business_profile>()
+                .ForMember(dest => dest.BusinessProfileId, opt => opt.Ignore())
+                .ForMember(dest => dest.UserId, opt => opt.Ignore())
+                .ForMember(dest => dest.Status, opt => opt.Ignore())
+                .ForMember(dest => dest.ReputationScore, opt => opt.Ignore())
+                .ForMember(dest => dest.CreatedAt, opt => opt.Ignore())
+                .ForMember(dest => dest.UpdatedAt, opt => opt.Ignore())
+                .ForMember(dest => dest.RejectReason, opt => opt.Ignore())
+                .ForMember(dest => dest.BusinessName, opt => opt.MapFrom(src => src.BusinessName.Trim()))
+                .ForMember(dest => dest.FullName, opt => opt.MapFrom(src => src.FullName == null ? null : src.FullName.Trim()))
+                .ForMember(dest => dest.BusinessDescription, opt => opt.MapFrom(src => src.BusinessDescription == null ? null : src.BusinessDescription.Trim()))
+                .ForMember(dest => dest.TaxCode, opt => opt.MapFrom(src => src.TaxCode.Trim()))
+                .ForMember(dest => dest.BusinessAddress, opt => opt.MapFrom(src => src.BusinessAddress.Trim()))
+                .ForMember(dest => dest.Ward, opt => opt.MapFrom(src => src.Ward.Trim()))
+                .ForMember(dest => dest.City, opt => opt.MapFrom(src => src.City.Trim()))
+                .ForMember(dest => dest.IdentityNumber, opt => opt.MapFrom(src => src.IdentityNumber.Trim()))
+                .ForMember(dest => dest.OperatingScope, opt => opt.MapFrom(src => src.OperatingScope == null ? null : src.OperatingScope.Trim()));
+
+            // business_profile -> Response DTOs (base info dùng chung cho cả 2 response tổng hợp)
+            CreateMap<business_profile, BusinessRegistrationDetailDto>();
+            CreateMap<business_profile, BusinessProfileDetailDto>();
+
+            // user -> BusinessProfileDetailDto (map trước, business_profile map đè sau — giống PersonalProfileService)
+            CreateMap<user, BusinessProfileDetailDto>();
+
+            // bank_account -> map đè lên response tổng hợp
+            CreateMap<bank_account, BusinessRegistrationDetailDto>();
+            CreateMap<bank_account, BankAccountDto>();   // đã có sẵn theo Profile cũ, giữ nguyên nếu trùng
+
+            // ==================== BUSINESS DOCUMENT ====================
+
+            CreateMap<business_document, BusinessRegistrationDocumentDto>();
+            CreateMap<business_document, BusinessDocumentResponseDto>();
+
+            // ==================== BUSINESS SERVICE AREA ====================
+
+            CreateMap<business_service_area, BusinessRegistrationServiceAreaDto>();
+            CreateMap<business_service_area, BusinessServiceAreaResponseDto>();
+
+            // ==================== PROCUREMENT PREFERENCE / SURVEY ====================
+
+            CreateMap<SubmitBusinessSurveyRequest, business_procurement_preference>()
+                .ForMember(dest => dest.PreferenceId, opt => opt.Ignore())
+                .ForMember(dest => dest.BusinessProfileId, opt => opt.Ignore())
+                .ForMember(dest => dest.CreatedAt, opt => opt.Ignore())
+                .ForMember(dest => dest.UpdatedAt, opt => opt.Ignore());
+
+            CreateMap<business_procurement_preference, BusinessSurveyDetailResponse>();
 
             // ==================== CATEGORY ====================
 

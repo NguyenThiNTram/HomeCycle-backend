@@ -1,4 +1,5 @@
-﻿using HomeCycle.Domain.Enums;
+﻿using HomeCycle.Application.DTOs.Responses.Banks;
+using HomeCycle.Domain.Enums;
 using Microsoft.EntityFrameworkCore.Metadata.Internal;
 using System;
 using System.Collections.Generic;
@@ -39,12 +40,12 @@ namespace HomeCycle.Application.DTOs.Responses.Users
         public BankAccountDto? BankAccount { get; set; }
     }
 
-    public class BankAccountDto
-    {
-        public Guid UserBankId { get; set; }
-        public string? BankCode { get; set; }
-        public string? BankName { get; set; }
-        public string? AccountNumber { get; set; }
-        public string? AccountName { get; set; }
-    }
+    //public class BankAccountDto
+    //{
+    //    public Guid UserBankId { get; set; }
+    //    public string? BankCode { get; set; }
+    //    public string? BankName { get; set; }
+    //    public string? AccountNumber { get; set; }
+    //    public string? AccountName { get; set; }
+    //}
 }

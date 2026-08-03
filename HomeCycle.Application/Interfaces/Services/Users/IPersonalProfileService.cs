@@ -1,4 +1,5 @@
 ﻿using HomeCycle.Application.Commons.Results;
+using HomeCycle.Application.DTOs.Requests.Banks;
 using HomeCycle.Application.DTOs.Requests.Users;
 using HomeCycle.Application.DTOs.Responses.Users;
 using System;

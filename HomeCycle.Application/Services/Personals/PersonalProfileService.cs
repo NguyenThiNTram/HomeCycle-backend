@@ -2,7 +2,9 @@
 using FluentValidation;
 using HomeCycle.Application.Commons.Errors;
 using HomeCycle.Application.Commons.Results;
+using HomeCycle.Application.DTOs.Requests.Banks;
 using HomeCycle.Application.DTOs.Requests.Users;
+using HomeCycle.Application.DTOs.Responses.Banks;
 using HomeCycle.Application.DTOs.Responses.Users;
 using HomeCycle.Application.Interfaces.Generics;
 using HomeCycle.Application.Interfaces.Repositories.Banks;

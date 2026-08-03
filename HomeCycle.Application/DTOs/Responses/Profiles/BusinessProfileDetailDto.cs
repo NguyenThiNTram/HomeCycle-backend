@@ -1,4 +1,5 @@
-﻿using System;
+﻿using HomeCycle.Application.DTOs.Responses.Banks;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -34,15 +35,6 @@ namespace HomeCycle.Application.DTOs.Responses.Profiles
         public BankAccountDto? BankAccount { get; set; }
         public List<BusinessDocumentResponseDto> Documents { get; set; } = new();
         public List<BusinessServiceAreaResponseDto> ServiceAreas { get; set; } = new();
-    }
-
-    public class BankAccountDto
-    {
-        public string BankCode { get; set; } = string.Empty;
-        public string BankName { get; set; } = string.Empty;
-        public string AccountNumber { get; set; } = string.Empty;
-        public string AccountName { get; set; } = string.Empty;
-        public int VerifyStatus { get; set; }
     }
 
     public class BusinessDocumentResponseDto

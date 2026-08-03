@@ -11,7 +11,7 @@ namespace HomeCycle.API.Controllers
 {
     [Route("api/business-profiles")]
     [ApiController]
-    [Authorize]
+    //[Authorize]
     public class BusinessProfileController : ControllerBase
     {
         private readonly IBusinessProfileService _businessProfileService;

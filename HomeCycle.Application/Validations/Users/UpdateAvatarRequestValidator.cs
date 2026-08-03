@@ -1,5 +1,6 @@
 ﻿using FluentValidation;
 using HomeCycle.Application.DTOs.Requests.Users;
+using Microsoft.AspNetCore.Http;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -13,8 +14,13 @@ namespace HomeCycle.Application.Validations.Users
         public UpdateAvatarRequestValidator()
         {
             RuleFor(x => x.AvatarUrl)
-                .NotEmpty().WithMessage("Đường dẫn ảnh đại diện không được để trống.")
-                .MaximumLength(500).WithMessage("Đường dẫn ảnh đại diện quá dài.");
+                .NotEmpty().WithMessage("The avatar field cannot be left blank.")
+                .Must(BeAValidUrl).WithMessage("Invalid avatar URL");
+        }
+
+        private bool BeAValidUrl(IFormFile file)
+        {
+            return Uri.TryCreate(file.FileName, UriKind.Absolute, out _);
         }
     }
 }

@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Microsoft.AspNetCore.Http;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -8,6 +9,6 @@ namespace HomeCycle.Application.DTOs.Requests.Users
 {
     public class UpdateAvatarRequest
     {
-        public string AvatarUrl { get; set; } = null!;
+        public IFormFile AvatarUrl { get; set; } = null!;
     }
 }
