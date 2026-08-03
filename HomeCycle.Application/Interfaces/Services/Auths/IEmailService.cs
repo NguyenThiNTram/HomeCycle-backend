@@ -9,5 +9,9 @@ namespace HomeCycle.Application.Interfaces.Services.Auths
     public interface IEmailService
     {
         Task SendOtpEmailAsync(string toEmail, string otpCode);
+
+        Task SendBusinessApprovalEmailAsync(string toEmail, string businessName);
+
+        Task SendBusinessRejectionEmailAsync(string toEmail, string businessName, IEnumerable<string> rejectionReasons);
     }
 }

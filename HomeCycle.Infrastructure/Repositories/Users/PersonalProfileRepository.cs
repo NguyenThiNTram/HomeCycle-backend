@@ -1,6 +1,7 @@
 ﻿using AutoMapper;
 using HomeCycle.Application.Interfaces.Repositories.Users;
 using HomeCycle.Domain.Entities;
+using HomeCycle.Domain.Enums;
 using HomeCycle.Infrastructure.DbContexts;
 using HomeCycle.Infrastructure.Persistences.Mappers;
 using Microsoft.EntityFrameworkCore;
@@ -38,6 +39,17 @@ namespace HomeCycle.Infrastructure.Repositories.Users
             return entity?.ToDomain();
         }
 
+        public async Task<personal_profile?> GetByIdAsync(Guid personalProfileId, CancellationToken cancellationToken = default)
+        {
+            var entity = await _db.Personal_Profiles
+                .AsNoTracking()
+                .FirstOrDefaultAsync(
+                    x => x.PersonalProfileId == personalProfileId,
+                    cancellationToken);
+
+            return entity?.ToDomain();
+        }
+
         public async Task UpdateAsync(personal_profile profile, CancellationToken cancellationToken = default)
         {
             Console.WriteLine(profile.FrontIDCardImage);
@@ -60,6 +72,32 @@ namespace HomeCycle.Infrastructure.Repositories.Users
         public async Task<bool> ExistsByUserIdAsync( Guid userId, CancellationToken cancellationToken = default)
         {
             return await _db.Personal_Profiles.AnyAsync(x => x.UserId == userId, cancellationToken);
+        }
+
+        public async Task<List<personal_profile>> GetPendingVerificationAsync(string? keyword, CancellationToken cancellationToken = default)
+        {
+            const int PendingStatus = 0;
+
+            var query = _db.Personal_Profiles
+                .AsNoTracking()
+                .Where(b => b.VerificationStatus == (int)VerifyStatus.Pending);
+
+            if (!string.IsNullOrWhiteSpace(keyword))
+            {
+                var cleanKeyword = keyword.Trim().ToLower();
+                query = query.Where(b =>
+                    (b.RepresentativeName != null && b.RepresentativeName.ToLower().Contains(cleanKeyword)) ||
+                    (b.RepresentativeCode != null && b.RepresentativeCode.ToLower().Contains(cleanKeyword))
+                );
+            }
+
+
+            var entities = await query
+                .OrderBy(b => b.CreatedAt)
+                .Take(100)
+                .ToListAsync(cancellationToken);
+
+            return entities.Select(e => e.ToDomain()!).ToList();
         }
     }
 }

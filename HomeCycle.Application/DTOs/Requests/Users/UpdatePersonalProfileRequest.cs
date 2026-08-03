@@ -19,11 +19,11 @@ namespace HomeCycle.Application.DTOs.Requests.Users
         public string? PhoneNumber { get; set; }
         public string? Address { get; set; }
     }
-    public class UpdateAvatarRequest
-    {
-        //public string AvatarUrl { get; set; } = null!;
-        public IFormFile AvatarUrl { get; set; } = null!;
-    }
+    //public class UpdateAvatarRequest
+    //{
+    //    //public string AvatarUrl { get; set; } = null!;
+    //    public IFormFile AvatarUrl { get; set; } = null!;
+    //}
 
     public class UpdateIdCardRequest
     {
@@ -35,11 +35,11 @@ namespace HomeCycle.Application.DTOs.Requests.Users
         public IFormFile BackIDCardImage { get; set; } = null!;  // Firebase url
     }
 
-    public class UpdateBankAccountRequest
-    {
-        public string BankCode { get; set; } = null!;
-        public string BankName { get; set; } = null!;
-        public string AccountNumber { get; set; } = null!;
-        public string AccountName { get; set; } = null!;
-    }
+    //public class UpdateBankAccountRequest
+    //{
+    //    public string BankCode { get; set; } = null!;
+    //    public string BankName { get; set; } = null!;
+    //    public string AccountNumber { get; set; } = null!;
+    //    public string AccountName { get; set; } = null!;
+    //}
 }

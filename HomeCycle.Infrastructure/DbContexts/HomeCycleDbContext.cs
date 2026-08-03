@@ -25,6 +25,8 @@ public partial class HomeCycleDbContext : DbContext
 
     public virtual DbSet<Business_Document> Business_Documents { get; set; }
 
+    public virtual DbSet<Business_Procurement_Preference> Business_Procurement_Preferences { get; set; }
+
     public virtual DbSet<Business_Product_Type> Business_Product_Types { get; set; }
 
     public virtual DbSet<Business_Profile> Business_Profiles { get; set; }
@@ -197,13 +199,46 @@ public partial class HomeCycleDbContext : DbContext
             entity.Property(e => e.BusinessDocumentId).ValueGeneratedNever();
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()");
             entity.Property(e => e.UpdatedAt).HasDefaultValueSql("now()");
-            entity.Property(e => e.VerifiedAt).HasDefaultValueSql("now()");
+            entity.Property(e => e.DocumentUrl).IsRequired();
 
             entity.HasOne(d => d.BusinessProfile).WithMany(p => p.Business_Documents)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("fk_business_doc_profile");
+        });
 
-            entity.HasOne(d => d.VerifiedByNavigation).WithMany(p => p.Business_Documents).HasConstraintName("fk_business_doc_verified_by");
+        modelBuilder.Entity<Business_Procurement_Preference>(entity =>
+        {
+        
+            entity.ToTable("Business_Procurement_Preference");
+            entity.Property(e => e.PreferenceId)
+                .ValueGeneratedNever();
+            entity.Property(e => e.BusinessProfileId)
+                .IsRequired();
+            entity.Property(e => e.TargetCities)
+                .HasColumnType("varchar(100)[]")
+                .IsRequired();
+            entity.Property(e => e.AcceptableDamageLevels)
+                .HasColumnType("int[]")
+                .IsRequired();
+            entity.Property(e => e.AcceptableFunctionalityStatuses)
+                .HasColumnType("int[]")
+                .IsRequired();
+            entity.Property(e => e.ProcurementScales)
+                .HasColumnType("int[]")
+                .IsRequired();
+            entity.Property(e => e.CreatedAt)
+                .HasColumnType("timestamp with time zone")
+                .IsRequired();
+            entity.Property(e => e.UpdatedAt)
+                .HasColumnType("timestamp with time zone")
+                .IsRequired(false);
+
+      
+            entity.HasOne(d => d.BusinessProfile)
+                .WithOne() 
+                .HasForeignKey<Business_Procurement_Preference>(d => d.BusinessProfileId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("fk_pref_business_profile");
         });
 
         modelBuilder.Entity<Business_Product_Type>(entity =>
@@ -230,10 +265,17 @@ public partial class HomeCycleDbContext : DbContext
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()");
             entity.Property(e => e.ReputationScore).HasDefaultValue(100);
             entity.Property(e => e.UpdatedAt).HasDefaultValueSql("now()");
-
+            entity.Property(e => e.IdentityNumber).HasMaxLength(20).IsRequired();
+            entity.Property(e => e.FullName)
+                .HasMaxLength(255)
+                .IsRequired(false);
             entity.HasOne(d => d.User).WithOne(p => p.Business_Profile)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("fk_business_user");
+            entity.HasOne(e => e.VerifiedByUser)
+                .WithMany()
+                .HasForeignKey(e => e.VerifiedBy)
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<Business_Service_Area>(entity =>

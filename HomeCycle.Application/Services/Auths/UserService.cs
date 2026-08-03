@@ -2,6 +2,7 @@
 using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Responses.Users;
 using HomeCycle.Application.Interfaces.Repositories.Posts;
+using HomeCycle.Application.Interfaces.Repositories.Profiles;
 using HomeCycle.Application.Interfaces.Repositories.Users;
 using HomeCycle.Application.Interfaces.Services.Users;
 using HomeCycle.Domain.Enums;
@@ -83,7 +84,7 @@ namespace HomeCycle.Application.Services.Auths
                     Ward = business.Ward,
                     City = business.City,
                     OperatingScope = business.OperatingScope,
-                    BusinessModel = business.BusinessModel
+                    BusinessModel = (BusinessModel?)business.BusinessModel
                 });
             }
             else
@@ -94,16 +95,16 @@ namespace HomeCycle.Application.Services.Auths
                         userId,
                         cancellationToken);
 
-                    _logger.LogWarning("======> AFTER GET PERSONAL <======");
+                    //_logger.LogWarning("======> AFTER GET PERSONAL <======");
 
                     if (personal is null)
                     {
-                        _logger.LogError("======> PERSONAL NULL <======");
+                        //_logger.LogError("======> PERSONAL NULL <======");
                         return Result<PublicUserProfileResponse>.Fail(AuthErrors.UserNotFound);
                     }
 
-                    _logger.LogWarning($"======> Personal Name: {personal.FullName} <======");
-                    _logger.LogWarning($"======> Personal Score: {personal.ReputationScore} <======");
+                    //_logger.LogWarning($"======> Personal Name: {personal.FullName} <======");
+                    //_logger.LogWarning($"======> Personal Score: {personal.ReputationScore} <======");
 
                     var response = new PersonalPublicProfileResponse
                     {
@@ -116,17 +117,16 @@ namespace HomeCycle.Application.Services.Auths
                         FullName = personal.FullName
                     };
 
-                    _logger.LogWarning($"======> Personal Name: {personal.FullName} <======");
+                    //_logger.LogWarning($"======> Personal Name: {personal.FullName} <======");
 
                     return Result<PublicUserProfileResponse>.Success(response);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "======> ERROR OCCURRED <======");
-                    Console.WriteLine("ERROR:");
-                    Console.WriteLine(ex.Message);
-                    Console.WriteLine(ex.StackTrace);
-
+                    //_logger.LogError(ex, "======> ERROR OCCURRED <======");
+                    //Console.WriteLine("ERROR:");
+                    //Console.WriteLine(ex.Message);
+                    //Console.WriteLine(ex.StackTrace);
                     throw;
                 }
             }

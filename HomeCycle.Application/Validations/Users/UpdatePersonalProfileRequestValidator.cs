@@ -1,5 +1,6 @@
 ﻿using FluentValidation;
 using HomeCycle.Application.DTOs.Requests.Users;
+using Microsoft.AspNetCore.Http;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -26,18 +27,6 @@ namespace HomeCycle.Application.Validations.Users
                 .When(x => !string.IsNullOrWhiteSpace(x.PhoneNumber))
                 .WithMessage("Invalid phone number.");
         }
-    }
-
-    public class UpdateAvatarRequestValidator : AbstractValidator<UpdateAvatarRequest>
-    {
-        public UpdateAvatarRequestValidator()
-        {
-            RuleFor(x => x.AvatarUrl)
-                .NotEmpty().WithMessage("The avatar field cannot be left blank.");
-                //.Must(BeAValidUrl).WithMessage("Invalid avatar URL.");
-        }
-
-        private bool BeAValidUrl(string url) => Uri.TryCreate(url, UriKind.Absolute, out _);
     }
 
     public class UpdateIdCardRequestValidator : AbstractValidator<UpdateIdCardRequest>
@@ -73,36 +62,6 @@ namespace HomeCycle.Application.Validations.Users
                 RuleFor(x => x.BackIDCardImage)
                     .NotNull().WithMessage("Back ID Card Image file is required.");
             });
-        }
-    }
-
-    public class UpdateBankAccountRequestValidator : AbstractValidator<UpdateBankAccountRequest>
-    {
-        public UpdateBankAccountRequestValidator()
-        {
-            When(x =>
-                !string.IsNullOrWhiteSpace(x.BankCode) ||
-                !string.IsNullOrWhiteSpace(x.BankName) ||
-                !string.IsNullOrWhiteSpace(x.AccountNumber) ||
-                !string.IsNullOrWhiteSpace(x.AccountName),
-                () =>
-                {
-                    RuleFor(x => x.BankCode)
-                        .NotEmpty()
-                        .MaximumLength(50);
-
-                    RuleFor(x => x.BankName)
-                        .NotEmpty()
-                        .MaximumLength(255);
-
-                    RuleFor(x => x.AccountNumber)
-                        .NotEmpty()
-                        .MaximumLength(50);
-
-                    RuleFor(x => x.AccountName)
-                        .NotEmpty()
-                        .MaximumLength(255);
-                });
         }
     }
 }

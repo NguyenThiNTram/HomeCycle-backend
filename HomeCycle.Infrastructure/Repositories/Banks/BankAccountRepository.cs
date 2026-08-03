@@ -53,5 +53,11 @@ namespace HomeCycle.Infrastructure.Repositories.Banks
             ////await _db.SaveChangesAsync(cancellationToken);
             //return Task.CompletedTask;
         }
+
+        public void Update(bank_account bankAccount)
+        {
+            var entity = bankAccount.ToInfrastructure();
+            _db.Bank_Accounts.Update(entity);
+        }
     }
 }

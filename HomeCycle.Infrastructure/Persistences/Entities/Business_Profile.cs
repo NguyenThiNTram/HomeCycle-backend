@@ -24,6 +24,12 @@ public partial class Business_Profile
     [StringLength(50)]
     public string? TaxCode { get; set; }
 
+    [StringLength(255)]
+    public string? FullName { get; set; }
+
+    [StringLength(20)]
+    public string IdentityNumber { get; set; }
+
     public string? BusinessAddress { get; set; }
 
     [StringLength(100)]
@@ -36,9 +42,14 @@ public partial class Business_Profile
     public string? OperatingScope { get; set; }
 
     [StringLength(255)]
-    public string? BusinessModel { get; set; }
+    public int BusinessModel { get; set; }
+
+    public int Status { get; set; }
 
     public int ReputationScore { get; set; }
+    public Guid? VerifiedBy { get; set; }
+    public DateTime? VerifiedAt { get; set; }
+    public string? RejectReason { get; set; }
 
     public DateTime CreatedAt { get; set; }
 
@@ -56,4 +67,7 @@ public partial class Business_Profile
     [ForeignKey("UserId")]
     [InverseProperty("Business_Profile")]
     public virtual User User { get; set; } = null!;
+
+    [ForeignKey("VerifiedBy")]
+    public virtual User? VerifiedByUser { get; set; }
 }

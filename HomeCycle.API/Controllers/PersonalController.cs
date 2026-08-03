@@ -1,4 +1,5 @@
 ﻿using HomeCycle.Application.Commons.Results;
+using HomeCycle.Application.DTOs.Requests.Banks;
 using HomeCycle.Application.DTOs.Requests.Users;
 using HomeCycle.Application.DTOs.Responses.Users;
 using HomeCycle.Application.Interfaces.Services.Users;
@@ -10,7 +11,7 @@ using System.Security.Claims;
 
 namespace HomeCycle.API.Controllers
 {
-    [Route("api/personals")]
+    [Route("api/personal-profiles")]
     [ApiController]
     //[Authorize(Roles = "Personal")]
     public class PersonalController : ControllerBase

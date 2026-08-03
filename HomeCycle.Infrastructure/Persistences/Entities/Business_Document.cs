@@ -15,30 +15,16 @@ public partial class Business_Document
     public Guid BusinessProfileId { get; set; }
 
     [StringLength(100)]
-    public string? DocumentType { get; set; }
+    public int DocumentType { get; set; }
 
     [StringLength(500)]
-    public string? DocumentUrl { get; set; }
-
-    public int? Status { get; set; }
-
-    public int? VerificationStatus { get; set; }
-
-    public Guid? VerifiedBy { get; set; }
-
-    public DateTime VerifiedAt { get; set; }
+    public string DocumentUrl { get; set; }
 
     public DateTime CreatedAt { get; set; }
 
     public DateTime UpdatedAt { get; set; }
 
-    public string? RejectReason { get; set; }
-
     [ForeignKey("BusinessProfileId")]
     [InverseProperty("Business_Documents")]
     public virtual Business_Profile BusinessProfile { get; set; } = null!;
-
-    [ForeignKey("VerifiedBy")]
-    [InverseProperty("Business_Documents")]
-    public virtual User? VerifiedByNavigation { get; set; }
 }

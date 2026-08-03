@@ -25,8 +25,14 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 OperatingScope = entity.OperatingScope,
                 BusinessModel = entity.BusinessModel,
                 ReputationScore = entity.ReputationScore,
+                VerifiedBy = entity.VerifiedBy,
+                VerifiedAt = entity.VerifiedAt,
+                RejectReason = entity.RejectReason,
                 CreatedAt = entity.CreatedAt,
-                UpdatedAt = entity.UpdatedAt
+                UpdatedAt = entity.UpdatedAt,
+                Status = entity.Status,
+                IdentityNumber = entity.IdentityNumber,
+                FullName = entity.FullName
             };
         }
         public static Business_Profile ToInfrastructure(this business_profile entity)
@@ -45,8 +51,14 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 OperatingScope = entity.OperatingScope,
                 BusinessModel = entity.BusinessModel,
                 ReputationScore = entity.ReputationScore,
+                VerifiedBy = entity.VerifiedBy,
+                VerifiedAt = entity.VerifiedAt,
+                RejectReason = entity.RejectReason,
                 CreatedAt = entity.CreatedAt,
-                UpdatedAt = entity.UpdatedAt
+                UpdatedAt = entity.UpdatedAt,
+                Status = entity.Status,
+                IdentityNumber = entity.IdentityNumber,
+                FullName = entity.FullName
             };
         }
     }
