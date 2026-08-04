@@ -1,4 +1,5 @@
 ﻿using HomeCycle.Domain.Entities;
+using HomeCycle.Domain.Enums;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -17,10 +18,16 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 ProductId = entity.ProductId,
                 AttributeId = entity.AttributeId,
                 OptionId = entity.OptionId,
-                InputType = entity.InputType,
+                InputType = (InputType?)entity.InputType,
                 ValueBoolean = entity.ValueBoolean,
                 ValueText = entity.ValueText,
-                ValueNumber = entity.ValueNumber
+                ValueNumber = entity.ValueNumber,
+                AttributeName = entity.Attribute?.AttributeName,
+                DataType = (DataType?)entity.Attribute?.DataType,
+                Unit = entity.Attribute?.Unit,
+                AttributeDisplayOrder = entity.Attribute?.DisplayOrder,
+                OptionValue = entity.Option?.OptionValue,
+                OptionDisplayOrder = entity.Option?.DisplayOrder
             };
         }
         public static Product_Attribute_Value ToInfrastructure(this product_attribute_value entity)
@@ -31,7 +38,7 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 ProductId = entity.ProductId,
                 AttributeId = entity.AttributeId,
                 OptionId = entity.OptionId,
-                InputType = entity.InputType,
+                InputType = (int?)entity.InputType,
                 ValueBoolean = entity.ValueBoolean,
                 ValueText = entity.ValueText,
                 ValueNumber = entity.ValueNumber

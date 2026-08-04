@@ -1,4 +1,5 @@
 ﻿using HomeCycle.Domain.Entities;
+using HomeCycle.Domain.Enums;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -23,7 +24,10 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 RepresentativeAddress = entity.RepresentativeAddress,
                 FrontIDCardImage = entity.FrontIDCardImage,
                 BackIDCardImage = entity.BackIDCardImage,
-                VerificationStatus = entity.VerificationStatus,
+                VerificationStatus = entity.VerificationStatus.HasValue
+                    ? (VerifyStatus)entity.VerificationStatus.Value
+                    : VerifyStatus.Pending,
+                RejectReason = entity.RejectReason,
                 VerifiedBy = entity.VerifiedBy,
                 VerifiedAt = entity.VerifiedAt,
                 ReputationScore = entity.ReputationScore,
@@ -44,7 +48,8 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 RepresentativeAddress = entity.RepresentativeAddress,
                 FrontIDCardImage = entity.FrontIDCardImage,
                 BackIDCardImage = entity.BackIDCardImage,
-                VerificationStatus = entity.VerificationStatus,
+                VerificationStatus = (int?)entity.VerificationStatus,
+                RejectReason = entity.RejectReason,
                 VerifiedBy = entity.VerifiedBy,
                 VerifiedAt = entity.VerifiedAt,
                 ReputationScore = entity.ReputationScore,

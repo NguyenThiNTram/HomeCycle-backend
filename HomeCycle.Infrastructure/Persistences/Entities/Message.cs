@@ -29,6 +29,9 @@ public partial class Message
 
     public int? OfferStatus { get; set; }
 
+    [Precision(18, 2)]
+    public decimal? BasePriceSnapshot { get; set; }
+
     [StringLength(500)]
     public string? MediaUrl { get; set; }
 

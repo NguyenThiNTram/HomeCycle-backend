@@ -19,14 +19,18 @@ namespace HomeCycle.Application.Interfaces.Repositories.Users
 
         Task<bool> ExistsByUsernameAsync(string username, CancellationToken cancellationToken = default);
 
+        Task UpdateAsync(user user, CancellationToken cancellationToken = default);
+
         Task AddAsync(user user, CancellationToken cancellationToken = default);
 
         //token
         Task AddRefreshTokenAsync(refresh_token token, CancellationToken cancellationToken = default);
+
         Task<refresh_token?> GetRefreshTokenAsync(string token, CancellationToken cancellationToken = default);
+
         void UpdateRefreshToken(refresh_token token);
 
         Task<bool> ExistsByUsernameAsync(string username, Guid excludeUserId, CancellationToken cancellationToken = default);
-        void Update(user user);
+        //void Update(user user);
     }
 }

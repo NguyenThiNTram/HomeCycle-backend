@@ -1,9 +1,13 @@
-﻿using HomeCycle.Infrastructure;
+﻿using HomeCycle.API.Middlewares;
+using HomeCycle.Infrastructure;
 using HomeCycle.Infrastructure.DbContexts;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.OpenApi;
 using Microsoft.OpenApi.Models;
+using Swashbuckle.AspNetCore.Annotations;
+using System.Reflection;
 using System.Security.Claims;
 using System.Text;
 using System.Text.Json.Serialization;
@@ -16,16 +20,36 @@ namespace HomeCycle.API
         {
             var builder = WebApplication.CreateBuilder(args);
 
+            // Config CORS
+            builder.Services.AddCors(options =>
+            {
+                options.AddPolicy("AllowAll", policy =>
+                {
+                    policy.AllowAnyOrigin()
+                          .AllowAnyMethod()
+                          .AllowAnyHeader();
+                          //.AllowCredentials(); // truyền Connection ID
+                });
+            });
+
             // Add services to the container.
 
             builder.Services.AddControllers();
+            builder.Services.AddSignalR();
 
             // read enums to text
             builder.Services.AddControllers().AddJsonOptions(options =>
             {
-                options.JsonSerializerOptions.Converters.Add(
-                    new JsonStringEnumConverter()
-                );
+                options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
+            });
+
+            //builder.Services.AddControllers(options =>
+            //{
+            //    options.ModelBinderProviders.Insert(0, new JsonModelBinderProvider());
+            //});
+            builder.Services.AddControllers(options =>
+            {
+                options.ModelBinderProviders.Insert(0, new JsonModelBinderProvider());
             });
 
             builder.Services.AddEndpointsApiExplorer();
@@ -39,6 +63,9 @@ namespace HomeCycle.API
                     Title = "HomeCycle API",
                     Version = "v1"
                 });
+
+                // Kích hoạt đọc thuộc tính [SwaggerOperation] từ Swashbuckle.AspNetCore.Annotations
+                options.EnableAnnotations();
 
                 options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
                 {
@@ -62,6 +89,13 @@ namespace HomeCycle.API
                         Array.Empty<string>()
                     }
                 });
+
+                var xmlFile = $"{Assembly.GetExecutingAssembly().GetName().Name}.xml";
+                var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
+                if (File.Exists(xmlPath))
+                {
+                    options.IncludeXmlComments(xmlPath);
+                }
             });
 
             //Khai báo DI
@@ -100,13 +134,6 @@ namespace HomeCycle.API
 
             var app = builder.Build();
 
-            // Configure the HTTP request pipeline
-            //if (app.Environment.IsDevelopment())
-            //{
-            //    app.UseSwagger();
-            //    app.UseSwaggerUI();
-            //}
-
             app.UseSwagger();
             app.UseSwaggerUI(c =>
             {
@@ -117,8 +144,15 @@ namespace HomeCycle.API
             if (!app.Environment.IsProduction()) // Hoặc if (app.Environment.IsDevelopment() && !Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER").Equals("true"))
             {
                 // Tốt nhất nếu chạy Docker hoàn toàn thì comment hẳn dòng dưới này lại:
-                // app.UseHttpsRedirection();
+                app.UseHttpsRedirection();
             }
+
+            app.UseCors("SignalRPolicy");
+            app.UseWebSockets();
+            //app.MapHub<ChatHub>("/chatHub");
+
+            app.UseRouting();
+            app.UseCors("AllowAll");
 
             app.UseAuthentication();
             app.UseAuthorization();

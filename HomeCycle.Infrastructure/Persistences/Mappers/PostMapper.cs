@@ -1,4 +1,5 @@
 ﻿using HomeCycle.Domain.Entities;
+using HomeCycle.Domain.Enums;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -16,17 +17,18 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
             {
                 PostId = entity.PostId,
                 OwnerId = entity.OwnerId,
+                ProductName = entity.Product?.ProductName,
                 Description = entity.Description,
                 Quantity = entity.Quantity,
                 RemainingQuantity = entity.RemainingQuantity,
-                PostType = entity.PostType,
+                PostType = (PostType?)entity.PostType,
                 BasePrice = entity.BasePrice,
                 StreetAddress = entity.StreetAddress,
                 Ward = entity.Ward,
                 City = entity.City,
                 DeliveryMethod = entity.DeliveryMethod,
-                PriorityLevel = entity.PriorityLevel,
-                Status = entity.Status,
+                PriorityLevel = (PriorityLevel?)entity.PriorityLevel,
+                Status = (PostStatus?)entity.Status,
                 IsBusinessPosting = entity.IsBusinessPosting,
                 CreatedAt = entity.CreatedAt,
                 UpdatedAt = entity.UpdatedAt,
@@ -43,14 +45,14 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 Description = entity.Description,
                 Quantity = entity.Quantity,
                 RemainingQuantity = entity.RemainingQuantity,
-                PostType = entity.PostType,
+                PostType = (int?)entity.PostType,
                 BasePrice = entity.BasePrice,
                 StreetAddress = entity.StreetAddress,
                 Ward = entity.Ward,
                 City = entity.City,
                 DeliveryMethod = entity.DeliveryMethod,
-                PriorityLevel = entity.PriorityLevel,
-                Status = entity.Status,
+                PriorityLevel = (int?)entity.PriorityLevel,
+                Status = (int?)entity.Status,
                 IsBusinessPosting = entity.IsBusinessPosting,
                 CreatedAt = entity.CreatedAt,
                 UpdatedAt = entity.UpdatedAt,

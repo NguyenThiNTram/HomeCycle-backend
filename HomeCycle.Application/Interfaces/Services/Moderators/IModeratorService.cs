@@ -24,5 +24,16 @@ namespace HomeCycle.Application.Interfaces.Services.Moderators
         Task<Result<List<PendingBusinessProfileSummaryDto>>> GetPendingBusinessProfilesAsync(
             string? keyword,
             CancellationToken cancellationToken = default);
+
+        Task<Result<List<PendingPersonalVerificationSummaryDto>>>GetPendingPersonalVerificationsAsync(string? keyword,
+        CancellationToken cancellationToken = default);
+
+        Task<Result<PersonalIdentityVerificationDetailDto>>GetPersonalVerificationDetailAsync(Guid personalProfileId, CancellationToken cancellationToken = default);
+
+        Task<Result<string>> ReviewPersonalIdentityAsync(
+            Guid moderatorId,
+            Guid personalProfileId,
+            ReviewPersonalIdentityRequest request,
+            CancellationToken cancellationToken = default);
     }
 }

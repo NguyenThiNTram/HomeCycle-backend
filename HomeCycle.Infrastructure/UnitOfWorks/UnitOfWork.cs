@@ -13,13 +13,14 @@ namespace HomeCycle.Infrastructure.UnitOfWorks
 {
     public class UnitOfWork : IUnitOfWork
     {
-        private readonly HomeCycleDbContext _context;
+        private readonly HomeCycleDbContext _db;
         private readonly Hashtable _repositories;
         private IDbContextTransaction? _currentTransaction;
+        private int _transactionCount = 0;
 
-        public UnitOfWork(HomeCycleDbContext context)
+        public UnitOfWork(HomeCycleDbContext db)
         {
-            _context = context;
+            _db = db;
             _repositories = new Hashtable();
         }
 
@@ -31,7 +32,7 @@ namespace HomeCycle.Infrastructure.UnitOfWorks
             if (!_repositories.ContainsKey(type))
             {
                 var repositoryType = typeof(GenericRepository<>);
-                var repositoryInstance = Activator.CreateInstance(repositoryType.MakeGenericType(typeof(T)), _context)!;
+                var repositoryInstance = Activator.CreateInstance(repositoryType.MakeGenericType(typeof(T)), _db)!;
                 _repositories.Add(type, repositoryInstance);
             }
 
@@ -40,19 +41,108 @@ namespace HomeCycle.Infrastructure.UnitOfWorks
 
         public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
         {
-            return _context.SaveChangesAsync(cancellationToken);
+            return _db.SaveChangesAsync(cancellationToken);
         }
 
         // Quản lý Transaction thủ công khi gọi nhiều API/Service phức tạp
         // Dùng khi lưu dữ liệu làm nhiều đợt
         // Chỉ khi nào bước x thành công và dùng lệnh _currentTransaction.Commit(), dữ liệu mới thực sự được lưu vào Database
-        public async Task BeginTransactionAsync() => _currentTransaction = await _context.Database.BeginTransactionAsync();
-        public async Task CommitTransactionAsync() => await _currentTransaction!.CommitAsync();
-        public async Task RollbackTransactionAsync() => await _currentTransaction!.RollbackAsync();
+        //public async Task BeginTransactionAsync() => _currentTransaction = await _db.Database.BeginTransactionAsync();
+        //public async Task CommitTransactionAsync() => await _currentTransaction!.CommitAsync();
+        //public async Task RollbackTransactionAsync() => await _currentTransaction!.RollbackAsync();
+
+        //public async Task BeginTransactionAsync(CancellationToken cancellationToken = default)
+        //{
+        //    if (_transactionCount == 0)
+        //        _currentTransaction = await _db.Database.BeginTransactionAsync(cancellationToken);
+
+        //    _transactionCount++;
+        //}
+
+        //public async Task CommitTransactionAsync(CancellationToken cancellationToken = default)
+        //{
+        //    _transactionCount--;
+        //    if (_transactionCount == 0 && _currentTransaction is not null)
+        //    {
+        //        await _currentTransaction.CommitAsync(cancellationToken);
+        //        await _currentTransaction.DisposeAsync();
+        //        _currentTransaction = null;
+        //    }
+        //}
+
+        //public async Task RollbackTransactionAsync(CancellationToken cancellationToken = default)
+        //{
+        //    _transactionCount = 0;
+        //    if (_currentTransaction is not null)
+        //    {
+        //        await _currentTransaction.RollbackAsync(cancellationToken);
+        //        await _currentTransaction.DisposeAsync();
+        //        _currentTransaction = null;
+        //    }
+        //}
+
+        public async Task BeginTransactionAsync(CancellationToken cancellationToken = default)
+        {
+            if (_currentTransaction is not null)
+            {
+                throw new InvalidOperationException(
+                    "UnitOfWork đang có một transaction chưa được hoàn tất.");
+            }
+
+            if (_db.Database.CurrentTransaction is not null)
+            {
+                throw new InvalidOperationException(
+                    "DbContext đang tham gia một transaction khác.");
+            }
+
+            _currentTransaction = await _db.Database.BeginTransactionAsync(cancellationToken);
+        }
+
+        public async Task CommitTransactionAsync(CancellationToken cancellationToken = default)
+        {
+            if (_currentTransaction is null)
+            {
+                throw new InvalidOperationException(
+                    "Không có transaction đang hoạt động để commit.");
+            }
+
+            try
+            {
+                await _currentTransaction.CommitAsync(cancellationToken);
+            }
+            finally
+            {
+                await DisposeCurrentTransactionAsync();
+            }
+        }
+
+        public async Task RollbackTransactionAsync(CancellationToken cancellationToken = default)
+        {
+            if (_currentTransaction is null)
+                return;
+
+            try
+            {
+                await _currentTransaction.RollbackAsync(cancellationToken);
+            }
+            finally
+            {
+                await DisposeCurrentTransactionAsync();
+            }
+        }
+
+        private async Task DisposeCurrentTransactionAsync()
+        {
+            if (_currentTransaction is null)
+                return;
+
+            await _currentTransaction.DisposeAsync();
+            _currentTransaction = null;
+        }
 
         public void Dispose()
         {
-            _context.Dispose();
+            _db.Dispose();
             GC.SuppressFinalize(this);
         }
     }

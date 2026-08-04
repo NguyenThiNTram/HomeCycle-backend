@@ -1,0 +1,35 @@
+﻿using HomeCycle.Application.DTOs.Requests.Media;
+using HomeCycle.Application.DTOs.Requests.Products;
+using HomeCycle.Domain.Enums;
+using Microsoft.AspNetCore.Http;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+
+namespace HomeCycle.Application.DTOs.Requests.Posts
+{
+    public class CreatePostRequest
+    {
+        public string? Description { get; set; }
+        public int Quantity { get; set; }
+        public string? StreetAddress { get; set; }
+        public string? Ward { get; set; }
+        public string? City { get; set; }
+        public DeliveryMethod DeliveryMethod { get; set; }
+        public PriorityLevel? PriorityLevel { get; set; }
+        public List<IFormFile>? Medias { get; set; }
+    }
+    public class UpdatePostRequest
+    {
+        public string? Description { get; set; }
+        public int? Quantity { get; set; }
+        public string? StreetAddress { get; set; }
+        public string? Ward { get; set; }
+        public string? City { get; set; }
+        public DeliveryMethod? DeliveryMethod { get; set; }
+        public PriorityLevel? PriorityLevel { get; set; }
+        public List<IFormFile>? Medias { get; set; }
+    }
+}

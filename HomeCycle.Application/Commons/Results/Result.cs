@@ -8,8 +8,8 @@ namespace HomeCycle.Application.Commons.Results
 {
     public class Result
     {
-        public bool IsSuccess { get; }
-        public Error Error { get; }
+        public bool IsSuccess { get; protected set; }
+        public Error? Error { get; protected set; }
 
         protected Result(bool isSuccess, Error error)
         {

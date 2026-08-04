@@ -47,12 +47,22 @@ namespace HomeCycle.Infrastructure.Repositories.Users
             return entity?.ToDomain();
         }
 
+        //Dùng cho chức năng Đăng ký tài khoản. Kiểm tra xem tên đăng ký đã tồn tại trong hệ thống chưa
         public async Task<bool> ExistsByUsernameAsync(string username, CancellationToken cancellationToken = default)
         {
+            var searchUsername = username.Trim().ToLower();
+
             return await _db.Users
-               .AnyAsync(
-                   x => x.Username.ToLower() == username.ToLower(),
-                   cancellationToken);
+               .AnyAsync(x => x.Username == searchUsername, cancellationToken);
+        }
+
+        //Hàm thứ hai (Có excludeUserId): Dùng cho chức năng Cập nhật hồ sơ (Update Profile). Kiểm tra xem tên đăng nhập mới có bị trùng với người khác hay không (phải loại trừ chính bản thân người đang sửa)
+        public async Task<bool> ExistsByUsernameAsync(string username, Guid excludeUserId, CancellationToken cancellationToken = default)
+        {
+            var searchUsername = username.Trim().ToLower();
+
+            return await _db.Users
+               .AnyAsync(x => x.Username == searchUsername && x.UserId != excludeUserId, cancellationToken);
         }
 
         public async Task<user?> GetByEmailAsync(string email, CancellationToken cancellationToken = default)
@@ -91,16 +101,20 @@ namespace HomeCycle.Infrastructure.Repositories.Users
             _db.Refresh_Tokens.Update(token.ToInfrastructure());
         }
 
-        public async Task<bool> ExistsByUsernameAsync(string username, Guid excludeUserId, CancellationToken cancellationToken = default)
-        {
-            return await _db.Users
-               .AnyAsync(x => x.Username.ToLower() == username.ToLower() && x.UserId != excludeUserId, cancellationToken);
-        }
-
-        public void Update(user user)
+        public Task UpdateAsync(user user, CancellationToken cancellationToken = default)
         {
             var entity = user.ToInfrastructure();
+            var localEntry = _db.Users.Local.FirstOrDefault(x => x.UserId == entity.UserId);
+
+            if (localEntry != null)
+            {
+                // Trục xuất thực thể cũ ra khỏi Change Tracker để nhường chỗ cho thực thể cập nhật
+                _db.Entry(localEntry).State = EntityState.Detached;
+            }
             _db.Users.Update(entity);
+
+            //await _db.SaveChangesAsync(cancellationToken);
+            return Task.CompletedTask;
         }
     }
 }

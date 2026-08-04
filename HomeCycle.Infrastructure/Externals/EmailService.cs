@@ -23,6 +23,11 @@ namespace HomeCycle.Infrastructure.Externals
         public async Task SendOtpEmailAsync(string toEmail, string otpCode)
         {
             var settings = _config.GetSection("EmailSettings");
+
+            Console.WriteLine(settings["MailServer"]);
+            Console.WriteLine(settings["MailPort"]);
+            Console.WriteLine(settings["SenderEmail"]);
+
             var email = new MimeMessage();
 
             email.From.Add(new MailboxAddress(settings["SenderName"], settings["SenderEmail"]));

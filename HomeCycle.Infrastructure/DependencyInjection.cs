@@ -8,6 +8,10 @@ using HomeCycle.Application.Interfaces.Repositories.Banks;
 using HomeCycle.Application.Interfaces.Repositories.Orders;
 using HomeCycle.Application.Interfaces.Repositories.Payments;
 using HomeCycle.Application.Interfaces.Repositories.Profiles;
+using HomeCycle.Application.Interfaces.Repositories.Media;
+using HomeCycle.Application.Interfaces.Repositories.Offers;
+using HomeCycle.Application.Interfaces.Repositories.Posts;
+using HomeCycle.Application.Interfaces.Repositories.Products;
 using HomeCycle.Application.Interfaces.Repositories.Shipments;
 using HomeCycle.Application.Interfaces.Repositories.Users;
 using HomeCycle.Application.Interfaces.Repositories.Wallets;
@@ -17,13 +21,23 @@ using HomeCycle.Application.Interfaces.Services.Auths;
 using HomeCycle.Application.Interfaces.Services.Moderators;
 using HomeCycle.Application.Interfaces.Services.Payments;
 using HomeCycle.Application.Interfaces.Services.Profiles;
+using HomeCycle.Application.Interfaces.Services.Externals;
+using HomeCycle.Application.Interfaces.Services.Offers;
+using HomeCycle.Application.Interfaces.Services.Posts;
+using HomeCycle.Application.Interfaces.Services.Products;
+using HomeCycle.Application.Interfaces.Services.Users;
 using HomeCycle.Application.Mappings;
 using HomeCycle.Application.Services.Agreements;
 using HomeCycle.Application.Services.Auths;
+using HomeCycle.Application.Services.Personals;
+using HomeCycle.Application.Services.Offers;
+using HomeCycle.Application.Services.Posts;
+using HomeCycle.Application.Services.Products;
 using HomeCycle.Application.Services.Moderators;
 using HomeCycle.Application.Services.Payments;
 using HomeCycle.Application.Services.Profiles;
 using HomeCycle.Application.Validations.Auths;
+using HomeCycle.Application.Validations.Users;
 using HomeCycle.Infrastructure.DbContexts;
 using HomeCycle.Infrastructure.Externals;
 using HomeCycle.Infrastructure.Repositories.Agreements;
@@ -32,6 +46,9 @@ using HomeCycle.Infrastructure.Repositories.Banks;
 using HomeCycle.Infrastructure.Repositories.Orders;
 using HomeCycle.Infrastructure.Repositories.Payments;
 using HomeCycle.Infrastructure.Repositories.Profiles;
+using HomeCycle.Infrastructure.Repositories.Offers;
+using HomeCycle.Infrastructure.Repositories.Posts;
+using HomeCycle.Infrastructure.Repositories.Products;
 using HomeCycle.Infrastructure.Repositories.Shipments;
 using HomeCycle.Infrastructure.Repositories.Users;
 using HomeCycle.Infrastructure.Repositories.Wallets;
@@ -41,11 +58,6 @@ using MathNet.Numerics;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace HomeCycle.Infrastructure
 {
@@ -57,6 +69,8 @@ namespace HomeCycle.Infrastructure
             services.AddDbContext<HomeCycleDbContext>(options =>
             {
                 options.UseNpgsql(configuration.GetConnectionString("DefaultConnection"));
+                options.EnableDetailedErrors();
+                options.EnableSensitiveDataLogging();
             });
 
             //register UOW
@@ -76,13 +90,33 @@ namespace HomeCycle.Infrastructure
             services.AddAutoMapper(cfg => cfg.AddMaps(typeof(MappingProfile).Assembly));
 
             // register FluentValidation
+            // do nằm chung 1 application nên chỉ cần gọi 1 lần là đủ, không cần gọi nhiều lần
             services.AddValidatorsFromAssemblyContaining<RegisterPersonalRequestValidator>();
+            services.AddValidatorsFromAssembly(typeof(LoginRequestValidator).Assembly);
+
+            // register External Services
+            services.AddScoped<IFileStorageService, FirebaseStorageService>();
+            services.AddScoped<IOtpRepository, OtpRepository>();
+            services.AddScoped<IEmailService, EmailService>();
+            services.AddScoped<IBrandRepository, BrandRepository>();
 
             // register Repositories
             services.AddScoped<IUserRepository, UserRepository>();
             services.AddScoped<IPersonalProfileRepository, PersonalProfileRepository>();
-            services.AddScoped<IOtpRepository, OtpRepository>();
+            services.AddScoped<IBusinessProfileRepository, BusinessProfileRepository>();
+            services.AddScoped<ICategoryRepository, CategoryRepository>();
             services.AddScoped<IBankAccountRepository, BankAccountRepository>();
+            services.AddScoped<IProductAttributeOptionRepository, ProductAttributeOptionRepository>();
+            services.AddScoped<IProductAttributeRepository, ProductAttributeRepository>();
+            services.AddScoped<IProductTypeRepository, ProductTypeRepository>();
+            services.AddScoped<IBrandRepository, BrandRepository>();
+            services.AddScoped<IProductRepository, ProductRepository>();
+            services.AddScoped<IPostRepository, PostRepository>();
+            services.AddScoped<IMediaRepository, MediaRepository>();
+            services.AddScoped<IProductAttributeValueRepository, ProductAttributeValueRepository>();
+            services.AddScoped<IOfferRepository, OfferRepository>();
+            services.AddScoped<INegotiationRepository, NegotiationRepository>();
+            services.AddScoped<IMessageRepository, MessageRepository>();
             services.AddScoped<IBusinessProfileRepository, BusinessProfileRepository>();
             services.AddScoped<IBusinessDocumentRepository, BusinessDocumentRepository>();
             services.AddScoped<IBusinessProductTypeRepository, BusinessProductTypeRepository>();
@@ -102,6 +136,17 @@ namespace HomeCycle.Infrastructure
 
             // register Services
             services.AddScoped<IAuthService, AuthService>();
+            services.AddScoped<IUserService, UserService>();
+            services.AddScoped<IPersonalProfileService, PersonalProfileService>();
+            services.AddScoped<ICategoryService, CategoryService>();
+            services.AddScoped<IBrandService, BrandService>();
+            services.AddScoped<IProductTypeService, ProductTypeService>();
+            services.AddScoped<IProductAttributeService, ProductAttributeService>();
+            services.AddScoped<IPostService, PostService>();
+            services.AddScoped<IProductService, ProductService>();
+            services.AddScoped<IMediaService, MediaService>();
+            services.AddScoped<IProductAttributeOptionService, ProductAttributeOptionService>();
+            services.AddScoped<IOfferService, OfferService>();
             services.AddScoped<IEmailService, EmailService>();
             services.AddScoped<IBusinessProfileService, BusinessProfileService>();
             services.AddScoped<IModeratorService, ModeratorService>();

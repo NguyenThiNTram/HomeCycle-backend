@@ -27,5 +27,7 @@ public class product_type
         this.ProductTypeId = ProductTypeId;
         this.CategoryId = CategoryId;
     }
+
+    public ICollection<product_attribute> ProductAttributes { get; set; } = new List<product_attribute>();
 }
 

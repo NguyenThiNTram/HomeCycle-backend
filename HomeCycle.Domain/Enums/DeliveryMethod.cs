@@ -8,8 +8,9 @@ namespace HomeCycle.Domain.Enums
 {
     public enum DeliveryMethod
     {
-        GHN = 1,
-        SellerDelivery = 2, 
-        SelfPickup = 3     
+        Unknown = 0, // để test - nếu chạy không xoá
+        GhnDelivery = 1,
+        SellerDelivers = 2,
+        BuyerPickUp = 3
     }
 }

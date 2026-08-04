@@ -40,7 +40,7 @@ public partial class Post
     public int? DeliveryMethod { get; set; }
 
     [StringLength(50)]
-    public string? PriorityLevel { get; set; }
+    public int? PriorityLevel { get; set; }
 
     public int? Status { get; set; }
 

@@ -19,6 +19,7 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 SellerId = entity.SellerId,
                 BuyerId = entity.BuyerId,
                 FinalPrice = entity.FinalPrice,
+                FinalQuantity = entity.FinalQuantity,
                 LastMessageAt = entity.LastMessageAt,
                 CreatedAt = entity.CreatedAt,
                 NegotiationStatus = entity.NegotiationStatus
@@ -35,6 +36,7 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 SellerId = entity.SellerId,
                 BuyerId = entity.BuyerId,
                 FinalPrice = entity.FinalPrice,
+                FinalQuantity = entity.FinalQuantity,
                 LastMessageAt = entity.LastMessageAt,
                 CreatedAt = entity.CreatedAt,
                 NegotiationStatus = entity.NegotiationStatus

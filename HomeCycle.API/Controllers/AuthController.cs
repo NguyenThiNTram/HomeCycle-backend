@@ -1,30 +1,36 @@
-﻿using HomeCycle.Application.DTOs.Requests.Auths;
+﻿using HomeCycle.Application.Commons.Results;
+using HomeCycle.Application.DTOs.Requests.Auths;
+using HomeCycle.Application.DTOs.Requests.Users;
 using HomeCycle.Application.DTOs.Responses.Auths;
 using HomeCycle.Application.Interfaces.Services.Auths;
+using HomeCycle.Application.Interfaces.Services.Users;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
 
 namespace HomeCycle.API.Controllers
 {
-    [Route("api/Auth")]
+    [Route("api/auth")]
     [ApiController]
     public class AuthController : ControllerBase
     {
         private readonly IAuthService _authService;
         private readonly IEmailService _emailService;
+        private readonly IUserService _userService;
 
-        public AuthController(IAuthService authService, IEmailService emailService)
+        public AuthController(IAuthService authService, IEmailService emailService, IUserService userService)
         {
             _authService = authService;
             _emailService = emailService;
+            _userService = userService;
         }
 
-        [HttpPost("/Personal/Login")]
-        public async Task<IActionResult> LoginPersonal([FromBody] LoginPersonalRequest request, CancellationToken cancellationToken)
+        [HttpPost("login")]
+        public async Task<IActionResult> Login( [FromBody] LoginRequest request, CancellationToken cancellationToken)
         {
-            var result = await _authService.LoginPersonalAsync(request, cancellationToken);
+            var result = await _authService.LoginAsync(request, cancellationToken);
 
             if (!result.IsSuccess)
                 return BadRequest(result.Error);
@@ -32,10 +38,10 @@ namespace HomeCycle.API.Controllers
             return Ok(result.Data);
         }
 
-        [HttpPost("/Personal/Register")]
+        [HttpPost("personal/register")]
         public async Task<IActionResult> RegisterPersonal(
             [FromHeader(Name = "X-Registration-Token")] string registrationToken, // Lấy token từ Header
-            [FromBody] RegisterPersonalRequest request,
+            [FromForm] RegisterPersonalRequest request,
             CancellationToken cancellationToken)
         {
             if (string.IsNullOrWhiteSpace(registrationToken))
@@ -67,7 +73,7 @@ namespace HomeCycle.API.Controllers
             });
         }
 
-        [HttpPost("/Personal/refresh-token")]
+        [HttpPost("refresh-token")]
         public async Task<IActionResult> RefreshToken([FromBody] RefreshTokenRequest request, CancellationToken cancellationToken)
         {
             var result = await _authService.RefreshTokenAsync(request.RefreshToken, cancellationToken);
@@ -95,11 +101,14 @@ namespace HomeCycle.API.Controllers
         [HttpPost("send-otp")]
         public async Task<IActionResult> SendOtp([FromBody] EmailDto request)
         {
-            await _authService.SendOtpAsync(request.Email);
+            var result = await _authService.SendOtpAsync(request.Email);
+
+            if (!result.IsSuccess)
+                return BadRequest(result.Error);
 
             return Ok(new
             {
-                Message = "OTP are sent!!!"
+                Message = result.Data
             });
         }
 
@@ -113,19 +122,19 @@ namespace HomeCycle.API.Controllers
                 return BadRequest(new VerifyOtpResponse
                 {
                     Success = false,
-                    Message = result.Error?.Message ?? "OTP không đúng hoặc đã hết hạn."
+                    Message = result.Error?.Message ?? "Invalid or expired OTP"
                 });
             }
 
             return Ok(new VerifyOtpResponse
             {
                 Success = true,
-                Message = "Xác thực email thành công.",
+                Message = "Email verified successfully!",
                 RegistrationToken = result.Data
             });
         }
 
-        [HttpPost("/business/register")]
+        [HttpPost("business/register")]
         public async Task<IActionResult> RegisterBusinessAccount(
             [FromHeader(Name = "X-Registration-Token")] string registrationToken,
             [FromBody] RegisterBusinessAccountRequest request,

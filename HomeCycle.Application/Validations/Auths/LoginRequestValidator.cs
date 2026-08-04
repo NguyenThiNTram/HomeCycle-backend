@@ -8,9 +8,9 @@ using System.Threading.Tasks;
 
 namespace HomeCycle.Application.Validations.Auths
 {
-    public sealed class LoginPersonalRequestValidator : AbstractValidator<LoginPersonalRequest>
+    public sealed class LoginRequestValidator : AbstractValidator<LoginRequest>
     {
-        public LoginPersonalRequestValidator()
+        public LoginRequestValidator()
         {
             RuleFor(x => x.Email)
             .NotEmpty().WithMessage("Email is required.")
@@ -20,4 +20,18 @@ namespace HomeCycle.Application.Validations.Auths
                 .NotEmpty().WithMessage("Password is required.");
         }
     }
+
+    //public class LoginRequestValidator : AbstractValidator<LoginRequest>
+    //{
+    //    public LoginRequestValidator()
+    //    {
+    //        RuleFor(x => x.Email)
+    //            .NotEmpty()
+    //            .EmailAddress();
+
+    //        RuleFor(x => x.Password)
+    //            .NotEmpty()
+    //            .MinimumLength(6);
+    //    }
+    //}
 }

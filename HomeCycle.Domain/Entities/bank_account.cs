@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using HomeCycle.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 
 namespace HomeCycle.Domain.Entities;
@@ -16,7 +17,7 @@ public class bank_account
     public string? AccountNumber { get; set; }
     public string? AccountName { get; set; }
 
-    public int? VerifyStatus { get; set; }
+    public VerifyStatus? VerifyStatus { get; set; }
 
     public DateTime CreatedAt { get; set; }
 
