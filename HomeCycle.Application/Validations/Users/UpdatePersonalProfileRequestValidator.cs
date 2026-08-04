@@ -18,9 +18,6 @@ namespace HomeCycle.Application.Validations.Users
 
             RuleFor(x => x.FullName)
                 .MaximumLength(255).WithMessage("The full name must not exceed 255 characters.");
-
-            RuleFor(x => x.Address)
-                .MaximumLength(500).WithMessage("The address must not exceed 500 characters.");
             
             RuleFor(x => x.PhoneNumber)
                 .Matches(@"^(0[3|5|7|8|9])+([0-9]{8})$")
