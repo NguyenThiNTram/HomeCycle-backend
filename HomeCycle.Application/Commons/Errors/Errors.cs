@@ -132,6 +132,10 @@ namespace HomeCycle.Application.Commons.Errors
 
         public static readonly Error DuplicatePending = new("OFFER_DUPLICATE_PENDING", "You already have a pending offer for this post.");
 
+        public static readonly Error RoleNotAllowed = new("OFFER_ROLE_NOT_ALLOWED", "Your account role is not allowed to make this offer.");
+
+        public static readonly Error BusinessCannotOfferBuyPost = new("OFFER_B2B_NOT_ALLOWED", "Business accounts cannot offer on a business buy post.");
+
         public static Error PriceOutOfRange(decimal minPrice, decimal maxPrice)
             => new("OFFER_PRICE_OUT_OF_RANGE",
                    $"Offer price must be between {minPrice:N0} and {maxPrice:N0}.");

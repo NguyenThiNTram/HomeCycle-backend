@@ -1,4 +1,5 @@
 ﻿using HomeCycle.Domain.Entities;
+using HomeCycle.Domain.Enums;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -20,7 +21,7 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 ReceiverId = entity.ReceiverId,
                 OfferPrice = entity.OfferPrice,
                 OfferQuantity = entity.OfferQuantity,
-                OfferStatus = entity.OfferStatus,
+                OfferStatus = (OfferStatus?)entity.OfferStatus,
                 CreatedAt = entity.CreatedAt
             };
         }
@@ -35,7 +36,7 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 ReceiverId = entity.ReceiverId,
                 OfferPrice = entity.OfferPrice,
                 OfferQuantity = entity.OfferQuantity,
-                OfferStatus = entity.OfferStatus,
+                OfferStatus = (int?)entity.OfferStatus,
                 CreatedAt = entity.CreatedAt
             };
         }

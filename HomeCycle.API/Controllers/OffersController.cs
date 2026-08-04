@@ -2,6 +2,7 @@ using HomeCycle.Application.Commons.Errors;
 using HomeCycle.Application.Commons.Paginations;
 using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Requests.Offers;
+using HomeCycle.Application.DTOs.Responses.Negotiations;
 using HomeCycle.Application.DTOs.Responses.Offers;
 using HomeCycle.Application.Interfaces.Services.Offers;
 using Microsoft.AspNetCore.Authorization;
@@ -41,26 +42,26 @@ namespace HomeCycle.API.Controllers
             Summary = "Tạo offer",
             Description = "Người mua gửi đề nghị mua (offer) cho bài đăng bán. Tự động tạo phiên thương lượng (Negotiation Open) và tin nhắn CounterOffer đầu tiên trong cùng một transaction."
         )]
-        public async Task<IActionResult> CreateOffer(
-            [FromBody] CreateOfferRequest request,
-            CancellationToken cancellationToken)
+        public async Task<IActionResult> Create([FromBody] CreateOfferRequest request, CancellationToken cancellationToken)
         {
-            var result = await _offerService.CreateOfferAsync(CurrentUserId, request, cancellationToken);
+            var result = await _offerService.CreateOfferAsync(
+                CurrentUserId,
+                request,
+                cancellationToken);
 
             if (!result.IsSuccess || result.Data is not OfferResponse response)
                 return MapErrorToResponse(result.Error!);
 
             return CreatedAtAction(
                 nameof(GetById),
-                new { id = response.OfferId },
-                response
-            );
+                new { offerId = response.OfferId },
+                response);
         }
 
         [HttpGet("{id:guid}")]
         [SwaggerOperation(
             Summary = "Lấy chi tiết offer",
-            Description = "Xem thông tin chi tiết của một offer (chỉ người gửi hoặc người nhận)."
+            Description = "Lấy thông tin một offer. Chỉ người gửi hoặc người nhận offer mới được phép xem"
         )]
         public async Task<IActionResult> GetById(Guid id, CancellationToken cancellationToken)
         {
@@ -75,7 +76,7 @@ namespace HomeCycle.API.Controllers
         [HttpGet("sent")]
         [SwaggerOperation(
             Summary = "Danh sách offer đã gửi",
-            Description = "Danh sách offer mà người dùng hiện tại là người gửi."
+            Description = "Lấy danh sách offer do người dùng hiện tại gửi, có phân trang. Dùng cho màn hình quản lý các đề nghị đã gửi"
         )]
         public async Task<IActionResult> GetSent([FromQuery] PaginationRequest request, CancellationToken cancellationToken)
         {
@@ -90,16 +91,19 @@ namespace HomeCycle.API.Controllers
         [HttpGet("received")]
         [SwaggerOperation(
             Summary = "Danh sách offer nhận được",
-            Description = "Danh sách offer mà người dùng hiện tại là người nhận."
+            Description = "Lấy danh sách offer do người dùng hiện tại nhận được, có phân trang. Dùng cho màn hình duyệt các đề nghị nhận được"
         )]
         public async Task<IActionResult> GetReceived([FromQuery] PaginationRequest request, CancellationToken cancellationToken)
         {
-            var result = await _offerService.GetReceivedAsync(CurrentUserId, request, cancellationToken);
+            var result = await _offerService.GetReceivedAsync(CurrentUserId, request,  cancellationToken);
 
-            if (!result.IsSuccess)
+            if (!result.IsSuccess ||
+                result.Data is not PagedResult<OfferResponse> response)
+            {
                 return MapErrorToResponse(result.Error!);
+            }
 
-            return Ok(result.Data);
+            return Ok(response);
         }
 
         [HttpPut("{id:guid}")]
@@ -135,22 +139,25 @@ namespace HomeCycle.API.Controllers
         [HttpPost("{id:guid}/accept")]
         [SwaggerOperation(
             Summary = "Chấp nhận offer",
-            Description = "Người nhận chấp nhận đề nghị. Trừ RemainingQuantity của bài đăng, đóng bài đăng nếu hết hàng, Negotiation chuyển sang Agreed."
+            Description = "Người nhận chấp nhận request ban đầu và mở một Negotiation. Thao tác này chưa chốt giao dịch, chưa trừ số lượng bài đăng"
         )]
         public async Task<IActionResult> Accept(Guid id, CancellationToken cancellationToken)
         {
             var result = await _offerService.AcceptAsync(CurrentUserId, id, cancellationToken);
 
-            if (!result.IsSuccess || result.Data is not OfferResponse response)
+            if (!result.IsSuccess ||
+           result.Data is not AcceptOfferResponse response)
+            {
                 return MapErrorToResponse(result.Error!);
+            }
 
-            return Ok(response);
+            return Created($"/api/negotiations/{response.NegotiationId}", response);
         }
 
         [HttpPost("{id:guid}/reject")]
         [SwaggerOperation(
             Summary = "Từ chối offer",
-            Description = "Người nhận từ chối đề nghị. Negotiation giữ trạng thái Open để có thể gửi counter-offer mới."
+            Description = "Người nhận từ chối đề nghị. Negotiation giữ trạng thái Open để có thể gửi counter-offer mới"
         )]
         public async Task<IActionResult> Reject(Guid id, CancellationToken cancellationToken)
         {
@@ -160,6 +167,25 @@ namespace HomeCycle.API.Controllers
                 return MapErrorToResponse(result.Error!);
 
             return Ok(response);
+        }
+
+        [HttpPost("{offerId:guid}/counter")]
+        [SwaggerOperation(
+           Summary = "Counter offer ban đầu",
+           Description = "Người nhận không đồng ý với đề nghị ban đầu và gửi mức giá hoặc số lượng khác. Backend mở Negotiation, lưu offer gốc vào lịch sử và đặt counter mới ở trạng thái Pending." )]
+        public async Task<IActionResult> CounterInitial(Guid offerId, [FromBody] CounterInitialOfferRequest request,  CancellationToken cancellationToken)
+        {
+            var result = await _offerService.CounterInitialOfferAsync(CurrentUserId, offerId, request, cancellationToken);
+
+            if (!result.IsSuccess ||
+                result.Data is not NegotiationResponse response)
+            {
+                return MapErrorToResponse(result.Error!);
+            }
+
+            return Created(
+                $"/api/negotiations/{response.NegotiationId}",
+                response);
         }
 
         private IActionResult MapErrorToResponse(Error error)

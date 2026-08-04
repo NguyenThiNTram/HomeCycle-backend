@@ -142,8 +142,8 @@ namespace HomeCycle.Application.Services.Products
                     Items = _mapper.Map<IReadOnlyList<CategoryResponse>>(result.Items),
                     PageNumber = result.PageNumber,
                     PageSize = result.PageSize,
-                    TotalCount = result.TotalCount,
-                    TotalPages = result.TotalPages
+                    TotalCount = result.TotalCount
+                    //TotalPages = result.TotalPages
                 });
         }
 
@@ -176,8 +176,8 @@ namespace HomeCycle.Application.Services.Products
                     Items = _mapper.Map<IReadOnlyList<CategoryResponse>>(result.Items),
                     PageNumber = result.PageNumber,
                     PageSize = result.PageSize,
-                    TotalCount = result.TotalCount,
-                    TotalPages = result.TotalPages
+                    TotalCount = result.TotalCount
+                    //TotalPages = result.TotalPages
                 });
         }
 
@@ -194,8 +194,8 @@ namespace HomeCycle.Application.Services.Products
                     Items = _mapper.Map<IReadOnlyList<CategoryResponse>>(result.Items),
                     PageNumber = result.PageNumber,
                     PageSize = result.PageSize,
-                    TotalCount = result.TotalCount,
-                    TotalPages = result.TotalPages
+                    TotalCount = result.TotalCount
+                    //TotalPages = result.TotalPages
                 });
         }
 

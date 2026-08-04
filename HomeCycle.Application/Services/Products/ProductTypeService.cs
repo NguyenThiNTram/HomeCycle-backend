@@ -278,8 +278,8 @@ namespace HomeCycle.Application.Services.Products
                     .ToList(),
                 PageNumber = pagedTypes.PageNumber,
                 PageSize = pagedTypes.PageSize,
-                TotalCount = pagedTypes.TotalCount,
-                TotalPages = pagedTypes.TotalPages
+                TotalCount = pagedTypes.TotalCount
+                //TotalPages = pagedTypes.TotalPages
             };
 
             return Result<PagedResult<ProductTypeResponse>>.Success(dto);
@@ -324,8 +324,8 @@ namespace HomeCycle.Application.Services.Products
                     .ToList(),
                 PageNumber = pagedTypes.PageNumber,
                 PageSize = pagedTypes.PageSize,
-                TotalCount = pagedTypes.TotalCount,
-                TotalPages = pagedTypes.TotalPages
+                TotalCount = pagedTypes.TotalCount
+                //TotalPages = pagedTypes.TotalPages
             };
 
             return Result<PagedResult<ProductTypeResponse>>.Success(dto);

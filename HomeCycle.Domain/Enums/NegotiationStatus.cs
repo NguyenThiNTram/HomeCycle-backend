@@ -8,10 +8,9 @@ namespace HomeCycle.Domain.Enums
 {
     public enum NegotiationStatus
     {
-        Open = 0,        // Đang thương lượng
-        Agreed = 1,      // Đã đạt thỏa thuận
-        Closed = 2,      // Đóng (hủy hoặc kết thúc)
-        Expired = 3,     // Hết hạn
-        Unavailable = 4  // Không còn khả dụng (bài đăng hết hàng/ngưng hoạt động)
+        Open = 1,      // Đang thương lượng
+        Agreed = 2,    // Đã thống nhất một proposal
+        Closed = 3,    // Một bên chủ động kết thúc mà không đạt thỏa thuận
+        Expired = 4    // Hết hạn do hệ thống
     }
 }

@@ -131,8 +131,8 @@ namespace HomeCycle.Infrastructure.Repositories.Products
                 Items = query,
                 PageNumber = 1,
                 PageSize = query.Count,
-                TotalCount = query.Count,
-                TotalPages = 1
+                TotalCount = query.Count
+                //TotalPages = 1
             };
         }
 

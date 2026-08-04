@@ -38,6 +38,19 @@ namespace HomeCycle.Infrastructure.Repositories.Offers
             return entity?.ToDomain();
         }
 
+        public async Task<negotiation?> GetByIdForUpdateAsync(Guid negotiationId, CancellationToken cancellationToken = default)
+        {
+            var entity = await _db.Negotiations
+                .FromSqlInterpolated($@"
+                    SELECT *
+                    FROM ""Negotiation""
+                    WHERE ""NegotiationId"" = {negotiationId}
+                    FOR UPDATE")
+                        .SingleOrDefaultAsync(cancellationToken);
+
+            return entity?.ToDomain();
+        }
+
         public async Task AddAsync(negotiation entity, CancellationToken cancellationToken = default)
         {
             var infraEntity = entity.ToInfrastructure();

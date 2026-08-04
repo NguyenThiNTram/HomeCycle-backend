@@ -12,6 +12,7 @@ namespace HomeCycle.Application.Interfaces.Repositories.Offers
         Task<negotiation?> GetByOfferIdAsync(Guid offerId, CancellationToken cancellationToken = default);
 
         Task<negotiation?> GetByIdAsync(Guid negotiationId, CancellationToken cancellationToken = default);
+        Task<negotiation?> GetByIdForUpdateAsync(Guid negotiationId, CancellationToken cancellationToken = default);
 
         Task AddAsync(negotiation entity, CancellationToken cancellationToken = default);
 

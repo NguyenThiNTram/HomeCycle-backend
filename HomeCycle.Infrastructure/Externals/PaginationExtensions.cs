@@ -28,8 +28,8 @@ namespace HomeCycle.Infrastructure.Externals
                 Items = items,
                 PageNumber = pageNumber,
                 PageSize = pageSize,
-                TotalCount = totalCount,
-                TotalPages = (int)Math.Ceiling(totalCount / (double)pageSize)
+                TotalCount = totalCount
+                //TotalPages = (int)Math.Ceiling(totalCount / (double)pageSize)
             };
         }
     }

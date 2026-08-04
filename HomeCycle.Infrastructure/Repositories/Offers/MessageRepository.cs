@@ -1,5 +1,7 @@
+using HomeCycle.Application.Commons.Paginations;
 using HomeCycle.Application.Interfaces.Repositories.Offers;
 using HomeCycle.Domain.Entities;
+using HomeCycle.Domain.Enums;
 using HomeCycle.Infrastructure.DbContexts;
 using HomeCycle.Infrastructure.Persistences.Mappers;
 using Microsoft.EntityFrameworkCore;
@@ -20,17 +22,91 @@ namespace HomeCycle.Infrastructure.Repositories.Offers
             _db = db;
         }
 
-        public async Task<message?> GetPendingCounterOfferByNegotiationAsync(Guid negotiationId, CancellationToken cancellationToken = default)
+        public async Task<message?> GetPendingProposalByNegotiationAsync(Guid negotiationId, CancellationToken cancellationToken = default)
         {
+            var pendingStatus = (int)MessageOfferStatus.Pending;
+            var initialOfferType = (int)MessageType.Offer;
+            var counterOfferType = (int)MessageType.CounterOffer;
+
             var entity = await _db.Messages
                 .AsNoTracking()
-                .Where(x => x.NegotiationId == negotiationId
-                    && x.MessageType == (int)HomeCycle.Domain.Enums.MessageType.CounterOffer
-                    && x.OfferStatus == (int)HomeCycle.Domain.Enums.OfferStatus.Pending)
+                .Where(x =>
+                    x.NegotiationId == negotiationId &&
+                    x.OfferStatus == pendingStatus &&
+                    (
+                        x.MessageType == initialOfferType ||
+                        x.MessageType == counterOfferType
+                    ))
                 .OrderByDescending(x => x.CreatedAt)
                 .FirstOrDefaultAsync(cancellationToken);
 
             return entity?.ToDomain();
+        }
+
+        public async Task<message?> GetPendingProposalForUpdateAsync(Guid negotiationId, CancellationToken cancellationToken = default)
+        {
+            var messageType = (int)MessageType.CounterOffer;
+            var pending = (int)ProposalStatus.Pending;
+
+            var entity = await _db.Messages
+                .FromSqlInterpolated($@"
+                    SELECT *
+                    FROM ""Messages""
+                    WHERE ""NegotiationId"" = {negotiationId}
+                      AND ""MessageType"" = {messageType}
+                      AND ""OfferStatus"" = {pending}
+                    ORDER BY ""CreatedAt"" DESC
+                    LIMIT 1
+                    FOR UPDATE")
+                .SingleOrDefaultAsync(cancellationToken);
+
+            return entity?.ToDomain();
+        }
+
+        public async Task<message?> GetByIdForUpdateAsync(Guid messageId, CancellationToken cancellationToken = default)
+        {
+            var entity = await _db.Messages
+                .FromSqlInterpolated($@"
+                    SELECT *
+                    FROM ""Messages""
+                    FROM ""Messages""
+                    WHERE ""MessageId"" = {messageId}
+                    FOR UPDATE")
+                .SingleOrDefaultAsync(cancellationToken);
+
+            return entity?.ToDomain();
+        }
+
+        public async Task<PagedResult<message>> GetByNegotiationIdAsync(Guid negotiationId, PaginationRequest request, CancellationToken cancellationToken = default)
+        {
+            var query = _db.Messages
+                .AsNoTracking()
+                .Where(x => x.NegotiationId == negotiationId);
+
+            var totalCount = await query.CountAsync(cancellationToken);
+
+            var skip = (request.PageNumber - 1) * request.PageSize;
+
+            var entities = await query
+                .OrderByDescending(x => x.CreatedAt)
+                .ThenByDescending(x => x.MessageId)
+                .Skip(skip)
+                .Take(request.PageSize)
+                .ToListAsync(cancellationToken);
+
+            var items = entities
+                .OrderBy(x => x.CreatedAt)
+                .ThenBy(x => x.MessageId)
+                .Select(x => x.ToDomain())
+                .ToList();
+
+            return new PagedResult<message>
+            {
+                Items = items,
+                PageNumber = request.PageNumber,
+                PageSize = request.PageSize,
+                TotalCount = totalCount
+            };
         }
 
         public async Task AddAsync(message entity, CancellationToken cancellationToken = default)

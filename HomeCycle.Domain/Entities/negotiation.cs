@@ -1,8 +1,9 @@
-﻿using System;
+﻿using HomeCycle.Domain.Enums;
+using Microsoft.EntityFrameworkCore;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
-using Microsoft.EntityFrameworkCore;
 
 namespace HomeCycle.Domain.Entities;
 
@@ -21,7 +22,7 @@ public partial class negotiation
     public DateTime? LastMessageAt { get; set; }
     public DateTime CreatedAt { get; set; }
 
-    public int? NegotiationStatus { get; set; }
+    public NegotiationStatus? NegotiationStatus { get; set; }
 
     public negotiation()
     {

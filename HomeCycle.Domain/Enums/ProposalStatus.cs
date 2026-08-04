@@ -6,14 +6,14 @@ using System.Threading.Tasks;
 
 namespace HomeCycle.Domain.Enums
 {
-    public enum OfferStatus
+    public enum ProposalStatus
     {
+        // Enum này được lưu trong Messages.OfferStatus.
         Pending = 0,
         Accepted = 1,
         Rejected = 2,
-        Cancelled = 3,
-        Completed = 4,
-        Closed = 5,
-        Expired = 6
+        Superseded = 3,
+        Withdrawn = 4,
+        Cancelled = 5
     }
 }

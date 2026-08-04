@@ -1,4 +1,4 @@
-using HomeCycle.Application.Commons.Paginations;
+﻿using HomeCycle.Application.Commons.Paginations;
 using HomeCycle.Application.Interfaces.Repositories.Offers;
 using HomeCycle.Domain.Entities;
 using HomeCycle.Infrastructure.DbContexts;
@@ -8,6 +8,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace HomeCycle.Infrastructure.Repositories.Offers
@@ -19,6 +20,20 @@ namespace HomeCycle.Infrastructure.Repositories.Offers
         public OfferRepository(HomeCycleDbContext db)
         {
             _db = db;
+        }
+
+        public async Task<offer?> GetByIdForUpdateAsync(Guid offerId, CancellationToken cancellationToken)
+        {
+            //FOR UPDATE để khóa dòng dữ liệu trong Postgres
+            var entity = await _db.Offers
+                .FromSqlInterpolated($@"
+            SELECT * 
+            FROM ""Offer"" 
+            WHERE ""OfferId"" = {offerId} 
+            FOR UPDATE")
+                .SingleOrDefaultAsync(cancellationToken);
+
+            return entity?.ToDomain();
         }
 
         public async Task AddAsync(offer entity, CancellationToken cancellationToken = default)
@@ -100,5 +115,7 @@ namespace HomeCycle.Infrastructure.Repositories.Offers
                   && x.OfferStatus == (int)HomeCycle.Domain.Enums.OfferStatus.Pending,
                 cancellationToken);
         }
+
+
     }
 }
