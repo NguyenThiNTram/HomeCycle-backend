@@ -1,8 +1,9 @@
-﻿using System;
+﻿using HomeCycle.Domain.Enums;
+using Microsoft.EntityFrameworkCore;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
-using Microsoft.EntityFrameworkCore;
 
 namespace HomeCycle.Domain.Entities;
 
@@ -13,11 +14,11 @@ public class message
     public Guid SenderId { get; set; }
 
     public string? MessageContent { get; set; }
-    public int? MessageType { get; set; }
+    public MessageType? MessageType { get; set; }
 
     public decimal? OfferPrice { get; set; }
     public int OfferQuantity { get; set; }
-    public int? OfferStatus { get; set; }
+    public MessageOfferStatus? OfferStatus { get; set; }
 
     public decimal? BasePriceSnapshot { get; set; }
 

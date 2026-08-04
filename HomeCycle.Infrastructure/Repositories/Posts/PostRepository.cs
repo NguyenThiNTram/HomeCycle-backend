@@ -37,14 +37,14 @@ namespace HomeCycle.Infrastructure.Repositories.Posts
         }
 
         public async Task<bool> UpdateStatusAsync(Guid postId, PostStatus status, CancellationToken cancellationToken = default)
-{
-    var dbPost = await _db.Posts.FindAsync(new object[] { postId }, cancellationToken);
-    if (dbPost == null) return false;
+        {
+            var dbPost = await _db.Posts.FindAsync(new object[] { postId }, cancellationToken);
+            if (dbPost == null) return false;
 
-    dbPost.Status = (int)status;
-    dbPost.UpdatedAt = DateTime.UtcNow;
-    return true;
-}
+            dbPost.Status = (int)status;
+            dbPost.UpdatedAt = DateTime.UtcNow;
+            return true;
+        }
 
         public async Task<post?> GetByIdAsync(Guid postId, CancellationToken cancellationToken = default)
         {

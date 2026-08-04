@@ -14,6 +14,7 @@ using HomeCycle.Application.DTOs.Responses.Banks;
 using HomeCycle.Application.DTOs.Responses.Brands;
 using HomeCycle.Application.DTOs.Responses.Categories;
 using HomeCycle.Application.DTOs.Responses.Media;
+using HomeCycle.Application.DTOs.Responses.Negotiations;
 using HomeCycle.Application.DTOs.Responses.Offers;
 using HomeCycle.Application.DTOs.Responses.Posts;
 using HomeCycle.Application.DTOs.Responses.Products;
@@ -433,6 +434,8 @@ namespace HomeCycle.Application.Mappings
                 .ForMember(dest => dest.OfferStatus, opt => opt.Ignore())
                 .ForMember(dest => dest.CreatedAt, opt => opt.Ignore());
 
+            CreateMap<offer, OfferResponse>();
+
             CreateMap<UpdateOfferRequest, offer>()
                 .ForMember(dest => dest.OfferId, opt => opt.Ignore())
                 .ForMember(dest => dest.PostId, opt => opt.Ignore())
@@ -441,6 +444,34 @@ namespace HomeCycle.Application.Mappings
                 .ForMember(dest => dest.OfferStatus, opt => opt.Ignore())
                 .ForMember(dest => dest.CreatedAt, opt => opt.Ignore());
 
+            CreateMap<offer, negotiation>()
+                .ForMember(dest => dest.NegotiationId, opt => opt.Ignore())
+                .ForMember(dest => dest.PostId, opt => opt.MapFrom(src => src.PostId))
+                .ForMember(dest => dest.OfferId, opt => opt.MapFrom(src => src.OfferId))
+                .ForMember(dest => dest.SellerId, opt => opt.MapFrom(src => src.ReceiverId))
+                .ForMember(dest => dest.BuyerId, opt => opt.MapFrom(src => src.SenderId))
+                .ForMember(dest => dest.FinalPrice, opt => opt.Ignore())
+                .ForMember(dest => dest.FinalQuantity, opt => opt.Ignore())
+                .ForMember(dest => dest.LastMessageAt, opt => opt.Ignore())
+                .ForMember(dest => dest.CreatedAt, opt => opt.Ignore())
+                .ForMember(dest => dest.NegotiationStatus, opt => opt.Ignore());
+
+            CreateMap<offer, message>()
+                .ForMember(dest => dest.MessageId, opt => opt.Ignore())
+                .ForMember(dest => dest.NegotiationId, opt => opt.Ignore())
+                .ForMember(dest => dest.SenderId, opt => opt.MapFrom(src => src.SenderId))
+                .ForMember(dest => dest.OfferPrice, opt => opt.MapFrom(src => src.OfferPrice))
+                .ForMember(dest => dest.OfferQuantity, opt => opt.MapFrom(src => src.OfferQuantity))
+                .ForMember(dest => dest.MessageContent, opt => opt.Ignore())
+                .ForMember(dest => dest.MessageType, opt => opt.Ignore())
+                .ForMember(dest => dest.OfferStatus, opt => opt.Ignore())
+                .ForMember(dest => dest.MediaUrl, opt => opt.Ignore())
+                .ForMember(dest => dest.IsRead, opt => opt.Ignore())
+                .ForMember(dest => dest.CreatedAt, opt => opt.Ignore())
+                .ForMember(dest => dest.BasePriceSnapshot, opt => opt.Ignore());
+
+            CreateMap<negotiation, NegotiationResponse>();
+            CreateMap<message, MessageResponse>();
         }
     }
 }

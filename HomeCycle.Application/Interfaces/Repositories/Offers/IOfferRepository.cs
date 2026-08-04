@@ -15,6 +15,7 @@ namespace HomeCycle.Application.Interfaces.Repositories.Offers
         Task<PagedResult<offer>> GetSentAsync(Guid senderId, PaginationRequest request, CancellationToken cancellationToken = default);
 
         Task<PagedResult<offer>> GetReceivedAsync(Guid receiverId, PaginationRequest request, CancellationToken cancellationToken = default);
+        Task<offer?> GetByIdForUpdateAsync(Guid offerId, CancellationToken cancellationToken);
 
         Task<bool> ExistsPendingByPostAndSenderAsync(Guid postId, Guid senderId, CancellationToken cancellationToken = default);
 

@@ -40,6 +40,8 @@ using MathNet.Numerics;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using HomeCycle.Application.Interfaces.Services.Negotiates;
+using HomeCycle.Application.Services.Negotiates;
 
 namespace HomeCycle.Infrastructure
 {
@@ -104,6 +106,9 @@ namespace HomeCycle.Infrastructure
             services.AddScoped<IBusinessProductTypeRepository, BusinessProductTypeRepository>();
             services.AddScoped<IBusinessServiceAreaRepository, BusinessServiceAreaRepository>();
             services.AddScoped<IBusinessProcurementPreferenceRepository, BusinessProcurementPreferenceRepository>();
+            services.AddScoped<IOfferRepository, OfferRepository>();
+            services.AddScoped<IMessageRepository, MessageRepository>();
+            services.AddScoped<INegotiationRepository, NegotiationRepository>();
 
             // register Services
             services.AddScoped<IAuthService, AuthService>();
@@ -121,6 +126,8 @@ namespace HomeCycle.Infrastructure
             services.AddScoped<IEmailService, EmailService>();
             services.AddScoped<IBusinessProfileService, BusinessProfileService>();
             services.AddScoped<IModeratorService, ModeratorService>();
+            services.AddScoped<IOfferService, OfferService>();
+            services.AddScoped<IAgreementFormService, AgreementFormService>();
 
             return services;
         }

@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using HomeCycle.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 
 namespace HomeCycle.Domain.Entities;
@@ -16,7 +17,7 @@ public class offer
 
     public decimal? OfferPrice { get; set; }
     public int OfferQuantity { get; set; }
-    public int? OfferStatus { get; set; }
+    public OfferStatus? OfferStatus { get; set; }
 
     public DateTime CreatedAt { get; set; }
 

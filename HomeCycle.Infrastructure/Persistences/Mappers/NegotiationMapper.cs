@@ -1,4 +1,5 @@
 ﻿using HomeCycle.Domain.Entities;
+using HomeCycle.Domain.Enums;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -22,7 +23,7 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 FinalQuantity = entity.FinalQuantity,
                 LastMessageAt = entity.LastMessageAt,
                 CreatedAt = entity.CreatedAt,
-                NegotiationStatus = entity.NegotiationStatus
+                NegotiationStatus = (NegotiationStatus?)entity.NegotiationStatus
             };
         }
 
@@ -39,7 +40,7 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 FinalQuantity = entity.FinalQuantity,
                 LastMessageAt = entity.LastMessageAt,
                 CreatedAt = entity.CreatedAt,
-                NegotiationStatus = entity.NegotiationStatus
+                NegotiationStatus = (int?)entity.NegotiationStatus
             };
         }
     }

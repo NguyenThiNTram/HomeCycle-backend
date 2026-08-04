@@ -1,4 +1,5 @@
 ﻿using HomeCycle.Domain.Entities;
+using HomeCycle.Domain.Enums;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -17,10 +18,10 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 NegotiationId = entity.NegotiationId,
                 SenderId = entity.SenderId,
                 MessageContent = entity.MessageContent,
-                MessageType = entity.MessageType,
+                MessageType = (MessageType?)entity.MessageType,
                 OfferPrice = entity.OfferPrice,
                 OfferQuantity = entity.OfferQuantity,
-                OfferStatus = entity.OfferStatus,
+                OfferStatus = (MessageOfferStatus?)entity.OfferStatus,
                 BasePriceSnapshot = entity.BasePriceSnapshot,
                 MediaUrl = entity.MediaUrl,
                 IsRead = entity.IsRead,
@@ -35,10 +36,10 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 NegotiationId = entity.NegotiationId,
                 SenderId = entity.SenderId,
                 MessageContent = entity.MessageContent,
-                MessageType = entity.MessageType,
+                MessageType = (int?)entity.MessageType,
                 OfferPrice = entity.OfferPrice,
                 OfferQuantity = entity.OfferQuantity,
-                OfferStatus = entity.OfferStatus,
+                OfferStatus = (int?)entity.OfferStatus,
                 BasePriceSnapshot = entity.BasePriceSnapshot,
                 MediaUrl = entity.MediaUrl,
                 IsRead = entity.IsRead,
