@@ -1,5 +1,6 @@
 ﻿using HomeCycle.Application.Interfaces.Repositories.Agreements;
 using HomeCycle.Domain.Entities;
+using HomeCycle.Domain.Enums;
 using HomeCycle.Infrastructure.DbContexts;
 using HomeCycle.Infrastructure.Persistences.Mappers;
 using Microsoft.EntityFrameworkCore;
@@ -50,5 +51,6 @@ namespace HomeCycle.Infrastructure.Repositories.Agreements
             _db.Agreement_Forms.Update(entity);
             return Task.CompletedTask;
         }
+
     }
 }

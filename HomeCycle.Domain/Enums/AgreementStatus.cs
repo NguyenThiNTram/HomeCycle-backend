@@ -10,7 +10,7 @@ namespace HomeCycle.Domain.Enums
     {
         Pending = 0,
         Awaiting_Payment = 1,
-        Confirmed = 2, 
+        Confirmed = 2,   
         Cancelled = 3, 
         Expired = 4 
     }

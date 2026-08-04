@@ -1,4 +1,5 @@
-﻿using System;
+﻿using HomeCycle.Domain.Enums;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -19,8 +20,7 @@ namespace HomeCycle.Application.DTOs.Requests.Agreements
         public string? PickupAddress { get; set; }
         public string? DeliveryAddress { get; set; }
 
-        // "GHN", "DIRECT", "SELF_PICKUP" - Bắt buộc phải có để chia nhánh logic sau này
-        public string? DeliveryMethod { get; set; }
+        public DeliveryMethod? DeliveryMethod { get; set; }
 
         // Phí ship do gọi API GHN (hoặc tự thỏa thuận) trả về lúc cấu hình form
         public decimal? EstimatedShippingFee { get; set; }

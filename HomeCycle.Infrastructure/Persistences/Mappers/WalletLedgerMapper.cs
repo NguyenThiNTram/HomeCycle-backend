@@ -18,8 +18,13 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 WalletTransactionId = entity.WalletTransactionId,
                 WalletId = entity.WalletId,
                 Direction = entity.Direction,
-                Amount = entity.Amount,
+                BalanceType = entity.BalanceType,
+                Amount = entity.Amount, 
+                BalanceBefore = entity.BalanceBefore,
                 BalanceAfter = entity.BalanceAfter,
+                ReferenceType = entity.ReferenceType,
+                ReferenceId = entity.ReferenceId,
+                Description = entity.Description,
                 CreatedAt = entity.CreatedAt
             };
         }
@@ -32,8 +37,13 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 WalletTransactionId = entity.WalletTransactionId,
                 WalletId = entity.WalletId,
                 Direction = entity.Direction,
+                BalanceType = entity.BalanceType,
                 Amount = entity.Amount,
+                BalanceBefore = entity.BalanceBefore,
                 BalanceAfter = entity.BalanceAfter,
+                ReferenceType = entity.ReferenceType,
+                ReferenceId = entity.ReferenceId, 
+                Description = entity.Description, 
                 CreatedAt = entity.CreatedAt
             };
         }

@@ -9,6 +9,7 @@ namespace HomeCycle.Domain.Enums
     public enum PaymentType
     {
         Deposit = 1,      
-        Full_Payment = 2 
+        Full_Payment = 2,
+        Subscription = 3
     }
 }

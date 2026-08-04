@@ -8,8 +8,7 @@ namespace HomeCycle.Domain.Enums
 {
     public enum AgreementType
     {
-        Inspection_Trade = 0,  
-        Direct_Collection = 1, 
-        GHN_Delivery = 2 
+        Inspection = 0,     
+        No_Inspection = 1
     }
 }
