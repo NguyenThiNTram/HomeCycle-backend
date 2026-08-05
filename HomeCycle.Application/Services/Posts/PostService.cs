@@ -85,7 +85,7 @@ namespace HomeCycle.Application.Services.Posts
             post.PostId = Guid.NewGuid();
             post.OwnerId = ownerId;
             post.PostType = PostType.Sell;
-            post.ProductName = request.Product?.ProductName;
+            //post.ProductName = request.Product?.ProductName;
             post.BasePrice = request.BasePrice;
             post.CreatedAt = now;
             post.UpdatedAt = now;
@@ -147,7 +147,7 @@ namespace HomeCycle.Application.Services.Posts
             post.PostId = Guid.NewGuid();
             post.OwnerId = ownerId;
             post.PostType = PostType.Buy;
-            post.ProductName = request.Requirement?.ProductName;
+            //post.ProductName = request.Requirement?.ProductName;
             post.BasePrice = request.ExpectedPrice;
             post.CreatedAt = now;
             post.UpdatedAt = now;
@@ -211,7 +211,7 @@ namespace HomeCycle.Application.Services.Posts
 
             _mapper.Map(request, existing);
             existing!.BasePrice = request.BasePrice;
-            existing.ProductName = request.Product?.ProductName;
+            //existing.ProductName = request.Product?.ProductName;
             existing.RemainingQuantity = newRemainingQuantity;
             existing.UpdatedAt = DateTime.UtcNow;
 
@@ -268,7 +268,7 @@ namespace HomeCycle.Application.Services.Posts
 
             _mapper.Map(request, existing);
             existing!.BasePrice = request.ExpectedPrice;
-            existing.ProductName = request.Requirement?.ProductName;
+            //existing.ProductName = request.Requirement?.ProductName;
             existing.RemainingQuantity = newRemainingQuantity;
             existing.UpdatedAt = DateTime.UtcNow;
 
@@ -416,8 +416,6 @@ namespace HomeCycle.Application.Services.Posts
                     ValidationErrors.InvalidRequest(string.Join("\n", validation.Errors.Select(e => e.ErrorMessage))));
 
             var paged = await _postRepository.SearchAsync(request, cancellationToken);
-
-            //var mappedItems = _mapper.Map<List<PostResponse>>(paged.Items);
 
             var response = new PagedResult<PostResponse>
             {

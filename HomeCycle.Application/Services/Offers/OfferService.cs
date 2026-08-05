@@ -477,7 +477,12 @@ namespace HomeCycle.Application.Services.Offers
 
         // Chấp nhận proposal Pending của đối phương và chốt giao dịch.
         // Người gửi tạo proposal là xác nhận của họ; người còn lại Accept => cả hai bên đồng ý cùng một proposal
-        public async Task<Result<NegotiationResponse>> AcceptNegotiationAsync(Guid userId, Guid negotiationId, CancellationToken cancellationToken = default)
+        // Chấp nhận proposal Pending của đối phương — chốt điều kiện thương mại giữa 2 bên.
+        // Đây LÀ ĐIỀU KIỆN ĐỦ để Seller tiến hành tạo Agreement Form ở bước tiếp theo (nghiệp vụ riêng,
+        // KHÔNG được gọi tự động tại đây). Method này chỉ cập nhật trạng thái Negotiation/Message/Post
+        // và trả về thông tin offer hiện tại — không tạo Agreement.
+        public async Task<Result<NegotiationResponse>> AcceptNegotiationAsync(
+            Guid userId, Guid negotiationId, CancellationToken cancellationToken = default)
         {
             await _unitOfWork.BeginTransactionAsync(cancellationToken);
 
@@ -546,11 +551,11 @@ namespace HomeCycle.Application.Services.Offers
                 DeductPostQuantity(post, pendingMessage.OfferQuantity);
                 await _postRepository.UpdateAsync(post, cancellationToken);
 
-                // Contract với task AgreementForm:
-                // hàm này chỉ Add dữ liệu vào cùng UnitOfWork, không tự mở/commit transaction.
-                await _agreementFormService.CreateFromNegotiationAsync(
-                    negotiation.NegotiationId,
-                    cancellationToken);
+                // ĐÃ BỎ: _agreementFormService.CreateFromNegotiationAsync(...)
+                // Lý do: Agreement không còn được tạo tự động khi Accept. Negotiation.Agreed chỉ là
+                // ĐIỀU KIỆN ĐỦ để Seller chủ động tạo Agreement Form ở một API/Service riêng sau đó.
+                // Việc Seller gửi form mới là hành động xác nhận nội dung form của chính Seller —
+                // đây là bước độc lập, không xảy ra đồng thời với Accept này.
 
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync(cancellationToken);

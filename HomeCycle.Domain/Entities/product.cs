@@ -34,6 +34,7 @@ public class product
     public string? DetailDescription { get; set; }
 
     public ICollection<product_attribute_value> Product_Attribute_Values { get; set; } = new List<product_attribute_value>();
+    public virtual post? Post { get; set; }
 
     public product()
     {

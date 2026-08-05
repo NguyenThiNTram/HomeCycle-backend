@@ -1,4 +1,5 @@
 ﻿using AutoMapper;
+using HomeCycle.Application.Commons.Paginations;
 using HomeCycle.Application.DTOs.Requests.Auths;
 using HomeCycle.Application.DTOs.Requests.Banks;
 using HomeCycle.Application.DTOs.Requests.Brands;
@@ -372,11 +373,45 @@ namespace HomeCycle.Application.Mappings
             CreateMap<post, PostResponse>();
             CreateMap<post, PostDetailResponse>();
 
+            CreateMap<post, PostResponse>()
+                .ForMember(d => d.ProductId,
+                    o => o.MapFrom(s =>
+                        s.Product == null
+                            ? Guid.Empty
+                            : s.Product.ProductId))
+                .ForMember(d => d.ProductName,
+                    o => o.MapFrom(s =>
+                        s.Product == null
+                            ? null
+                            : s.Product.ProductName))
+                .ForMember(d => d.ProductTypeName,
+                    o => o.MapFrom(s =>
+                        s.Product == null
+                            ? null
+                            : s.Product.ProductTypeName))
+                .ForMember(d => d.CategoryName,
+                    o => o.MapFrom(s =>
+                        s.Product == null
+                            ? null
+                            : s.Product.CategoryName))
+                .ForMember(d => d.BrandName,
+                    o => o.MapFrom(s =>
+                        s.Product == null
+                            ? null
+                            : s.Product.BrandName));
+
+            CreateMap<PagedResult<post>, PagedResult<PostResponse>>()
+                .ForMember(d => d.Items, o => o.MapFrom(s => s.Items));
+
             // ==================== PRODUCT (dùng chung cho Sell/Buy, gắn liền Post) ====================
 
             CreateMap<ProductRequest, product>()
-                .ForMember(dest => dest.ProductId, opt => opt.Ignore())
-                .ForMember(dest => dest.PostId, opt => opt.Ignore());
+                .ForMember(d => d.ProductId, o => o.Ignore())
+                .ForMember(d => d.PostId, o => o.Ignore())
+                .ForMember(d => d.CategoryName, o => o.Ignore())
+                .ForMember(d => d.ProductTypeName, o => o.Ignore())
+                .ForMember(d => d.BrandName, o => o.Ignore())
+                .ForMember(d => d.Product_Attribute_Values, o => o.Ignore());
 
             CreateMap<product, ProductResponse>()
                 .ForMember(dest => dest.AttributeValues, opt => opt.MapFrom(src => src.Product_Attribute_Values));

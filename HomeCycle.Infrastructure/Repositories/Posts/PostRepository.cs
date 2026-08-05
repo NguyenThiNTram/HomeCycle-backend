@@ -149,144 +149,376 @@ namespace HomeCycle.Infrastructure.Repositories.Posts
             var query = _db.Posts
                 .AsNoTracking()
                 .Include(x => x.Product)
-                    .ThenInclude(p => p!.Brand)
-                .Where(x => x.Status == (int)PostStatus.Active)
-                .AsQueryable();
+                    .ThenInclude(x => x!.Category)
+                .Include(x => x.Product)
+                    .ThenInclude(x => x!.ProductType)
+                .Include(x => x.Product)
+                    .ThenInclude(x => x!.Brand)
+                .Where(x =>
+                    x.Status == (int)PostStatus.Active &&
+                    x.Product != null);
 
-            // ---------- KEYWORD ----------
+            // ==================== KEYWORD ====================
+
             if (!string.IsNullOrWhiteSpace(request.Keyword))
             {
-                var kw = $"%{request.Keyword.Trim()}%";
+                var keyword = $"%{request.Keyword.Trim()}%";
+
                 query = query.Where(x =>
-                    EF.Functions.ILike(x.Description ?? "", kw) ||
-                    EF.Functions.ILike(x.Product!.ProductName ?? "", kw) ||
-                    (x.Product!.Brand != null && EF.Functions.ILike(x.Product.Brand.BrandName, kw)) ||
-                    EF.Functions.ILike(x.City ?? "", kw) ||
-                    EF.Functions.ILike(x.Ward ?? "", kw) ||
-                    EF.Functions.ILike(x.StreetAddress ?? "", kw));
+                    EF.Functions.ILike(x.Description ?? string.Empty, keyword) ||
+                    EF.Functions.ILike(x.Product!.ProductName ?? string.Empty, keyword) ||
+                    EF.Functions.ILike(x.Product.Category.CategoryName ?? string.Empty, keyword) ||
+                    EF.Functions.ILike(x.Product.ProductType.ProductTypeName ?? string.Empty, keyword) ||
+
+                    (x.Product.Brand != null &&
+                     EF.Functions.ILike(x.Product.Brand.BrandName ?? string.Empty, keyword)) ||
+                     EF.Functions.ILike(x.City ?? string.Empty, keyword) ||
+                     EF.Functions.ILike(x.Ward ?? string.Empty, keyword) ||
+                     EF.Functions.ILike(x.StreetAddress ?? string.Empty, keyword));
             }
 
-            // ---------- PHÂN LOẠI BÁN/MUA ----------
-            if (request.PostType.HasValue)
-                query = query.Where(x => x.PostType == (int)request.PostType);
+            // ==================== POST TYPE + CATEGORY + PRODUCT TYPE + BRAND + CITY ====================
 
-            // ---------- FILTER PHÂN CẤP ----------
+            if (request.PostType.HasValue)
+            {
+                var postType = (int)request.PostType.Value;
+                query = query.Where(x =>  x.PostType == postType);
+            }
+
             if (request.CategoryId.HasValue)
-                query = query.Where(x => x.Product!.CategoryId == request.CategoryId);
+            {
+                var categoryId = request.CategoryId.Value;
+                query = query.Where(x => x.Product!.CategoryId == categoryId);
+            }
 
             if (request.ProductTypeId.HasValue)
-                query = query.Where(x => x.Product!.ProductTypeId == request.ProductTypeId);
+            {
+                var productTypeId = request.ProductTypeId.Value;
+                query = query.Where(x => x.Product!.ProductTypeId == productTypeId);
+            }
 
             if (request.BrandId.HasValue)
-                query = query.Where(x => x.Product!.BrandId == request.BrandId);
-
-            // ---------- FILTER ĐIỀU KIỆN SẢN PHẨM ----------
+            {
+                var brandId = request.BrandId.Value;
+                query = query.Where(x => x.Product!.BrandId == brandId);
+            }
 
             if (!string.IsNullOrWhiteSpace(request.City))
-                query = query.Where(x => x.City == request.City);
+            {
+                var city = request.City.Trim();
+
+                // So khớp chính xác nhưng không phân biệt hoa/thường.
+                // Không thêm % nếu không muốn "Hồ Chí" khớp "Hồ Chí Minh".
+                query = query.Where(x => EF.Functions.ILike(x.City ?? string.Empty, city));
+            }
+
+            // ==================== PRODUCT CONDITION ====================
 
             if (request.FunctionalityStatus.HasValue)
-                query = query.Where(x => x.Product!.FunctionalityStatus == (int)request.FunctionalityStatus);
+            {
+                var functionalityStatus = (int)request.FunctionalityStatus.Value;
+                query = query.Where(x => x.Product!.FunctionalityStatus == functionalityStatus);
+            }
 
             if (request.MinUsageDuration.HasValue)
-                query = query.Where(x => x.Product!.UsageDuration >= request.MinUsageDuration);
+            {
+                var minUsageDuration = request.MinUsageDuration.Value;
+                query = query.Where(x => x.Product!.UsageDuration >= minUsageDuration);
+            }
+
             if (request.MaxUsageDuration.HasValue)
-                query = query.Where(x => x.Product!.UsageDuration <= request.MaxUsageDuration);
+            {
+                var maxUsageDuration = request.MaxUsageDuration.Value;
+                query = query.Where(x => x.Product!.UsageDuration <= maxUsageDuration);
+            }
 
             if (request.MinDamageLevel.HasValue)
-                query = query.Where(x => x.Product!.DamageLevel >= request.MinDamageLevel);
+            {
+                var minDamageLevel = request.MinDamageLevel.Value;
+                query = query.Where(x => x.Product!.DamageLevel >= minDamageLevel);
+            }
+
             if (request.MaxDamageLevel.HasValue)
-                query = query.Where(x => x.Product!.DamageLevel <= request.MaxDamageLevel);
+            {
+                var maxDamageLevel = request.MaxDamageLevel.Value;
+                query = query.Where(x => x.Product!.DamageLevel <= maxDamageLevel);
+            }
 
-            // ---------- KHOẢNG GIÁ ----------
+            // ==================== PRICE ====================
+
             if (request.MinPrice.HasValue)
-                query = query.Where(x => x.BasePrice >= request.MinPrice);
-            if (request.MaxPrice.HasValue)
-                query = query.Where(x => x.BasePrice <= request.MaxPrice);
+            {
+                var minPrice = request.MinPrice.Value;
+                query = query.Where(x => x.BasePrice >= minPrice);
+            }
 
-            // ---------- BASE FILTER NÂNG CAO TRẢI NGHIỆM ----------
-            if (request.OnlyAvailable)
+            if (request.MaxPrice.HasValue)
+            {
+                var maxPrice = request.MaxPrice.Value;
+                query = query.Where(x => x.BasePrice <= maxPrice);
+            }
+
+            // ==================== AVAILABILITY ====================
+
+            if (request.OnlyAvailable == true)
                 query = query.Where(x => x.RemainingQuantity > 0);
+
+            // ==================== POSTED TIME ====================
 
             if (request.PostedWithinDays.HasValue)
             {
-                var threshold = DateTime.UtcNow.AddDays(-request.PostedWithinDays.Value);
+                var threshold = DateTime.UtcNow.AddDays(
+                    -request.PostedWithinDays.Value);
+
                 query = query.Where(x => x.CreatedAt >= threshold);
             }
 
+            // ==================== DELIVERY METHOD ====================
+
             if (request.DeliveryMethod.HasValue)
-                query = query.Where(x => x.DeliveryMethod == (int)request.DeliveryMethod);
+            {
+                var deliveryMethod = (int)request.DeliveryMethod.Value;
+                query = query.Where(x => x.DeliveryMethod == deliveryMethod);
+            }
+
+            // ==================== PRIORITY LEVEL ====================
 
             if (request.PriorityLevel.HasValue)
-                query = query.Where(x => x.PriorityLevel == (int)request.PriorityLevel);
+            {
+                var priorityLevel = (int)request.PriorityLevel.Value;
+                query = query.Where(x => x.PriorityLevel == priorityLevel);
+            }
 
-            // ---------- FILTER ĐỘNG ----------
-            // Product_Attribute_Value khác nhau — Join thường sẽ nhân bản dòng và lọc sai.
-            if (request.ProductTypeId.HasValue && request.AttributeFilters is { Count: > 0 })
+            // ==================== ATTRIBUTE + OPTION ====================
+
+            if (request.AttributeFilters is { Count: > 0 })
             {
                 foreach (var filter in request.AttributeFilters)
                 {
-                    var attrId = filter.AttributeId;
+                    var attributeId = filter.AttributeId;
 
-                    if (filter.OptionIds is { Count: > 0 })
-                    {
-                        var optionIds = filter.OptionIds;
-                        query = query.Where(x => x.Product!.Product_Attribute_Values
-                            .Any(av => av.AttributeId == attrId && av.OptionId.HasValue && optionIds.Contains(av.OptionId.Value)));
-                    }
-                    else if (filter.MinValue.HasValue || filter.MaxValue.HasValue)
-                    {
-                        var min = filter.MinValue;
-                        var max = filter.MaxValue;
-                        query = query.Where(x => x.Product!.Product_Attribute_Values.Any(av =>
-                            av.AttributeId == attrId &&
-                            (!min.HasValue || av.ValueNumber >= min) &&
-                            (!max.HasValue || av.ValueNumber <= max)));
-                    }
-                    else if (filter.ValueBoolean.HasValue)
-                    {
-                        var val = filter.ValueBoolean.Value;
-                        query = query.Where(x => x.Product!.Product_Attribute_Values
-                            .Any(av => av.AttributeId == attrId && av.ValueBoolean == val));
-                    }
-                    else if (!string.IsNullOrWhiteSpace(filter.ValueTextContains))
-                    {
-                        var text = $"%{filter.ValueTextContains.Trim()}%";
-                        query = query.Where(x => x.Product!.Product_Attribute_Values
-                            .Any(av => av.AttributeId == attrId && EF.Functions.ILike(av.ValueText ?? "", text)));
-                    }
+                    var optionIds = filter.OptionIds?
+                        .Where(x => x != Guid.Empty)
+                        .Distinct()
+                        .ToArray()
+                        ?? Array.Empty<Guid>();
+
+                    // Validator nên ngăn trường hợp này.
+                    if (attributeId == Guid.Empty || optionIds.Length == 0)
+                        continue;
+
+                    query = query.Where(postEntity =>
+                        postEntity.Product!
+                            .Product_Attribute_Values
+                            .Any(value =>
+                                value.AttributeId == attributeId &&
+
+                                // Chỉ cho phép lọc attribute được phép
+                                value.Attribute.IsFilterable &&
+
+                                // Attribute phải thuộc đúng ProductType của Product
+                                value.Attribute.ProductTypeId ==
+                                postEntity.Product.ProductTypeId &&
+
+                                value.OptionId.HasValue &&
+                                optionIds.Contains(value.OptionId.Value)));
                 }
-
             }
 
-            // ---------- SORT ----------
+            // Đếm sau toàn bộ filter nhưng trước ORDER BY.
+            var totalCount = await query.CountAsync(cancellationToken);
+
+            // ==================== SORT ====================
+
             var sortBy = request.SortBy ?? PostSortBy.Newest;
 
-            var orderedQuery = query.OrderByDescending(x => x.PriorityLevel);   // KHÔNG cast, để var tự suy luận đúng kiểu
+            // PriorityLevel luôn được ưu tiên trước.
+            var orderedQuery = query.OrderByDescending(x => x.PriorityLevel);
 
             orderedQuery = sortBy switch
             {
-                PostSortBy.PriceAsc => orderedQuery.ThenBy(x => x.BasePrice == null).ThenBy(x => x.BasePrice),
-                PostSortBy.PriceDesc => orderedQuery.ThenBy(x => x.BasePrice == null).ThenByDescending(x => x.BasePrice),
-                PostSortBy.Oldest => orderedQuery.ThenBy(x => x.CreatedAt),
-                _ => orderedQuery.ThenByDescending(x => x.CreatedAt)
+                PostSortBy.PriceAsc => orderedQuery
+                    .ThenBy(x => x.BasePrice == null)
+                    .ThenBy(x => x.BasePrice)
+                    .ThenByDescending(x => x.CreatedAt),
+
+                PostSortBy.PriceDesc => orderedQuery
+                    .ThenBy(x => x.BasePrice == null)
+                    .ThenByDescending(x => x.BasePrice)
+                    .ThenByDescending(x => x.CreatedAt),
+
+                PostSortBy.Oldest => orderedQuery
+                    .ThenBy(x => x.CreatedAt),
+
+                _ => orderedQuery
+                    .ThenByDescending(x => x.CreatedAt)
             };
 
-            var totalCount = await orderedQuery.CountAsync(cancellationToken);
+            orderedQuery = orderedQuery.ThenBy(x => x.PostId);
 
-            var items = await orderedQuery
-                .Skip((request.PageNumber - 1) * request.PageSize)
+            // ==================== PAGINATION ====================
+
+            var skip = (request.PageNumber - 1) *  request.PageSize;
+
+            var entities = await orderedQuery
+                .Skip(skip)
                 .Take(request.PageSize)
                 .ToListAsync(cancellationToken);
 
             return new PagedResult<post>
             {
-                Items = items.Select(x => x.ToDomain()).ToList(),
+                Items = entities
+                    .Select(x => x.ToDomain())
+                    .ToList(),
+
                 PageNumber = request.PageNumber,
                 PageSize = request.PageSize,
                 TotalCount = totalCount
             };
         }
+
+        //public async Task<PagedResult<post>> SearchAsync(PostSearchRequest request, CancellationToken cancellationToken = default)
+        //{
+        //    var query = _db.Posts
+        //        .AsNoTracking()
+        //        .Include(x => x.Product)
+        //            .ThenInclude(x => x!.Category)
+        //        .Include(x => x.Product)
+        //            .ThenInclude(x => x!.ProductType)
+        //        .Include(x => x.Product)
+        //            .ThenInclude(x => x!.Brand)
+        //        .Where(x =>
+        //            x.Status == (int)PostStatus.Active &&
+        //            x.Product != null);
+
+        //    // ---------- KEYWORD ----------
+        //    if (!string.IsNullOrWhiteSpace(request.Keyword))
+        //    {
+        //        var keyword = $"%{request.Keyword.Trim()}%";
+        //        query = query.Where(x =>
+        //               EF.Functions.ILike(x.Description ?? string.Empty, keyword) ||
+        //               EF.Functions.ILike(x.Product!.ProductName ?? string.Empty, keyword) ||
+        //               EF.Functions.ILike(x.Product.Category.CategoryName ?? string.Empty, keyword) ||
+        //               EF.Functions.ILike(x.Product.ProductType.ProductTypeName ?? string.Empty, keyword) ||
+        //               (x.Product.Brand != null &&
+        //                EF.Functions.ILike(x.Product.Brand.BrandName ?? string.Empty, keyword)) ||
+        //               EF.Functions.ILike(x.City ?? string.Empty, keyword) ||
+        //               EF.Functions.ILike(x.Ward ?? string.Empty, keyword) ||
+        //               EF.Functions.ILike(x.StreetAddress ?? string.Empty, keyword));
+        //    }
+
+        //    // ---------- PHÂN LOẠI BÁN/MUA ----------
+        //    if (request.PostType.HasValue)
+        //        query = query.Where(x => x.PostType == (int)request.PostType);
+
+        //    // ---------- FILTER PHÂN CẤP ----------
+        //    if (request.CategoryId.HasValue)
+        //        query = query.Where(x => x.Product!.CategoryId == request.CategoryId);
+
+        //    if (request.ProductTypeId.HasValue)
+        //        query = query.Where(x => x.Product!.ProductTypeId == request.ProductTypeId);
+
+        //    if (request.BrandId.HasValue)
+        //        query = query.Where(x => x.Product!.BrandId == request.BrandId);
+
+        //    // ---------- FILTER ĐIỀU KIỆN SẢN PHẨM ----------
+
+        //    if (!string.IsNullOrWhiteSpace(request.City))
+        //        query = query.Where(x => x.City == request.City);
+
+        //    if (request.FunctionalityStatus.HasValue)
+        //        query = query.Where(x => x.Product!.FunctionalityStatus == (int)request.FunctionalityStatus);
+
+        //    if (request.MinUsageDuration.HasValue)
+        //        query = query.Where(x => x.Product!.UsageDuration >= request.MinUsageDuration);
+        //    if (request.MaxUsageDuration.HasValue)
+        //        query = query.Where(x => x.Product!.UsageDuration <= request.MaxUsageDuration);
+
+        //    if (request.MinDamageLevel.HasValue)
+        //        query = query.Where(x => x.Product!.DamageLevel >= request.MinDamageLevel);
+        //    if (request.MaxDamageLevel.HasValue)
+        //        query = query.Where(x => x.Product!.DamageLevel <= request.MaxDamageLevel);
+
+        //    // ---------- KHOẢNG GIÁ ----------
+        //    if (request.MinPrice.HasValue)
+        //        query = query.Where(x => x.BasePrice >= request.MinPrice);
+        //    if (request.MaxPrice.HasValue)
+        //        query = query.Where(x => x.BasePrice <= request.MaxPrice);
+
+        //    // ---------- BASE FILTER NÂNG CAO TRẢI NGHIỆM ----------
+        //    if (request.OnlyAvailable.HasValue && request.OnlyAvailable.Value)
+        //        query = query.Where(x => x.RemainingQuantity > 0);
+
+        //    if (request.PostedWithinDays.HasValue)
+        //    {
+        //        var threshold = DateTime.UtcNow.AddDays(-request.PostedWithinDays.Value);
+        //        query = query.Where(x => x.CreatedAt >= threshold);
+        //    }
+
+        //    if (request.DeliveryMethod.HasValue)
+        //        query = query.Where(x => x.DeliveryMethod == (int)request.DeliveryMethod);
+
+        //    if (request.PriorityLevel.HasValue)
+        //        query = query.Where(x => x.PriorityLevel == (int)request.PriorityLevel);
+
+        //    if (!string.IsNullOrWhiteSpace(request.City))
+        //    {
+        //        var city = request.City.Trim();
+
+        //        query = query.Where(x =>
+        //            EF.Functions.ILike(x.City ?? string.Empty, city));
+        //    }
+
+        //    // ---------- FILTER ĐỘNG ----------
+        //    // Product_Attribute_Value khác nhau — Join thường sẽ nhân bản dòng và lọc sai.
+        //    if (request.ProductTypeId.HasValue && request.AttributeFilters is { Count: > 0 })
+        //    {
+        //        foreach (var filter in request.AttributeFilters)
+        //        {
+        //            var attrId = filter.AttributeId;
+
+        //            // Một trong các option được chọn
+        //            if (filter.OptionIds is { Count: > 0 })
+        //            {
+        //                var optionIds = filter.OptionIds;
+        //                query = query.Where(x => x.Product!.Product_Attribute_Values
+        //                    .Any(av => av.AttributeId == attrId
+        //                            && av.Attribute.IsFilterable
+        //                            && av.OptionId.HasValue
+        //                            && optionIds.Contains(av.OptionId.Value)));
+        //            }
+        //        }
+
+        //    }
+
+        //    // ---------- SORT ----------
+        //    var sortBy = request.SortBy ?? PostSortBy.Newest;
+
+        //    var orderedQuery = query.OrderByDescending(x => x.PriorityLevel);   // KHÔNG cast, để var tự suy luận đúng kiểu
+
+        //    orderedQuery = sortBy switch
+        //    {
+        //        PostSortBy.PriceAsc => orderedQuery.ThenBy(x => x.BasePrice == null).ThenBy(x => x.BasePrice),
+        //        PostSortBy.PriceDesc => orderedQuery.ThenBy(x => x.BasePrice == null).ThenByDescending(x => x.BasePrice),
+        //        PostSortBy.Oldest => orderedQuery.ThenBy(x => x.CreatedAt),
+        //        _ => orderedQuery.ThenByDescending(x => x.CreatedAt)
+        //    };
+
+        //    var totalCount = await orderedQuery.CountAsync(cancellationToken);
+
+        //    var items = await orderedQuery
+        //        .Skip((request.PageNumber - 1) * request.PageSize)
+        //        .Take(request.PageSize)
+        //        .ToListAsync(cancellationToken);
+
+        //    return new PagedResult<post>
+        //    {
+        //        Items = items.Select(x => x.ToDomain()).ToList(),
+        //        PageNumber = request.PageNumber,
+        //        PageSize = request.PageSize,
+        //        TotalCount = totalCount
+        //    };
+        //}
 
         public async Task<int> CountActiveByOwnerAsync(Guid ownerId, CancellationToken cancellationToken = default)
         {
