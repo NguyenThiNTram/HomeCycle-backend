@@ -23,7 +23,7 @@ namespace HomeCycle.Application.Interfaces.Services.Products
 
         Task<Result<PagedResult<BrandResponse>>> SearchAsync(BrandSearchRequest request, CancellationToken cancellationToken = default);
 
-        Task<PagedResult<brand>> GetActiveAsync(BrandSearchRequest request, CancellationToken cancellationToken = default);
+        Task<PagedResult<brand>> GetActiveAsync(GetActiveBrandRequest request, CancellationToken cancellationToken = default);
 
         Task<Result<BrandResponse>> GetByIdAsync(Guid brandId, CancellationToken cancellationToken = default);
     }

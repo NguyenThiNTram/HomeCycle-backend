@@ -12,4 +12,8 @@ namespace HomeCycle.Application.DTOs.Requests.Categories
         public string? Keyword { get; set; }
         public bool? IsActive { get; set; }
     }
+
+    public class GetActiveCategoryRequest : PaginationRequest
+    {
+    }
 }

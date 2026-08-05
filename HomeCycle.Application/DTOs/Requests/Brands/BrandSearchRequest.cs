@@ -12,4 +12,8 @@ namespace HomeCycle.Application.DTOs.Requests.Brands
         public string? Keyword { get; set; }
         public bool? IsActive { get; set; }
     }
+
+    public class GetActiveBrandRequest : PaginationRequest
+    {
+    }
 }

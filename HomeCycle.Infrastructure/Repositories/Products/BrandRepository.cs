@@ -117,11 +117,11 @@ namespace HomeCycle.Infrastructure.Repositories.Products
             _db.Brands.Update(entity);
         }
 
-        public async Task<PagedResult<brand>> GetActiveAsync(PaginationRequest pagination, CancellationToken cancellationToken = default)
+        public async Task<PagedResult<brand>> GetActiveAsync(GetActiveBrandRequest request, CancellationToken cancellationToken = default)
         {
             var query = await _db.Brands
                 .AsNoTracking()
-                .Where(x => x.IsActive)
+                .Where(x => x.IsActive == true)
                 .OrderBy(x => x.BrandName)
                 .Select(x => x.ToDomain())
                 .ToListAsync(cancellationToken);

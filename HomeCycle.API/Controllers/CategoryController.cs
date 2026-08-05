@@ -93,7 +93,7 @@ namespace HomeCycle.API.Controllers
             Summary = "Lấy danh sách danh mục đang hoạt động",
             Description = "Trả về danh sách danh mục đang hoạt động (IsActive = true) có hỗ trợ tìm kiếm."
         )]
-        public async Task<IActionResult> GetActive([FromQuery] CategorySearchRequest request, CancellationToken cancellationToken)
+        public async Task<IActionResult> GetActive([FromQuery] GetActiveCategoryRequest request, CancellationToken cancellationToken)
         {
             var result = await _categoryService.GetActiveAsync(request, cancellationToken);
             if (!result.IsSuccess)

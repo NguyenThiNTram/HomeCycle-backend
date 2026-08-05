@@ -171,7 +171,7 @@ namespace HomeCycle.Application.Services.Products
             );
         }
 
-        public async Task<PagedResult<brand>> GetActiveAsync(BrandSearchRequest request, CancellationToken cancellationToken = default)
+        public async Task<PagedResult<brand>> GetActiveAsync(GetActiveBrandRequest request, CancellationToken cancellationToken = default)
         {
             var pagination = new PaginationRequest
             {
@@ -179,7 +179,7 @@ namespace HomeCycle.Application.Services.Products
                 PageSize = request.PageSize
             };
 
-            return await _brandRepository.GetActiveAsync(pagination, cancellationToken);
+            return await _brandRepository.GetActiveAsync(request, cancellationToken);
         }
 
     }
