@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using System.Threading;
 
 namespace HomeCycle.Application.Interfaces.Repositories.Products
 {
@@ -23,6 +24,6 @@ namespace HomeCycle.Application.Interfaces.Repositories.Products
 
         Task<PagedResult<brand>> SearchAsync(string keyword, BrandSearchRequest request, CancellationToken cancellationToken = default);
 
-        Task<PagedResult<brand>> GetActiveAsync(PaginationRequest pagination, CancellationToken cancellationToken = default);
+        Task<PagedResult<brand>> GetActiveAsync(GetActiveBrandRequest request, CancellationToken cancellationToken = default);
     }
 }

@@ -18,7 +18,7 @@ namespace HomeCycle.Application.Interfaces.Services.Products
 
         Task<Result<bool>> DeleteCategoryAsync(Guid categoryId, CancellationToken cancellationToken = default);
 
-        Task<Result<PagedResult<CategoryResponse>>> GetActiveAsync(CategorySearchRequest request, CancellationToken cancellationToken = default);
+        Task<Result<PagedResult<CategoryResponse>>> GetActiveAsync(GetActiveCategoryRequest request, CancellationToken cancellationToken = default);
 
         Task<Result<CategoryResponse>> GetByIdAsync(Guid categoryId, CancellationToken cancellationToken = default);
 

@@ -132,7 +132,7 @@ namespace HomeCycle.Application.Services.Products
             return Result<bool>.Success(true);
         }
 
-        public async Task<Result<PagedResult<CategoryResponse>>> GetActiveAsync(CategorySearchRequest request, CancellationToken cancellationToken = default)
+        public async Task<Result<PagedResult<CategoryResponse>>> GetActiveAsync(GetActiveCategoryRequest request, CancellationToken cancellationToken = default)
         {
             var result = await _categoryRepository.GetActiveAsync(request, cancellationToken);
 

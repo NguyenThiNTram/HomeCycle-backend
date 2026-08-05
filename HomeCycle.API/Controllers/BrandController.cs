@@ -33,7 +33,7 @@ namespace HomeCycle.API.Controllers
             Summary = "Lấy danh sách thương hiệu đang hoạt động",
             Description = "Trả về danh sách thương hiệu đang hoạt động (IsActive = true)."
         )]
-        public async Task<IActionResult> GetActiveBrands([FromQuery] BrandSearchRequest request, CancellationToken cancellationToken)
+        public async Task<IActionResult> GetActiveBrands([FromQuery] GetActiveBrandRequest request, CancellationToken cancellationToken)
         {
             var result = await _brandService.GetActiveAsync(request, cancellationToken);
             return Ok(result);
@@ -95,6 +95,17 @@ namespace HomeCycle.API.Controllers
             if (!result.IsSuccess)
                 return BadRequest(result);
 
+            return Ok(result);
+        }
+
+        [HttpGet("search")]
+        [SwaggerOperation(
+            Summary = "Tìm kiếm thương hiệu",
+            Description = "Tìm kiếm thương hiệu theo từ khóa và hỗ trợ phân trang."
+        )]
+        public async Task<IActionResult> SearchBrands([FromQuery] BrandSearchRequest request, CancellationToken cancellationToken)
+        {
+            var result = await _brandService.SearchAsync(request, cancellationToken);
             return Ok(result);
         }
     }

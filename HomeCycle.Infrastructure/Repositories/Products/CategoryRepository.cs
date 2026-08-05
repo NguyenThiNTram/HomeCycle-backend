@@ -87,7 +87,7 @@ namespace HomeCycle.Infrastructure.Repositories.Products
         {
             return await _db.Categories
                 .AsNoTracking()
-                .Where(x => x.IsActive)
+                .Where(x => x.IsActive == true)
                 .OrderBy(x => x.CategoryName)
                 .Select(x => x.ToDomain())
                 .ToPagedResultAsync(
