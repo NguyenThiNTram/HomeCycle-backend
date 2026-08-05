@@ -15,9 +15,12 @@ using HomeCycle.Application.Interfaces.Services.Negotiates;
 using HomeCycle.Application.Interfaces.Services.Offers;
 using HomeCycle.Domain.Entities;
 using HomeCycle.Domain.Enums;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -30,7 +33,7 @@ namespace HomeCycle.Application.Services.Offers
         private readonly IMessageRepository _messageRepository;
         private readonly IPostRepository _postRepository;
         private readonly IUserRepository _userRepository;
-        private readonly IAgreementFormService _agreementFormService;
+        private readonly ILogger<OfferService> _logger;
         private readonly IValidator<CreateOfferRequest> _createValidator;
         private readonly IValidator<UpdateOfferRequest> _updateValidator;
         private readonly IValidator<CounterInitialOfferRequest> _counterInitialValidator;
@@ -47,7 +50,7 @@ namespace HomeCycle.Application.Services.Offers
             IMessageRepository messageRepository,
             IPostRepository postRepository,
             IUserRepository userRepository,
-            IAgreementFormService agreementFormService,
+            ILogger<OfferService> logger,
             IValidator<CreateOfferRequest> createValidator,
             IValidator<UpdateOfferRequest> updateValidator,
             IValidator<CounterInitialOfferRequest> counterInitialValidator,
@@ -60,7 +63,7 @@ namespace HomeCycle.Application.Services.Offers
             _messageRepository = messageRepository;
             _postRepository = postRepository;
             _userRepository = userRepository;
-            _agreementFormService = agreementFormService;
+            _logger = logger;
             _createValidator = createValidator;
             _updateValidator = updateValidator;
             _counterInitialValidator = counterInitialValidator;
@@ -114,13 +117,27 @@ namespace HomeCycle.Application.Services.Offers
             var offer = _mapper.Map<offer>(request);
 
             offer.OfferId = Guid.NewGuid();
+            offer.PostId = post.PostId;
             offer.SenderId = userId;
             offer.ReceiverId = post.OwnerId;
             offer.OfferStatus = OfferStatus.Pending;
             offer.CreatedAt = DateTime.UtcNow;
 
-            await _offerRepository.AddAsync(offer, cancellationToken);
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            try
+            {
+                await _offerRepository.AddAsync(offer, cancellationToken);
+
+                // Kiểm tra ngay trước SaveChangesAsync
+                _logger.LogInformation("Creating offer for PostId: {PostId}", offer.PostId);
+
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+            }
+            // Unique partial index uq_offer_pending_post_sender chặn 2 request đồng thời
+            // cùng tạo Offer Pending cho cùng (Post, Sender). Kẻ thua nhận 23505 -> trả lỗi nghiệp vụ.
+            catch (DbUpdateException ex) when (IsUniqueViolation(ex))
+            {
+                return Result<OfferResponse>.Fail(OfferErrors.DuplicatePending);
+            }
 
             return Result<OfferResponse>.Success(_mapper.Map<OfferResponse>(offer));
         }
@@ -159,6 +176,9 @@ namespace HomeCycle.Application.Services.Offers
             if (priceError is not null)
                 return Result<OfferResponse>.Fail(priceError);
 
+            offer.OfferPrice = request.OfferPrice;
+            offer.OfferQuantity = request.OfferQuantity;
+
             _mapper.Map(request, offer);
 
             await _offerRepository.UpdateAsync(offer, cancellationToken);
@@ -177,7 +197,7 @@ namespace HomeCycle.Application.Services.Offers
             if (offer.SenderId != userId)
                 return Result<OfferResponse>.Fail(OfferErrors.Forbidden);
 
-            if (offer.OfferStatus != (int)OfferStatus.Pending)
+            if (offer.OfferStatus != OfferStatus.Pending)
                 return Result<OfferResponse>.Fail(OfferErrors.NotPending);
 
             offer.OfferStatus = OfferStatus.Cancelled;
@@ -215,40 +235,62 @@ namespace HomeCycle.Application.Services.Offers
         {
             await _unitOfWork.BeginTransactionAsync(cancellationToken);
 
-            var offer = await _offerRepository.GetByIdAsync(offerId, cancellationToken);
-            if (offer is null)
-                return Result<AcceptOfferResponse>.Fail(OfferErrors.NotFound);
-
-            if (offer.ReceiverId != userId)
-                return Result<AcceptOfferResponse>.Fail(OfferErrors.Forbidden);
-
-            if (offer.OfferStatus != OfferStatus.Pending)
-                return Result<AcceptOfferResponse>.Fail(OfferErrors.NotPending);
-
-            var post = await _postRepository.GetByIdAsync(offer.PostId, cancellationToken);
-            if (post is null)
-                return Result<AcceptOfferResponse>.Fail(OfferErrors.PostNotFound);
-
-            if (post.Status != PostStatus.Active)
-                return Result<AcceptOfferResponse>.Fail(OfferErrors.PostNotActive);
-
-            if (offer.OfferQuantity > post.RemainingQuantity)
-                return Result<AcceptOfferResponse>.Fail(
-                    OfferErrors.QuantityExceedsRemaining(
-                        offer.OfferQuantity,
-                        post.RemainingQuantity));
-
-            var now = DateTime.UtcNow;
-            var negotiation = CreateOpenNegotiation(offer, post, now);
-            var initialOfferMessage = CreateInitialOfferMessage(
-                offer,
-                negotiation.NegotiationId,
-                post.BasePrice,
-                MessageOfferStatus.Pending,
-                now);
-
             try
             {
+                // Khóa dòng Offer (FOR UPDATE) TRONG transaction: serialize Accept/Counter/Cancel
+                // đồng thời trên cùng một Offer, tránh 2 request cùng tạo Negotiation.
+                var offer = await _offerRepository.GetByIdForUpdateAsync(offerId, cancellationToken);
+                if (offer is null)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<AcceptOfferResponse>.Fail(OfferErrors.NotFound);
+                }
+
+                if (offer.ReceiverId != userId)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<AcceptOfferResponse>.Fail(OfferErrors.Forbidden);
+                }
+
+                // Re-check trạng thái NGAY TRONG khóa: request thứ 2 sẽ thấy Accepted -> trả lỗi sạch
+                // thay vì để DB unique index Negotiation_OfferId_key văng exception.
+                if (offer.OfferStatus != OfferStatus.Pending)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<AcceptOfferResponse>.Fail(OfferErrors.NotPending);
+                }
+
+                var post = await _postRepository.GetByIdAsync(offer.PostId, cancellationToken);
+                if (post is null)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<AcceptOfferResponse>.Fail(OfferErrors.PostNotFound);
+                }
+
+                if (post.Status != PostStatus.Active)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<AcceptOfferResponse>.Fail(OfferErrors.PostNotActive);
+                }
+
+                if (offer.OfferQuantity > post.RemainingQuantity)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<AcceptOfferResponse>.Fail(
+                        OfferErrors.QuantityExceedsRemaining(
+                            offer.OfferQuantity,
+                            post.RemainingQuantity));
+                }
+
+                var now = DateTime.UtcNow;
+                var negotiation = CreateOpenNegotiation(offer, post, now);
+                var initialOfferMessage = CreateInitialOfferMessage(
+                    offer,
+                    negotiation.NegotiationId,
+                    post.BasePrice,
+                    MessageOfferStatus.Pending,
+                    now);
+
                 // Accepted ở bảng Offer nghĩa là request mở thương lượng đã được nhận.
                 // Kết quả giao dịch cuối cùng do NegotiationStatus quyết định.
                 offer.OfferStatus = OfferStatus.Accepted;
@@ -259,88 +301,119 @@ namespace HomeCycle.Application.Services.Offers
 
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync(cancellationToken);
+
+                return Result<AcceptOfferResponse>.Success(new AcceptOfferResponse
+                {
+                    OfferId = offer.OfferId,
+                    NegotiationId = negotiation.NegotiationId,
+                    OfferStatus = OfferStatus.Accepted,
+                    NegotiationStatus = NegotiationStatus.Open
+                });
             }
             catch
             {
                 await _unitOfWork.RollbackTransactionAsync(cancellationToken);
                 throw;
             }
-
-            return Result<AcceptOfferResponse>.Success(new AcceptOfferResponse
-            {
-                OfferId = offer.OfferId,
-                NegotiationId = negotiation.NegotiationId,
-                OfferStatus = OfferStatus.Accepted,
-                NegotiationStatus = NegotiationStatus.Open
-            });
         }
 
         // Người nhận counter request ban đầu -> mở Negotiation, lưu proposal gốc
         // thành Superseded và lưu counter mới thành Pending.
         public async Task<Result<NegotiationResponse>> CounterInitialOfferAsync(Guid userId, Guid offerId, CounterInitialOfferRequest request, CancellationToken cancellationToken = default)
         {
-            await _unitOfWork.BeginTransactionAsync(cancellationToken);
-
             var validation = await _counterInitialValidator.ValidateAsync(request, cancellationToken);
             if (!validation.IsValid)
                 return Result<NegotiationResponse>.Fail(ToValidationError(validation));
 
-            var offer = await _offerRepository.GetByIdAsync(offerId, cancellationToken);
-            if (offer is null)
-                return Result<NegotiationResponse>.Fail(OfferErrors.NotFound);
-
-            if (offer.ReceiverId != userId)
-                return Result<NegotiationResponse>.Fail(OfferErrors.Forbidden);
-
-            if (offer.OfferStatus != OfferStatus.Pending)
-                return Result<NegotiationResponse>.Fail(OfferErrors.NotPending);
-
-            var post = await _postRepository.GetByIdAsync(offer.PostId, cancellationToken);
-            if (post is null)
-                return Result<NegotiationResponse>.Fail(OfferErrors.PostNotFound);
-
-            if (post.Status != PostStatus.Active)
-                return Result<NegotiationResponse>.Fail(OfferErrors.PostNotActive);
-
-            if (request.OfferQuantity > post.RemainingQuantity)
-                return Result<NegotiationResponse>.Fail(
-                    OfferErrors.QuantityExceedsRemaining(
-                        request.OfferQuantity,
-                        post.RemainingQuantity));
-
-            var priceError = ValidatePriceRange(post.BasePrice, request.OfferPrice);
-            if (priceError is not null)
-                return Result<NegotiationResponse>.Fail(priceError);
-
-            var now = DateTime.UtcNow;
-            var negotiation = CreateOpenNegotiation(offer, post, now);
-
-            // Giữ lịch sử request gốc trước khi đồng bộ Offer sang mức counter mới.
-            var initialOfferMessage = CreateInitialOfferMessage(
-                offer,
-                negotiation.NegotiationId,
-                post.BasePrice,
-                MessageOfferStatus.Superseded,
-                now);
-
-            var counterMessage = new message
-            {
-                MessageId = Guid.NewGuid(),
-                NegotiationId = negotiation.NegotiationId,
-                SenderId = userId,
-                //MessageContent = request.MessageContent ?? "Đề nghị mức giá khác.",
-                MessageType = MessageType.CounterOffer,
-                OfferPrice = request.OfferPrice,
-                OfferQuantity = request.OfferQuantity,
-                OfferStatus = MessageOfferStatus.Pending,
-                MediaUrl = null,
-                BasePriceSnapshot = post.BasePrice,
-                IsRead = false,
-                CreatedAt = now
-            };
+            await _unitOfWork.BeginTransactionAsync(cancellationToken);
 
             try
             {
+                // Khóa dòng Offer TRONG transaction: chống Accept + Counter đồng thời
+                // trên cùng một Offer tạo ra 2 Negotiation.
+                var offer = await _offerRepository.GetByIdForUpdateAsync(offerId, cancellationToken);
+                if (offer is null)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<NegotiationResponse>.Fail(OfferErrors.NotFound);
+                }
+
+                if (offer.ReceiverId != userId)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<NegotiationResponse>.Fail(OfferErrors.Forbidden);
+                }
+
+                if (offer.OfferStatus != OfferStatus.Pending)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<NegotiationResponse>.Fail(OfferErrors.NotPending);
+                }
+
+                // Kiểm tra 1 OfferId -> tối đa 1 Negotiation
+                var existingNegotiation = await _negotiationRepository.GetByOfferIdAsync(offerId, cancellationToken);
+                if (existingNegotiation is not null)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<NegotiationResponse>.Fail(NegotiationErrors.AlreadyExists);
+                }
+
+                var post = await _postRepository.GetByIdAsync(offer.PostId, cancellationToken);
+                if (post is null)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<NegotiationResponse>.Fail(OfferErrors.PostNotFound);
+                }
+
+                if (post.Status != PostStatus.Active)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<NegotiationResponse>.Fail(OfferErrors.PostNotActive);
+                }
+
+                if (request.OfferQuantity > post.RemainingQuantity)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<NegotiationResponse>.Fail(
+                        OfferErrors.QuantityExceedsRemaining(
+                            request.OfferQuantity,
+                            post.RemainingQuantity));
+                }
+
+                var priceError = ValidatePriceRange(post.BasePrice, request.OfferPrice);
+                if (priceError is not null)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<NegotiationResponse>.Fail(priceError);
+                }
+
+                var now = DateTime.UtcNow;
+                var negotiation = CreateOpenNegotiation(offer, post, now);
+
+                // Giữ lịch sử request gốc trước khi đồng bộ Offer sang mức counter mới.
+                var initialOfferMessage = CreateInitialOfferMessage(
+                    offer,
+                    negotiation.NegotiationId,
+                    post.BasePrice,
+                    MessageOfferStatus.Superseded,
+                    now);
+
+                var counterMessage = new message
+                {
+                    MessageId = Guid.NewGuid(),
+                    NegotiationId = negotiation.NegotiationId,
+                    SenderId = userId,
+                    //MessageContent = request.MessageContent ?? "Đề nghị mức giá khác.",
+                    MessageType = MessageType.CounterOffer,
+                    OfferPrice = request.OfferPrice,
+                    OfferQuantity = request.OfferQuantity,
+                    OfferStatus = MessageOfferStatus.Pending,
+                    MediaUrl = null,
+                    BasePriceSnapshot = post.BasePrice,
+                    IsRead = false,
+                    CreatedAt = now
+                };
+
                 // Offer lưu snapshot mới + Messages giữ lịch sử thay đổi
                 offer.OfferPrice = request.OfferPrice;
                 offer.OfferQuantity = request.OfferQuantity;
@@ -353,15 +426,15 @@ namespace HomeCycle.Application.Services.Offers
 
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync(cancellationToken);
+
+                return Result<NegotiationResponse>.Success(
+                    _mapper.Map<NegotiationResponse>(negotiation));
             }
             catch
             {
                 await _unitOfWork.RollbackTransactionAsync(cancellationToken);
                 throw;
             }
-
-            return Result<NegotiationResponse>.Success(
-                _mapper.Map<NegotiationResponse>(negotiation));
         }
 
         // ================== GIAI ĐOẠN 2: TRONG NEGOTIATION ==================
@@ -370,8 +443,6 @@ namespace HomeCycle.Application.Services.Offers
         // do chính mình vừa gửi. Proposal Pending của đối phương sẽ thành Superseded.
         public async Task<Result<NegotiationResponse>> SendNegotiationCounterAsync(Guid userId, Guid negotiationId, SendNegotiationCounterRequest request, CancellationToken cancellationToken = default)
         {
-            await _unitOfWork.BeginTransactionAsync(cancellationToken);
-
             var validation = await _negotiationCounterValidator.ValidateAsync(
                 request,
                 cancellationToken);
@@ -379,73 +450,117 @@ namespace HomeCycle.Application.Services.Offers
             if (!validation.IsValid)
                 return Result<NegotiationResponse>.Fail(ToValidationError(validation));
 
-            var negotiation = await _negotiationRepository.GetByIdAsync(
-                negotiationId,
-                cancellationToken);
-
-            if (negotiation is null)
-                return Result<NegotiationResponse>.Fail(NegotiationErrors.NotFound);
-
-            if (!IsParticipant(negotiation, userId))
-                return Result<NegotiationResponse>.Fail(OfferErrors.Forbidden);
-
-            if (negotiation.NegotiationStatus != NegotiationStatus.Open)
-                return Result<NegotiationResponse>.Fail(NegotiationErrors.NotOpen);
-
-            var pendingMessage =
-                await _messageRepository.GetPendingProposalByNegotiationAsync(
-                    negotiationId,
-                    cancellationToken);
-
-            if (pendingMessage is not null && pendingMessage.SenderId == userId)
-                return Result<NegotiationResponse>.Fail(OfferErrors.Forbidden);
-
-            var post = await _postRepository.GetByIdAsync(
-                negotiation.PostId,
-                cancellationToken);
-
-            if (post is null)
-                return Result<NegotiationResponse>.Fail(OfferErrors.PostNotFound);
-
-            if (post.Status != PostStatus.Active)
-                return Result<NegotiationResponse>.Fail(OfferErrors.PostNotActive);
-
-            if (request.OfferQuantity > post.RemainingQuantity)
-                return Result<NegotiationResponse>.Fail(
-                    OfferErrors.QuantityExceedsRemaining(
-                        request.OfferQuantity,
-                        post.RemainingQuantity));
-
-            var priceError = ValidatePriceRange(post.BasePrice, request.OfferPrice);
-            if (priceError is not null)
-                return Result<NegotiationResponse>.Fail(priceError);
-
-            var offer = await _offerRepository.GetByIdAsync(
-                negotiation.OfferId,
-                cancellationToken);
-
-            if (offer is null)
-                return Result<NegotiationResponse>.Fail(OfferErrors.NotFound);
-
-            var now = DateTime.UtcNow;
-            var counterMessage = new message
-            {
-                MessageId = Guid.NewGuid(),
-                NegotiationId = negotiationId,
-                SenderId = userId,
-                //MessageContent = request.MessageContent ?? "Đề nghị mức giá khác.",
-                MessageType = MessageType.CounterOffer,
-                OfferPrice = request.OfferPrice,
-                OfferQuantity = request.OfferQuantity,
-                OfferStatus = MessageOfferStatus.Pending,
-                MediaUrl = null,
-                BasePriceSnapshot = post.BasePrice,
-                IsRead = false,
-                CreatedAt = now
-            };
+            await _unitOfWork.BeginTransactionAsync(cancellationToken);
 
             try
             {
+
+                // Khóa dòng Negotiation: serialize 2 counter đồng thời trong cùng một negotiation.
+                var negotiation = await _negotiationRepository.GetByIdForUpdateAsync(
+                    negotiationId,
+                    cancellationToken);
+
+                if (negotiation is null)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<NegotiationResponse>.Fail(NegotiationErrors.NotFound);
+                }
+
+                if (!IsParticipant(negotiation, userId))
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<NegotiationResponse>.Fail(OfferErrors.Forbidden);
+                }
+
+                //Chỉ cho phép gửi counter khi trạng thái là Open hoặc Agreed
+                if (negotiation.NegotiationStatus != NegotiationStatus.Open && negotiation.NegotiationStatus != NegotiationStatus.Agreed)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<NegotiationResponse>.Fail(NegotiationErrors.InvalidStatusForCounter);
+                }
+
+                //nếu Seller/Buyer tiếp tục Counter sau khi Buyer đã Accept
+                if (negotiation.NegotiationStatus == NegotiationStatus.Agreed)
+                {
+                    negotiation.NegotiationStatus = NegotiationStatus.Open;
+
+                    negotiation.FinalPrice = null;
+                    negotiation.FinalQuantity = null;
+
+                    // Lúc này Seller sẽ mất quyền tạo form ở UI cho đến khi Buyer Accept lại
+                }
+
+                // Khóa dòng proposal Pending: chống 2 counter cùng lúc cùng supersede và
+                // tạo ra 2 proposal Pending trong cùng negotiation.
+                var pendingMessage =
+                    await _messageRepository.GetPendingProposalForUpdateAsync(
+                        negotiationId,
+                        cancellationToken);
+
+                if (pendingMessage is not null && pendingMessage.SenderId == userId)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<NegotiationResponse>.Fail(OfferErrors.Forbidden);
+                }
+
+                var post = await _postRepository.GetByIdAsync(
+                    negotiation.PostId,
+                    cancellationToken);
+
+                if (post is null)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<NegotiationResponse>.Fail(OfferErrors.PostNotFound);
+                }
+
+                if (post.Status != PostStatus.Active)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<NegotiationResponse>.Fail(OfferErrors.PostNotActive);
+                }
+
+                if (request.OfferQuantity > post.RemainingQuantity)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<NegotiationResponse>.Fail(
+                        OfferErrors.QuantityExceedsRemaining(
+                            request.OfferQuantity,
+                            post.RemainingQuantity));
+                }
+
+                var priceError = ValidatePriceRange(post.BasePrice, request.OfferPrice);
+                if (priceError is not null)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<NegotiationResponse>.Fail(priceError);
+                }
+
+                var offer = await _offerRepository.GetByIdAsync(
+                    negotiation.OfferId,
+                    cancellationToken);
+
+                if (offer is null)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<NegotiationResponse>.Fail(OfferErrors.NotFound);
+                }
+
+                var now = DateTime.UtcNow;
+                var counterMessage = new message
+                {
+                    MessageId = Guid.NewGuid(),
+                    NegotiationId = negotiationId,
+                    SenderId = userId,
+                    MessageType = MessageType.CounterOffer,
+                    OfferPrice = request.OfferPrice,
+                    OfferQuantity = request.OfferQuantity,
+                    OfferStatus = MessageOfferStatus.Pending,
+                    MediaUrl = null,
+                    BasePriceSnapshot = post.BasePrice,
+                    IsRead = false,
+                    CreatedAt = now
+                };
+
                 if (pendingMessage is not null)
                 {
                     pendingMessage.OfferStatus = MessageOfferStatus.Superseded;
@@ -464,77 +579,111 @@ namespace HomeCycle.Application.Services.Offers
 
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync(cancellationToken);
+
+                return Result<NegotiationResponse>.Success(
+                    _mapper.Map<NegotiationResponse>(negotiation));
             }
             catch
             {
                 await _unitOfWork.RollbackTransactionAsync(cancellationToken);
                 throw;
             }
-
-            return Result<NegotiationResponse>.Success(
-                _mapper.Map<NegotiationResponse>(negotiation));
         }
 
-        // Chấp nhận proposal Pending của đối phương và chốt giao dịch.
-        // Người gửi tạo proposal là xác nhận của họ; người còn lại Accept => cả hai bên đồng ý cùng một proposal
-        // Chấp nhận proposal Pending của đối phương — chốt điều kiện thương mại giữa 2 bên.
-        // Đây LÀ ĐIỀU KIỆN ĐỦ để Seller tiến hành tạo Agreement Form ở bước tiếp theo (nghiệp vụ riêng,
-        // KHÔNG được gọi tự động tại đây). Method này chỉ cập nhật trạng thái Negotiation/Message/Post
-        // và trả về thông tin offer hiện tại — không tạo Agreement.
+        // CHỈ Buyer mới được gọi hành động này, bất kể ai gửi proposal cuối cùng (kể cả khi
+        // Seller là người vừa counter). Lý do: quyền "chốt deal" luôn thuộc về Buyer, tránh trường hợp
+        // Seller tự ý quyết định giá mà không cần Buyer thật sự chấp thuận. Seller vẫn giữ quyền kiểm soát
+        // riêng ở bước tạo Agreement Form sau đó (có thể không tạo nếu không đồng ý).
         public async Task<Result<NegotiationResponse>> AcceptNegotiationAsync(
             Guid userId, Guid negotiationId, CancellationToken cancellationToken = default)
         {
             await _unitOfWork.BeginTransactionAsync(cancellationToken);
 
-            var negotiation = await _negotiationRepository.GetByIdAsync(
-                negotiationId,
-                cancellationToken);
-
-            if (negotiation is null)
-                return Result<NegotiationResponse>.Fail(NegotiationErrors.NotFound);
-
-            if (!IsParticipant(negotiation, userId))
-                return Result<NegotiationResponse>.Fail(OfferErrors.Forbidden);
-
-            if (negotiation.NegotiationStatus != NegotiationStatus.Open)
-                return Result<NegotiationResponse>.Fail(NegotiationErrors.NotOpen);
-
-            var pendingMessage =
-                await _messageRepository.GetPendingProposalByNegotiationAsync(
+            try
+            {
+                // Khóa dòng Negotiation: chống accept 2 lần trên cùng negotiation (2 lần trừ tồn kho).
+                var negotiation = await _negotiationRepository.GetByIdForUpdateAsync(
                     negotiationId,
                     cancellationToken);
 
-            if (pendingMessage is null)
-                return Result<NegotiationResponse>.Fail(OfferErrors.NotPending);
+                if (negotiation is null)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<NegotiationResponse>.Fail(NegotiationErrors.NotFound);
+                }
 
-            if (pendingMessage.SenderId == userId)
-                return Result<NegotiationResponse>.Fail(OfferErrors.Forbidden);
+                // Ràng buộc cứng: chỉ Buyer mới Accept được, không dùng IsParticipant chung nữa
+                if (negotiation.BuyerId != userId)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<NegotiationResponse>.Fail(OfferErrors.Forbidden);
+                }
 
-            var post = await _postRepository.GetByIdAsync(
-                negotiation.PostId,
-                cancellationToken);
+                // Re-check trạng thái NGAY TRONG khóa.
+                if (negotiation.NegotiationStatus != NegotiationStatus.Open)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<NegotiationResponse>.Fail(NegotiationErrors.NotOpen);
+                }
 
-            if (post is null)
-                return Result<NegotiationResponse>.Fail(OfferErrors.PostNotFound);
+                var pendingMessage =
+                    await _messageRepository.GetPendingProposalForUpdateAsync(
+                        negotiationId,
+                        cancellationToken);
 
-            if (post.Status != PostStatus.Active)
-                return Result<NegotiationResponse>.Fail(OfferErrors.PostNotActive);
+                if (pendingMessage is null)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<NegotiationResponse>.Fail(OfferErrors.NotPending);
+                }
 
-            if (pendingMessage.OfferQuantity > post.RemainingQuantity)
-                return Result<NegotiationResponse>.Fail(
-                    OfferErrors.QuantityExceedsRemaining(
-                        pendingMessage.OfferQuantity,
-                        post.RemainingQuantity));
+                // Vẫn giữ chặn: Buyer không thể tự Accept đề nghị do chính mình vừa gửi
+                // (nếu proposal Pending hiện tại là do Buyer tự gửi, chưa có ai phản hồi thì chưa đủ điều kiện chốt)
+                if (pendingMessage.SenderId == userId)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<NegotiationResponse>.Fail(OfferErrors.Forbidden);
+                }
 
-            var offer = await _offerRepository.GetByIdAsync(
-                negotiation.OfferId,
-                cancellationToken);
+                // Khóa dòng Post TRONG transaction: chống lost update khi 2 Negotiation khác nhau
+                // cùng trừ RemainingQuantity của cùng một bài đăng.
+                var post = await _postRepository.GetByIdForUpdateAsync(
+                    negotiation.PostId,
+                    cancellationToken);
 
-            if (offer is null)
-                return Result<NegotiationResponse>.Fail(OfferErrors.NotFound);
+                if (post is null)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<NegotiationResponse>.Fail(OfferErrors.PostNotFound);
+                }
 
-            try
-            {
+                if (post.Status != PostStatus.Active)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<NegotiationResponse>.Fail(OfferErrors.PostNotActive);
+                }
+
+                // Re-check tồn kho NGAY SAU KHI post được khóa (giá trị đã được refresh)
+                // để negotiation thứ 2 trừ dựa trên số liệu mới nhất, không dùng dữ liệu cũ.
+                if (pendingMessage.OfferQuantity > post.RemainingQuantity)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<NegotiationResponse>.Fail(
+                        OfferErrors.QuantityExceedsRemaining(
+                            pendingMessage.OfferQuantity,
+                            post.RemainingQuantity));
+                }
+
+                var offer = await _offerRepository.GetByIdAsync(
+                    negotiation.OfferId,
+                    cancellationToken);
+
+                if (offer is null)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<NegotiationResponse>.Fail(OfferErrors.NotFound);
+                }
+
                 pendingMessage.OfferStatus = MessageOfferStatus.Accepted;
                 await _messageRepository.UpdateAsync(pendingMessage, cancellationToken);
 
@@ -548,26 +697,23 @@ namespace HomeCycle.Application.Services.Offers
                 offer.OfferQuantity = pendingMessage.OfferQuantity;
                 await _offerRepository.UpdateAsync(offer, cancellationToken);
 
-                DeductPostQuantity(post, pendingMessage.OfferQuantity);
-                await _postRepository.UpdateAsync(post, cancellationToken);
+                //DeductPostQuantity(post, pendingMessage.OfferQuantity); ////giảm số lượng hàng hoá trong bài đăng
+                //await _postRepository.UpdateAsync(post, cancellationToken);
 
-                // ĐÃ BỎ: _agreementFormService.CreateFromNegotiationAsync(...)
-                // Lý do: Agreement không còn được tạo tự động khi Accept. Negotiation.Agreed chỉ là
-                // ĐIỀU KIỆN ĐỦ để Seller chủ động tạo Agreement Form ở một API/Service riêng sau đó.
-                // Việc Seller gửi form mới là hành động xác nhận nội dung form của chính Seller —
-                // đây là bước độc lập, không xảy ra đồng thời với Accept này.
+                // Agreement KHÔNG tạo tự động tại đây — Negotiation.Agreed chỉ là điều kiện đủ để
+                // Seller chủ động tạo Agreement Form ở bước riêng sau đó (nghiệp vụ AgreementService).
 
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync(cancellationToken);
+
+                return Result<NegotiationResponse>.Success(
+                    _mapper.Map<NegotiationResponse>(negotiation));
             }
             catch
             {
                 await _unitOfWork.RollbackTransactionAsync(cancellationToken);
                 throw;
             }
-
-            return Result<NegotiationResponse>.Success(
-                _mapper.Map<NegotiationResponse>(negotiation));
         }
 
         // Chỉ từ chối proposal Pending của đối phương.
@@ -576,32 +722,49 @@ namespace HomeCycle.Application.Services.Offers
         {
             await _unitOfWork.BeginTransactionAsync(cancellationToken);
 
-            var negotiation = await _negotiationRepository.GetByIdAsync(
-                negotiationId,
-                cancellationToken);
-
-            if (negotiation is null)
-                return Result<NegotiationResponse>.Fail(NegotiationErrors.NotFound);
-
-            if (!IsParticipant(negotiation, userId))
-                return Result<NegotiationResponse>.Fail(OfferErrors.Forbidden);
-
-            if (negotiation.NegotiationStatus != NegotiationStatus.Open)
-                return Result<NegotiationResponse>.Fail(NegotiationErrors.NotOpen);
-
-            var pendingMessage =
-                await _messageRepository.GetPendingProposalByNegotiationAsync(
+            try
+            {
+                // Khóa dòng Negotiation: serialize reject/counter/accept đồng thời trong cùng negotiation.
+                var negotiation = await _negotiationRepository.GetByIdForUpdateAsync(
                     negotiationId,
                     cancellationToken);
 
-            if (pendingMessage is null)
-                return Result<NegotiationResponse>.Fail(OfferErrors.NotPending);
+                if (negotiation is null)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<NegotiationResponse>.Fail(NegotiationErrors.NotFound);
+                }
 
-            if (pendingMessage.SenderId == userId)
-                return Result<NegotiationResponse>.Fail(OfferErrors.Forbidden);
+                if (!IsParticipant(negotiation, userId))
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<NegotiationResponse>.Fail(OfferErrors.Forbidden);
+                }
 
-            try
-            {
+                if (negotiation.NegotiationStatus != NegotiationStatus.Open)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<NegotiationResponse>.Fail(NegotiationErrors.NotOpen);
+                }
+
+                // Khóa dòng proposal Pending để không reject đè lên proposal đã bị counter/supersede.
+                var pendingMessage =
+                    await _messageRepository.GetPendingProposalForUpdateAsync(
+                        negotiationId,
+                        cancellationToken);
+
+                if (pendingMessage is null)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<NegotiationResponse>.Fail(OfferErrors.NotPending);
+                }
+
+                if (pendingMessage.SenderId == userId)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<NegotiationResponse>.Fail(OfferErrors.Forbidden);
+                }
+
                 pendingMessage.OfferStatus = MessageOfferStatus.Rejected;
                 await _messageRepository.UpdateAsync(pendingMessage, cancellationToken);
 
@@ -611,15 +774,15 @@ namespace HomeCycle.Application.Services.Offers
 
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync(cancellationToken);
+
+                return Result<NegotiationResponse>.Success(
+                    _mapper.Map<NegotiationResponse>(negotiation));
             }
             catch
             {
                 await _unitOfWork.RollbackTransactionAsync(cancellationToken);
                 throw;
             }
-
-            return Result<NegotiationResponse>.Success(
-                _mapper.Map<NegotiationResponse>(negotiation));
         }
 
         // ================== QUERY ==================
@@ -809,15 +972,35 @@ namespace HomeCycle.Application.Services.Offers
             var sender = await _userRepository.GetByIdAsync(userId, cancellationToken);
             if (sender is null)
                 return OfferErrors.RoleNotAllowed;
+            if (sender.Status != UserStatus.Active)
+                return OfferErrors.UserNotActive;
 
-            // Chỉ C (Personal) và B (Business) được tham gia Offer; Moderator/Admin không được.
-            if (sender.Role != UserRole.Personal && sender.Role != UserRole.Business)
-                return OfferErrors.RoleNotAllowed;
+            // Personal tạo Sell Post:
+            // Personal hoặc Business có thể gửi Offer.
+            if (post.PostType == PostType.Sell)
+            {
+                return sender.Role is UserRole.Personal or UserRole.Business
+                    ? null
+                    : OfferErrors.RoleNotAllowed;
+            }
 
-            // Bài đăng Bán (do Personal tạo): Personal hoặc Business khác được Offer mua.
-            // Bài đăng Mua (do Business tạo): chỉ Personal được Offer bán, chặn B2B.
-            if (post.PostType == PostType.Buy && sender.Role == UserRole.Business)
-                return OfferErrors.BusinessCannotOfferBuyPost;
+            // Business tạo Buy Post:
+            // chỉ Personal được gửi Offer.
+            if (post.PostType == PostType.Buy)
+            {
+                return sender.Role == UserRole.Personal
+                    ? null
+                    : OfferErrors.BusinessCannotOfferBuyPost;
+            }
+
+            //// Chỉ C (Personal) và B (Business) được tham gia Offer; Moderator/Admin không được.
+            //if (sender.Role != UserRole.Personal && sender.Role != UserRole.Business)
+            //    return OfferErrors.RoleNotAllowed;
+
+            //// Bài đăng Bán (do Personal tạo): Personal hoặc Business khác được Offer mua.
+            //// Bài đăng Mua (do Business tạo): chỉ Personal được Offer bán, chặn B2B.
+            //if (post.PostType == PostType.Buy && sender.Role == UserRole.Business)
+            //    return OfferErrors.BusinessCannotOfferBuyPost;
 
             return null;
         }
@@ -827,16 +1010,16 @@ namespace HomeCycle.Application.Services.Offers
             return negotiation.BuyerId == userId || negotiation.SellerId == userId;
         }
 
-        private static void DeductPostQuantity(post post, int quantity)
-        {
-            post.RemainingQuantity -= quantity;
+        //private static void DeductPostQuantity(post post, int quantity)
+        //{
+        //    post.RemainingQuantity -= quantity;
 
-            if (post.RemainingQuantity <= 0)
-            {
-                post.RemainingQuantity = 0;
-                post.Status = PostStatus.Closed;
-            }
-        }
+        //    if (post.RemainingQuantity <= 0)
+        //    {
+        //        post.RemainingQuantity = 0;
+        //        post.Status = PostStatus.Closed;
+        //    }
+        //}
 
         private PagedResult<OfferResponse> MapPaged(PagedResult<offer> paged)
         {
@@ -855,6 +1038,23 @@ namespace HomeCycle.Application.Services.Offers
         {
             var errors = string.Join("\n", validation.Errors.Select(x => x.ErrorMessage));
             return ValidationErrors.InvalidRequest(errors);
+        }
+
+        // Nhận diện lỗi vi phạm UNIQUE constraint của Postgres (SQLSTATE 23505) trong chuỗi InnerException.
+        // Dùng reflection thay vì phụ thuộc trực tiếp vào Npgsql ở tầng Application.
+        private static bool IsUniqueViolation(Exception exception)
+        {
+            for (Exception? current = exception; current is not null; current = current.InnerException)
+            {
+                var sqlState = current.GetType()
+                    .GetProperty("SqlState", BindingFlags.Instance | BindingFlags.Public)
+                    ?.GetValue(current) as string;
+
+                if (sqlState == "23505")
+                    return true;
+            }
+
+            return false;
         }
     }
 }

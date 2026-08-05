@@ -45,7 +45,12 @@ namespace HomeCycle.Infrastructure.Repositories.Offers
 
         public async Task<message?> GetPendingProposalForUpdateAsync(Guid negotiationId, CancellationToken cancellationToken = default)
         {
-            var messageType = (int)MessageType.CounterOffer;
+            //Đồng bộ predicate với GetPendingProposalByNegotiationAsync:
+            //proposal Pending có thể là Offer ban đầu (Accept) hoặc CounterOffer.
+            //FOR UPDATE khóa dòng để serialize các counter/accept cùng lúc trên cùng negotiation.
+            //AsNoTracking: tránh xung đột ChangeTracker với UpdateAsync.
+            var offerType = (int)MessageType.Offer;
+            var counterOfferType = (int)MessageType.CounterOffer;
             var pending = (int)ProposalStatus.Pending;
 
             var entity = await _db.Messages
@@ -53,11 +58,12 @@ namespace HomeCycle.Infrastructure.Repositories.Offers
                     SELECT *
                     FROM ""Messages""
                     WHERE ""NegotiationId"" = {negotiationId}
-                      AND ""MessageType"" = {messageType}
+                      AND ""MessageType"" IN ({offerType}, {counterOfferType})
                       AND ""OfferStatus"" = {pending}
                     ORDER BY ""CreatedAt"" DESC
                     LIMIT 1
                     FOR UPDATE")
+                .AsNoTracking()
                 .SingleOrDefaultAsync(cancellationToken);
 
             return entity?.ToDomain();
@@ -65,13 +71,14 @@ namespace HomeCycle.Infrastructure.Repositories.Offers
 
         public async Task<message?> GetByIdForUpdateAsync(Guid messageId, CancellationToken cancellationToken = default)
         {
+            //AsNoTracking: tránh xung đột ChangeTracker với UpdateAsync.
             var entity = await _db.Messages
                 .FromSqlInterpolated($@"
                     SELECT *
                     FROM ""Messages""
-                    FROM ""Messages""
                     WHERE ""MessageId"" = {messageId}
                     FOR UPDATE")
+                .AsNoTracking()
                 .SingleOrDefaultAsync(cancellationToken);
 
             return entity?.ToDomain();

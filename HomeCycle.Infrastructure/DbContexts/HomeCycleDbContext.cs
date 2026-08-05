@@ -474,6 +474,12 @@ public partial class HomeCycleDbContext : DbContext
             entity.HasOne(d => d.Sender).WithMany(p => p.OfferSenders)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("fk_offer_sender");
+
+            // Chống tạo trùng Offer Pending cho cùng (Post, Sender) khi có 2 request đồng thời
+            // vượt qua ExistsPendingByPostAndSenderAsync(). Partial index chỉ áp dụng khi OfferStatus = Pending.
+            entity.HasIndex(e => new { e.PostId, e.SenderId }, "uq_offer_pending_post_sender")
+                .IsUnique()
+                .HasFilter("\"OfferStatus\" = 0");
         });
 
         modelBuilder.Entity<Order>(entity =>
