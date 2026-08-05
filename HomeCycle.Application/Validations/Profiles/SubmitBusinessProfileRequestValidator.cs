@@ -31,6 +31,17 @@ namespace HomeCycle.Application.Validations.Profiles
                 .NotEmpty().WithMessage("Identity card number (CCCD) is required.")
                 .Matches(@"^[0-9]{12}$").WithMessage("Identity number must be exactly 12 numeric digits.");
 
+            RuleFor(x => x.IdentityName)
+                .NotEmpty().WithMessage("Full name on Identity Card is required.")
+                .MaximumLength(255).WithMessage("Identity name must not exceed 255 characters.");
+
+            RuleFor(x => x.IdentityDob)
+                .NotEmpty().WithMessage("Date of birth on Identity Card is required.")
+                .Must(dob => dob != default(DateTime)).WithMessage("Invalid date of birth.");
+
+            RuleFor(x => x.IdentityAddress)
+                .NotEmpty().WithMessage("Address on Identity Card is required.");
+
             // 3. Validate Address (Nhận dữ liệu sạch đã bóc tách từ Frontend)
             RuleFor(x => x.BusinessAddress).NotEmpty().WithMessage("Business address is required.");
             RuleFor(x => x.Ward).NotEmpty().WithMessage("Ward is required.");
@@ -52,14 +63,15 @@ namespace HomeCycle.Application.Validations.Profiles
             RuleForEach(x => x.Documents).ChildRules(doc =>
             {
                 doc.RuleFor(d => d.DocumentType).InclusiveBetween(0, 3).WithMessage("Invalid document type.");
-                doc.RuleFor(d => d.DocumentUrl).NotEmpty().WithMessage("Document upload URL for this slot is required.");
+                doc.RuleFor(d => d.DocumentUrl).NotNull().WithMessage("Document upload URL for this slot is required.")
+                                                .Must(f => f != null && f.Length > 0).WithMessage("Document file for this slot is invalid.");
             });
 
             RuleFor(x => x)
                 .Must(x => x.Documents != null &&
-                           x.Documents.Any(d => d.DocumentType == 0 && !string.IsNullOrWhiteSpace(d.DocumentUrl)) &&
-                           x.Documents.Any(d => d.DocumentType == 1 && !string.IsNullOrWhiteSpace(d.DocumentUrl)) &&
-                           x.Documents.Any(d => d.DocumentType == 2 && !string.IsNullOrWhiteSpace(d.DocumentUrl)))
+                           x.Documents.Any(d => d.DocumentType == 0 && d.DocumentUrl != null && d.DocumentUrl.Length > 0) &&
+                           x.Documents.Any(d => d.DocumentType == 1 && d.DocumentUrl != null && d.DocumentUrl.Length > 0) &&
+                           x.Documents.Any(d => d.DocumentType == 2 && d.DocumentUrl != null && d.DocumentUrl.Length > 0))
                 .WithMessage("Registration requires uploading all mandatory documents: CCCD Front, CCCD Back, and Business Registration Certificate.");
 
             // 7. Chốt chặn phân vùng kho bãi hoạt động (Chỉ ép buộc đối với Enterprise)

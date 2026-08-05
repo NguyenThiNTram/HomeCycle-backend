@@ -32,6 +32,17 @@ namespace HomeCycle.Application.Validations.Profiles
             RuleFor(x => x.IdentityNumber)
                 .NotEmpty().WithMessage("Số CCCD/CMND không được để trống.")
                 .Matches(@"^[0-9]{9,12}$").WithMessage("Số CCCD/CMND phải từ 9 đến 12 chữ số.");
+
+            RuleFor(x => x.IdentityName)
+                .NotEmpty().WithMessage("Full name on Identity Card is required.")
+                .MaximumLength(255).WithMessage("Identity name must not exceed 255 characters.");
+
+            RuleFor(x => x.IdentityDob)
+                .NotEmpty().WithMessage("Date of birth on Identity Card is required.")
+                .Must(dob => dob != default(DateTime)).WithMessage("Invalid date of birth.");
+
+            RuleFor(x => x.IdentityAddress)
+                .NotEmpty().WithMessage("Address on Identity Card is required.");
         }
     }
 }

@@ -16,6 +16,9 @@ namespace HomeCycle.Application.DTOs.Requests.Profiles
         public string Ward { get; set; } = string.Empty;
         public string City { get; set; } = string.Empty;
         public string IdentityNumber { get; set; } = string.Empty;
+        public string IdentityName { get; set; }
+        public DateTime IdentityDob { get; set; }
+        public string IdentityAddress { get; set; }
         public string? OperatingScope { get; set; }
     }
 

@@ -137,6 +137,9 @@ namespace HomeCycle.Application.Mappings
                 .ForMember(dest => dest.Ward, opt => opt.MapFrom(src => src.Ward.Trim()))
                 .ForMember(dest => dest.City, opt => opt.MapFrom(src => src.City.Trim()))
                 .ForMember(dest => dest.IdentityNumber, opt => opt.MapFrom(src => src.IdentityNumber.Trim()))
+                .ForMember(dest => dest.IdentityName, opt => opt.MapFrom(src => src.IdentityName.Trim()))
+                .ForMember(dest => dest.IdentityDob, opt => opt.MapFrom(src => src.IdentityDob))
+                .ForMember(dest => dest.IdentityAddress, opt => opt.MapFrom(src => src.IdentityAddress.Trim()))
                 .ForMember(dest => dest.OperatingScope, opt => opt.MapFrom(src => src.OperatingScope == null ? null : src.OperatingScope.Trim()));
 
             // business_profile -> Response DTOs (base info dùng chung cho cả 2 response tổng hợp)
@@ -154,6 +157,9 @@ namespace HomeCycle.Application.Mappings
 
             CreateMap<business_document, BusinessRegistrationDocumentDto>();
             CreateMap<business_document, BusinessDocumentResponseDto>();
+
+            CreateMap<BusinessDocumentDto, business_document>()
+                .ForMember(dest => dest.DocumentUrl, opt => opt.Ignore());
 
             // ==================== BUSINESS SERVICE AREA ====================
 

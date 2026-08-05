@@ -22,8 +22,8 @@ namespace HomeCycle.Application.Validations.Profiles
                     .GreaterThan(0).WithMessage("Loại tài liệu không hợp lệ.");
 
                 doc.RuleFor(d => d.DocumentUrl)
-                    .NotEmpty().WithMessage("Đường dẫn tài liệu không được để trống.")
-                    .MaximumLength(500).WithMessage("Đường dẫn tài liệu quá dài.");
+                    .NotNull().WithMessage("File tài liệu không được để trống.")
+                    .Must(f => f != null && f.Length > 0).WithMessage("File tài liệu không hợp lệ.");
             });
         }
     }

@@ -15,6 +15,9 @@ public class business_profile
     public string? BusinessDescription { get; set; }
     public string? TaxCode { get; set; }
     public string IdentityNumber { get; set; }
+    public string IdentityName { get; set; } 
+    public DateTime IdentityDob { get; set; } 
+    public string IdentityAddress { get; set; } 
     public string? FullName { get; set; }
     public string? BusinessAddress { get; set; }
     public string? Ward { get; set; }

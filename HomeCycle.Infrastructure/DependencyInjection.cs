@@ -58,6 +58,9 @@ using MathNet.Numerics;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using HomeCycle.Application.Validations.Agreements;
+using HomeCycle.Application.DTOs.Requests.Agreements;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace HomeCycle.Infrastructure
 {
@@ -93,6 +96,8 @@ namespace HomeCycle.Infrastructure
             // do nằm chung 1 application nên chỉ cần gọi 1 lần là đủ, không cần gọi nhiều lần
             services.AddValidatorsFromAssemblyContaining<RegisterPersonalRequestValidator>();
             services.AddValidatorsFromAssembly(typeof(LoginRequestValidator).Assembly);
+            services.RemoveAll(typeof(IValidator<AgreementDetailsDto>));
+            services.RemoveAll(typeof(AgreementDetailsDtoValidator));
 
             // register External Services
             services.AddScoped<IFileStorageService, FirebaseStorageService>();

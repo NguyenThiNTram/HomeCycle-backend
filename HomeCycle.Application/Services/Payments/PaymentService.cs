@@ -113,18 +113,18 @@ namespace HomeCycle.Application.Services.Payments
             }
             else
             {
-                if (deliveryMethod == DeliveryMethod.GHN)
+                if (deliveryMethod == DeliveryMethod.GhnDelivery)
                 {
                     amountToPay = basePrice;
                     agreement.PaymentType = (int)PaymentType.Full_Payment;
                 }
-                else if (deliveryMethod == DeliveryMethod.SelfPickup)
+                else if (deliveryMethod == DeliveryMethod.BuyerPickUp)
                 {
                     amountToPay = agreement.PaymentType == (int)PaymentType.Deposit
                         ? (basePrice * DEPOSIT_RATE)
                         : basePrice;
                 }
-                else if (deliveryMethod == DeliveryMethod.SellerDelivery)
+                else if (deliveryMethod == DeliveryMethod.SellerDelivers)
                 {
                     decimal itemPay = agreement.PaymentType == (int)PaymentType.Deposit
                         ? (basePrice * DEPOSIT_RATE)
@@ -435,15 +435,15 @@ namespace HomeCycle.Application.Services.Payments
             }
             else
             {
-                if (deliveryMethod == DeliveryMethod.GHN)
+                if (deliveryMethod == DeliveryMethod.GhnDelivery)
                 {
                     amountToPay = basePrice;
                     agreement.PaymentType = (int)PaymentType.Full_Payment;
                 }
-                else if (deliveryMethod == DeliveryMethod.SelfPickup || deliveryMethod == DeliveryMethod.SellerDelivery)
+                else if (deliveryMethod == DeliveryMethod.BuyerPickUp || deliveryMethod == DeliveryMethod.SellerDelivers)
                 {
                     decimal itemPay = agreement.PaymentType == (int)PaymentType.Deposit ? (basePrice * DEPOSIT_RATE) : basePrice;
-                    amountToPay = deliveryMethod == DeliveryMethod.SellerDelivery ? itemPay + shippingFee : itemPay;
+                    amountToPay = deliveryMethod == DeliveryMethod.SellerDelivers ? itemPay + shippingFee : itemPay;
                 }
                 else
                 {

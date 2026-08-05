@@ -39,7 +39,7 @@ namespace HomeCycle.API.Controllers
 
         [HttpPost("submit")]
         public async Task<IActionResult> SubmitBusinessProfile(
-            [FromBody] SubmitBusinessProfileRequest request,
+            [FromForm] SubmitBusinessProfileRequest request,
             CancellationToken cancellationToken)
         {
             var userId = GetCurrentUserId();
@@ -107,7 +107,7 @@ namespace HomeCycle.API.Controllers
 
         [HttpPut("documents")]
         public async Task<IActionResult> UpdateDocuments(
-            [FromBody] UpdateBusinessDocumentsRequest request,
+            [FromForm] UpdateBusinessDocumentsRequest request,
             CancellationToken cancellationToken)
         {
             var userId = GetCurrentUserId();
@@ -151,7 +151,7 @@ namespace HomeCycle.API.Controllers
 
         [HttpPut("avatar")]
         public async Task<IActionResult> UpdateAvatar(
-            [FromBody] UpdateAvatarRequest request,
+            [FromForm] UpdateAvatarRequest request,
             CancellationToken cancellationToken)
         {
             var userId = GetCurrentUserId();

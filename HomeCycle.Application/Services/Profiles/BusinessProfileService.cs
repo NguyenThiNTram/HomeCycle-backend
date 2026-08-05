@@ -261,15 +261,25 @@ namespace HomeCycle.Application.Services.Profiles
                 //    UpdatedAt = now,
                 //}).ToList();
 
-                var businessDocs = request.Documents.Select(docDto =>
-               {
-                   var doc = _mapper.Map<business_document>(docDto);
-                   doc.BusinessDocumentId = Guid.NewGuid();
-                   doc.BusinessProfileId = targetProfileId;
-                   doc.CreatedAt = now;
-                   doc.UpdatedAt = now;
-                   return doc;
-               }).ToList();
+                var businessDocs = new List<business_document>();
+                foreach (var docDto in request.Documents)
+                {
+                    var doc = _mapper.Map<business_document>(docDto);
+                    doc.BusinessDocumentId = Guid.NewGuid();
+                    doc.BusinessProfileId = targetProfileId;
+                    doc.CreatedAt = now;
+                    doc.UpdatedAt = now;
+
+                    using (var stream = docDto.DocumentUrl.OpenReadStream())
+                    {
+                        doc.DocumentUrl = await _fileStorageService.UploadFileAsync(
+                            stream,
+                            docDto.DocumentUrl.FileName,
+                            $"business-documents/{targetProfileId}");
+                    }
+
+                    businessDocs.Add(doc);
+                }
                 await _businessDocumentRepository.AddRangeAsync(businessDocs, cancellationToken);
 
                 // 3. Bulk Insert Service Areas (Chỉ nạp nếu là Doanh nghiệp Enterprise và có thông tin đăng ký)
@@ -763,7 +773,7 @@ namespace HomeCycle.Application.Services.Profiles
             return Result.Success();
         }
 
-        public async Task<Result> UpdateBusinessDocumentsAsync(Guid userId, UpdateBusinessDocumentsRequest request, CancellationToken cancellationToken = default)
+        public async Task<Result>   UpdateBusinessDocumentsAsync(Guid userId, UpdateBusinessDocumentsRequest request, CancellationToken cancellationToken = default)
         {
             var valResult = await _updateDocumentsValidator.ValidateAsync(request, cancellationToken);
             if (!valResult.IsValid)
@@ -790,15 +800,25 @@ namespace HomeCycle.Application.Services.Profiles
                 //    UpdatedAt = now
                 //}).ToList();
 
-                var newDocs = request.Documents.Select(d =>
+                var newDocs = new List<business_document>();
+                foreach (var d in request.Documents)
                 {
                     var doc = _mapper.Map<business_document>(d);
                     doc.BusinessDocumentId = Guid.NewGuid();
                     doc.BusinessProfileId = profile.BusinessProfileId;
                     doc.CreatedAt = now;
                     doc.UpdatedAt = now;
-                    return doc;
-                }).ToList();
+
+                    using (var stream = d.DocumentUrl.OpenReadStream())
+                    {
+                        doc.DocumentUrl = await _fileStorageService.UploadFileAsync(
+                            stream,
+                            d.DocumentUrl.FileName,
+                            $"business-documents/{profile.BusinessProfileId}");
+                    }
+
+                    newDocs.Add(doc);
+                }
 
                 await _businessDocumentRepository.AddRangeAsync(newDocs, cancellationToken);
 

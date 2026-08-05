@@ -17,7 +17,6 @@ namespace HomeCycle.Infrastructure.Repositories.Wallets
 
         public async Task AddAsync(wallet_transaction transaction, CancellationToken ct = default)
         {
-            // Immutable log: Transactions chỉ Add, không Update/Delete
             await _db.Wallet_Transactions.AddAsync(transaction.ToInfrastructure(), ct);
         }
     }

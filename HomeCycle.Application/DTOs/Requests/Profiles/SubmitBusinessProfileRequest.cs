@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Microsoft.AspNetCore.Http;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -14,6 +15,9 @@ namespace HomeCycle.Application.DTOs.Requests.Profiles
         public string? BusinessDescription { get; set; }
         public string TaxCode { get; set; } = null!;
         public string IdentityNumber { get; set; } = null!;
+        public string IdentityName { get; set; }
+        public DateTime IdentityDob { get; set; }
+        public string IdentityAddress { get; set; }
         public string BusinessAddress { get; set; } = null!;
         public string Ward { get; set; } = null!;
         public string City { get; set; } = null!;
@@ -34,7 +38,7 @@ namespace HomeCycle.Application.DTOs.Requests.Profiles
     public class BusinessDocumentDto
     {
         public int DocumentType { get; set; } 
-        public string DocumentUrl { get; set; } = null!;
+        public IFormFile DocumentUrl { get; set; } = null!;
     }
 
     public class BusinessServiceAreaDto
