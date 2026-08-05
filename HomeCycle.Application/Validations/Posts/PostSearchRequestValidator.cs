@@ -66,25 +66,17 @@ namespace HomeCycle.Application.Validations.Posts
             RuleFor(x => x.AttributeId)
                 .NotEmpty().WithMessage("AttributeId không được để trống.");
 
-            // Mỗi filter phải có ĐÚNG 1 loại điều kiện được điền — tránh gửi lẫn lộn nhiều kiểu
-            // (VD: vừa OptionIds vừa MinValue) gây khó hiểu khi Repository build query.
             RuleFor(x => x)
                 .Must(HaveExactlyOneConditionType)
                 .WithMessage("Mỗi bộ lọc thuộc tính chỉ được chọn đúng 1 kiểu điều kiện: Option, Khoảng số, Boolean, hoặc Văn bản.");
 
-            RuleFor(x => x)
-                .Must(x => !x.MinValue.HasValue || !x.MaxValue.HasValue || x.MinValue <= x.MaxValue)
-                .WithMessage("Giá trị tối thiểu không thể lớn hơn giá trị tối đa.")
-                .OverridePropertyName("ValueRange");
+       
         }
 
         private static bool HaveExactlyOneConditionType(AttributeFilterRequest x)
         {
             int count = 0;
             if (x.OptionIds is { Count: > 0 }) count++;
-            if (x.MinValue.HasValue || x.MaxValue.HasValue) count++;
-            if (x.ValueBoolean.HasValue) count++;
-            if (!string.IsNullOrWhiteSpace(x.ValueTextContains)) count++;
             return count == 1;
         }
     }

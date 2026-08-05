@@ -13,11 +13,14 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
         public static post ToDomain(this Post entity)
         {
             if (entity == null) return null;
+
+            var productDomain = entity.Product?.ToDomain();
+
             return new post
             {
                 PostId = entity.PostId,
                 OwnerId = entity.OwnerId,
-                ProductName = entity.Product?.ProductName,
+                //ProductName = entity.Product?.ProductName,
                 Description = entity.Description,
                 Quantity = entity.Quantity,
                 RemainingQuantity = entity.RemainingQuantity,
@@ -32,7 +35,9 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 IsBusinessPosting = entity.IsBusinessPosting,
                 CreatedAt = entity.CreatedAt,
                 UpdatedAt = entity.UpdatedAt,
-                ExpiryDate = entity.ExpiryDate
+                ExpiryDate = entity.ExpiryDate,
+
+                Product = productDomain,
             };
         }
         public static Post ToInfrastructure(this post entity)

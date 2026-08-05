@@ -188,7 +188,7 @@ namespace HomeCycle.API.Controllers
             Summary = "Tìm kiếm bài đăng",
             Description = "Tìm kiếm bài đăng theo nhiều tiêu chí với phân trang."
         )]
-        //[AllowAnonymous]
+        [AllowAnonymous]
         public async Task<IActionResult> Search([FromBody] PostSearchRequest request,
                     CancellationToken cancellationToken)
         {
