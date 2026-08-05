@@ -17,6 +17,8 @@ namespace HomeCycle.Application.Interfaces.Repositories.Posts
 
         Task<post?> GetByIdAsync(Guid postId, CancellationToken cancellationToken = default);
 
+        Task<post?> GetByIdForUpdateAsync(Guid postId, CancellationToken cancellationToken = default);
+
         Task<post?> GetDetailByIdAsync(Guid postId, CancellationToken cancellationToken = default);
 
         Task<PagedResult<post>> GetAllAsync(PaginationRequest request, CancellationToken cancellationToken = default);

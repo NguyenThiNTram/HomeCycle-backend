@@ -56,6 +56,23 @@ namespace HomeCycle.Infrastructure.Repositories.Posts
             return entity?.ToDomain();
         }
 
+        public async Task<post?> GetByIdForUpdateAsync(Guid postId, CancellationToken cancellationToken = default)
+        {
+            //FOR UPDATE khóa dòng Post để serialize việc trừ RemainingQuantity
+            //giữa các Negotiation khác nhau trên cùng một bài đăng.
+            //AsNoTracking: tránh xung đột ChangeTracker với UpdateAsync.
+            var entity = await _db.Posts
+                .FromSqlInterpolated($@"
+                    SELECT *
+                    FROM ""Post""
+                    WHERE ""PostId"" = {postId}
+                    FOR UPDATE")
+                .AsNoTracking()
+                .SingleOrDefaultAsync(cancellationToken);
+
+            return entity?.ToDomain();
+        }
+
         public async Task<post?> GetDetailByIdAsync(Guid postId, CancellationToken cancellationToken = default)
         {
             var entity = await _db.Posts.AsNoTracking()

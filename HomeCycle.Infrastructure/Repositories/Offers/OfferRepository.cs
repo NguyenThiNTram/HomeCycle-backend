@@ -24,13 +24,15 @@ namespace HomeCycle.Infrastructure.Repositories.Offers
 
         public async Task<offer?> GetByIdForUpdateAsync(Guid offerId, CancellationToken cancellationToken)
         {
-            //FOR UPDATE để khóa dòng dữ liệu trong Postgres
+            //FOR UPDATE để khóa dòng dữ liệu trong Postgres.
+            //AsNoTracking: tránh xung đột ChangeTracker với UpdateAsync (vốn tạo instance mới qua ToInfrastructure()).
             var entity = await _db.Offers
                 .FromSqlInterpolated($@"
             SELECT * 
             FROM ""Offer"" 
             WHERE ""OfferId"" = {offerId} 
             FOR UPDATE")
+                .AsNoTracking()
                 .SingleOrDefaultAsync(cancellationToken);
 
             return entity?.ToDomain();

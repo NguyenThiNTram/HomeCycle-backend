@@ -135,7 +135,7 @@ namespace HomeCycle.Application.Commons.Errors
         public static readonly Error RoleNotAllowed = new("OFFER_ROLE_NOT_ALLOWED", "Your account role is not allowed to make this offer.");
 
         public static readonly Error BusinessCannotOfferBuyPost = new("OFFER_B2B_NOT_ALLOWED", "Business accounts cannot offer on a business buy post.");
-
+        public static readonly Error UserNotActive = new("OFFER_USER_NOT_ACTIVE", "Your account is not active. Please verify your email or contact support.");
         public static Error PriceOutOfRange(decimal minPrice, decimal maxPrice)
             => new("OFFER_PRICE_OUT_OF_RANGE",
                    $"Offer price must be between {minPrice:N0} and {maxPrice:N0}.");
@@ -150,5 +150,10 @@ namespace HomeCycle.Application.Commons.Errors
         public static readonly Error NotFound = new("NEGOTIATION_NOT_FOUND", "The negotiation is not found.");
 
         public static readonly Error NotOpen = new("NEGOTIATION_NOT_OPEN", "The negotiation is not in open state.");
+
+        public static readonly Error Forbidden = new("NEGOTIATION_FORBIDDEN", "You do not have permission to access this negotiation.");
+
+        public static readonly Error InvalidStatusForCounter = new("NEGOTIATION_INVALID_STATUS_FOR_COUNTER", "You can only counter an offer when the negotiation is in open state.");
+        public static readonly Error AlreadyExists = new("NEGOTIATION_ALREADY_EXISTS", "A negotiation already exists for this offer.");
     }
 }
