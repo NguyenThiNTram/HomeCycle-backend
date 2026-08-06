@@ -11,8 +11,10 @@ namespace HomeCycle.Application.Interfaces.Repositories.Media
     {
         Task AddRangeAsync(IEnumerable<media> entities, CancellationToken cancellationToken = default);
 
-        Task<IReadOnlyList<media>> GetByTargetAsync(Guid targetId, string targetType, CancellationToken cancellationToken = default);
+        //Task<IReadOnlyList<media>> GetByTargetAsync(Guid targetId, string targetType, CancellationToken cancellationToken = default);
 
-        Task RemoveByTargetAsync(Guid targetId, string targetType, CancellationToken cancellationToken = default);
+        Task<IReadOnlyList<media>> GetByTargetsAsync(IReadOnlyCollection<Guid> targetId, string targetType, CancellationToken cancellationToken = default);
+
+        Task<IReadOnlyList<media>> RemoveByTargetAsync(Guid targetId, string targetType, CancellationToken cancellationToken = default);
     }
 }

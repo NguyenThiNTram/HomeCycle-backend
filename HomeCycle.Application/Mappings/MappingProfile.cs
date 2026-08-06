@@ -337,9 +337,10 @@ namespace HomeCycle.Application.Mappings
             CreateMap<UpdateSellPostRequest, post>();
             CreateMap<UpdateBuyPostRequest, post>();
 
-            CreateMap<post, PostResponse>();
+            //CreateMap<post, PostResponse>();
 
             CreateMap<post, PostDetailResponse>()
+                .IncludeBase<post, PostResponse>()
                 .ForMember(dest => dest.Product, opt => opt.Ignore())
                 .ForMember(dest => dest.Medias, opt => opt.Ignore());
 
@@ -398,7 +399,8 @@ namespace HomeCycle.Application.Mappings
                     o => o.MapFrom(s =>
                         s.Product == null
                             ? null
-                            : s.Product.BrandName));
+                            : s.Product.BrandName))
+                .ForMember(d => d.Medias, o => o.Ignore());
 
             CreateMap<PagedResult<post>, PagedResult<PostResponse>>()
                 .ForMember(d => d.Items, o => o.MapFrom(s => s.Items));
