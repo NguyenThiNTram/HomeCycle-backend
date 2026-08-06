@@ -45,6 +45,9 @@ namespace HomeCycle.Application.DTOs.Responses.Posts
         public DateTime UpdatedAt { get; set; }
 
         public DateTime? ExpiryDate { get; set; }
+
+        public IReadOnlyList<MediaResponse> Medias { get; set; }
+        = Array.Empty<MediaResponse>();
     }
 
     public class PostDetailResponse : PostResponse

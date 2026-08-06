@@ -10,7 +10,9 @@ namespace HomeCycle.Domain.Enums
     {
         Open = 1,      // Đang thương lượng
         Agreed = 2,    // Đã thống nhất một proposal
-        Closed = 3,    // Một bên chủ động kết thúc mà không đạt thỏa thuận
-        Expired = 4    // Hết hạn do hệ thống
+        AgreementPending = 3, // Đang chờ đối tác ký kết thỏa thuận
+        Completed = 4, // Đã hoàn tất thương lượng và ký kết thỏa thuận
+        Closed = 5,    // Một bên chủ động kết thúc mà không đạt thỏa thuận
+        Expired = 6    // Hết hạn do hệ thống
     }
 }

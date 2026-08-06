@@ -119,24 +119,49 @@ namespace HomeCycle.Application.Services.Posts
             }
         }
 
-        public async Task<Result<IReadOnlyList<MediaResponse>>> GetByTargetAsync(
-            Guid targetId,
-            string targetType,
-            CancellationToken cancellationToken = default)
-        {
-            try
-            {
-                var entities = await _mediaRepository.GetByTargetAsync(targetId, targetType, cancellationToken);
-                var response = _mapper.Map<List<MediaResponse>>(entities).AsReadOnly();
+        //public async Task<Result<IReadOnlyList<MediaResponse>>> GetByTargetAsync(
+        //    Guid targetId,
+        //    string targetType,
+        //    CancellationToken cancellationToken = default)
+        //{
+        //    try
+        //    {
+        //        var entities = await _mediaRepository.GetByTargetAsync(targetId, targetType, cancellationToken);
+        //        var response = _mapper.Map<List<MediaResponse>>(entities).AsReadOnly();
 
-                return Result<IReadOnlyList<MediaResponse>>.Success(response);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Lỗi khi lấy media cho TargetId {TargetId} ({TargetType})", targetId, targetType);
-                return Result<IReadOnlyList<MediaResponse>>.Fail(
-                    ValidationErrors.InvalidRequest("Không thể tải danh sách hình ảnh/tệp tin."));
-            }
+        //        return Result<IReadOnlyList<MediaResponse>>.Success(response);
+        //    }
+        //    catch (Exception ex)
+        //    {
+        //        _logger.LogError(ex, "Lỗi khi lấy media cho TargetId {TargetId} ({TargetType})", targetId, targetType);
+        //        return Result<IReadOnlyList<MediaResponse>>.Fail(
+        //            ValidationErrors.InvalidRequest("Không thể tải danh sách hình ảnh/tệp tin."));
+        //    }
+        //}
+
+        public async Task<Result<IReadOnlyDictionary<Guid, IReadOnlyList<MediaResponse>>>>GetByTargetsAsync(
+        IReadOnlyCollection<Guid> targetIds,
+        string targetType,
+        CancellationToken cancellationToken = default)
+        {
+            var medias = await _mediaRepository.GetByTargetsAsync(
+                targetIds,
+                targetType,
+                cancellationToken);
+
+            var result = medias
+                .Where(x => x.TargetId.HasValue)
+                .GroupBy(x => x.TargetId!.Value)
+                .ToDictionary(
+                    group => group.Key,
+                    group => (IReadOnlyList<MediaResponse>)group
+                        .OrderBy(x => x.DisplayOrder)
+                        .Select(x => _mapper.Map<MediaResponse>(x))
+                        .ToList());
+
+            return Result<
+                IReadOnlyDictionary<Guid, IReadOnlyList<MediaResponse>>>
+                .Success(result);
         }
 
         public async Task<Result<bool>> DeleteByTargetAsync(

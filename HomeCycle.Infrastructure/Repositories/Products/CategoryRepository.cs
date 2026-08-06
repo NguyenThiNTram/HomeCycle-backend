@@ -1,4 +1,5 @@
 ﻿using HomeCycle.Application.Commons.Paginations;
+using HomeCycle.Application.DTOs.Requests.Categories;
 using HomeCycle.Application.Interfaces.Repositories.Products;
 using HomeCycle.Domain.Entities;
 using HomeCycle.Infrastructure.DbContexts;
@@ -96,7 +97,7 @@ namespace HomeCycle.Infrastructure.Repositories.Products
                     cancellationToken);
         }
 
-        public async Task<PagedResult<category>> SearchAsync(string keyword, PaginationRequest pagination, CancellationToken cancellationToken = default)
+        public async Task<PagedResult<category>> SearchAsync(string keyword, CategorySearchRequest request, CancellationToken cancellationToken = default)
         {
             var query = _db.Categories.AsNoTracking();
 
@@ -109,12 +110,17 @@ namespace HomeCycle.Infrastructure.Repositories.Products
                     EF.Functions.ILike(x.Description!, $"%{keyword}%"));
             }
 
+            if (request.IsActive.HasValue)
+            {
+                query = query.Where(x => x.IsActive == request.IsActive.Value);
+            }
+
             return await query
                 .OrderBy(x => x.CategoryName)
                 .Select(x => x.ToDomain())
                 .ToPagedResultAsync(
-                    pagination.PageNumber,
-                    pagination.PageSize,
+                    request.PageNumber,
+                    request.PageSize,
                     cancellationToken);
         }
     }

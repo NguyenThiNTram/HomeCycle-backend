@@ -337,9 +337,10 @@ namespace HomeCycle.Application.Mappings
             CreateMap<UpdateSellPostRequest, post>();
             CreateMap<UpdateBuyPostRequest, post>();
 
-            CreateMap<post, PostResponse>();
+            //CreateMap<post, PostResponse>();
 
             CreateMap<post, PostDetailResponse>()
+                .IncludeBase<post, PostResponse>()
                 .ForMember(dest => dest.Product, opt => opt.Ignore())
                 .ForMember(dest => dest.Medias, opt => opt.Ignore());
 
@@ -398,7 +399,8 @@ namespace HomeCycle.Application.Mappings
                     o => o.MapFrom(s =>
                         s.Product == null
                             ? null
-                            : s.Product.BrandName));
+                            : s.Product.BrandName))
+                .ForMember(d => d.Medias, o => o.Ignore());
 
             CreateMap<PagedResult<post>, PagedResult<PostResponse>>()
                 .ForMember(d => d.Items, o => o.MapFrom(s => s.Items));
@@ -470,6 +472,13 @@ namespace HomeCycle.Application.Mappings
                 .ForMember(dest => dest.CreatedAt, opt => opt.Ignore());
 
             CreateMap<offer, OfferResponse>();
+            CreateMap<offer, OfferListItem>()
+                .ForMember(dest => dest.OfferId, opt => opt.MapFrom(src => src.OfferId)) // hoặc src.OfferId
+                .ForMember(dest => dest.OfferStatus, opt => opt.MapFrom(src => src.OfferStatus.ToString()))
+                .ForMember(dest => dest.SenderName, opt => opt.MapFrom(src => src.Sender != null ? src.Sender.Username : string.Empty))
+                .ForMember(dest => dest.SenderAvatarUrl, opt => opt.MapFrom(src => src.Sender != null ? src.Sender.AvatarUrl : null))
+                .ForMember(dest => dest.ReceiverName, opt => opt.MapFrom(src => src.Receiver != null ? src.Receiver.Username : string.Empty))
+                .ForMember(dest => dest.ReceiverAvatarUrl, opt => opt.MapFrom(src => src.Receiver != null ? src.Receiver.AvatarUrl : null));
 
             CreateMap<UpdateOfferRequest, offer>()
                 .ForMember(dest => dest.OfferId, opt => opt.Ignore())

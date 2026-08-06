@@ -31,10 +31,10 @@ namespace HomeCycle.Application.Interfaces.Services.Posts
             CancellationToken cancellationToken = default);
 
         // Lấy danh sách Media theo TargetId và TargetType
-        Task<Result<IReadOnlyList<MediaResponse>>> GetByTargetAsync(
-            Guid targetId,
-            string targetType,
-            CancellationToken cancellationToken = default);
+        Task<Result<IReadOnlyDictionary<Guid, IReadOnlyList<MediaResponse>>>> GetByTargetsAsync(
+          IReadOnlyCollection<Guid> targetIds,
+          string targetType,
+          CancellationToken cancellationToken = default);
 
         // Xóa toàn bộ Media của một Target
         Task<Result<bool>> DeleteByTargetAsync(

@@ -17,12 +17,18 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
             {
                 OfferId = entity.OfferId,
                 PostId = entity.PostId,
+
                 SenderId = entity.SenderId,
                 ReceiverId = entity.ReceiverId,
+
                 OfferPrice = entity.OfferPrice,
                 OfferQuantity = entity.OfferQuantity,
                 OfferStatus = (OfferStatus?)entity.OfferStatus,
-                CreatedAt = entity.CreatedAt
+                CreatedAt = entity.CreatedAt,
+
+                Post = entity.Post?.ToDomain(),
+                Sender = entity.Sender?.ToDomain(),
+                Receiver = entity.Receiver?.ToDomain()
             };
         }
         public static Offer ToInfrastructure(this offer entity)

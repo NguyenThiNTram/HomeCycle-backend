@@ -17,6 +17,7 @@ namespace HomeCycle.Application.Commons.Results
             Error = error;
         }
 
+        //public static Result Success(Paginations.PagedResult<DTOs.Responses.Offers.OfferResponse> pagedResult) => new(true, Error.None);
         public static Result Success() => new(true, Error.None);
         public static Result Fail(Error error) => new(false, error);
     }
