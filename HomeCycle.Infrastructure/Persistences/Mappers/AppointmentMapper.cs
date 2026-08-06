@@ -27,7 +27,7 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
             };
         }
 
-        public static Appointment ToInfrastructure(appointment entity)
+        public static Appointment ToInfrastructure(this appointment entity)
         {
             return new Appointment
             {

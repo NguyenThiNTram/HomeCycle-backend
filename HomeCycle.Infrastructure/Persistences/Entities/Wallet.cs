@@ -16,8 +16,7 @@ public partial class Wallet
 
     public Guid UserId { get; set; }
 
-    [StringLength(100)]
-    public string? WalletType { get; set; }
+    public int WalletType { get; set; }
 
     [Precision(18, 2)]
     public decimal AvailableBalance { get; set; }

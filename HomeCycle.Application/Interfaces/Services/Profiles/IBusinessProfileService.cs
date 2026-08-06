@@ -31,9 +31,10 @@ namespace HomeCycle.Application.Interfaces.Services.Profiles
         Task<Result> UpdatePhoneNumberAsync(Guid userId, UpdatePhoneNumberRequest request, CancellationToken cancellationToken = default);
         Task<Result> UpdateAvatarAsync(Guid userId, UpdateAvatarRequest request, CancellationToken cancellationToken = default);
         Task<Result> UpdateBankAccountAsync(Guid userId, UpdateBankAccountRequest request, CancellationToken cancellationToken = default);
-        Task<Result> UpdateApprovedBusinessProfileAsync(Guid userId, UpdateApprovedBusinessProfileRequest request, CancellationToken cancellationToken = default);
         Task<Result> UpdateBusinessDocumentsAsync(Guid userId, UpdateBusinessDocumentsRequest request, CancellationToken cancellationToken = default);
         Task<Result> UpdateBusinessServiceAreasAsync(Guid userId, UpdateBusinessServiceAreasRequest request, CancellationToken cancellationToken = default);
+        Task<Result> UpdateIdentityAsync(Guid userId, UpdateIdentityRequest request, CancellationToken cancellationToken = default);
+        Task<Result> UpdateBusinessRegistrationAsync(Guid userId, UpdateBusinessRegistrationRequest request, CancellationToken cancellationToken = default);
 
     }
 }

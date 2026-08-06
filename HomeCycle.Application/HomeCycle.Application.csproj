@@ -22,7 +22,9 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Folder Include="Interfaces\Services\Negotiates\" />
     <Folder Include="Interfaces\Services\Users\" />
+    <Folder Include="Services\Negotiates\" />
   </ItemGroup>
 
 </Project>

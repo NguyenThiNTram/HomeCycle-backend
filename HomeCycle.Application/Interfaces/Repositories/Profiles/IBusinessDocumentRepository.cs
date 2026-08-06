@@ -14,5 +14,9 @@ namespace HomeCycle.Application.Interfaces.Repositories.Profiles
         Task<List<business_document>> GetByProfileIdAsync(Guid businessProfileId, CancellationToken cancellationToken = default);
         void UpdateRange(IEnumerable<business_document> documents);
         Task DeleteAllByProfileIdAsync(Guid businessProfileId, CancellationToken cancellationToken = default);
+        Task<List<business_document>> GetActiveByProfileIdAsync(Guid businessProfileId, CancellationToken cancellationToken = default);
+        Task<business_document> GetActiveByProfileIdAndTypeAsync(Guid businessProfileId, int documentType, CancellationToken cancellationToken = default);
+
+        void Update(business_document document);
     }
 }

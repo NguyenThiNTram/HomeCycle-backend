@@ -39,7 +39,7 @@ namespace HomeCycle.API.Controllers
 
         [HttpPost("submit")]
         public async Task<IActionResult> SubmitBusinessProfile(
-            [FromBody] SubmitBusinessProfileRequest request,
+            [FromForm] SubmitBusinessProfileRequest request,
             CancellationToken cancellationToken)
         {
             var userId = GetCurrentUserId();
@@ -91,33 +91,19 @@ namespace HomeCycle.API.Controllers
             return Ok(result);
         }
 
-        [HttpPut]
-        public async Task<IActionResult> UpdateBusinessProfile(
-            [FromBody] UpdateApprovedBusinessProfileRequest request,
-            CancellationToken cancellationToken)
-        {
-            var userId = GetCurrentUserId();
-            var result = await _businessProfileService.UpdateApprovedBusinessProfileAsync(userId, request, cancellationToken);
+        //[HttpPut("documents")]
+        //public async Task<IActionResult> UpdateDocuments(
+        //    [FromForm] UpdateBusinessDocumentsRequest request,
+        //    CancellationToken cancellationToken)
+        //{
+        //    var userId = GetCurrentUserId();
+        //    var result = await _businessProfileService.UpdateBusinessDocumentsAsync(userId, request, cancellationToken);
 
-            if (!result.IsSuccess)
-                return BadRequest(result);
+        //    if (!result.IsSuccess)
+        //        return BadRequest(result);
 
-            return Ok(result);
-        }
-
-        [HttpPut("documents")]
-        public async Task<IActionResult> UpdateDocuments(
-            [FromBody] UpdateBusinessDocumentsRequest request,
-            CancellationToken cancellationToken)
-        {
-            var userId = GetCurrentUserId();
-            var result = await _businessProfileService.UpdateBusinessDocumentsAsync(userId, request, cancellationToken);
-
-            if (!result.IsSuccess)
-                return BadRequest(result);
-
-            return Ok(result);
-        }
+        //    return Ok(result);
+        //}
 
 
         [HttpPut("username")]
@@ -151,7 +137,7 @@ namespace HomeCycle.API.Controllers
 
         [HttpPut("avatar")]
         public async Task<IActionResult> UpdateAvatar(
-            [FromBody] UpdateAvatarRequest request,
+            [FromForm] UpdateAvatarRequest request,
             CancellationToken cancellationToken)
         {
             var userId = GetCurrentUserId();
@@ -184,6 +170,34 @@ namespace HomeCycle.API.Controllers
         {
             var userId = GetCurrentUserId();
             var result = await _businessProfileService.UpdateBusinessServiceAreasAsync(userId, request, cancellationToken);
+
+            if (!result.IsSuccess)
+                return BadRequest(result);
+
+            return Ok(result);
+        }
+
+        [HttpPut("identity")]
+        public async Task<IActionResult> UpdateIdentity(
+            [FromForm] UpdateIdentityRequest request,
+            CancellationToken cancellationToken)
+        {
+            var userId = GetCurrentUserId();
+            var result = await _businessProfileService.UpdateIdentityAsync(userId, request, cancellationToken);
+
+            if (!result.IsSuccess)
+                return BadRequest(result);
+
+            return Ok(result);
+        }
+
+        [HttpPut("business-registration")]
+        public async Task<IActionResult> UpdateBusinessRegistration(
+            [FromForm] UpdateBusinessRegistrationRequest request,
+            CancellationToken cancellationToken)
+        {
+            var userId = GetCurrentUserId();
+            var result = await _businessProfileService.UpdateBusinessRegistrationAsync(userId, request, cancellationToken);
 
             if (!result.IsSuccess)
                 return BadRequest(result);

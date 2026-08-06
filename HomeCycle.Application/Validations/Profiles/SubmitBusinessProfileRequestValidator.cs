@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
 namespace HomeCycle.Application.Validations.Profiles
@@ -14,8 +15,10 @@ namespace HomeCycle.Application.Validations.Profiles
         {
             // 1. Validate Representative Full Name (Cho phép Null, nhưng nếu điền thì giới hạn độ dài ký tự)
             RuleFor(x => x.FullName)
-                .MaximumLength(255).WithMessage("Representative full name must not exceed 255 characters.")
-                .When(x => !string.IsNullOrWhiteSpace(x.FullName));
+            .NotEmpty().WithMessage("Representative full name is required.")
+            .MaximumLength(255).WithMessage("Representative full name must not exceed 255 characters.")
+            .Must((request, fullName) => IsNameMatch(fullName, request.IdentityName))
+            .WithMessage("FullName bắt buộc phải khớp chính xác với IdentityName (Tên trên CCCD).");
 
             // 2. Validate Business Core Info
             RuleFor(x => x.BusinessName)
@@ -30,6 +33,17 @@ namespace HomeCycle.Application.Validations.Profiles
             RuleFor(x => x.IdentityNumber)
                 .NotEmpty().WithMessage("Identity card number (CCCD) is required.")
                 .Matches(@"^[0-9]{12}$").WithMessage("Identity number must be exactly 12 numeric digits.");
+
+            RuleFor(x => x.IdentityName)
+                .NotEmpty().WithMessage("Full name on Identity Card is required.")
+                .MaximumLength(255).WithMessage("Identity name must not exceed 255 characters.");
+
+            RuleFor(x => x.IdentityDob)
+                .NotEmpty().WithMessage("Date of birth on Identity Card is required.")
+                .Must(dob => dob != default(DateTime)).WithMessage("Invalid date of birth.");
+
+            RuleFor(x => x.IdentityAddress)
+                .NotEmpty().WithMessage("Address on Identity Card is required.");
 
             // 3. Validate Address (Nhận dữ liệu sạch đã bóc tách từ Frontend)
             RuleFor(x => x.BusinessAddress).NotEmpty().WithMessage("Business address is required.");
@@ -46,21 +60,35 @@ namespace HomeCycle.Application.Validations.Profiles
             RuleFor(x => x.AccountName).NotEmpty().WithMessage("Bank account holder name is required.");
 
             // 6. Chốt chặn tài liệu chứng thực upload bắt buộc (CCCD trước/sau + Giấy phép)
-            RuleFor(x => x.Documents)
-                .NotEmpty().WithMessage("Business documentation list is required.");
-
-            RuleForEach(x => x.Documents).ChildRules(doc =>
-            {
-                doc.RuleFor(d => d.DocumentType).InclusiveBetween(0, 3).WithMessage("Invalid document type.");
-                doc.RuleFor(d => d.DocumentUrl).NotEmpty().WithMessage("Document upload URL for this slot is required.");
-            });
-
             RuleFor(x => x)
-                .Must(x => x.Documents != null &&
-                           x.Documents.Any(d => d.DocumentType == 0 && !string.IsNullOrWhiteSpace(d.DocumentUrl)) &&
-                           x.Documents.Any(d => d.DocumentType == 1 && !string.IsNullOrWhiteSpace(d.DocumentUrl)) &&
-                           x.Documents.Any(d => d.DocumentType == 2 && !string.IsNullOrWhiteSpace(d.DocumentUrl)))
-                .WithMessage("Registration requires uploading all mandatory documents: CCCD Front, CCCD Back, and Business Registration Certificate.");
+            .Custom((request, context) =>
+            {
+                // Đọc cờ từ Service truyền vào qua RootContextData
+                bool isResubmit = context.RootContextData.ContainsKey("IsResubmit") && (bool)context.RootContextData["IsResubmit"];
+
+                // Lấy danh sách các DocumentType đã có bản active trong DB (Service truyền vào)
+                var existingActiveTypes = context.RootContextData.ContainsKey("ExistingActiveDocTypes")
+                    ? (List<int>)context.RootContextData["ExistingActiveDocTypes"]
+                    : new List<int>();
+
+                var uploadedTypes = request.Documents?.Where(d => d.DocumentUrl != null && d.DocumentUrl.Length > 0)
+                                                     .Select(d => d.DocumentType).ToList() ?? new List<int>();
+
+                // Các document type bắt buộc phải có (0: CccdFront, 1: CccdBack, 2: BusinessReg)
+                int[] requiredTypes = { 0, 1, 2 };
+
+                foreach (var reqType in requiredTypes)
+                {
+                    // Nếu user CÓ gửi file mới -> Pass
+                    if (uploadedTypes.Contains(reqType)) continue;
+
+                    // Nếu user KHÔNG gửi file mới, nhưng đây là Resubmit và DB đã có bản active -> Pass
+                    if (isResubmit && existingActiveTypes.Contains(reqType)) continue;
+
+                    // Còn lại -> Thiếu file, quăng lỗi
+                    context.AddFailure("Documents", $"Bắt buộc phải đính kèm tài liệu loại {reqType} (CCCD/Giấy ĐKKD).");
+                }
+            });
 
             // 7. Chốt chặn phân vùng kho bãi hoạt động (Chỉ ép buộc đối với Enterprise)
             RuleFor(x => x.ServiceAreas)
@@ -73,6 +101,21 @@ namespace HomeCycle.Application.Validations.Profiles
                 area.RuleFor(a => a.District).NotEmpty().WithMessage("Warehouse District is required.");
                 area.RuleFor(a => a.Ward).NotEmpty().WithMessage("Warehouse Ward is required.");
             });
+        }
+
+        private bool IsNameMatch(string name1, string name2)
+        {
+            if (string.IsNullOrWhiteSpace(name1) || string.IsNullOrWhiteSpace(name2)) return false;
+
+            return NormalizeString(name1) == NormalizeString(name2);
+        }
+
+        private string NormalizeString(string input)
+        {
+            // 1. Chuyển Unicode tổ hợp về dựng sẵn (FormC)
+            var normalized = input.Normalize(NormalizationForm.FormC).ToUpperInvariant().Trim();
+            // 2. Xóa các khoảng trắng thừa ở giữa
+            return Regex.Replace(normalized, @"\s+", " ");
         }
     }
 }

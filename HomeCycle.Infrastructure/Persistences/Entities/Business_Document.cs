@@ -22,7 +22,7 @@ public partial class Business_Document
 
     public DateTime CreatedAt { get; set; }
 
-    public DateTime UpdatedAt { get; set; }
+    public DateTime? ReplacedAt { get; set; }
 
     [ForeignKey("BusinessProfileId")]
     [InverseProperty("Business_Documents")]

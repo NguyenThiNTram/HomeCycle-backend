@@ -13,5 +13,6 @@ namespace HomeCycle.Application.Interfaces.Repositories.Profiles
         Task AddRangeAsync(IEnumerable<business_service_area> serviceAreas, CancellationToken cancellationToken = default);
         Task<List<business_service_area>> GetByProfileIdAsync(Guid businessProfileId, CancellationToken cancellationToken = default);
         Task DeleteAllByProfileIdAsync(Guid businessProfileId, CancellationToken cancellationToken = default);
+        Task DeleteRangeAsync(IEnumerable<Guid> businessServiceAreaIds, CancellationToken cancellationToken = default);
     }
 }
