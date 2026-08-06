@@ -61,8 +61,7 @@ using Microsoft.Extensions.DependencyInjection;
 using HomeCycle.Application.Validations.Agreements;
 using HomeCycle.Application.DTOs.Requests.Agreements;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using HomeCycle.Application.Interfaces.Services.Negotiates;
-using HomeCycle.Application.Services.Negotiates;
+
 
 namespace HomeCycle.Infrastructure
 {

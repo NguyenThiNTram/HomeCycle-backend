@@ -11,7 +11,6 @@ using HomeCycle.Application.Interfaces.Generics;
 using HomeCycle.Application.Interfaces.Repositories.Offers;
 using HomeCycle.Application.Interfaces.Repositories.Posts;
 using HomeCycle.Application.Interfaces.Repositories.Users;
-using HomeCycle.Application.Interfaces.Services.Negotiates;
 using HomeCycle.Application.Interfaces.Services.Offers;
 using HomeCycle.Domain.Entities;
 using HomeCycle.Domain.Enums;

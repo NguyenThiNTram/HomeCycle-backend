@@ -176,7 +176,7 @@ namespace HomeCycle.Application.Services.Agreements
                     SellerConfirmedAt = DateTime.UtcNow
                 };
 
-                negotiation.NegotiationStatus = 1;
+                //negotiation.NegotiationStatus = 1;
 
                 await _agreementRepo.AddAsync(newAgreement, cancellationToken);
                 await _negotiationRepo.UpdateAsync(negotiation, cancellationToken);
