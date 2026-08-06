@@ -1,5 +1,6 @@
 ﻿using HomeCycle.Application.Interfaces.Repositories.Profiles;
 using HomeCycle.Domain.Entities;
+using HomeCycle.Domain.Enums;
 using HomeCycle.Infrastructure.DbContexts;
 using HomeCycle.Infrastructure.Persistences.Mappers;
 using Microsoft.EntityFrameworkCore;
@@ -59,12 +60,11 @@ namespace HomeCycle.Infrastructure.Repositories.Profiles
             string? keyword,
             CancellationToken cancellationToken = default)
         {
-            const int PendingStatus = 0; 
 
             // Query đọc nhanh, không theo dõi tracking state
             var query = _db.Business_Profiles
                 .AsNoTracking()
-                .Where(b => b.Status == PendingStatus);
+                .Where(b => b.Status == (int)BusinessProfileStatus.Pending);
 
             // Xử lý tìm kiếm động nếu người dùng nhập keyword
             if (!string.IsNullOrWhiteSpace(keyword))

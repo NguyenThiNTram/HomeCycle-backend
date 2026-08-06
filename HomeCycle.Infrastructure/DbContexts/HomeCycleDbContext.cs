@@ -198,7 +198,9 @@ public partial class HomeCycleDbContext : DbContext
 
             entity.Property(e => e.BusinessDocumentId).ValueGeneratedNever();
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()");
-            entity.Property(e => e.UpdatedAt).HasDefaultValueSql("now()");
+            entity.HasIndex(x => new { x.BusinessProfileId, x.DocumentType })
+                    .HasFilter("[ReplacedAt] IS NULL")
+                    .IsUnique();
             entity.Property(e => e.DocumentUrl).IsRequired();
 
             entity.HasOne(d => d.BusinessProfile).WithMany(p => p.Business_Documents)
@@ -264,7 +266,6 @@ public partial class HomeCycleDbContext : DbContext
             entity.Property(e => e.BusinessProfileId).ValueGeneratedNever();
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()");
             entity.Property(e => e.ReputationScore).HasDefaultValue(100);
-            entity.Property(e => e.UpdatedAt).HasDefaultValueSql("now()");
             entity.Property(e => e.IdentityNumber).HasMaxLength(20).IsRequired();
             entity.Property(e => e.FullName)
                 .HasMaxLength(255)

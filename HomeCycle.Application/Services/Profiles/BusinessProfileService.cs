@@ -15,6 +15,7 @@ using HomeCycle.Application.Interfaces.Services.Externals;
 using HomeCycle.Application.Interfaces.Services.Profiles;
 using HomeCycle.Domain.Entities;
 using HomeCycle.Domain.Enums;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
@@ -43,9 +44,10 @@ namespace HomeCycle.Application.Services.Profiles
         private readonly IValidator<UpdatePhoneNumberRequest> _updatePhoneValidator;
         private readonly IValidator<UpdateAvatarRequest> _updateAvatarValidator;
         private readonly IValidator<UpdateBankAccountRequest> _updateBankValidator;
-        private readonly IValidator<UpdateApprovedBusinessProfileRequest> _updateBusinessProfileValidator;
         private readonly IValidator<UpdateBusinessDocumentsRequest> _updateDocumentsValidator;
         private readonly IValidator<UpdateBusinessServiceAreasRequest> _updateServiceAreasValidator;
+        private readonly IValidator<UpdateIdentityRequest> _updateIdentityValidator;
+        private readonly IValidator<UpdateBusinessRegistrationRequest> _updateBusinessRegistrationValidator;
 
         public BusinessProfileService(
             IBusinessProfileRepository businessProfileRepository,
@@ -64,10 +66,11 @@ namespace HomeCycle.Application.Services.Profiles
             IValidator<UpdatePhoneNumberRequest> updatePhoneValidator,
             IValidator<UpdateAvatarRequest> updateAvatarValidator,
             IValidator<UpdateBankAccountRequest> updateBankValidator,
-            IValidator<UpdateApprovedBusinessProfileRequest> updateBusinessProfileValidator,
             IValidator<UpdateBusinessDocumentsRequest> updateDocumentsValidator,
             IValidator<UpdateBusinessServiceAreasRequest> updateServiceAreasValidator,
-            IFileStorageService fileStorageService)
+            IFileStorageService fileStorageService,
+            IValidator<UpdateIdentityRequest> updateIdentityValidator,
+            IValidator<UpdateBusinessRegistrationRequest> updateBusinessRegistrationValidator)
         {
             _businessProfileRepository = businessProfileRepository;
             _businessDocumentRepository = businessDocumentRepository;
@@ -85,10 +88,11 @@ namespace HomeCycle.Application.Services.Profiles
             _updatePhoneValidator = updatePhoneValidator;
             _updateAvatarValidator = updateAvatarValidator;
             _updateBankValidator = updateBankValidator;
-            _updateBusinessProfileValidator = updateBusinessProfileValidator;
             _updateDocumentsValidator = updateDocumentsValidator;
             _updateServiceAreasValidator = updateServiceAreasValidator;
             _fileStorageService = fileStorageService;
+            _updateIdentityValidator = updateIdentityValidator;
+            _updateBusinessRegistrationValidator = updateBusinessRegistrationValidator;
         }
 
         public async Task<Result<string>> SubmitBusinessProfileAsync(
@@ -96,19 +100,32 @@ namespace HomeCycle.Application.Services.Profiles
             SubmitBusinessProfileRequest request,
             CancellationToken cancellationToken = default)
         {
+            var now = DateTime.UtcNow;
 
-            var validationResult = await _profileValidator.ValidateAsync(request, cancellationToken);
+            // 0. TRUY VẤN TRƯỚC KHI VALIDATE - vì validator cần biết IsResubmit + ExistingActiveDocTypes
+            //    để quyết định document nào bắt buộc phải gửi lại (Hướng B).
+            var existingProfile = await _businessProfileRepository.GetByUserIdAsync(userId, cancellationToken);
+            bool isResubmit = existingProfile != null;
+
+            var existingActiveDocTypes = new List<int>();
+            if (isResubmit)
+            {
+                var activeDocs = await _businessDocumentRepository.GetActiveByProfileIdAsync(
+                    existingProfile!.BusinessProfileId, cancellationToken);
+                existingActiveDocTypes = activeDocs.Select(d => d.DocumentType).ToList();
+            }
+
+            // 1. VALIDATE - nối dây RootContextData để validator (bạn đã viết đúng) đọc được ngữ cảnh
+            var validationContext = new ValidationContext<SubmitBusinessProfileRequest>(request);
+            validationContext.RootContextData["IsResubmit"] = isResubmit;
+            validationContext.RootContextData["ExistingActiveDocTypes"] = existingActiveDocTypes;
+
+            var validationResult = await _profileValidator.ValidateAsync(validationContext, cancellationToken);
             if (!validationResult.IsValid)
             {
                 var errorMessage = string.Join(" | ", validationResult.Errors.Select(e => e.ErrorMessage));
                 return Result<string>.Fail(ValidationErrors.InvalidRequest(errorMessage));
             }
-
-            var now = DateTime.UtcNow;
-
-            // 1. TRUY VẤN KIỂM TRA HỒ SƠ DOANH NGHIỆP HIỆN TẠI
-            var existingProfile = await _businessProfileRepository.GetByUserIdAsync(userId, cancellationToken);
-
 
             await _unitOfWork.BeginTransactionAsync();
             try
@@ -117,31 +134,8 @@ namespace HomeCycle.Application.Services.Profiles
 
                 if (existingProfile == null)
                 {
-                    // KỊCH BẢN A: NỘP HỒ SƠ LẦN ĐẦU (ADD NEW)
-                    targetProfileId = Guid.NewGuid();
-
-                    //var newProfile = new business_profile
-                    //{
-                    //    BusinessProfileId = targetProfileId,
-                    //    UserId = userId,
-                    //    BusinessName = request.BusinessName.Trim(),
-                    //    FullName = request.FullName?.Trim(),
-                    //    BusinessDescription = request.BusinessDescription?.Trim(),
-                    //    TaxCode = request.TaxCode.Trim(),
-                    //    BusinessAddress = request.BusinessAddress.Trim(),
-                    //    Ward = request.Ward.Trim(),
-                    //    City = request.City.Trim(),
-                    //    IdentityNumber = request.IdentityNumber.Trim(),
-                    //    OperatingScope = request.OperatingScope?.Trim(),
-                    //    BusinessModel = request.BusinessModel,
-                    //    Status = (int)BusinessProfileStatus.Pending, 
-                    //    ReputationScore = 100,
-                    //    CreatedAt = now,
-                    //    UpdatedAt = now
-                    //};
-
+                    // KỊCH BẢN A: NỘP HỒ SƠ LẦN ĐẦU
                     var newProfile = _mapper.Map<business_profile>(request);
-
                     targetProfileId = newProfile.BusinessProfileId = Guid.NewGuid();
                     newProfile.UserId = userId;
                     newProfile.Status = (int)BusinessProfileStatus.Pending;
@@ -151,33 +145,51 @@ namespace HomeCycle.Application.Services.Profiles
 
                     await _businessProfileRepository.AddAsync(newProfile, cancellationToken);
 
-                    // Khởi tạo tài khoản liên kết ngân hàng lần đầu
-                    //var bankAccount = new bank_account
-                    //{
-                    //    UserBankId = Guid.NewGuid(),
-                    //    UserId = userId,
-                    //    BankCode = request.BankCode.Trim(),
-                    //    BankName = request.BankName.Trim(),
-                    //    AccountNumber = request.AccountNumber.Trim(),
-                    //    AccountName = request.AccountName.Trim().ToUpper(),
-                    //    VerifyStatus = (int)BankVerifyStatus.Unverified, // 0
-                    //    CreatedAt = now
-                    //};
-
                     var bankAccount = _mapper.Map<bank_account>(request);
-
                     bankAccount.UserBankId = Guid.NewGuid();
                     bankAccount.UserId = userId;
-                    bankAccount.VerifyStatus = (int)BankVerifyStatus.Unverified;
+                    bankAccount.VerifyStatus = VerifyStatus.Verified;
                     bankAccount.CreatedAt = now;
 
                     await _bankAccountRepository.AddAsync(bankAccount, cancellationToken);
+
+                    // Lần đầu: chưa có document nào -> insert mới bình thường, tất cả đều active (ReplacedAt = null)
+                    foreach (var docDto in request.Documents)
+                    {
+                        var doc = _mapper.Map<business_document>(docDto);
+                        doc.BusinessDocumentId = Guid.NewGuid();
+                        doc.BusinessProfileId = targetProfileId;
+                        doc.CreatedAt = now;
+                        doc.ReplacedAt = null; // ĐANG ACTIVE - KHÔNG được gán = now
+
+                        using (var stream = docDto.DocumentUrl.OpenReadStream())
+                        {
+                            doc.DocumentUrl = await _fileStorageService.UploadFileAsync(
+                                stream, docDto.DocumentUrl.FileName, $"business-documents/{targetProfileId}");
+                        }
+
+                        await _businessDocumentRepository.AddAsync(doc, cancellationToken);
+                    }
+
+                    // Service areas (nếu Enterprise)
+                    if (request.BusinessModel == (int)BusinessModel.Enterprise && request.ServiceAreas != null && request.ServiceAreas.Any())
+                    {
+                        var serviceAreas = request.ServiceAreas.Select(areaDto =>
+                        {
+                            var area = _mapper.Map<business_service_area>(areaDto);
+                            area.BusinessServiceAreaId = Guid.NewGuid();
+                            area.BusinessProfileId = targetProfileId;
+                            area.Priority = 0;
+                            area.CreatedAt = now;
+                            return area;
+                        }).ToList();
+
+                        await _businessServiceAreaRepository.AddRangeAsync(serviceAreas, cancellationToken);
+                    }
                 }
                 else
                 {
-
-                    // KỊCH BẢN B: NỘP LẠI HỒ SƠ (RESUBMIT)
-                    // Chốt chặn bảo mật: Chỉ cho phép sửa khi trạng thái hiện tại là Rejected (3)
+                    // KỊCH BẢN B: RESUBMIT SAU KHI BỊ REJECTED
                     if (existingProfile.Status != (int)BusinessProfileStatus.Rejected)
                     {
                         return Result<string>.Fail(ValidationErrors.InvalidRequest(
@@ -186,130 +198,56 @@ namespace HomeCycle.Application.Services.Profiles
 
                     targetProfileId = existingProfile.BusinessProfileId;
 
-                    // 1. Cập nhật thông tin cơ bản & Reset trạng thái tổng về Pending (0)
-                    //existingProfile.BusinessName = request.BusinessName.Trim();
-                    //existingProfile.FullName = request.FullName?.Trim();
-                    //existingProfile.BusinessDescription = request.BusinessDescription?.Trim();
-                    //existingProfile.TaxCode = request.TaxCode.Trim();
-                    //existingProfile.BusinessAddress = request.BusinessAddress.Trim();
-                    //existingProfile.Ward = request.Ward.Trim();
-                    //existingProfile.City = request.City.Trim();
-                    //existingProfile.IdentityNumber = request.IdentityNumber.Trim();
-                    //existingProfile.OperatingScope = request.OperatingScope?.Trim();
-                    //existingProfile.BusinessModel = request.BusinessModel;
-                    //existingProfile.Status = (int)BusinessProfileStatus.Pending; 
-                    //existingProfile.UpdatedAt = now;
-
                     _mapper.Map(request, existingProfile);
                     existingProfile.Status = (int)BusinessProfileStatus.Pending;
                     existingProfile.UpdatedAt = now;
-
                     _businessProfileRepository.Update(existingProfile);
 
-                    // 2. DỌN SẠCH DỮ LIỆU LIÊN KẾT CŨ TRÁNH RÁC DATABASE
-                    await _businessDocumentRepository.DeleteAllByProfileIdAsync(targetProfileId, cancellationToken);
+                    // KHÔNG xóa business_service_area kiểu Wipe-and-reinsert đơn giản nữa cũng không phải mục tiêu
+                    // của resubmit này - service area xử lý riêng ở UpdateBusinessServiceAreasAsync (mục C bên dưới).
+                    // Ở đây resubmit CHỈ chạm business_service_area nếu request có gửi kèm - giữ hành vi wipe-simple
+                    // cho service area vì đây không phải nhóm tài liệu cần lưu lịch sử (đã note ở tài liệu thiết kế).
                     await _businessServiceAreaRepository.DeleteAllByProfileIdAsync(targetProfileId, cancellationToken);
+                    if (request.ServiceAreas != null && request.ServiceAreas.Any())
+                    {
+                        var serviceAreas = request.ServiceAreas.Select(areaDto =>
+                        {
+                            var area = _mapper.Map<business_service_area>(areaDto);
+                            area.BusinessServiceAreaId = Guid.NewGuid();
+                            area.BusinessProfileId = targetProfileId;
+                            area.Priority = 0;
+                            area.CreatedAt = now;
+                            return area;
+                        }).ToList();
+                        await _businessServiceAreaRepository.AddRangeAsync(serviceAreas, cancellationToken);
+                    }
 
-                    // 3. Cập nhật tài khoản ngân hàng liên kết & Reset trạng thái BankVerify về Unverified
+                    // Bank account: upsert đúng chuẩn (map đè hoặc add), KHÔNG xóa - giữ nguyên logic gốc, đúng rồi.
                     var existingBank = await _bankAccountRepository.GetByUserIdAsync(userId, cancellationToken);
                     if (existingBank != null)
                     {
-                        //existingBank.BankCode = request.BankCode.Trim();
-                        //existingBank.BankName = request.BankName.Trim();
-                        //existingBank.AccountNumber = request.AccountNumber.Trim();
-                        //existingBank.AccountName = request.AccountName.Trim().ToUpper();
-                        //existingBank.VerifyStatus = (int)BankVerifyStatus.Unverified;
-
                         _mapper.Map(request, existingBank);
-                        existingBank.VerifyStatus = (int)BankVerifyStatus.Unverified;
-
+                        existingBank.VerifyStatus = VerifyStatus.Verified;
                         _bankAccountRepository.UpdateAsync(existingBank);
                     }
                     else
                     {
-                        //var bankAccount = new bank_account
-                        //{
-                        //    UserBankId = Guid.NewGuid(),
-                        //    UserId = userId,
-                        //    BankCode = request.BankCode.Trim(),
-                        //    BankName = request.BankName.Trim(),
-                        //    AccountNumber = request.AccountNumber.Trim(),
-                        //    AccountName = request.AccountName.Trim().ToUpper(),
-                        //    VerifyStatus = (int)BankVerifyStatus.Unverified,
-                        //    CreatedAt = now
-                        //};
-
                         var bankAccount = _mapper.Map<bank_account>(request);
                         bankAccount.UserBankId = Guid.NewGuid();
                         bankAccount.UserId = userId;
-                        bankAccount.VerifyStatus = (int)BankVerifyStatus.Unverified;
+                        bankAccount.VerifyStatus = VerifyStatus.Verified;
                         bankAccount.CreatedAt = now;
-
                         await _bankAccountRepository.AddAsync(bankAccount, cancellationToken);
                     }
-                }
 
-                // 1. Bulk Insert Documents (Duyệt LINQ cực nhanh trên RAM, chạy 1 hàm AddRangeAsync tối ưu I/O)
-
-                //var businessDocs = request.Documents.Select(docDto => new business_document
-                //{
-                //    BusinessDocumentId = Guid.NewGuid(),
-                //    BusinessProfileId = targetProfileId,
-                //    DocumentType = docDto.DocumentType, 
-                //    DocumentUrl = docDto.DocumentUrl.Trim(),
-                //    CreatedAt = now,
-                //    UpdatedAt = now,
-                //}).ToList();
-
-                var businessDocs = new List<business_document>();
-                foreach (var docDto in request.Documents)
-                {
-                    var doc = _mapper.Map<business_document>(docDto);
-                    doc.BusinessDocumentId = Guid.NewGuid();
-                    doc.BusinessProfileId = targetProfileId;
-                    doc.CreatedAt = now;
-                    doc.UpdatedAt = now;
-
-                    using (var stream = docDto.DocumentUrl.OpenReadStream())
+                    // Document: HƯỚNG B - chỉ soft-replace type nào có file mới trong request.
+                    // Type không có trong request.Documents -> GIỮ NGUYÊN bản active cũ, không đụng tới.
+                    foreach (var docDto in request.Documents)
                     {
-                        doc.DocumentUrl = await _fileStorageService.UploadFileAsync(
-                            stream,
-                            docDto.DocumentUrl.FileName,
-                            $"business-documents/{targetProfileId}");
+                        await HandleDocumentSoftReplaceAsync(targetProfileId, docDto.DocumentType, docDto.DocumentUrl, cancellationToken);
                     }
-
-                    businessDocs.Add(doc);
-                }
-                await _businessDocumentRepository.AddRangeAsync(businessDocs, cancellationToken);
-
-                // 3. Bulk Insert Service Areas (Chỉ nạp nếu là Doanh nghiệp Enterprise và có thông tin đăng ký)
-                if (request.BusinessModel == (int)BusinessModel.Enterprise && request.ServiceAreas != null && request.ServiceAreas.Any())
-                {
-                    //var serviceAreas = request.ServiceAreas.Select(areaDto => new business_service_area
-                    //{
-                    //    BusinessServiceAreaId = Guid.NewGuid(),
-                    //    BusinessProfileId = targetProfileId,
-                    //    City = areaDto.City.Trim(),
-                    //    District = areaDto.District.Trim(),
-                    //    Ward = areaDto.Ward.Trim(),
-                    //    Priority = 0,
-                    //    CreatedAt = now
-                    //}).ToList();
-
-                    var serviceAreas = request.ServiceAreas.Select(areaDto =>
-                    {
-                        var area = _mapper.Map<business_service_area>(areaDto);
-                        area.BusinessServiceAreaId = Guid.NewGuid();
-                        area.BusinessProfileId = targetProfileId;
-                        area.Priority = 0;
-                        area.CreatedAt = now;
-                        return area;
-                    }).ToList();
-
-                    await _businessServiceAreaRepository.AddRangeAsync(serviceAreas, cancellationToken);
                 }
 
-                // 4. THỰC THI GHI XUỐNG POSTGRESQL & COMMIT TRANSACTION
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync();
 
@@ -340,47 +278,9 @@ namespace HomeCycle.Application.Services.Profiles
 
             var bankAccount = await _bankAccountRepository.GetByUserIdAsync(userId, cancellationToken);
 
-            var documents = await _businessDocumentRepository.GetByProfileIdAsync(profile.BusinessProfileId, cancellationToken);
+            var documents = await _businessDocumentRepository.GetActiveByProfileIdAsync(profile.BusinessProfileId, cancellationToken);
             var serviceAreas = await _businessServiceAreaRepository.GetByProfileIdAsync(profile.BusinessProfileId, cancellationToken);
 
-
-            //var registrationDetail = new BusinessRegistrationDetailDto
-            //{
-            //    BusinessProfileId = profile.BusinessProfileId,
-            //    BusinessName = profile.BusinessName ?? string.Empty,
-            //    FullName = profile.FullName,
-            //    BusinessDescription = profile.BusinessDescription,
-            //    TaxCode = profile.TaxCode ?? string.Empty,
-            //    BusinessAddress = profile.BusinessAddress ?? string.Empty,
-            //    Ward = profile.Ward ?? string.Empty,
-            //    City = profile.City ?? string.Empty,
-            //    IdentityNumber = profile.IdentityNumber ?? string.Empty,
-            //    OperatingScope = profile.OperatingScope,
-            //    BusinessModel = profile.BusinessModel, 
-            //    Status = profile.Status,
-            //    RejectReason = profile.RejectReason,
-
-            //    BankCode = bankAccount?.BankCode ?? string.Empty,
-            //    BankName = bankAccount?.BankName ?? string.Empty,
-            //    AccountNumber = bankAccount?.AccountNumber ?? string.Empty,
-            //    AccountName = bankAccount?.AccountName ?? string.Empty,
-
-            //    Documents = documents.Select(doc => new BusinessRegistrationDocumentDto
-            //    {
-            //        BusinessDocumentId = doc.BusinessDocumentId,
-            //        DocumentType = doc.DocumentType,
-            //        DocumentUrl = doc.DocumentUrl ?? string.Empty,
-            //    }).ToList(),
-
-
-
-            //    ServiceAreas = serviceAreas.Select(sa => new BusinessRegistrationServiceAreaDto
-            //    {
-            //        City = sa.City ?? string.Empty,
-            //        District = sa.District ?? string.Empty,
-            //        Ward = sa.Ward ?? string.Empty
-            //    }).ToList()
-            //};
 
             // Map base từ profile trước, sau đó map đè bankAccount lên cùng object (giống pattern PersonalProfileService)
             var registrationDetail = _mapper.Map<BusinessRegistrationDetailDto>(profile);
@@ -417,16 +317,6 @@ namespace HomeCycle.Application.Services.Profiles
 
                 if (domainPreference == null)
                 {
-                    //var newPreference = new business_procurement_preference
-                    //{
-                    //    PreferenceId = Guid.NewGuid(), 
-                    //    BusinessProfileId = businessProfileId, 
-                    //    TargetCities = request.TargetCities, 
-                    //    AcceptableDamageLevels = request.AcceptableDamageLevels, 
-                    //    AcceptableFunctionalityStatuses = request.AcceptableFunctionalityStatuses, 
-                    //    ProcurementScales = request.ProcurementScales, 
-                    //    CreatedAt = DateTime.UtcNow 
-                    //};
 
                     var newPreference = _mapper.Map<business_procurement_preference>(request);
                     newPreference.PreferenceId = Guid.NewGuid();
@@ -437,11 +327,6 @@ namespace HomeCycle.Application.Services.Profiles
                 }
                 else
                 {
-                    //domainPreference.TargetCities = request.TargetCities; 
-                    //domainPreference.AcceptableDamageLevels = request.AcceptableDamageLevels; 
-                    //domainPreference.AcceptableFunctionalityStatuses = request.AcceptableFunctionalityStatuses; 
-                    //domainPreference.ProcurementScales = request.ProcurementScales; 
-                    //domainPreference.UpdatedAt = DateTime.UtcNow; 
 
                     _mapper.Map(request, domainPreference);
                     domainPreference.UpdatedAt = DateTime.UtcNow;
@@ -449,25 +334,39 @@ namespace HomeCycle.Application.Services.Profiles
                     _preferenceRepository.Update(domainPreference); 
                 }
 
-                // 2. Dọn sạch danh mục loại sản phẩm cũ & Chèn danh mục mới
-                await _businessProductTypeRepository.DeleteAllByProfileIdAsync(businessProfileId, cancellationToken); 
+                // 2. Diff-upsert danh mục loại sản phẩm (thay cho Delete-all + Insert-all)
+                var existingProductTypes = await _businessProductTypeRepository.GetByProfileIdAsync(businessProfileId, cancellationToken);
+                var incomingTypeIds = (request.ProductTypeIds ?? new List<Guid>()).Distinct().ToList();
 
-                if (request.ProductTypeIds != null && request.ProductTypeIds.Any())
+                var existingTypeIdSet = existingProductTypes.Select(pt => pt.ProductTypeId).ToHashSet();
+                var incomingTypeIdSet = incomingTypeIds.ToHashSet();
+
+                // Xóa những cái không còn trong danh sách mới
+                var toRemove = existingProductTypes
+                    .Where(pt => !incomingTypeIdSet.Contains(pt.ProductTypeId))
+                    .Select(pt => pt.BusinessProductTypeId)
+                    .ToList();
+                await _businessProductTypeRepository.DeleteRangeAsync(toRemove, cancellationToken);
+
+                // Thêm những cái chưa có trong danh sách cũ - giữ nguyên (không đổi Priority) cho cái đã tồn tại
+                var toAddIds = incomingTypeIds.Where(id => !existingTypeIdSet.Contains(id)).ToList();
+                if (toAddIds.Any())
                 {
                     var newProductTypes = new List<business_product_type>();
-                    int priority = 1;
-                    foreach (var typeId in request.ProductTypeIds) 
+                    // Priority tiếp nối từ số lượng hiện có, tránh trùng
+                    int priority = existingProductTypes.Count + 1;
+                    foreach (var typeId in toAddIds)
                     {
                         newProductTypes.Add(new business_product_type
                         {
-                            BusinessProductTypeId = Guid.NewGuid(), 
-                            BusinessProfileId = businessProfileId, 
-                            ProductTypeId = typeId, 
-                            Priority = priority++, 
-                            CreatedAt = DateTime.UtcNow 
+                            BusinessProductTypeId = Guid.NewGuid(),
+                            BusinessProfileId = businessProfileId,
+                            ProductTypeId = typeId,
+                            Priority = priority++,
+                            CreatedAt = DateTime.UtcNow
                         });
                     }
-                    await _businessProductTypeRepository.AddRangeAsync(newProductTypes, cancellationToken); 
+                    await _businessProductTypeRepository.AddRangeAsync(newProductTypes, cancellationToken);
                 }
 
                 // 3. Commit DB
@@ -499,14 +398,6 @@ namespace HomeCycle.Application.Services.Profiles
             var productTypesEntities = await _businessProductTypeRepository.GetByProfileIdAsync(businessProfile.BusinessProfileId);
             var productTypeIds = productTypesEntities.Select(pt => pt.ProductTypeId).ToList(); // Ép kiểu tường minh về List<Guid>
 
-            //var response = new BusinessSurveyDetailResponse
-            //{
-            //    TargetCities = preference.TargetCities,
-            //    AcceptableDamageLevels = preference.AcceptableDamageLevels,
-            //    AcceptableFunctionalityStatuses = preference.AcceptableFunctionalityStatuses,
-            //    ProcurementScales = preference.ProcurementScales,
-            //    ProductTypeIds = productTypeIds
-            //};
             var response = _mapper.Map<BusinessSurveyDetailResponse>(preference);
             response.ProductTypeIds = productTypeIds;
 
@@ -549,54 +440,8 @@ namespace HomeCycle.Application.Services.Profiles
                 return Result<BusinessProfileDetailDto>.Fail(new Error("BusinessProfile.NotFound", "Chưa có hồ sơ doanh nghiệp."));
 
             var bankAccount = await _bankAccountRepository.GetByUserIdAsync(userId, cancellationToken);
-            var documents = await _businessDocumentRepository.GetByProfileIdAsync(profile.BusinessProfileId, cancellationToken);
+            var documents = await _businessDocumentRepository.GetActiveByProfileIdAsync(profile.BusinessProfileId, cancellationToken);
             var serviceAreas = await _businessServiceAreaRepository.GetByProfileIdAsync(profile.BusinessProfileId, cancellationToken);
-
-            //var detail = new BusinessProfileDetailDto
-            //{
-            //    BusinessProfileId = profile.BusinessProfileId,
-            //    UserId = user.UserId,
-            //    Username = user.Username,
-            //    Email = user.Email,
-            //    PhoneNumber = user.PhoneNumber,
-            //    AvatarUrl = user.AvatarUrl,
-
-            //    BusinessName = profile.BusinessName ?? string.Empty,
-            //    FullName = profile.FullName,
-            //    BusinessDescription = profile.BusinessDescription,
-            //    TaxCode = profile.TaxCode ?? string.Empty,
-            //    BusinessAddress = profile.BusinessAddress ?? string.Empty,
-            //    Ward = profile.Ward ?? string.Empty,
-            //    City = profile.City ?? string.Empty,
-            //    IdentityNumber = profile.IdentityNumber ?? string.Empty,
-            //    OperatingScope = profile.OperatingScope,
-            //    BusinessModel = profile.BusinessModel,
-            //    Status = profile.Status,
-            //    ReputationScore = profile.ReputationScore,
-
-            //    BankAccount = bankAccount != null ? new BankAccountDto
-            //    {
-            //        BankCode = bankAccount.BankCode ?? string.Empty,
-            //        BankName = bankAccount.BankName ?? string.Empty,
-            //        AccountNumber = bankAccount.AccountNumber ?? string.Empty,
-            //        AccountName = bankAccount.AccountName ?? string.Empty,
-            //        VerifyStatus = bankAccount.VerifyStatus ?? 0
-            //    } : null,
-
-            //    Documents = documents.Select(d => new BusinessDocumentResponseDto
-            //    {
-            //        BusinessDocumentId = d.BusinessDocumentId,
-            //        DocumentType = d.DocumentType,
-            //        DocumentUrl = d.DocumentUrl ?? string.Empty
-            //    }).ToList(),
-
-            //    ServiceAreas = serviceAreas.Select(sa => new BusinessServiceAreaResponseDto
-            //    {
-            //        City = sa.City ?? string.Empty,
-            //        District = sa.District ?? string.Empty,
-            //        Ward = sa.Ward ?? string.Empty
-            //    }).ToList()
-            //};
 
             var detail = _mapper.Map<BusinessProfileDetailDto>(user);
             _mapper.Map(profile, detail);
@@ -653,19 +498,6 @@ namespace HomeCycle.Application.Services.Profiles
 
         public async Task<Result> UpdateAvatarAsync(Guid userId, UpdateAvatarRequest request, CancellationToken cancellationToken = default)
         {
-            //var valResult = await _updateAvatarValidator.ValidateAsync(request, cancellationToken);
-            //if (!valResult.IsValid)
-            //    return Result.Fail(ValidationErrors.InvalidRequest(string.Join(" | ", valResult.Errors.Select(e => e.ErrorMessage))));
-
-            //var user = await _userRepository.GetByIdAsync(userId, cancellationToken);
-            //if (user == null)
-            //    return Result.Fail(new Error("User.NotFound", "Không tìm thấy thông tin người dùng."));
-
-            //user.AvatarUrl = request.AvatarUrl.Trim();
-            //_userRepository.Update(user);
-            //await _unitOfWork.SaveChangesAsync(cancellationToken);
-
-            //return Result.Success();
             var validationResult = await _updateAvatarValidator.ValidateAsync(request, cancellationToken);
             if (!validationResult.IsValid)
             {
@@ -705,35 +537,19 @@ namespace HomeCycle.Application.Services.Profiles
 
             if (existingBank != null)
             {
-                //existingBank.BankCode = request.BankCode.Trim();
-                //existingBank.BankName = request.BankName.Trim();
-                //existingBank.AccountNumber = request.AccountNumber.Trim();
-                //existingBank.AccountName = request.AccountName.Trim().ToUpper();
-                //existingBank.VerifyStatus = (int)BankVerifyStatus.Unverified;
 
                 _mapper.Map(request, existingBank);
-                existingBank.VerifyStatus = (int)BankVerifyStatus.Unverified;
+                existingBank.VerifyStatus = VerifyStatus.Verified;
 
                 _bankAccountRepository.UpdateAsync(existingBank);
             }
             else
             {
-                //var newBank = new bank_account
-                //{
-                //    UserBankId = Guid.NewGuid(),
-                //    UserId = userId,
-                //    BankCode = request.BankCode.Trim(),
-                //    BankName = request.BankName.Trim(),
-                //    AccountNumber = request.AccountNumber.Trim(),
-                //    AccountName = request.AccountName.Trim().ToUpper(),
-                //    VerifyStatus = (int)BankVerifyStatus.Unverified,
-                //    CreatedAt = DateTime.UtcNow
-                //};
 
                 var newBank = _mapper.Map<bank_account>(request);
                 newBank.UserBankId = Guid.NewGuid();
                 newBank.UserId = userId;
-                newBank.VerifyStatus = (int)BankVerifyStatus.Unverified;
+                newBank.VerifyStatus = VerifyStatus.Verified;
                 newBank.CreatedAt = DateTime.UtcNow;
 
                 await _bankAccountRepository.AddAsync(newBank, cancellationToken);
@@ -743,35 +559,6 @@ namespace HomeCycle.Application.Services.Profiles
             return Result.Success();
         }
 
-        public async Task<Result> UpdateApprovedBusinessProfileAsync(Guid userId, UpdateApprovedBusinessProfileRequest request, CancellationToken cancellationToken = default)
-        {
-            var valResult = await _updateBusinessProfileValidator.ValidateAsync(request, cancellationToken);
-            if (!valResult.IsValid)
-                return Result.Fail(ValidationErrors.InvalidRequest(string.Join(" | ", valResult.Errors.Select(e => e.ErrorMessage))));
-
-            var profile = await _businessProfileRepository.GetByUserIdAsync(userId, cancellationToken);
-            if (profile == null)
-                return Result.Fail(new Error("BusinessProfile.NotFound", "Không tìm thấy hồ sơ doanh nghiệp."));
-
-            //profile.BusinessName = request.BusinessName.Trim();
-            //profile.FullName = request.FullName?.Trim();
-            //profile.BusinessDescription = request.BusinessDescription?.Trim();
-            //profile.TaxCode = request.TaxCode.Trim();
-            //profile.BusinessAddress = request.BusinessAddress.Trim();
-            //profile.Ward = request.Ward.Trim();
-            //profile.City = request.City.Trim();
-            //profile.IdentityNumber = request.IdentityNumber.Trim();
-            //profile.OperatingScope = request.OperatingScope?.Trim();
-            //profile.UpdatedAt = DateTime.UtcNow;
-
-            _mapper.Map(request, profile);
-            profile.UpdatedAt = DateTime.UtcNow;
-
-            _businessProfileRepository.Update(profile);
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
-
-            return Result.Success();
-        }
 
         public async Task<Result>   UpdateBusinessDocumentsAsync(Guid userId, UpdateBusinessDocumentsRequest request, CancellationToken cancellationToken = default)
         {
@@ -790,15 +577,6 @@ namespace HomeCycle.Application.Services.Profiles
 
                 var now = DateTime.UtcNow;
 
-                //var newDocs = request.Documents.Select(d => new business_document
-                //{
-                //    BusinessDocumentId = Guid.NewGuid(),
-                //    BusinessProfileId = profile.BusinessProfileId,
-                //    DocumentType = d.DocumentType,
-                //    DocumentUrl = d.DocumentUrl.Trim(),
-                //    CreatedAt = now,
-                //    UpdatedAt = now
-                //}).ToList();
 
                 var newDocs = new List<business_document>();
                 foreach (var d in request.Documents)
@@ -807,7 +585,7 @@ namespace HomeCycle.Application.Services.Profiles
                     doc.BusinessDocumentId = Guid.NewGuid();
                     doc.BusinessProfileId = profile.BusinessProfileId;
                     doc.CreatedAt = now;
-                    doc.UpdatedAt = now;
+                    doc.ReplacedAt = now;
 
                     using (var stream = d.DocumentUrl.OpenReadStream())
                     {
@@ -836,49 +614,49 @@ namespace HomeCycle.Application.Services.Profiles
         }
 
         public async Task<Result> UpdateBusinessServiceAreasAsync(
-            Guid userId,
-            UpdateBusinessServiceAreasRequest request,
-            CancellationToken cancellationToken = default)
+    Guid userId,
+    UpdateBusinessServiceAreasRequest request,
+    CancellationToken cancellationToken = default)
         {
-            // 1. Validate Input Payload
             var valResult = await _updateServiceAreasValidator.ValidateAsync(request, cancellationToken);
             if (!valResult.IsValid)
                 return Result.Fail(ValidationErrors.InvalidRequest(string.Join(" | ", valResult.Errors.Select(e => e.ErrorMessage))));
 
-            // 2. Check Profile Existence
             var profile = await _businessProfileRepository.GetByUserIdAsync(userId, cancellationToken);
             if (profile == null)
                 return Result.Fail(new Error("BusinessProfile.NotFound", "Không tìm thấy hồ sơ doanh nghiệp."));
 
-            // 3. Rào chắn Nghiệp vụ: Chỉ Enterprise mới được đăng ký Service Areas
             if (profile.BusinessModel != (int)BusinessModel.Enterprise)
             {
                 return Result.Fail(new Error("BusinessProfile.InvalidModel", "Mô hình kinh doanh của bạn không hỗ trợ cấu hình khu vực thu gom mở rộng."));
             }
 
-            // 4. Transaction Wipe & Bulk Re-insert
             await _unitOfWork.BeginTransactionAsync();
             try
             {
-                // Xoá danh sách địa bàn thu gom cũ
-                await _businessServiceAreaRepository.DeleteAllByProfileIdAsync(profile.BusinessProfileId, cancellationToken);
+                var now = DateTime.UtcNow;
 
-                // Chèn danh sách địa bàn thu gom mới
-                if (request.ServiceAreas != null && request.ServiceAreas.Any())
-                {
-                    var now = DateTime.UtcNow;
-                    //var serviceAreas = request.ServiceAreas.Select(sa => new business_service_area
-                    //{
-                    //    BusinessServiceAreaId = Guid.NewGuid(),
-                    //    BusinessProfileId = profile.BusinessProfileId,
-                    //    City = sa.City.Trim(),
-                    //    District = sa.District.Trim(),
-                    //    Ward = sa.Ward.Trim(),
-                    //    Priority = 0,
-                    //    CreatedAt = now
-                    //}).ToList();
+                // DIFF-BASED UPSERT: so khớp theo bộ khóa tự nhiên (City, District, Ward)
+                // vì request không có Id để đối chiếu trực tiếp.
+                var existing = await _businessServiceAreaRepository.GetByProfileIdAsync(profile.BusinessProfileId, cancellationToken);
+                var incoming = request.ServiceAreas ?? new List<BusinessServiceAreaRequestDto>();
 
-                    var serviceAreas = request.ServiceAreas.Select(sa =>
+                string Key(string city, string district, string ward) =>
+                    $"{city.Trim().ToUpperInvariant()}|{district.Trim().ToUpperInvariant()}|{ward.Trim().ToUpperInvariant()}";
+
+                var existingByKey = existing.ToDictionary(e => Key(e.City, e.District, e.Ward), e => e);
+                var incomingKeys = incoming.Select(i => Key(i.City, i.District, i.Ward)).ToHashSet();
+
+                // Xóa những bản ghi cũ KHÔNG còn trong danh sách mới
+                var toRemove = existing.Where(e => !incomingKeys.Contains(Key(e.City, e.District, e.Ward)))
+                                        .Select(e => e.BusinessServiceAreaId)
+                                        .ToList();
+                await _businessServiceAreaRepository.DeleteRangeAsync(toRemove, cancellationToken);
+
+                // Thêm những bản ghi mới CHƯA có trong danh sách cũ - giữ nguyên bản ghi trùng khóa (không đụng tới)
+                var toAdd = incoming
+                    .Where(i => !existingByKey.ContainsKey(Key(i.City, i.District, i.Ward)))
+                    .Select(sa =>
                     {
                         var area = _mapper.Map<business_service_area>(sa);
                         area.BusinessServiceAreaId = Guid.NewGuid();
@@ -888,8 +666,8 @@ namespace HomeCycle.Application.Services.Profiles
                         return area;
                     }).ToList();
 
-                    await _businessServiceAreaRepository.AddRangeAsync(serviceAreas, cancellationToken);
-                }
+                if (toAdd.Any())
+                    await _businessServiceAreaRepository.AddRangeAsync(toAdd, cancellationToken);
 
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync();
@@ -902,6 +680,120 @@ namespace HomeCycle.Application.Services.Profiles
                 _logger.LogError(ex, "Lỗi xảy ra khi cập nhật khu vực hoạt động cho BusinessProfileId: {ProfileId}", profile.BusinessProfileId);
                 throw;
             }
+        }
+
+        public async Task<Result> UpdateIdentityAsync(Guid userId, UpdateIdentityRequest request, CancellationToken cancellationToken = default)
+        {
+
+            var validationResult = await _updateIdentityValidator.ValidateAsync(request, cancellationToken);
+            if (!validationResult.IsValid)
+            {
+                var errorMessage = string.Join(" | ", validationResult.Errors.Select(e => e.ErrorMessage));
+                return Result.Fail(ValidationErrors.InvalidRequest(errorMessage));
+            }
+
+
+            await _unitOfWork.BeginTransactionAsync();
+            try
+            {
+                var profile = await _businessProfileRepository.GetByUserIdAsync(userId, cancellationToken);
+                if (profile == null)
+                    return Result.Fail(new Error("BusinessProfile.NotFound", "Không tìm thấy hồ sơ doanh nghiệp."));
+
+                string oldIdentityName = profile.IdentityName;
+
+                _mapper.Map(request, profile);
+                profile.UpdatedAt = DateTime.UtcNow;
+                _businessProfileRepository.Update(profile);
+
+                if (request.CccdFront != null)
+                    await HandleDocumentSoftReplaceAsync(profile.BusinessProfileId, 0, request.CccdFront, cancellationToken);
+
+                if (request.CccdBack != null)
+                    await HandleDocumentSoftReplaceAsync(profile.BusinessProfileId, 1, request.CccdBack, cancellationToken);
+
+
+                // BẮT BUỘC CÓ SAVECHANGES TRƯỚC KHI COMMIT
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+                await _unitOfWork.CommitTransactionAsync();
+
+                return Result.Success();
+            }
+            catch (Exception ex)
+            {
+                await _unitOfWork.RollbackTransactionAsync();
+                _logger.LogError(ex, "Lỗi khi UpdateIdentity cho UserId: {UserId}", userId);
+                throw;
+            }
+        }
+
+        public async Task<Result> UpdateBusinessRegistrationAsync(Guid userId, UpdateBusinessRegistrationRequest request, CancellationToken cancellationToken = default)
+        {
+            // 1. Validate Input Payload cho Business Registration
+            var validationResult = await _updateBusinessRegistrationValidator.ValidateAsync(request, cancellationToken);
+            if (!validationResult.IsValid)
+            {
+                var errorMessage = string.Join(" | ", validationResult.Errors.Select(e => e.ErrorMessage));
+                return Result.Fail(ValidationErrors.InvalidRequest(errorMessage));
+            }
+
+            await _unitOfWork.BeginTransactionAsync();
+            try
+            {
+                var profile = await _businessProfileRepository.GetByUserIdAsync(userId, cancellationToken);
+                if (profile == null)
+                    return Result.Fail(new Error("BusinessProfile.NotFound", "Không tìm thấy hồ sơ doanh nghiệp của user này."));
+
+                _mapper.Map(request, profile);
+                profile.UpdatedAt = DateTime.UtcNow;
+                _businessProfileRepository.Update(profile);
+
+                if (request.BusinessRegistrationCertificate != null)
+                {
+                    await HandleDocumentSoftReplaceAsync(profile.BusinessProfileId, 2, request.BusinessRegistrationCertificate, cancellationToken);
+                }
+
+                // BẮT BUỘC CÓ SAVECHANGES
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+                await _unitOfWork.CommitTransactionAsync();
+
+                return Result.Success();
+            }
+            catch (Exception ex)
+            {
+                await _unitOfWork.RollbackTransactionAsync();
+                _logger.LogError(ex, "Lỗi khi UpdateBusinessRegistration cho UserId: {UserId}", userId);
+                throw;
+            }
+        }
+
+        private async Task HandleDocumentSoftReplaceAsync(Guid businessProfileId, int documentType, IFormFile file, CancellationToken cancellationToken)
+        {
+            using var stream = file.OpenReadStream();
+            string folderName = $"business-documents/{businessProfileId}";
+            string fileUrl = await _fileStorageService.UploadFileAsync(stream, file.FileName, folderName);
+
+            var activeDoc = await _businessDocumentRepository.GetActiveByProfileIdAndTypeAsync(businessProfileId, documentType, cancellationToken);
+            DateTime now = DateTime.UtcNow;
+
+            if (activeDoc != null)
+            {
+                activeDoc.ReplacedAt = now;
+                // Bắt buộc gọi Update vì chúng ta dùng pattern mapper tách biệt Domain/Infra
+                _businessDocumentRepository.Update(activeDoc);
+            }
+
+            var newDoc = new business_document
+            {
+                BusinessDocumentId = Guid.NewGuid(),
+                BusinessProfileId = businessProfileId,
+                DocumentType = documentType,
+                DocumentUrl = fileUrl,
+                CreatedAt = now,
+                ReplacedAt = null
+            };
+
+            await _businessDocumentRepository.AddAsync(newDoc, cancellationToken);
         }
 
     }

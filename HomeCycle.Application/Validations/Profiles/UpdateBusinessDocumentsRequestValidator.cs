@@ -19,7 +19,7 @@ namespace HomeCycle.Application.Validations.Profiles
             RuleForEach(x => x.Documents).ChildRules(doc =>
             {
                 doc.RuleFor(d => d.DocumentType)
-                    .GreaterThan(0).WithMessage("Loại tài liệu không hợp lệ.");
+                    .InclusiveBetween(0, 3).WithMessage("Loại tài liệu không hợp lệ.");
 
                 doc.RuleFor(d => d.DocumentUrl)
                     .NotNull().WithMessage("File tài liệu không được để trống.")

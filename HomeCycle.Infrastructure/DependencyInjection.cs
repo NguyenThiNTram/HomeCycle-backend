@@ -155,7 +155,7 @@ namespace HomeCycle.Infrastructure
             services.AddScoped<IEmailService, EmailService>();
             services.AddScoped<IBusinessProfileService, BusinessProfileService>();
             services.AddScoped<IModeratorService, ModeratorService>();
-            //services.AddScoped<IAgreementFormService, AgreementFormService>();
+            services.AddScoped<IAgreementFormService, AgreementFormService>();
             services.AddScoped<IPaymentService, PaymentService>();
 
 

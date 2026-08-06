@@ -18,7 +18,7 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 DocumentType = entity.DocumentType,
                 DocumentUrl = entity.DocumentUrl,
                 CreatedAt = entity.CreatedAt,
-                UpdatedAt = entity.UpdatedAt,
+                ReplacedAt = entity.ReplacedAt,
             };
         }
 
@@ -31,7 +31,7 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 DocumentType = entity.DocumentType,
                 DocumentUrl = entity.DocumentUrl,
                 CreatedAt = entity.CreatedAt,
-                UpdatedAt = entity.UpdatedAt,
+                ReplacedAt = entity.ReplacedAt,
             };
         }
     }
