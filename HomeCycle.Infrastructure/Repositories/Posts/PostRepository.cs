@@ -51,6 +51,11 @@ namespace HomeCycle.Infrastructure.Repositories.Posts
             var entity = await _db.Posts
                 .AsNoTracking()
                 .Include(x => x.Product)
+                    .ThenInclude(x => x.ProductType)
+                .Include(x => x.Product)
+                    .ThenInclude(x => x.Category)
+                .Include(x => x.Product)
+                    .ThenInclude(x => x.Brand)
                 .FirstOrDefaultAsync(x => x.PostId == postId, cancellationToken);
 
             return entity?.ToDomain();
@@ -99,6 +104,12 @@ namespace HomeCycle.Infrastructure.Repositories.Posts
             var query = _db.Posts
                 .AsNoTracking()
                 .Include(x => x.Product)
+                    .ThenInclude(x => x.ProductType)
+                .Include(x => x.Product)
+                    .ThenInclude(x => x.Category)
+                .Include(x => x.Product)
+                    .ThenInclude(x => x.Brand)
+                .Include(x => x.Product)
                 .OrderByDescending(x => x.CreatedAt);
 
             var totalCount = await query.CountAsync(cancellationToken);
@@ -121,6 +132,12 @@ namespace HomeCycle.Infrastructure.Repositories.Posts
         {
             var query = _db.Posts
                 .AsNoTracking()
+                .Include(x => x.Product)
+                    .ThenInclude(x => x.ProductType)
+                .Include(x => x.Product)
+                    .ThenInclude(x => x.Category)
+                .Include(x => x.Product)
+                    .ThenInclude(x => x.Brand)
                 .Where(x => x.OwnerId == ownerId)
                 .OrderByDescending(x => x.CreatedAt);
 
@@ -393,149 +410,6 @@ namespace HomeCycle.Infrastructure.Repositories.Posts
                 TotalCount = totalCount
             };
         }
-
-        //public async Task<PagedResult<post>> SearchAsync(PostSearchRequest request, CancellationToken cancellationToken = default)
-        //{
-        //    var query = _db.Posts
-        //        .AsNoTracking()
-        //        .Include(x => x.Product)
-        //            .ThenInclude(x => x!.Category)
-        //        .Include(x => x.Product)
-        //            .ThenInclude(x => x!.ProductType)
-        //        .Include(x => x.Product)
-        //            .ThenInclude(x => x!.Brand)
-        //        .Where(x =>
-        //            x.Status == (int)PostStatus.Active &&
-        //            x.Product != null);
-
-        //    // ---------- KEYWORD ----------
-        //    if (!string.IsNullOrWhiteSpace(request.Keyword))
-        //    {
-        //        var keyword = $"%{request.Keyword.Trim()}%";
-        //        query = query.Where(x =>
-        //               EF.Functions.ILike(x.Description ?? string.Empty, keyword) ||
-        //               EF.Functions.ILike(x.Product!.ProductName ?? string.Empty, keyword) ||
-        //               EF.Functions.ILike(x.Product.Category.CategoryName ?? string.Empty, keyword) ||
-        //               EF.Functions.ILike(x.Product.ProductType.ProductTypeName ?? string.Empty, keyword) ||
-        //               (x.Product.Brand != null &&
-        //                EF.Functions.ILike(x.Product.Brand.BrandName ?? string.Empty, keyword)) ||
-        //               EF.Functions.ILike(x.City ?? string.Empty, keyword) ||
-        //               EF.Functions.ILike(x.Ward ?? string.Empty, keyword) ||
-        //               EF.Functions.ILike(x.StreetAddress ?? string.Empty, keyword));
-        //    }
-
-        //    // ---------- PHÂN LOẠI BÁN/MUA ----------
-        //    if (request.PostType.HasValue)
-        //        query = query.Where(x => x.PostType == (int)request.PostType);
-
-        //    // ---------- FILTER PHÂN CẤP ----------
-        //    if (request.CategoryId.HasValue)
-        //        query = query.Where(x => x.Product!.CategoryId == request.CategoryId);
-
-        //    if (request.ProductTypeId.HasValue)
-        //        query = query.Where(x => x.Product!.ProductTypeId == request.ProductTypeId);
-
-        //    if (request.BrandId.HasValue)
-        //        query = query.Where(x => x.Product!.BrandId == request.BrandId);
-
-        //    // ---------- FILTER ĐIỀU KIỆN SẢN PHẨM ----------
-
-        //    if (!string.IsNullOrWhiteSpace(request.City))
-        //        query = query.Where(x => x.City == request.City);
-
-        //    if (request.FunctionalityStatus.HasValue)
-        //        query = query.Where(x => x.Product!.FunctionalityStatus == (int)request.FunctionalityStatus);
-
-        //    if (request.MinUsageDuration.HasValue)
-        //        query = query.Where(x => x.Product!.UsageDuration >= request.MinUsageDuration);
-        //    if (request.MaxUsageDuration.HasValue)
-        //        query = query.Where(x => x.Product!.UsageDuration <= request.MaxUsageDuration);
-
-        //    if (request.MinDamageLevel.HasValue)
-        //        query = query.Where(x => x.Product!.DamageLevel >= request.MinDamageLevel);
-        //    if (request.MaxDamageLevel.HasValue)
-        //        query = query.Where(x => x.Product!.DamageLevel <= request.MaxDamageLevel);
-
-        //    // ---------- KHOẢNG GIÁ ----------
-        //    if (request.MinPrice.HasValue)
-        //        query = query.Where(x => x.BasePrice >= request.MinPrice);
-        //    if (request.MaxPrice.HasValue)
-        //        query = query.Where(x => x.BasePrice <= request.MaxPrice);
-
-        //    // ---------- BASE FILTER NÂNG CAO TRẢI NGHIỆM ----------
-        //    if (request.OnlyAvailable.HasValue && request.OnlyAvailable.Value)
-        //        query = query.Where(x => x.RemainingQuantity > 0);
-
-        //    if (request.PostedWithinDays.HasValue)
-        //    {
-        //        var threshold = DateTime.UtcNow.AddDays(-request.PostedWithinDays.Value);
-        //        query = query.Where(x => x.CreatedAt >= threshold);
-        //    }
-
-        //    if (request.DeliveryMethod.HasValue)
-        //        query = query.Where(x => x.DeliveryMethod == (int)request.DeliveryMethod);
-
-        //    if (request.PriorityLevel.HasValue)
-        //        query = query.Where(x => x.PriorityLevel == (int)request.PriorityLevel);
-
-        //    if (!string.IsNullOrWhiteSpace(request.City))
-        //    {
-        //        var city = request.City.Trim();
-
-        //        query = query.Where(x =>
-        //            EF.Functions.ILike(x.City ?? string.Empty, city));
-        //    }
-
-        //    // ---------- FILTER ĐỘNG ----------
-        //    // Product_Attribute_Value khác nhau — Join thường sẽ nhân bản dòng và lọc sai.
-        //    if (request.ProductTypeId.HasValue && request.AttributeFilters is { Count: > 0 })
-        //    {
-        //        foreach (var filter in request.AttributeFilters)
-        //        {
-        //            var attrId = filter.AttributeId;
-
-        //            // Một trong các option được chọn
-        //            if (filter.OptionIds is { Count: > 0 })
-        //            {
-        //                var optionIds = filter.OptionIds;
-        //                query = query.Where(x => x.Product!.Product_Attribute_Values
-        //                    .Any(av => av.AttributeId == attrId
-        //                            && av.Attribute.IsFilterable
-        //                            && av.OptionId.HasValue
-        //                            && optionIds.Contains(av.OptionId.Value)));
-        //            }
-        //        }
-
-        //    }
-
-        //    // ---------- SORT ----------
-        //    var sortBy = request.SortBy ?? PostSortBy.Newest;
-
-        //    var orderedQuery = query.OrderByDescending(x => x.PriorityLevel);   // KHÔNG cast, để var tự suy luận đúng kiểu
-
-        //    orderedQuery = sortBy switch
-        //    {
-        //        PostSortBy.PriceAsc => orderedQuery.ThenBy(x => x.BasePrice == null).ThenBy(x => x.BasePrice),
-        //        PostSortBy.PriceDesc => orderedQuery.ThenBy(x => x.BasePrice == null).ThenByDescending(x => x.BasePrice),
-        //        PostSortBy.Oldest => orderedQuery.ThenBy(x => x.CreatedAt),
-        //        _ => orderedQuery.ThenByDescending(x => x.CreatedAt)
-        //    };
-
-        //    var totalCount = await orderedQuery.CountAsync(cancellationToken);
-
-        //    var items = await orderedQuery
-        //        .Skip((request.PageNumber - 1) * request.PageSize)
-        //        .Take(request.PageSize)
-        //        .ToListAsync(cancellationToken);
-
-        //    return new PagedResult<post>
-        //    {
-        //        Items = items.Select(x => x.ToDomain()).ToList(),
-        //        PageNumber = request.PageNumber,
-        //        PageSize = request.PageSize,
-        //        TotalCount = totalCount
-        //    };
-        //}
 
         public async Task<int> CountActiveByOwnerAsync(Guid ownerId, CancellationToken cancellationToken = default)
         {
