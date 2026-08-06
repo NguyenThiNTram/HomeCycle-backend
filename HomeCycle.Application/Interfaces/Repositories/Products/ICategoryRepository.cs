@@ -1,4 +1,5 @@
 ﻿using HomeCycle.Application.Commons.Paginations;
+using HomeCycle.Application.DTOs.Requests.Categories;
 using HomeCycle.Domain.Entities;
 using System;
 using System.Collections.Generic;
@@ -18,7 +19,7 @@ namespace HomeCycle.Application.Interfaces.Repositories.Products
         Task<PagedResult<category>> GetAllAsync(PaginationRequest pagination, CancellationToken cancellationToken = default);
         Task<PagedResult<category>> GetActiveAsync(PaginationRequest pagination, CancellationToken cancellationToken = default);
 
-        Task<PagedResult<category>> SearchAsync(string keyword, PaginationRequest pagination, CancellationToken cancellationToken = default);
+        Task<PagedResult<category>> SearchAsync(string keyword, CategorySearchRequest request, CancellationToken cancellationToken = default);
         Task<bool> ExistsByNameAsync(string categoryName, CancellationToken cancellationToken = default);
     }
 }

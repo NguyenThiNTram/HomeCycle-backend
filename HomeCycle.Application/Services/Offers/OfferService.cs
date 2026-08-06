@@ -799,24 +799,24 @@ namespace HomeCycle.Application.Services.Offers
             return Result<OfferResponse>.Success(_mapper.Map<OfferResponse>(offer));
         }
 
-        public async Task<Result<PagedResult<OfferResponse>>> GetSentAsync(Guid userId, PaginationRequest request, CancellationToken cancellationToken = default)
+        public async Task<Result<PagedResult<OfferListItem>>> GetSentAsync(Guid userId, PaginationRequest request, CancellationToken cancellationToken = default)
         {
             var paged = await _offerRepository.GetSentAsync(
                 userId,
                 request,
                 cancellationToken);
 
-            return Result<PagedResult<OfferResponse>>.Success(MapPaged(paged));
+            return Result<PagedResult<OfferListItem>>.Success(MapPaged<offer, OfferListItem>(paged));
         }
 
-        public async Task<Result<PagedResult<OfferResponse>>> GetReceivedAsync(Guid userId, PaginationRequest request, CancellationToken cancellationToken = default)
+        public async Task<Result<PagedResult<OfferListItem>>> GetReceivedAsync(Guid userId, PaginationRequest request, CancellationToken cancellationToken = default)
         {
             var paged = await _offerRepository.GetReceivedAsync(
                 userId,
                 request,
                 cancellationToken);
 
-            return Result<PagedResult<OfferResponse>>.Success(MapPaged(paged));
+            return Result<PagedResult<OfferListItem>>.Success(MapPaged<offer, OfferListItem>(paged));
         }
 
         public async Task<Result<NegotiationResponse>> GetNegotiationByIdAsync(Guid userId, Guid negotiationId, CancellationToken cancellationToken = default)
@@ -1021,16 +1021,27 @@ namespace HomeCycle.Application.Services.Offers
         //    }
         //}
 
-        private PagedResult<OfferResponse> MapPaged(PagedResult<offer> paged)
+        //private PagedResult<OfferResponse> MapPaged(PagedResult<offer> paged)
+        //{
+        //    return new PagedResult<OfferResponse>
+        //    {
+        //        Items = paged.Items
+        //            .Select(x => _mapper.Map<OfferResponse>(x))
+        //            .ToList(),
+        //        PageNumber = paged.PageNumber,
+        //        PageSize = paged.PageSize,
+        //        TotalCount = paged.TotalCount
+        //    };
+        //}
+
+        private PagedResult<TDestination> MapPaged<TSource, TDestination>(PagedResult<TSource> source)
         {
-            return new PagedResult<OfferResponse>
+            return new PagedResult<TDestination>
             {
-                Items = paged.Items
-                    .Select(x => _mapper.Map<OfferResponse>(x))
-                    .ToList(),
-                PageNumber = paged.PageNumber,
-                PageSize = paged.PageSize,
-                TotalCount = paged.TotalCount
+                Items = _mapper.Map<IReadOnlyList<TDestination>>(source.Items),
+                PageNumber = source.PageNumber,
+                PageSize = source.PageSize,
+                TotalCount = source.TotalCount
             };
         }
 

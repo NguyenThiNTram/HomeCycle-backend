@@ -195,7 +195,7 @@ namespace HomeCycle.Application.Services.Products
                     PageNumber = result.PageNumber,
                     PageSize = result.PageSize,
                     TotalCount = result.TotalCount
-                    //TotalPages = result.TotalPages
+
                 });
         }
 

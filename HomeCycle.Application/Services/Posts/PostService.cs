@@ -323,24 +323,20 @@ namespace HomeCycle.Application.Services.Posts
 
             var productResult = await _productService.GetDetailByPostIdAsync(postId, cancellationToken);
 
-            var mediaResult =  await _mediaService.GetByTargetAsync(postId, PostMediaTargetType, cancellationToken);
-
-            //await Task.WhenAll(productTask, mediaTask);
-
-            //var productResult = await _productService.GetDetailByPostIdAsync(postId, cancellationToken);
+            var mediaResult =  await _mediaService.GetByTargetsAsync(new[] { postId }, PostMediaTargetType, cancellationToken);
 
             if (!productResult.IsSuccess || productResult.Data is null)
                 return Result<PostDetailResponse>.Fail(ProductErrors.ProductNotFound);
-
-            //var mediaResult = await _mediaService.GetByTargetAsync(postId, PostMediaTargetType, cancellationToken);
 
             if (!mediaResult.IsSuccess)
                 return Result<PostDetailResponse>.Fail(mediaResult.Error!);
 
             response.Product = productResult.Data;
-            //response.Medias = mediaResult.Value ?? [];
-            response.Medias = mediaResult.Data ?? [];
-
+            response.Medias = mediaResult.Data.TryGetValue(
+                postId,
+                out var postMedias)
+                    ? postMedias
+                    : Array.Empty<MediaResponse>();
 
             return Result<PostDetailResponse>.Success(response);
         }
@@ -351,9 +347,30 @@ namespace HomeCycle.Application.Services.Posts
         {
             var paged = await _postRepository.GetAllAsync(request, cancellationToken);
 
+            var items = paged.Items.Select(x => _mapper.Map<PostResponse>(x)).ToList();
+
+            var postIds = items.Select(x => x.PostId).Distinct().ToArray();
+
+            var mediaResult = await _mediaService.GetByTargetsAsync(postIds, PostMediaTargetType, cancellationToken);
+
+            if (!mediaResult.IsSuccess || mediaResult.Data is null)
+            {
+                return Result<PagedResult<PostResponse>>.Fail(
+                    mediaResult.Error!);
+            }
+
+            foreach (var item in items)
+            {
+                item.Medias = mediaResult.Data.TryGetValue(
+                    item.PostId,
+                    out var medias)
+                        ? medias
+                        : Array.Empty<MediaResponse>();
+            }
+
             var response = new PagedResult<PostResponse>
             {
-                Items = paged.Items.Select(x => _mapper.Map<PostResponse>(x)).ToList(),
+                Items = items,
                 PageNumber = paged.PageNumber,
                 PageSize = paged.PageSize,
                 TotalCount = paged.TotalCount
@@ -392,7 +409,7 @@ namespace HomeCycle.Application.Services.Posts
             var response = _mapper.Map<PostDetailResponse>(entity);
 
             var productResult = await _productService.GetDetailByPostIdAsync(postId, cancellationToken);
-            var mediaResult = await _mediaService.GetByTargetAsync(postId, PostMediaTargetType, cancellationToken);
+            var mediaResult = await _mediaService.GetByTargetsAsync(new[] { postId }, PostMediaTargetType, cancellationToken);
 
             if (!productResult.IsSuccess || productResult.Data is null)
                 return Result<PostDetailResponse>.Fail(ProductErrors.ProductNotFound);
@@ -401,7 +418,11 @@ namespace HomeCycle.Application.Services.Posts
                 return Result<PostDetailResponse>.Fail(mediaResult.Error!);
 
             response.Product = productResult.Data;
-            response.Medias = mediaResult.Data ?? [];
+            response.Medias = mediaResult.Data.TryGetValue(
+                postId,
+                out var postMedias)
+                    ? postMedias
+                    : Array.Empty<MediaResponse>();
 
             return Result<PostDetailResponse>.Success(response);
         }

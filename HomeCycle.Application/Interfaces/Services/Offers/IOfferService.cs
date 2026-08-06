@@ -34,9 +34,9 @@ namespace HomeCycle.Application.Interfaces.Services.Offers
 
         Task<Result<OfferResponse>> GetByIdAsync(Guid userId, Guid offerId, CancellationToken cancellationToken = default);
 
-        Task<Result<PagedResult<OfferResponse>>> GetSentAsync(Guid userId, PaginationRequest request, CancellationToken cancellationToken = default);
+        Task<Result<PagedResult<OfferListItem>>> GetSentAsync(Guid userId, PaginationRequest request, CancellationToken cancellationToken = default);
 
-        Task<Result<PagedResult<OfferResponse>>> GetReceivedAsync(Guid userId, PaginationRequest request, CancellationToken cancellationToken = default);
+        Task<Result<PagedResult<OfferListItem>>> GetReceivedAsync(Guid userId, PaginationRequest request, CancellationToken cancellationToken = default);
 
         Task<Result<NegotiationResponse>> GetNegotiationByIdAsync(Guid userId, Guid negotiationId, CancellationToken cancellationToken = default);
 

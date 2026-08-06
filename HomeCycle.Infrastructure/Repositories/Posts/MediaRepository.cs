@@ -3,6 +3,7 @@ using HomeCycle.Domain.Entities;
 using HomeCycle.Infrastructure.DbContexts;
 using HomeCycle.Infrastructure.Persistences.Mappers;
 using Microsoft.EntityFrameworkCore;
+using Org.BouncyCastle.Asn1.X509;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -31,17 +32,56 @@ namespace HomeCycle.Infrastructure.Repositories.Posts
             string targetType,
             CancellationToken cancellationToken = default)
         {
-            return await _db.Media
+            //return await _db.Media
+            //    .AsNoTracking()
+            //    .Where(x =>
+            //        x.TargetId == targetId &&
+            //        x.TargetType == targetType)
+            //    .OrderBy(x => x.DisplayOrder)
+            //    .Select(x => x.ToDomain())
+            //    .ToListAsync(cancellationToken);
+
+            if (targetId == Guid.Empty)
+                return Array.Empty<media>();
+
+            var entities = await _db.Media
                 .AsNoTracking()
                 .Where(x =>
                     x.TargetId == targetId &&
                     x.TargetType == targetType)
                 .OrderBy(x => x.DisplayOrder)
-                .Select(x => x.ToDomain())
                 .ToListAsync(cancellationToken);
+
+            return entities
+                .Select(x => x.ToDomain())
+                .ToList();
         }
 
-        public async Task RemoveByTargetAsync(
+        public async Task<IReadOnlyList<media>> GetByTargetsAsync(IReadOnlyCollection<Guid> targetId, string targetType, CancellationToken cancellationToken = default)
+        {
+            if (targetId.Count == 0)
+                return Array.Empty<media>();
+
+            var ids = targetId
+                .Distinct()
+                .ToArray();
+
+            var entities = await _db.Media
+                .AsNoTracking()
+                .Where(x =>
+                    x.TargetId.HasValue &&
+                    ids.Contains(x.TargetId.Value) &&
+                    x.TargetType == targetType)
+                .OrderBy(x => x.TargetId)
+                .ThenBy(x => x.DisplayOrder)
+                .ToListAsync(cancellationToken);
+
+            return entities
+                .Select(x => x.ToDomain())
+                .ToList();
+        }
+
+        public async Task<IReadOnlyList<media>> RemoveByTargetAsync(
             Guid targetId,
             string targetType,
             CancellationToken cancellationToken = default)
@@ -50,8 +90,13 @@ namespace HomeCycle.Infrastructure.Repositories.Posts
                 .Where(x => x.TargetId == targetId && x.TargetType == targetType)
                 .ToListAsync(cancellationToken);
 
-            if (items.Count > 0)
-                _db.Media.RemoveRange(items);
+            var oldMedias = items
+                .Select(x => x.ToDomain())
+                .ToList();
+
+            _db.Media.RemoveRange(items);
+
+            return oldMedias;
         }
     }
 }
