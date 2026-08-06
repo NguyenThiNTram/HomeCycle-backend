@@ -65,6 +65,8 @@ namespace HomeCycle.Infrastructure.Repositories.Offers
         {
             var query = _db.Offers
                 .AsNoTracking()
+                .Include(o => o.Sender)
+                .Include(o => o.Receiver)
                 .Include(x => x.Post)
                 .Where(x => x.SenderId == senderId);
 
@@ -89,6 +91,8 @@ namespace HomeCycle.Infrastructure.Repositories.Offers
         {
             var query = _db.Offers
                 .AsNoTracking()
+                .Include(o => o.Sender)
+                .Include(o => o.Receiver)
                 .Include(x => x.Post)
                 .Where(x => x.ReceiverId == receiverId);
 

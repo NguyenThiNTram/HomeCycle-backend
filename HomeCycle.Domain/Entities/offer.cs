@@ -21,6 +21,11 @@ public class offer
 
     public DateTime CreatedAt { get; set; }
 
+    public virtual post? Post { get; set; } = null!;
+
+    public virtual user? Sender { get; set; } = null!;
+    public virtual user? Receiver { get; set; } = null!;
+
     public offer()
     {
     }
