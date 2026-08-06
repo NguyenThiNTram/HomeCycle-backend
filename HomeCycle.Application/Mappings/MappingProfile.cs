@@ -82,6 +82,30 @@ namespace HomeCycle.Application.Mappings
 
             // ==================== BUSINESS PROFILE ====================
 
+            // Nhóm 1 - Định danh: blacklist-all rồi whitelist đúng field được phép sửa.
+            CreateMap<UpdateIdentityRequest, business_profile>()
+                .ForAllMembers(opts => opts.Ignore());
+
+            CreateMap<UpdateIdentityRequest, business_profile>()
+                .ForMember(dest => dest.FullName, opt => opt.MapFrom(src => src.FullName.Trim()))
+                .ForMember(dest => dest.IdentityNumber, opt => opt.MapFrom(src => src.IdentityNumber.Trim()))
+                .ForMember(dest => dest.IdentityName, opt => opt.MapFrom(src => src.IdentityName.Trim()))
+                .ForMember(dest => dest.IdentityDob, opt => opt.MapFrom(src => src.IdentityDob))
+                .ForMember(dest => dest.IdentityAddress, opt => opt.MapFrom(src => src.IdentityAddress.Trim()));
+
+            // Nhóm 2 - Đăng ký kinh doanh: cùng nguyên tắc trên
+            CreateMap<UpdateBusinessRegistrationRequest, business_profile>()
+                .ForAllMembers(opts => opts.Ignore());
+
+            CreateMap<UpdateBusinessRegistrationRequest, business_profile>()
+                .ForMember(dest => dest.BusinessName, opt => opt.MapFrom(src => src.BusinessName.Trim()))
+                .ForMember(dest => dest.BusinessDescription, opt => opt.MapFrom(src => src.BusinessDescription == null ? null : src.BusinessDescription.Trim()))
+                .ForMember(dest => dest.TaxCode, opt => opt.MapFrom(src => src.TaxCode.Trim()))
+                .ForMember(dest => dest.BusinessAddress, opt => opt.MapFrom(src => src.BusinessAddress.Trim()))
+                .ForMember(dest => dest.Ward, opt => opt.MapFrom(src => src.Ward.Trim()))
+                .ForMember(dest => dest.City, opt => opt.MapFrom(src => src.City.Trim()))
+                .ForMember(dest => dest.OperatingScope, opt => opt.MapFrom(src => src.OperatingScope == null ? null : src.OperatingScope.Trim()));
+
             // Create — nộp hồ sơ lần đầu: request -> business_profile (bỏ field set tay sau đó)
             CreateMap<SubmitBusinessProfileRequest, business_profile>()
                 .ForMember(dest => dest.BusinessProfileId, opt => opt.Ignore())
@@ -99,17 +123,10 @@ namespace HomeCycle.Application.Mappings
                 .ForMember(dest => dest.Ward, opt => opt.MapFrom(src => src.Ward.Trim()))
                 .ForMember(dest => dest.City, opt => opt.MapFrom(src => src.City.Trim()))
                 .ForMember(dest => dest.IdentityNumber, opt => opt.MapFrom(src => src.IdentityNumber.Trim()))
+                .ForMember(dest => dest.IdentityName, opt => opt.MapFrom(src => src.IdentityName.Trim()))
+                .ForMember(dest => dest.IdentityAddress, opt => opt.MapFrom(src => src.IdentityAddress.Trim()))
                 .ForMember(dest => dest.OperatingScope, opt => opt.MapFrom(src => src.OperatingScope == null ? null : src.OperatingScope.Trim()));
 
-            // Resubmit — request -> business_profile hiện có, chỉ ghi đè field cho phép sửa
-            CreateMap<SubmitBusinessProfileRequest, business_profile>()
-                .ForMember(dest => dest.BusinessProfileId, opt => opt.Ignore())
-                .ForMember(dest => dest.UserId, opt => opt.Ignore())
-                .ForMember(dest => dest.Status, opt => opt.Ignore())
-                .ForMember(dest => dest.ReputationScore, opt => opt.Ignore())
-                .ForMember(dest => dest.CreatedAt, opt => opt.Ignore())
-                .ForMember(dest => dest.UpdatedAt, opt => opt.Ignore())
-                .ForMember(dest => dest.RejectReason, opt => opt.Ignore());
 
             // SubmitBusinessProfileRequest chứa cả field ngân hàng (BankCode/BankName/AccountNumber/AccountName)
             // -> map thẳng sang bank_account, AccountName cần .ToUpper() nên map riêng bằng MapFrom
@@ -123,24 +140,6 @@ namespace HomeCycle.Application.Mappings
                 .ForMember(dest => dest.AccountNumber, opt => opt.MapFrom(src => src.AccountNumber.Trim()))
                 .ForMember(dest => dest.AccountName, opt => opt.MapFrom(src => src.AccountName.Trim().ToUpper()));
 
-            CreateMap<UpdateApprovedBusinessProfileRequest, business_profile>()
-                .ForMember(dest => dest.BusinessProfileId, opt => opt.Ignore())
-                .ForMember(dest => dest.UserId, opt => opt.Ignore())
-                .ForMember(dest => dest.Status, opt => opt.Ignore())
-                .ForMember(dest => dest.ReputationScore, opt => opt.Ignore())
-                .ForMember(dest => dest.CreatedAt, opt => opt.Ignore())
-                .ForMember(dest => dest.UpdatedAt, opt => opt.Ignore())
-                .ForMember(dest => dest.RejectReason, opt => opt.Ignore())
-                .ForMember(dest => dest.BusinessName, opt => opt.MapFrom(src => src.BusinessName.Trim()))
-                .ForMember(dest => dest.FullName, opt => opt.MapFrom(src => src.FullName == null ? null : src.FullName.Trim()))
-                .ForMember(dest => dest.BusinessDescription, opt => opt.MapFrom(src => src.BusinessDescription == null ? null : src.BusinessDescription.Trim()))
-                .ForMember(dest => dest.TaxCode, opt => opt.MapFrom(src => src.TaxCode.Trim()))
-                .ForMember(dest => dest.BusinessAddress, opt => opt.MapFrom(src => src.BusinessAddress.Trim()))
-                .ForMember(dest => dest.Ward, opt => opt.MapFrom(src => src.Ward.Trim()))
-                .ForMember(dest => dest.City, opt => opt.MapFrom(src => src.City.Trim()))
-                .ForMember(dest => dest.IdentityNumber, opt => opt.MapFrom(src => src.IdentityNumber.Trim()))
-                .ForMember(dest => dest.OperatingScope, opt => opt.MapFrom(src => src.OperatingScope == null ? null : src.OperatingScope.Trim()));
-
             // business_profile -> Response DTOs (base info dùng chung cho cả 2 response tổng hợp)
             CreateMap<business_profile, BusinessRegistrationDetailDto>();
             CreateMap<business_profile, BusinessProfileDetailDto>();
@@ -150,17 +149,43 @@ namespace HomeCycle.Application.Mappings
 
             // bank_account -> map đè lên response tổng hợp
             CreateMap<bank_account, BusinessRegistrationDetailDto>();
-            CreateMap<bank_account, BankAccountDto>();   // đã có sẵn theo Profile cũ, giữ nguyên nếu trùng
+            CreateMap<bank_account, BankAccountDto>();   
 
             // ==================== BUSINESS DOCUMENT ====================
 
             CreateMap<business_document, BusinessRegistrationDocumentDto>();
             CreateMap<business_document, BusinessDocumentResponseDto>();
 
+            CreateMap<BusinessDocumentDto, business_document>()
+                .ForMember(dest => dest.DocumentUrl, opt => opt.Ignore());
+
             // ==================== BUSINESS SERVICE AREA ====================
 
             CreateMap<business_service_area, BusinessRegistrationServiceAreaDto>();
             CreateMap<business_service_area, BusinessServiceAreaResponseDto>();
+
+            // QUAN TRỌNG - 2 map này TRƯỚC ĐÂY BỊ THIẾU HOÀN TOÀN trong file, trong khi service
+            // đang gọi _mapper.Map<business_service_area>(sa) cho cả 2 DTO này. AutoMapper bắt buộc
+            // phải có CreateMap khai báo tường minh, nếu không sẽ ném AutoMapperMappingException
+            // ngay lúc runtime khi SubmitBusinessProfileAsync hoặc UpdateBusinessServiceAreasAsync
+            // được gọi với ServiceAreas không rỗng.
+            CreateMap<BusinessServiceAreaDto, business_service_area>()
+                .ForMember(dest => dest.BusinessServiceAreaId, opt => opt.Ignore())
+                .ForMember(dest => dest.BusinessProfileId, opt => opt.Ignore())
+                .ForMember(dest => dest.Priority, opt => opt.Ignore())
+                .ForMember(dest => dest.CreatedAt, opt => opt.Ignore())
+                .ForMember(dest => dest.City, opt => opt.MapFrom(src => src.City.Trim()))
+                .ForMember(dest => dest.District, opt => opt.MapFrom(src => src.District.Trim()))
+                .ForMember(dest => dest.Ward, opt => opt.MapFrom(src => src.Ward.Trim()));
+
+            CreateMap<BusinessServiceAreaRequestDto, business_service_area>()
+                .ForMember(dest => dest.BusinessServiceAreaId, opt => opt.Ignore())
+                .ForMember(dest => dest.BusinessProfileId, opt => opt.Ignore())
+                .ForMember(dest => dest.Priority, opt => opt.Ignore())
+                .ForMember(dest => dest.CreatedAt, opt => opt.Ignore())
+                .ForMember(dest => dest.City, opt => opt.MapFrom(src => src.City.Trim()))
+                .ForMember(dest => dest.District, opt => opt.MapFrom(src => src.District.Trim()))
+                .ForMember(dest => dest.Ward, opt => opt.MapFrom(src => src.Ward.Trim()));
 
             // ==================== PROCUREMENT PREFERENCE / SURVEY ====================
 

@@ -11,7 +11,7 @@ public class wallet
     public Guid WalletId { get; set; }
     public Guid UserId { get; set; }
 
-    public string? WalletType { get; set; }
+    public int WalletType { get; set; }
     public decimal AvailableBalance { get; set; }
     public decimal HoldBalance { get; set; }
 

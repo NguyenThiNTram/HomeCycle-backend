@@ -54,5 +54,18 @@ namespace HomeCycle.Infrastructure.Repositories.Profiles
                 _db.Business_Product_Types.RemoveRange(productTypes);
             }
         }
+
+        public async Task DeleteRangeAsync(IEnumerable<Guid> businessProductTypeIds, CancellationToken cancellationToken = default)
+        {
+            var ids = businessProductTypeIds.ToList();
+            if (!ids.Any()) return;
+
+            var entities = await _db.Business_Product_Types
+                .Where(x => ids.Contains(x.BusinessProductTypeId))
+                .ToListAsync(cancellationToken);
+
+            if (entities.Any())
+                _db.Business_Product_Types.RemoveRange(entities);
+        }
     }
 }

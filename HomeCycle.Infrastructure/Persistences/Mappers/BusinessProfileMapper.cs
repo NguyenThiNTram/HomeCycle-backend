@@ -32,6 +32,9 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 UpdatedAt = entity.UpdatedAt,
                 Status = entity.Status,
                 IdentityNumber = entity.IdentityNumber,
+                IdentityAddress = entity.IdentityAddress,
+                IdentityDob = entity.IdentityDob,
+                IdentityName = entity.IdentityName,
                 FullName = entity.FullName
             };
         }
@@ -58,6 +61,9 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 UpdatedAt = entity.UpdatedAt,
                 Status = entity.Status,
                 IdentityNumber = entity.IdentityNumber,
+                IdentityAddress = entity.IdentityAddress,
+                IdentityDob = entity.IdentityDob,
+                IdentityName = entity.IdentityName,
                 FullName = entity.FullName
             };
         }

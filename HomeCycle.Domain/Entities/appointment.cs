@@ -32,4 +32,5 @@ public class appointment
         this.AppointmentId = AppointmentId;
         this.AgreementId = AgreementId;
     }
+
 }

@@ -14,7 +14,7 @@ public class business_document
     public string DocumentUrl { get; set; }
 
     public DateTime CreatedAt { get; set; }
-    public DateTime UpdatedAt { get; set; }
+    public DateTime? ReplacedAt { get; set; }
 
     public business_document()
     {

@@ -61,5 +61,31 @@ namespace HomeCycle.Infrastructure.Repositories.Profiles
                 _db.Business_Documents.RemoveRange(documents);
             }
         }
+
+        public async Task<List<business_document>> GetActiveByProfileIdAsync(Guid businessProfileId, CancellationToken cancellationToken = default)
+        {
+            var entities = await _db.Business_Documents
+                .AsNoTracking()
+                .Where(x => x.BusinessProfileId == businessProfileId && x.ReplacedAt == null)
+                .ToListAsync(cancellationToken);
+
+            return entities.Select(x => x.ToDomain()).ToList();
+        }
+
+        public async Task<business_document> GetActiveByProfileIdAndTypeAsync(Guid businessProfileId, int documentType, CancellationToken cancellationToken = default)
+        {
+            var entity = await _db.Business_Documents
+                .FirstOrDefaultAsync(x => x.BusinessProfileId == businessProfileId
+                                        && x.DocumentType == documentType
+                                        && x.ReplacedAt == null, cancellationToken);
+
+            return entity?.ToDomain();
+        }
+
+        public void Update(business_document document)
+        {
+            var entity = document.ToInfrastructure();
+            _db.Business_Documents.Update(entity);
+        }
     }
 }

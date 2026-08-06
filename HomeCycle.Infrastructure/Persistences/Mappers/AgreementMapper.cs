@@ -9,7 +9,7 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
 {
     public static class AgreementMapper
     {
-        public static agreement_form ToDomain(Agreement_Form entity)
+        public static agreement_form ToDomain(this Agreement_Form entity)
         {
             return new agreement_form
             {
@@ -32,7 +32,7 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
             };
         }
 
-        public static Agreement_Form ToInfrastructure(agreement_form entity)
+        public static Agreement_Form ToInfrastructure(this agreement_form entity)
         {
             return new Agreement_Form
             {
