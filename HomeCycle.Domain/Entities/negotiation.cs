@@ -24,6 +24,11 @@ public partial class negotiation
 
     public NegotiationStatus? NegotiationStatus { get; set; }
 
+    public virtual post? Post { get; set; } = null!;
+    public virtual offer? Offer { get; set; } = null!;
+    public virtual user? Seller { get; set; } = null!;
+    public virtual user? Buyer { get; set; } = null!;
+
     public negotiation()
     {
     }

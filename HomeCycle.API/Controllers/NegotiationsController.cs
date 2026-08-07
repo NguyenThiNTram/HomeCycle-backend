@@ -1,8 +1,10 @@
-﻿using HomeCycle.Application.Commons.Paginations;
+﻿using HomeCycle.Application.Commons.Errors;
+using HomeCycle.Application.Commons.Paginations;
 using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Requests.Negotiates;
 using HomeCycle.Application.DTOs.Responses.Negotiations;
-using HomeCycle.Application.Interfaces.Services.Offers;
+using HomeCycle.Application.Interfaces.Services.Negotiates;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Swashbuckle.AspNetCore.Annotations;
@@ -10,15 +12,16 @@ using System.Security.Claims;
 
 namespace HomeCycle.API.Controllers
 {
-    [Route("api/[controller]")]
+    [Route("api/negotiations")]
     [ApiController]
+    [Authorize]
     public class NegotiationsController : ControllerBase
     {
-        private readonly IOfferService _offerService;
+        private readonly INegotiationService _negotiationService;
 
-        public NegotiationsController(IOfferService offerService)
+        public NegotiationsController(INegotiationService negotiationService)
         {
-            _offerService = offerService;
+            _negotiationService = negotiationService;
         }
 
         private Guid CurrentUserId
@@ -33,43 +36,58 @@ namespace HomeCycle.API.Controllers
             }
         }
 
-        private IActionResult MapErrorToResponse(Error error)
+        private IActionResult HandleResult<T>(Result<T> result)
         {
-            return error.Code switch
-            {
-                var code when code.Contains("NotFound", StringComparison.OrdinalIgnoreCase) => NotFound(error),
-                var code when code.Contains("Forbidden", StringComparison.OrdinalIgnoreCase) => Forbid(),
-                _ => BadRequest(error)
-            };
+            if (result.IsSuccess)
+                return Ok(result);
+
+            return BadRequest(result);
         }
 
         // ==================== READ ====================
+
+        [HttpGet]
+        [SwaggerOperation(
+            Summary = "Lấy danh sách phiên thương lượng của tôi",
+            Description =
+                "Phân trang các Negotiation mà người dùng hiện tại tham gia với vai trò " +
+                "Buyer hoặc Seller."
+        )]
+        [ProducesResponseType(typeof(Result<PagedResult<NegotiationListItemResponse>>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(Result<PagedResult<NegotiationListItemResponse>>), StatusCodes.Status400BadRequest)]
+        public async Task<IActionResult> GetMyNegotiations(
+            [FromQuery] PaginationRequest request,
+            CancellationToken cancellationToken)
+        {
+            var result = await _negotiationService.GetMyNegotiationsAsync(
+                CurrentUserId,
+                request,
+                cancellationToken);
+
+            return HandleResult(result);
+        }
 
         [HttpGet("{negotiationId:guid}")]
         [SwaggerOperation(
             Summary = "Lấy chi tiết phòng thương lượng",
             Description =
-                "Lấy trạng thái, hai bên tham gia, giá cuối cùng và số lượng cuối cùng " +
-                "của một Negotiation. Chỉ Buyer hoặc Seller của phiên được xem."
+                "Lấy trạng thái, hai bên tham gia, giá cuối cùng, số lượng cuối cùng " +
+                "và toàn bộ proposal/message của một Negotiation. " +
+                "Chỉ Buyer hoặc Seller của phiên được xem."
         )]
+        [ProducesResponseType(typeof(Result<NegotiationDetailResponse>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(Result<NegotiationDetailResponse>), StatusCodes.Status400BadRequest)]
         public async Task<IActionResult> GetById(
             Guid negotiationId,
             CancellationToken cancellationToken)
         {
-            var result = await _offerService.GetNegotiationByIdAsync(
+            var result = await _negotiationService.GetByIdAsync(
                 CurrentUserId,
                 negotiationId,
                 cancellationToken);
 
-            if (!result.IsSuccess ||
-                result.Data is not NegotiationResponse response)
-            {
-                return MapErrorToResponse(result.Error!);
-            }
-
-            return Ok(response);
+            return HandleResult(result);
         }
-
 
         [HttpGet("by-offer/{offerId:guid}")]
         [SwaggerOperation(
@@ -78,54 +96,24 @@ namespace HomeCycle.API.Controllers
                 "Tìm Negotiation được tạo từ một Offer. FE dùng endpoint này khi " +
                 "người dùng chọn một offer đã được Accept hoặc Counter."
         )]
+        [ProducesResponseType(typeof(Result<NegotiationDetailResponse>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(Result<NegotiationDetailResponse>), StatusCodes.Status400BadRequest)]
         public async Task<IActionResult> GetByOfferId(
             Guid offerId,
             CancellationToken cancellationToken)
         {
-            var result = await _offerService.GetNegotiationByOfferIdAsync(
+            var result = await _negotiationService.GetByOfferIdAsync(
                 CurrentUserId,
                 offerId,
                 cancellationToken);
 
-            if (!result.IsSuccess ||
-                result.Data is not NegotiationResponse response)
-            {
-                return MapErrorToResponse(result.Error!);
-            }
-
-            return Ok(response);
-        }
-
-        [HttpGet("{negotiationId:guid}/messages")]
-        [SwaggerOperation(
-            Summary = "Lấy lịch sử thương lượng",
-            Description =
-                "Lấy danh sách message và proposal của một Negotiation theo phân trang. " +
-                "Chỉ hai người tham gia phiên thương lượng được xem."
-        )]
-        public async Task<IActionResult> GetMessages(
-            Guid negotiationId,
-            [FromQuery] PaginationRequest request,
-            CancellationToken cancellationToken)
-        {
-            var result = await _offerService.GetNegotiationMessagesAsync(
-                CurrentUserId,
-                negotiationId,
-                request,
-                cancellationToken);
-
-            if (!result.IsSuccess ||
-                result.Data is not PagedResult<MessageResponse> response)
-            {
-                return MapErrorToResponse(result.Error!);
-            }
-
-            return Ok(response);
+            return HandleResult(result);
         }
 
         // ==================== NEGOTIATION ACTIONS ====================
 
         [HttpPost("{negotiationId:guid}/counter")]
+        [Consumes("application/json")]
         [SwaggerOperation(
             Summary = "Gửi counter trong phòng thương lượng",
             Description =
@@ -133,101 +121,89 @@ namespace HomeCycle.API.Controllers
                 "của đối phương chuyển thành Superseded. Không được tự counter " +
                 "proposal Pending do chính mình vừa gửi."
         )]
+        [ProducesResponseType(typeof(Result<NegotiationProposalResponse>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(Result<NegotiationProposalResponse>), StatusCodes.Status400BadRequest)]
         public async Task<IActionResult> Counter(
             Guid negotiationId,
             [FromBody] SendNegotiationCounterRequest request,
             CancellationToken cancellationToken)
         {
-            var result = await _offerService.SendNegotiationCounterAsync(
+            var result = await _negotiationService.CounterAsync(
                 CurrentUserId,
                 negotiationId,
                 request,
                 cancellationToken);
 
-            if (!result.IsSuccess ||
-                result.Data is not NegotiationResponse response)
-            {
-                return MapErrorToResponse(result.Error!);
-            }
-
-            return Ok(response);
+            return HandleResult(result);
         }
 
-        [HttpPost("{negotiationId:guid}/accept")]
+        [HttpPatch("{negotiationId:guid}/proposals/{proposalMessageId:guid}/accept")]
         [SwaggerOperation(
             Summary = "Chấp nhận proposal và chốt thương lượng",
             Description =
-                "Chấp nhận proposal Pending của đối phương. Negotiation chuyển sang " +
-                "Agreed, số lượng bài đăng được trừ và Agreement Form được tạo. " +
+                "Chỉ Buyer mới được chấp nhận proposal Pending của đối phương. " +
+                "Negotiation chuyển sang Agreed và chốt FinalPrice/FinalQuantity. " +
                 "Không được chấp nhận proposal do chính mình gửi."
         )]
-        public async Task<IActionResult> Accept(
+        [ProducesResponseType(typeof(Result<NegotiationResponse>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(Result<NegotiationResponse>), StatusCodes.Status400BadRequest)]
+        public async Task<IActionResult> AcceptProposal(
             Guid negotiationId,
+            Guid proposalMessageId,
             CancellationToken cancellationToken)
         {
-            var result = await _offerService.AcceptNegotiationAsync(
+            var result = await _negotiationService.AcceptProposalAsync(
                 CurrentUserId,
                 negotiationId,
+                proposalMessageId,
                 cancellationToken);
 
-            if (!result.IsSuccess ||
-                result.Data is not NegotiationResponse response)
-            {
-                return MapErrorToResponse(result.Error!);
-            }
-
-            return Ok(response);
+            return HandleResult(result);
         }
 
-        [HttpPost("{negotiationId:guid}/reject-proposal")]
+        [HttpPatch("{negotiationId:guid}/proposals/{proposalMessageId:guid}/reject")]
         [SwaggerOperation(
             Summary = "Từ chối proposal hiện tại",
             Description =
                 "Từ chối proposal Pending của đối phương. Proposal chuyển sang " +
                 "Rejected nhưng Negotiation vẫn Open để hai bên có thể tiếp tục counter."
         )]
+        [ProducesResponseType(typeof(Result<NegotiationProposalResponse>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(Result<NegotiationProposalResponse>), StatusCodes.Status400BadRequest)]
         public async Task<IActionResult> RejectProposal(
+            Guid negotiationId,
+            Guid proposalMessageId,
+            CancellationToken cancellationToken)
+        {
+            var result = await _negotiationService.RejectProposalAsync(
+                CurrentUserId,
+                negotiationId,
+                proposalMessageId,
+                cancellationToken);
+
+            return HandleResult(result);
+        }
+
+        [HttpPost("{negotiationId:guid}/cancel")]
+        [SwaggerOperation(
+            Summary = "Hủy phiên thương lượng",
+            Description =
+                "Một trong hai bên chủ động kết thúc Negotiation mà không chốt " +
+                "thỏa thuận. Negotiation chuyển sang Closed và không thể gửi " +
+                "hoặc xử lý proposal mới."
+        )]
+        [ProducesResponseType(typeof(Result<NegotiationResponse>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(Result<NegotiationResponse>), StatusCodes.Status400BadRequest)]
+        public async Task<IActionResult> Cancel(
             Guid negotiationId,
             CancellationToken cancellationToken)
         {
-            var result = await _offerService.RejectNegotiationProposalAsync(
+            var result = await _negotiationService.CancelAsync(
                 CurrentUserId,
                 negotiationId,
                 cancellationToken);
 
-            if (!result.IsSuccess ||
-                result.Data is not NegotiationResponse response)
-            {
-                return MapErrorToResponse(result.Error!);
-            }
-
-            return Ok(response);
+            return HandleResult(result);
         }
-
-        //[HttpPost("{negotiationId:guid}/close")]
-        //[SwaggerOperation(
-        //    Summary = "Đóng phòng thương lượng",
-        //    Description =
-        //        "Một trong hai bên chủ động kết thúc Negotiation mà không chốt " +
-        //        "thỏa thuận. Negotiation chuyển từ Open sang Closed và không thể " +
-        //        "gửi hoặc xử lý proposal mới."
-        //)]
-        //public async Task<IActionResult> Close(
-        //    Guid negotiationId,
-        //    CancellationToken cancellationToken)
-        //{
-        //    var result = await _offerService.CloseNegotiationAsync(
-        //        CurrentUserId,
-        //        negotiationId,
-        //        cancellationToken);
-
-        //    if (!result.IsSuccess ||
-        //        result.Data is not NegotiationResponse response)
-        //    {
-        //        return MapErrorToResponse(result.Error!);
-        //    }
-
-        //    return Ok(response);
-        //}
     }
 }

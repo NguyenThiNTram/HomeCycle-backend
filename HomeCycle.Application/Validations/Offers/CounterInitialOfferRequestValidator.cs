@@ -1,4 +1,5 @@
 ﻿using FluentValidation;
+using HomeCycle.Application.Commons.Helpers;
 using HomeCycle.Application.DTOs.Requests.Offers;
 using System;
 using System.Collections.Generic;
@@ -11,15 +12,13 @@ namespace HomeCycle.Application.Validations.Offers
     public sealed class CounterInitialOfferRequestValidator
         : AbstractValidator<CounterInitialOfferRequest>
     {
+        private const int MaxMessageLength = 1000;
+
         public CounterInitialOfferRequestValidator()
         {
-            RuleFor(x => x.OfferPrice)
-                .GreaterThan(0)
-                .WithMessage("Giá đề nghị phải lớn hơn 0.");
-
-            RuleFor(x => x.OfferQuantity)
-                .GreaterThan(0)
-                .WithMessage("Số lượng đề nghị phải lớn hơn 0.");
+            this.AddOfferTermsRules(
+                x => x.OfferPrice,
+                x => x.OfferQuantity);
         }
     }
 }

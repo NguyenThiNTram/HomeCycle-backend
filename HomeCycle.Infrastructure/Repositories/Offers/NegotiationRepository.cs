@@ -1,3 +1,4 @@
+using HomeCycle.Application.Commons.Paginations;
 using HomeCycle.Application.Interfaces.Repositories.Offers;
 using HomeCycle.Domain.Entities;
 using HomeCycle.Infrastructure.DbContexts;
@@ -24,6 +25,8 @@ namespace HomeCycle.Infrastructure.Repositories.Offers
         {
             var entity = await _db.Negotiations
                 .AsNoTracking()
+                .Include(x => x.Offer)
+                .Include(x => x.Post)
                 .FirstOrDefaultAsync(x => x.OfferId == offerId, cancellationToken);
 
             return entity?.ToDomain();
@@ -33,6 +36,8 @@ namespace HomeCycle.Infrastructure.Repositories.Offers
         {
             var entity = await _db.Negotiations
                 .AsNoTracking()
+                .Include(x => x.Offer)
+                .Include(x => x.Post)
                 .FirstOrDefaultAsync(x => x.NegotiationId == negotiationId, cancellationToken);
 
             return entity?.ToDomain();
@@ -58,6 +63,34 @@ namespace HomeCycle.Infrastructure.Repositories.Offers
         {
             var infraEntity = entity.ToInfrastructure();
             await _db.Negotiations.AddAsync(infraEntity, cancellationToken);
+        }
+
+        public async Task<PagedResult<negotiation>> GetByParticipantAsync(Guid userId, PaginationRequest request, CancellationToken cancellationToken = default)
+        {
+            var query = _db.Negotiations
+                .AsNoTracking()
+                .Include(n => n.Offer)
+                .Include(n => n.Post)
+                .Include(n => n.Seller)
+                .Include(n => n.Buyer)
+                .Where(n => n.BuyerId == userId || n.SellerId == userId);
+
+            var totalCount = await query.CountAsync(cancellationToken);
+
+            var entities = await query
+                .OrderByDescending(n => n.LastMessageAt != null ? n.LastMessageAt : n.CreatedAt)
+                .ThenByDescending(n => n.CreatedAt)
+                .Skip((request.PageNumber - 1) * request.PageSize)
+                .Take(request.PageSize)
+                .ToListAsync(cancellationToken);
+
+            return new PagedResult<negotiation>
+            {
+                Items = entities.Select(n => n.ToDomain()).ToList(),
+                PageNumber = request.PageNumber,
+                PageSize = request.PageSize,
+                TotalCount = totalCount
+            };
         }
 
         public Task UpdateAsync(negotiation entity, CancellationToken cancellationToken = default)

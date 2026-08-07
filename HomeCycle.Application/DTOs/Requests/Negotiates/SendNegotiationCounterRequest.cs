@@ -11,7 +11,5 @@ namespace HomeCycle.Application.DTOs.Requests.Negotiates
         public decimal OfferPrice { get; set; }
 
         public int OfferQuantity { get; set; }
-
-        //public string? MessageContent { get; set; }
     }
 }
