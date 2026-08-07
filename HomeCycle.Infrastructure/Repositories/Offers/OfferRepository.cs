@@ -56,6 +56,8 @@ namespace HomeCycle.Infrastructure.Repositories.Offers
             var entity = await _db.Offers
                 .AsNoTracking()
                 .Include(x => x.Post)
+                .Include(x => x.Sender)
+                .Include(x => x.Receiver)
                 .FirstOrDefaultAsync(x => x.OfferId == offerId, cancellationToken);
 
             return entity?.ToDomain();

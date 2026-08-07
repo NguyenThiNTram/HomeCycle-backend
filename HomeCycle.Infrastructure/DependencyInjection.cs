@@ -61,6 +61,8 @@ using Microsoft.Extensions.DependencyInjection;
 using HomeCycle.Application.Validations.Agreements;
 using HomeCycle.Application.DTOs.Requests.Agreements;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using HomeCycle.Application.Interfaces.Services.Negotiates;
+using HomeCycle.Application.Services.Negotiates;
 
 
 namespace HomeCycle.Infrastructure
@@ -153,9 +155,14 @@ namespace HomeCycle.Infrastructure
             services.AddScoped<IMediaService, MediaService>();
             services.AddScoped<IProductAttributeOptionService, ProductAttributeOptionService>();
             services.AddScoped<IOfferService, OfferService>();
+            services.AddScoped<INegotiationService, NegotiationService>();
             services.AddScoped<IEmailService, EmailService>();
             services.AddScoped<IBusinessProfileService, BusinessProfileService>();
             services.AddScoped<IModeratorService, ModeratorService>();
+            services.AddScoped<IAgreementFormService, AgreementFormService>();
+            services.AddScoped<IOfferService, OfferService>();
+            services.AddScoped<IOfferTermsPolicy, OfferTermsPolicy>();
+            //services.AddScoped<IMessageService, MessageService>();
             services.AddScoped<IAgreementFormService, AgreementFormService>();
             services.AddScoped<IPaymentService, PaymentService>();
 

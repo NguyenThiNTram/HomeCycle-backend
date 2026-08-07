@@ -128,6 +128,8 @@ namespace HomeCycle.Application.Commons.Errors
 
         public static readonly Error PostNotActive = new("OFFER_POST_NOT_ACTIVE", "The post is not active.");
 
+        public static readonly Error InvalidQuantity = new("OFFER_INVALID_QUANTITY", "Offer quantity must be greater than zero.");
+
         public static readonly Error CannotOfferOwnPost = new("OFFER_CANNOT_OFFER_OWN_POST", "You cannot send an offer for your own post.");
 
         public static readonly Error DuplicatePending = new("OFFER_DUPLICATE_PENDING", "You already have a pending offer for this post.");
@@ -155,5 +157,7 @@ namespace HomeCycle.Application.Commons.Errors
 
         public static readonly Error InvalidStatusForCounter = new("NEGOTIATION_INVALID_STATUS_FOR_COUNTER", "You can only counter an offer when the negotiation is in open state.");
         public static readonly Error AlreadyExists = new("NEGOTIATION_ALREADY_EXISTS", "A negotiation already exists for this offer.");
+        public static readonly Error ProposalNotFound = new("NEGOTIATION_PROPOSAL_NOT_FOUND", "The proposal message is not found.");
+        public static readonly Error InvalidStatusForCancel = new("NEGOTIATION_INVALID_STATUS_FOR_CANCEL", "You can only cancel a negotiation that is still in open or agreed state.");
     }
 }
