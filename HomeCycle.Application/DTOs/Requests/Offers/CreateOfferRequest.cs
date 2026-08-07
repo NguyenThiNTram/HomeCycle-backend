@@ -17,8 +17,8 @@ namespace HomeCycle.Application.DTOs.Requests.Offers
 
     public class UpdateOfferRequest
     {
-        public decimal OfferPrice { get; set; }
+        public decimal? OfferPrice { get; set; }
 
-        public int OfferQuantity { get; set; }
+        public int? OfferQuantity { get; set; }
     }
 }

@@ -23,7 +23,11 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 FinalQuantity = entity.FinalQuantity,
                 LastMessageAt = entity.LastMessageAt,
                 CreatedAt = entity.CreatedAt,
-                NegotiationStatus = (NegotiationStatus?)entity.NegotiationStatus
+                NegotiationStatus = (NegotiationStatus?)entity.NegotiationStatus,
+                Post = entity.Post?.ToDomain(),
+                Offer = entity.Offer?.ToDomain(),
+                Seller = entity.Seller?.ToDomain(),
+                Buyer = entity.Buyer?.ToDomain()
             };
         }
 

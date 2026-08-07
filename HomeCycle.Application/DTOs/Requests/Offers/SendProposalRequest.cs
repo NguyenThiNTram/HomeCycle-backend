@@ -10,6 +10,6 @@ namespace HomeCycle.Application.DTOs.Requests.Offers
     {
         public decimal OfferPrice { get; set; }
         public int OfferQuantity { get; set; }
-        public string? MessageContent { get; set; }
+        //public string? MessageContent { get; set; }
     }
 }
