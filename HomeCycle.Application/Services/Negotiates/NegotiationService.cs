@@ -12,6 +12,7 @@ using HomeCycle.Application.Interfaces.Repositories.Posts;
 using HomeCycle.Application.Interfaces.Services.Negotiates;
 using HomeCycle.Domain.Entities;
 using HomeCycle.Domain.Enums;
+using MathNet.Numerics.Distributions;
 using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
@@ -216,13 +217,20 @@ namespace HomeCycle.Application.Services.Negotiates
                     MediaUrl = null,
                     BasePriceSnapshot = post.BasePrice,
                     IsRead = false,
-                    CreatedAt = now
+                    CreatedAt = now,
+                    UpdatedAt = now
                 };
 
                 if (pendingMessage is not null)
                 {
                     pendingMessage.OfferStatus = MessageOfferStatus.Superseded;
-                    await _messageRepository.UpdateAsync(pendingMessage, cancellationToken);
+                    pendingMessage.UpdatedAt = now;
+                    await _messageRepository.TryUpdateProposalStatusAsync(
+                         pendingMessage.MessageId,
+                         MessageOfferStatus.Pending,
+                         MessageOfferStatus.Superseded,
+                         now,
+                         cancellationToken);
                 }
 
                 // Đồng bộ Offer về proposal mới nhất; lịch sử vẫn nằm trong Messages.
@@ -248,9 +256,8 @@ namespace HomeCycle.Application.Services.Negotiates
             }
         }
 
-        // CHỈ Buyer mới được gọi hành động này, bất kể ai gửi proposal cuối cùng (kể cả khi Seller là người vừa counter). Lý do: quyền "chốt deal" luôn thuộc về Buyer, tránh trường hợp
-        // Seller tự ý quyết định giá mà không cần Buyer thật sự chấp thuận. Seller vẫn giữ quyền kiểm soát
-        // riêng ở bước tạo Agreement Form sau đó (có thể không tạo nếu không đồng ý).
+        // Bất kỳ participant nào (Buyer hoặc Seller) cũng có thể chấp nhận proposal Pending
+        // của đối phương để chốt thương lượng. Không được chấp nhận proposal do chính mình gửi.
         public async Task<Result<NegotiationResponse>> AcceptProposalAsync(
             Guid userId, Guid negotiationId, Guid proposalMessageId, CancellationToken cancellationToken = default)
         {
@@ -269,8 +276,8 @@ namespace HomeCycle.Application.Services.Negotiates
                     return Result<NegotiationResponse>.Fail(NegotiationErrors.NotFound);
                 }
 
-                // Ràng buộc cứng: chỉ Buyer mới Accept được, không dùng IsParticipant chung nữa
-                if (negotiation.BuyerId != userId)
+                // Người gọi phải là participant (Buyer hoặc Seller) của phiên thương lượng.
+                if (!NegotiationAccess.IsParticipant(negotiation, userId))
                 {
                     await _unitOfWork.RollbackTransactionAsync(cancellationToken);
                     return Result<NegotiationResponse>.Fail(NegotiationErrors.Forbidden);
@@ -300,11 +307,24 @@ namespace HomeCycle.Application.Services.Negotiates
                     return Result<NegotiationResponse>.Fail(OfferErrors.NotPending);
                 }
 
-                // Vẫn giữ chặn: Buyer không thể tự Accept đề nghị do chính mình vừa gửi
+                // Không được tự Accept proposal do chính mình vừa gửi
                 if (proposal.SenderId == userId)
                 {
                     await _unitOfWork.RollbackTransactionAsync(cancellationToken);
                     return Result<NegotiationResponse>.Fail(NegotiationErrors.Forbidden);
+                }
+
+                var isProposal =
+                    proposal.MessageType == MessageType.Offer ||
+                    proposal.MessageType == MessageType.CounterOffer;
+
+                if (!isProposal)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(
+                        cancellationToken);
+
+                    return Result<NegotiationResponse>.Fail(
+                        NegotiationErrors.ProposalNotFound);
                 }
 
                 // Khóa dòng Post TRONG transaction: chống lost update khi 2 Negotiation khác nhau
@@ -345,8 +365,15 @@ namespace HomeCycle.Application.Services.Negotiates
                     return Result<NegotiationResponse>.Fail(OfferErrors.NotFound);
                 }
 
+                var now = DateTime.UtcNow;
+
                 proposal.OfferStatus = MessageOfferStatus.Accepted;
-                await _messageRepository.UpdateAsync(proposal, cancellationToken);
+                await _messageRepository.TryUpdateProposalStatusAsync(
+                    proposal.MessageId,
+                    MessageOfferStatus.Pending,
+                    MessageOfferStatus.Accepted,
+                    now,
+                    cancellationToken);
 
                 negotiation.NegotiationStatus = NegotiationStatus.Agreed;
                 negotiation.FinalPrice = proposal.OfferPrice;
@@ -362,6 +389,14 @@ namespace HomeCycle.Application.Services.Negotiates
                 // Seller chủ động tạo Agreement Form ở bước riêng sau đó (nghiệp vụ AgreementService).
 
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+                //// chỉ tạo AgreementForm snapshot trong UnitOfWork hiện tại,
+                //// không tự mở hoặc commit transaction.
+                //await _agreementFormService.CreateFromNegotiationAsync(
+                //    negotiation.NegotiationId,
+                //    cancellationToken);
+
+                //await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync(cancellationToken);
 
                 return Result<NegotiationResponse>.Success(
@@ -428,8 +463,28 @@ namespace HomeCycle.Application.Services.Negotiates
                     return Result<NegotiationProposalResponse>.Fail(NegotiationErrors.Forbidden);
                 }
 
+                var isProposal =
+                    proposal.MessageType == MessageType.Offer ||
+                    proposal.MessageType == MessageType.CounterOffer;
+
+                if (!isProposal)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(
+                        cancellationToken);
+
+                    return Result<NegotiationProposalResponse>.Fail(
+                        NegotiationErrors.ProposalNotFound);
+                }
+
+                var now = DateTime.UtcNow;
+
                 proposal.OfferStatus = MessageOfferStatus.Rejected;
-                await _messageRepository.UpdateAsync(proposal, cancellationToken);
+                await _messageRepository.TryUpdateProposalStatusAsync(
+                    proposal.MessageId,
+                    MessageOfferStatus.Pending,
+                    MessageOfferStatus.Rejected,
+                    now,
+                    cancellationToken);
 
                 // Không đổi NegotiationStatus và không đổi OfferStatus.
                 negotiation.LastMessageAt = DateTime.UtcNow;

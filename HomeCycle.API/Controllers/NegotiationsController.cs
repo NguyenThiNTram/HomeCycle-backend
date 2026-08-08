@@ -36,14 +36,6 @@ namespace HomeCycle.API.Controllers
             }
         }
 
-        private IActionResult HandleResult<T>(Result<T> result)
-        {
-            if (result.IsSuccess)
-                return Ok(result);
-
-            return BadRequest(result);
-        }
-
         // ==================== READ ====================
 
         [HttpGet]
@@ -205,5 +197,17 @@ namespace HomeCycle.API.Controllers
 
             return HandleResult(result);
         }
+
+        #region PRIVATE HELPERS
+
+        private IActionResult HandleResult<T>(Result<T> result)
+        {
+            if (result.IsSuccess)
+                return Ok(result);
+
+            return BadRequest(result);
+        }
+
+        #endregion
     }
 }

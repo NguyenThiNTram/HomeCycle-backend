@@ -17,6 +17,7 @@ public partial class Message
     public Guid NegotiationId { get; set; }
 
     public Guid SenderId { get; set; }
+    public Guid ClientMessageId { get; set; }
 
     public string? MessageContent { get; set; }
 
@@ -38,6 +39,7 @@ public partial class Message
     public bool IsRead { get; set; }
 
     public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
 
     [ForeignKey("NegotiationId")]
     [InverseProperty("Messages")]

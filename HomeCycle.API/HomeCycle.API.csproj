@@ -21,10 +21,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Folder Include="Hubs\" />
-  </ItemGroup>
-
-  <ItemGroup>
     <ProjectReference Include="..\HomeCycle.Application\HomeCycle.Application.csproj" />
     <ProjectReference Include="..\HomeCycle.Infrastructure\HomeCycle.Infrastructure.csproj" />
     <ProjectReference Include="..\HomeCycle.Share\HomeCycle.Share.csproj" />

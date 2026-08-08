@@ -387,7 +387,18 @@ public partial class HomeCycleDbContext : DbContext
 
             entity.Property(e => e.MessageId).ValueGeneratedNever();
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()");
+            entity.Property(e => e.UpdatedAt).HasDefaultValueSql("now()");
             entity.Property(e => e.IsRead).HasDefaultValue(false);
+            entity.Property(x => x.ClientMessageId).IsRequired(false);
+
+            entity.HasIndex(x => new
+            {
+                x.NegotiationId,
+                x.SenderId,
+                x.ClientMessageId
+            })
+                .IsUnique()
+                .HasFilter("\"ClientMessageId\" IS NOT NULL");
 
             entity.HasOne(d => d.Negotiation).WithMany(p => p.Messages)
                 .OnDelete(DeleteBehavior.ClientSetNull)
