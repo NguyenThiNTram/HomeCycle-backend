@@ -485,9 +485,38 @@ namespace HomeCycle.Application.Services.Posts
 
             var paged = await _postRepository.SearchAsync(request, cancellationToken);
 
+            var items = paged.Items.Select(x => _mapper.Map<PostResponse>(x)).ToList();
+
+            if (items.Count > 0)
+            {
+                var postIds = items
+                    .Select(x => x.PostId)
+                    .Distinct()
+                    .ToArray();
+
+                var mediaResult = await _mediaService.GetByTargetsAsync(
+                    postIds,
+                    PostMediaTargetType,
+                    cancellationToken);
+
+                if (!mediaResult.IsSuccess)
+                    return Result<PagedResult<PostResponse>>.Fail(mediaResult.Error!);
+
+                var mediasByPost = mediaResult.Data ?? new Dictionary<Guid, IReadOnlyList<MediaResponse>>();
+
+                foreach (var item in items)
+                {
+                    item.Medias = mediasByPost.TryGetValue(
+                        item.PostId,
+                        out var medias)
+                            ? medias
+                            : Array.Empty<MediaResponse>();
+                }
+            }
+
             var response = new PagedResult<PostResponse>
             {
-                Items = paged.Items.Select(x => _mapper.Map<PostResponse>(x)).ToList(),
+                Items = items,
                 PageNumber = paged.PageNumber,
                 PageSize = paged.PageSize,
                 TotalCount = paged.TotalCount

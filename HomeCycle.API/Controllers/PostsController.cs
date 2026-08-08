@@ -200,8 +200,6 @@ namespace HomeCycle.API.Controllers
             return Ok(result.Data);
         }
 
-       
-
         [HttpPatch("{postId:guid}/close")]
         [SwaggerOperation(
             Summary = "Đóng bài đăng",
