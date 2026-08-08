@@ -57,7 +57,6 @@ namespace HomeCycle.API
             // Add services to the container.
 
             builder.Services.AddControllers();
-            builder.Services.AddSignalR();
 
             // read enums to text
             builder.Services.AddControllers().AddJsonOptions(options =>
@@ -188,19 +187,16 @@ namespace HomeCycle.API
                 app.UseHttpsRedirection();
             }
 
-            app.UseCors("SignalRPolicy");
-            app.UseCors("CorsPolicy");
             app.UseWebSockets();
-            //app.MapHub<ChatHub>("/chatHub");
-
-            app.MapHub<ChatHub>(ChatHub.Route).RequireAuthorization();
 
             app.UseRouting();
-            app.UseCors("AllowAll");
+
+            app.UseCors("CorsPolicy");
 
             app.UseAuthentication();
             app.UseAuthorization();
 
+            app.MapHub<ChatHub>(ChatHub.Route).RequireAuthorization();
             app.MapControllers();
 
             app.Run();

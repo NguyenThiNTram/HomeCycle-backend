@@ -114,6 +114,8 @@ namespace HomeCycle.Application.Commons.Errors
 
         public static readonly Error PostAlreadyClosedOrDeleted = new("POST_ALREADY_CLOSED_OR_DELETED", "The post is already closed or deleted.");
 
+        public static readonly Error PostAlreadySuspended = new("POST_ALREADY_SUSPENDED", "The post is already suspended.");
+
         public static readonly Error Forbidden = new("POST_FORBIDDEN", "You do not have permission to access this post.");
 
         public static readonly Error PostExpired = new("POST_EXPIRED", "Bài đăng đã hết thời hạn cho phép chỉnh sửa.");

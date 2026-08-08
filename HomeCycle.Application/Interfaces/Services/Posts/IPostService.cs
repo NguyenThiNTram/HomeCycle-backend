@@ -22,11 +22,13 @@ namespace HomeCycle.Application.Interfaces.Services.Posts
 
         Task<Result<PostDetailResponse>> GetDetailAsync(Guid postId, CancellationToken cancellationToken = default);
         Task<Result<PagedResult<PostResponse>>> GetAllAsync(PaginationRequest request, CancellationToken cancellationToken = default);
+        Task<Result<PagedResult<PostResponse>>> GetAllActiveAsync(PaginationRequest request, CancellationToken cancellationToken = default);
         Task<Result<PagedResult<PostResponse>>> GetAllByOwnerAsync(Guid ownerId, PaginationRequest request, CancellationToken cancellationToken = default);
         Task<Result<PostDetailResponse>> GetDetailByOwnerAsync(Guid ownerId, Guid postId, CancellationToken cancellationToken = default);
         Task<Result<PagedResult<PostResponse>>> SearchAsync(PostSearchRequest request, CancellationToken cancellationToken = default);
         Task<Result<bool>> CloseAsync(Guid ownerId, Guid postId, CancellationToken cancellationToken = default);
         Task<Result<bool>> ReactivateAsync(Guid ownerId, Guid postId, CancellationToken cancellationToken = default);
         Task<Result<bool>> DeleteAsync(Guid ownerId, Guid postId, CancellationToken cancellationToken = default);
+        Task<Result<bool>> SuspendAsync(Guid postId, CancellationToken cancellationToken = default);
     }
 }

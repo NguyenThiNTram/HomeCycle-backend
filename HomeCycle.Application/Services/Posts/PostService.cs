@@ -379,6 +379,44 @@ namespace HomeCycle.Application.Services.Posts
             return Result<PagedResult<PostResponse>>.Success(response);
         }
 
+        public async Task<Result<PagedResult<PostResponse>>> GetAllActiveAsync(
+            PaginationRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            var paged = await _postRepository.GetAllActiveAsync(request, cancellationToken);
+
+            var items = paged.Items.Select(x => _mapper.Map<PostResponse>(x)).ToList();
+
+            var postIds = items.Select(x => x.PostId).Distinct().ToArray();
+
+            var mediaResult = await _mediaService.GetByTargetsAsync(postIds, PostMediaTargetType, cancellationToken);
+
+            if (!mediaResult.IsSuccess || mediaResult.Data is null)
+            {
+                return Result<PagedResult<PostResponse>>.Fail(
+                    mediaResult.Error!);
+            }
+
+            foreach (var item in items)
+            {
+                item.Medias = mediaResult.Data.TryGetValue(
+                    item.PostId,
+                    out var medias)
+                        ? medias
+                        : Array.Empty<MediaResponse>();
+            }
+
+            var response = new PagedResult<PostResponse>
+            {
+                Items = items,
+                PageNumber = paged.PageNumber,
+                PageSize = paged.PageSize,
+                TotalCount = paged.TotalCount
+            };
+
+            return Result<PagedResult<PostResponse>>.Success(response);
+        }
+
         public async Task<Result<PagedResult<PostResponse>>> GetAllByOwnerAsync(
             Guid ownerId,
             PaginationRequest request,
@@ -592,6 +630,30 @@ namespace HomeCycle.Application.Services.Posts
             var deleted = await _postRepository.DeleteAsync(postId, cancellationToken);
             if (!deleted)
                 return Result<bool>.Fail(PostErrors.NotFound);
+
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            return Result<bool>.Success(true);
+        }
+
+        // ================== MODERATOR - SUSPEND ==================
+
+        public async Task<Result<bool>> SuspendAsync(
+            Guid postId,
+            CancellationToken cancellationToken = default)
+        {
+            var existing = await _postRepository.GetByIdAsync(postId, cancellationToken);
+            if (existing is null || existing.Status == PostStatus.Deleted)
+                return Result<bool>.Fail(PostErrors.NotFound);
+
+            if (existing.Status == PostStatus.Suspended)
+                return Result<bool>.Fail(PostErrors.PostAlreadySuspended);
+
+            var updated = await _postRepository.UpdateStatusAsync(postId, PostStatus.Suspended, cancellationToken);
+            if (!updated)
+                return Result<bool>.Fail(PostErrors.NotFound);
+
+            existing.Status = PostStatus.Suspended;
+            existing.UpdatedAt = DateTime.UtcNow;
 
             await _unitOfWork.SaveChangesAsync(cancellationToken);
             return Result<bool>.Success(true);
