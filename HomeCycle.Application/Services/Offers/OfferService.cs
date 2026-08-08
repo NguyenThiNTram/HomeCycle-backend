@@ -135,7 +135,11 @@ namespace HomeCycle.Application.Services.Offers
                 return Result<OfferResponse>.Fail(OfferErrors.DuplicatePending);
             }
 
-            return Result<OfferResponse>.Success(_mapper.Map<OfferResponse>(offer));
+            var created = await _offerRepository.GetByIdAsync(offer.OfferId, cancellationToken);
+            if (created is null)
+                return Result<OfferResponse>.Fail(OfferErrors.NotFound);
+
+            return Result<OfferResponse>.Success(_mapper.Map<OfferResponse>(created));
         }
 
         // Người gửi chỉ được sửa giá và số lượng khi request ban đầu còn Pending
