@@ -160,4 +160,13 @@ namespace HomeCycle.Application.Commons.Errors
         public static readonly Error ProposalNotFound = new("NEGOTIATION_PROPOSAL_NOT_FOUND", "The proposal message is not found.");
         public static readonly Error InvalidStatusForCancel = new("NEGOTIATION_INVALID_STATUS_FOR_CANCEL", "You can only cancel a negotiation that is still in open or agreed state.");
     }
+
+    public static class MessageErrors
+    {
+        public static readonly Error NotFound = new("MESSAGE_NOT_FOUND", "The message is not found.");
+        public static readonly Error Forbidden = new("MESSAGE_FORBIDDEN", "You do not have permission to access this message.");
+        public static readonly Error ClientMessageIdConflict = new("MESSAGE_CLIENT_ID_CONFLICT", "A message with the same client message ID already exists.");
+        public static readonly Error InvalidMessage = new("MESSAGE_INVALID", "The message is invalid or cannot be processed.");
+        public static readonly Error NegotiationReadOnly = new("MESSAGE_NEGOTIATION_READ_ONLY", "Cannot send messages in a negotiation that is not open.");
+    }
 }

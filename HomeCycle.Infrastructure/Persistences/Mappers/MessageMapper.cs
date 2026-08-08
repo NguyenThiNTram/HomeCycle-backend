@@ -17,6 +17,7 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 MessageId = entity.MessageId,
                 NegotiationId = entity.NegotiationId,
                 SenderId = entity.SenderId,
+                ClientMessageId = entity.ClientMessageId,
                 MessageContent = entity.MessageContent,
                 MessageType = (MessageType?)entity.MessageType,
                 OfferPrice = entity.OfferPrice,
@@ -25,7 +26,8 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 BasePriceSnapshot = entity.BasePriceSnapshot,
                 MediaUrl = entity.MediaUrl,
                 IsRead = entity.IsRead,
-                CreatedAt = entity.CreatedAt
+                CreatedAt = entity.CreatedAt,
+                UpdatedAt = entity.UpdatedAt
             };
         }
         public static Message ToInfrastructure(this message entity)
@@ -35,6 +37,7 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 MessageId = entity.MessageId,
                 NegotiationId = entity.NegotiationId,
                 SenderId = entity.SenderId,
+                ClientMessageId = entity.ClientMessageId,
                 MessageContent = entity.MessageContent,
                 MessageType = (int?)entity.MessageType,
                 OfferPrice = entity.OfferPrice,
@@ -43,7 +46,8 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 BasePriceSnapshot = entity.BasePriceSnapshot,
                 MediaUrl = entity.MediaUrl,
                 IsRead = entity.IsRead,
-                CreatedAt = entity.CreatedAt
+                CreatedAt = entity.CreatedAt,
+                UpdatedAt = entity.UpdatedAt
             };
         }
     }

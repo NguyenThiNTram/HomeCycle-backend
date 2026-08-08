@@ -141,6 +141,11 @@ namespace HomeCycle.Infrastructure
             services.AddScoped<ICollectionAppointmentRepository, CollectionAppointmentRepository>();
             services.AddScoped<IInspectionAppointmentRepository, InspectionAppointmentRepository>();
             services.AddScoped<IShipmentRepository, ShipmentRepository>();
+            services.AddScoped<IOfferRepository, OfferRepository>();
+            services.AddScoped<IMessageRepository, MessageRepository>();
+            services.AddScoped<INegotiationRepository, NegotiationRepository>();
+            services.AddScoped<IMessageRepository, MessageRepository>();
+
 
             // register Services
             services.AddScoped<IAuthService, AuthService>();
@@ -162,7 +167,8 @@ namespace HomeCycle.Infrastructure
             services.AddScoped<IAgreementFormService, AgreementFormService>();
             services.AddScoped<IOfferService, OfferService>();
             services.AddScoped<IOfferTermsPolicy, OfferTermsPolicy>();
-            //services.AddScoped<IMessageService, MessageService>();
+            services.AddScoped<INegotiationService, NegotiationService>();
+            services.AddScoped<IMessageService, MessageService>();
             services.AddScoped<IAgreementFormService, AgreementFormService>();
             services.AddScoped<IPaymentService, PaymentService>();
 
