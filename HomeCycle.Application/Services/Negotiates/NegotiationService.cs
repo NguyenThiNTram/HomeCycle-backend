@@ -32,6 +32,7 @@ namespace HomeCycle.Application.Services.Negotiates
         private readonly IValidator<SendNegotiationCounterRequest> _counterValidator;
         private readonly IMapper _mapper;
         private readonly IUnitOfWork _unitOfWork;
+        private readonly IChatRealtimePublisher _realtimePublisher;
 
         private const decimal MinPriceFactor = 0.2m;
         private const decimal MaxPriceFactor = 3m;
@@ -44,7 +45,8 @@ namespace HomeCycle.Application.Services.Negotiates
             ILogger<NegotiationService> logger,
             IValidator<SendNegotiationCounterRequest> counterValidator,
             IMapper mapper,
-            IUnitOfWork unitOfWork)
+            IUnitOfWork unitOfWork,
+            IChatRealtimePublisher realtimePublisher)
         {
             _negotiationRepository = negotiationRepository;
             _offerRepository = offerRepository;
@@ -54,6 +56,7 @@ namespace HomeCycle.Application.Services.Negotiates
             _counterValidator = counterValidator;
             _mapper = mapper;
             _unitOfWork = unitOfWork;
+            _realtimePublisher = realtimePublisher;
         }
 
         // ================== QUERY ==================
@@ -246,6 +249,19 @@ namespace HomeCycle.Application.Services.Negotiates
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync(cancellationToken);
 
+                // Realtime: đẩy counter mới cho cả 2 bên trong negotiation.
+                await PublishMessageCreatedSafelyAsync(
+                    negotiationId,
+                    _mapper.Map<MessageResponse>(counterMessage));
+
+                // Realtime: proposal Pending cũ bị supersede → cập nhật trạng thái thẻ.
+                if (pendingMessage is not null)
+                {
+                    await PublishMessageUpdatedSafelyAsync(
+                        negotiationId,
+                        _mapper.Map<MessageResponse>(pendingMessage));
+                }
+
                 return Result<NegotiationProposalResponse>.Success(
                     ToProposalResponse(counterMessage, negotiation.NegotiationStatus));
             }
@@ -399,6 +415,11 @@ namespace HomeCycle.Application.Services.Negotiates
                 //await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync(cancellationToken);
 
+                // Realtime: thẻ proposal được chấp nhận → cập nhật trạng thái Accepted.
+                await PublishMessageUpdatedSafelyAsync(
+                    negotiationId,
+                    _mapper.Map<MessageResponse>(proposal));
+
                 return Result<NegotiationResponse>.Success(
                     _mapper.Map<NegotiationResponse>(negotiation));
             }
@@ -492,6 +513,11 @@ namespace HomeCycle.Application.Services.Negotiates
 
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync(cancellationToken);
+
+                // Realtime: thẻ proposal bị từ chối → cập nhật trạng thái Rejected.
+                await PublishMessageUpdatedSafelyAsync(
+                    negotiationId,
+                    _mapper.Map<MessageResponse>(proposal));
 
                 return Result<NegotiationProposalResponse>.Success(
                     ToProposalResponse(proposal, negotiation.NegotiationStatus));
@@ -705,6 +731,48 @@ namespace HomeCycle.Application.Services.Negotiates
         {
             var errors = string.Join("\n", validation.Errors.Select(x => x.ErrorMessage));
             return ValidationErrors.InvalidRequest(errors);
+        }
+
+        // ================== REALTIME HELPERS ==================
+
+        private async Task PublishMessageCreatedSafelyAsync(Guid negotiationId, MessageResponse response)
+        {
+            try
+            {
+                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+                await _realtimePublisher.PublishMessageCreatedAsync(
+                    negotiationId,
+                    response,
+                    timeout.Token);
+            }
+            catch (Exception exception)
+            {
+                _logger.LogWarning(
+                    exception,
+                    "Không thể phát MessageCreated cho MessageId {MessageId}. Tin nhắn đã được lưu vào database.",
+                    response.MessageId);
+            }
+        }
+
+        private async Task PublishMessageUpdatedSafelyAsync(Guid negotiationId, MessageResponse response)
+        {
+            try
+            {
+                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+                await _realtimePublisher.PublishMessageUpdatedAsync(
+                    negotiationId,
+                    response,
+                    timeout.Token);
+            }
+            catch (Exception exception)
+            {
+                _logger.LogWarning(
+                    exception,
+                    "Không thể phát MessageUpdated cho MessageId {MessageId}. Trạng thái đã được lưu vào database.",
+                    response.MessageId);
+            }
         }
     }
 }
