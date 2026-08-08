@@ -109,6 +109,8 @@ namespace HomeCycle.Infrastructure
             services.AddScoped<IOfferRepository, OfferRepository>();
             services.AddScoped<IMessageRepository, MessageRepository>();
             services.AddScoped<INegotiationRepository, NegotiationRepository>();
+            services.AddScoped<IMessageRepository, MessageRepository>();
+
 
             // register Services
             services.AddScoped<IAuthService, AuthService>();
@@ -131,7 +133,8 @@ namespace HomeCycle.Infrastructure
             services.AddScoped<IOfferService, OfferService>();
             services.AddScoped<IOfferTermsPolicy, OfferTermsPolicy>();
             services.AddScoped<INegotiationService, NegotiationService>();
-            //services.AddScoped<IMessageService, MessageService>();
+            services.AddScoped<IMessageService, MessageService>();
+
 
             return services;
         }

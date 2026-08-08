@@ -1,4 +1,8 @@
-﻿using HomeCycle.API.Middlewares;
+﻿using HomeCycle.API.Hubs;
+using HomeCycle.API.Middlewares;
+using HomeCycle.Application.Interfaces.Repositories.Offers;
+using HomeCycle.Application.Interfaces.Services.Negotiates;
+using HomeCycle.Application.Services.Negotiates;
 using HomeCycle.Infrastructure;
 using HomeCycle.Infrastructure.DbContexts;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -20,17 +24,35 @@ namespace HomeCycle.API
         {
             var builder = WebApplication.CreateBuilder(args);
 
+            // Add services to the container
+            builder.Services.AddSignalR();
+            builder.Services.AddScoped<IMessageService, MessageService>();
+            builder.Services.AddSingleton<IChatRealtimePublisher, SignalRChatRealtimePublisher>();
+
             // Config CORS
+            //builder.Services.AddCors(options =>
+            //{
+            //    options.AddPolicy("AllowAll", policy =>
+            //    {
+            //        policy.AllowAnyOrigin()
+            //              .AllowAnyMethod()
+            //              .AllowAnyHeader()
+            //              .AllowCredentials(); // truyền Connection ID
+            //    });
+            //});
+
             builder.Services.AddCors(options =>
             {
-                options.AddPolicy("AllowAll", policy =>
+                options.AddPolicy("CorsPolicy", policy =>
                 {
-                    policy.AllowAnyOrigin()
+                    policy.SetIsOriginAllowed(origin => true) // Chấp nhận mọi origin động nhưng vẫn hợp lệ với AllowCredentials
+                          .AllowAnyHeader()
                           .AllowAnyMethod()
-                          .AllowAnyHeader();
-                          //.AllowCredentials(); // truyền Connection ID
+                          .AllowCredentials();
                 });
             });
+
+            
 
             // Add services to the container.
 
@@ -128,6 +150,25 @@ namespace HomeCycle.API
                     ValidAudience = jwtSettings["Audience"],
                     IssuerSigningKey = new SymmetricSecurityKey(key)
                 };
+
+                //Config SignalR
+                options.Events ??= new JwtBearerEvents();
+
+                options.Events.OnMessageReceived = context =>
+                {
+                    var accessToken =
+                        context.Request.Query["access_token"].ToString();
+
+                    var path = context.HttpContext.Request.Path;
+
+                    if (!string.IsNullOrWhiteSpace(accessToken) &&
+                        path.StartsWithSegments(ChatHub.Route))
+                    {
+                        context.Token = accessToken;
+                    }
+
+                    return Task.CompletedTask;
+                };
             });
 
             builder.Services.AddAuthorization();
@@ -148,8 +189,11 @@ namespace HomeCycle.API
             }
 
             app.UseCors("SignalRPolicy");
+            app.UseCors("CorsPolicy");
             app.UseWebSockets();
             //app.MapHub<ChatHub>("/chatHub");
+
+            app.MapHub<ChatHub>(ChatHub.Route).RequireAuthorization();
 
             app.UseRouting();
             app.UseCors("AllowAll");
