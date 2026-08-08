@@ -1,5 +1,6 @@
 ﻿using HomeCycle.Application.DTOs.Requests.Moderators;
 using HomeCycle.Application.Interfaces.Services.Moderators;
+using HomeCycle.Application.Interfaces.Services.Posts;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -13,10 +14,12 @@ namespace HomeCycle.API.Controllers
     public class ModeratorController : ControllerBase
     {
         private readonly IModeratorService _moderatorService;
+        private readonly IPostService _postService;
 
-        public ModeratorController(IModeratorService moderatorService)
+        public ModeratorController(IModeratorService moderatorService, IPostService postService)
         {
             _moderatorService = moderatorService;
+            _postService = postService;
         }
 
         [HttpPost("business-profiles/review")]
@@ -173,6 +176,32 @@ namespace HomeCycle.API.Controllers
             {
                 success = true,
                 data = result.Data
+            });
+        }
+
+        [HttpPatch("posts/{postId:guid}/suspend")]
+        public async Task<IActionResult> SuspendPost(Guid postId, CancellationToken cancellationToken)
+        {
+            var moderatorId = GetCurrentUserId();
+            if (moderatorId == Guid.Empty)
+                return Unauthorized(new { success = false, message = "Phiên làm việc không hợp lệ." });
+
+            var result = await _postService.SuspendAsync(postId, cancellationToken);
+
+            if (!result.IsSuccess)
+            {
+                return BadRequest(new
+                {
+                    success = false,
+                    code = result.Error.Code,
+                    message = result.Error.Message
+                });
+            }
+
+            return Ok(new
+            {
+                success = true,
+                message = "Bài đăng đã bị đình chỉ (Suspended). Bài đăng sẽ không còn hiển thị trên trang chủ người dùng."
             });
         }
 

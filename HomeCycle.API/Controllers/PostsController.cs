@@ -145,13 +145,25 @@ namespace HomeCycle.API.Controllers
 
         [HttpGet("get-all")]
         [SwaggerOperation(
-            Summary = "Lấy danh sách bài đăng",
-            Description = "Trả về danh sách tất cả bài đăng trong hệ thống có hỗ trợ phân trang."
+            Summary = "Lấy tất cả bài đăng (dành cho Moderator/Admin quản lý hệ thống)",
+            Description = "Trả về danh sách TẤT CẢ bài đăng bất kể trạng thái (Active, Suspended, Closed, Deleted) có hỗ trợ phân trang. Chỉ dành cho Moderator/Admin."
         )]
         [AllowAnonymous]
         public async Task<IActionResult> GetAll([FromQuery] PaginationRequest request, CancellationToken cancellationToken)
         {
             var result = await _postService.GetAllAsync(request, cancellationToken);
+            return Ok(result.Data);
+        }
+
+        [HttpGet("get-all-active")]
+        [SwaggerOperation(
+            Summary = "Lấy danh sách bài đăng hoạt động (trang chủ người dùng)",
+            Description = "Trả về danh sách các bài đăng đang hoạt động (Active) cho trang chủ người dùng. Các bài bị đình chỉ (Suspended), đóng (Closed) hoặc xóa (Deleted) sẽ không xuất hiện."
+        )]
+        [AllowAnonymous]
+        public async Task<IActionResult> GetAllActive([FromQuery] PaginationRequest request, CancellationToken cancellationToken)
+        {
+            var result = await _postService.GetAllActiveAsync(request, cancellationToken);
             return Ok(result.Data);
         }
 

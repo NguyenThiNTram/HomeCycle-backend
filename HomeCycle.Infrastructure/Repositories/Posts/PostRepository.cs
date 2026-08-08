@@ -99,6 +99,8 @@ namespace HomeCycle.Infrastructure.Repositories.Posts
             return entity?.ToDomain();
         }
 
+        // Trả về TẤT CẢ bài đăng bất kể trạng thái (Active/Suspended/Closed/Deleted).
+        // Dành riêng cho Moderator/Admin quản lý hệ thống.
         public async Task<PagedResult<post>> GetAllAsync(PaginationRequest request, CancellationToken cancellationToken = default)
         {
             var query = _db.Posts
@@ -110,6 +112,38 @@ namespace HomeCycle.Infrastructure.Repositories.Posts
                 .Include(x => x.Product)
                     .ThenInclude(x => x.Brand)
                 .Include(x => x.Product)
+                .OrderByDescending(x => x.CreatedAt);
+
+            var totalCount = await query.CountAsync(cancellationToken);
+
+            var items = await query
+                .Skip((request.PageNumber - 1) * request.PageSize)
+                .Take(request.PageSize)
+                .ToListAsync(cancellationToken);
+
+            return new PagedResult<post>
+            {
+                Items = items.Select(x => x.ToDomain()).ToList(),
+                PageNumber = request.PageNumber,
+                PageSize = request.PageSize,
+                TotalCount = totalCount
+            };
+        }
+
+        // Chỉ trả về các bài đăng đang hoạt động (Active) — dành cho trang chủ phía người dùng.
+        // Loại trừ các bài đã bị đình chỉ (Suspended), đóng (Closed) hoặc xóa (Deleted).
+        public async Task<PagedResult<post>> GetAllActiveAsync(PaginationRequest request, CancellationToken cancellationToken = default)
+        {
+            var query = _db.Posts
+                .AsNoTracking()
+                .Include(x => x.Product)
+                    .ThenInclude(x => x.ProductType)
+                .Include(x => x.Product)
+                    .ThenInclude(x => x.Category)
+                .Include(x => x.Product)
+                    .ThenInclude(x => x.Brand)
+                .Include(x => x.Product)
+                .Where(x => x.Status == (int)PostStatus.Active)
                 .OrderByDescending(x => x.CreatedAt);
 
             var totalCount = await query.CountAsync(cancellationToken);
