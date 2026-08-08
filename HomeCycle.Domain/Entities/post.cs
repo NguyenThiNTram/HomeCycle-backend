@@ -35,6 +35,7 @@ public class post
     public DateTime? ExpiryDate { get; set; }
 
     public virtual product? Product { get; set; }
+    //public virtual ICollection<media> PostImages { get; set; } = new List<media>();
 
     public post()
     {

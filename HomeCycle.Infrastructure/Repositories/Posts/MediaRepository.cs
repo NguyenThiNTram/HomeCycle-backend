@@ -63,6 +63,7 @@ namespace HomeCycle.Infrastructure.Repositories.Posts
                 return Array.Empty<media>();
 
             var ids = targetId
+                .Where(x => x != Guid.Empty)
                 .Distinct()
                 .ToArray();
 
