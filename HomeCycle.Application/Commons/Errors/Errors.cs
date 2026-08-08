@@ -28,6 +28,14 @@ namespace HomeCycle.Application.Commons.Errors
         public static readonly Error InvalidOtp = new("AUTH_INVALID_OTP", "Invalid OTP.");
 
         public static readonly Error AccountSuspended = new("AUTH_ACCOUNT_SUSPENDED", "Account has been suspended.");
+
+        public static readonly Error CannotLockSelf = new("AUTH_CANNOT_LOCK_SELF", "Admin cannot lock their own account.");
+
+        public static readonly Error CannotLockAdmin = new("AUTH_CANNOT_LOCK_ADMIN", "Cannot lock another admin account.");
+
+        public static readonly Error AlreadyLocked = new("AUTH_ACCOUNT_ALREADY_LOCKED", "Account is already locked.");
+
+        public static readonly Error NotLocked = new("AUTH_ACCOUNT_NOT_LOCKED", "Account is not locked.");
     }
 
     public static class ProfileErrors

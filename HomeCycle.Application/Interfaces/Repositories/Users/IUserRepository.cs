@@ -1,4 +1,6 @@
-﻿using HomeCycle.Domain.Entities;
+﻿using HomeCycle.Application.Commons.Paginations;
+using HomeCycle.Domain.Entities;
+using HomeCycle.Domain.Enums;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -9,6 +11,13 @@ namespace HomeCycle.Application.Interfaces.Repositories.Users
 {
     public interface IUserRepository
     {
+        Task<PagedResult<user>> GetPagedAsync(
+            UserRole? role,
+            UserStatus? status,
+            string? keyword,
+            PaginationRequest pagination,
+            CancellationToken cancellationToken = default);
+
         Task<user?> GetByEmailAsync(string email, CancellationToken cancellationToken = default);
 
         Task<user?> GetByIdAsync(Guid userId, CancellationToken cancellationToken = default);

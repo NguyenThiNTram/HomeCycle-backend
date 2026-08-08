@@ -169,5 +169,99 @@ namespace HomeCycle.API.Controllers
             });
         }
 
+        // Lấy danh sách người dùng (lọc theo role, status, keyword) — chỉ dành cho Admin
+        [HttpGet("admin/users")]
+        //[Authorize(Roles = "Admin")]
+        public async Task<IActionResult> GetAllUsers(
+            [FromQuery] GetAllUsersRequest request,
+            CancellationToken cancellationToken)
+        {
+            var result = await _authService.GetAllUsersAsync(request, cancellationToken);
+
+            if (!result.IsSuccess)
+            {
+                return BadRequest(new
+                {
+                    success = false,
+                    code = result.Error.Code,
+                    message = result.Error.Message
+                });
+            }
+
+            return Ok(new
+            {
+                success = true,
+                data = result.Data
+            });
+        }
+
+        // Khoá tài khoản (chuyển Status -> Suspended) — chỉ dành cho Admin
+        [HttpPost("admin/users/{userId:guid}/lock")]
+        //[Authorize(Roles = "Admin")]
+        public async Task<IActionResult> LockUser(
+            [FromRoute] Guid userId,
+            CancellationToken cancellationToken)
+        {
+            var adminId = GetCurrentUserId();
+            if (adminId == Guid.Empty)
+                return Unauthorized(new { success = false, message = "Phiên làm việc không hợp lệ." });
+
+            var result = await _authService.LockUserAsync(adminId, userId, cancellationToken);
+
+            if (!result.IsSuccess)
+            {
+                return BadRequest(new
+                {
+                    success = false,
+                    code = result.Error.Code,
+                    message = result.Error.Message
+                });
+            }
+
+            return Ok(new
+            {
+                success = true,
+                message = "Tài khoản đã bị khoá.",
+                data = result.Data
+            });
+        }
+
+        // Mở khoá tài khoản (chuyển Status -> Active) — chỉ dành cho Admin
+        [HttpPost("admin/users/{userId:guid}/unlock")]
+        //[Authorize(Roles = "Admin")]
+        public async Task<IActionResult> UnlockUser(
+            [FromRoute] Guid userId,
+            CancellationToken cancellationToken)
+        {
+            var adminId = GetCurrentUserId();
+            if (adminId == Guid.Empty)
+                return Unauthorized(new { success = false, message = "Phiên làm việc không hợp lệ." });
+
+            var result = await _authService.UnlockUserAsync(adminId, userId, cancellationToken);
+
+            if (!result.IsSuccess)
+            {
+                return BadRequest(new
+                {
+                    success = false,
+                    code = result.Error.Code,
+                    message = result.Error.Message
+                });
+            }
+
+            return Ok(new
+            {
+                success = true,
+                message = "Tài khoản đã được mở khoá.",
+                data = result.Data
+            });
+        }
+
+        private Guid GetCurrentUserId()
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            return Guid.TryParse(userIdClaim, out var userId) ? userId : Guid.Empty;
+        }
+
     }
 }
