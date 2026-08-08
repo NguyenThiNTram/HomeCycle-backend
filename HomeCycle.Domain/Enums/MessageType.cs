@@ -12,6 +12,7 @@ namespace HomeCycle.Domain.Enums
         Media = 1,       // Tin nhắn hình ảnh/file
         Offer = 2,       // Tin nhắn đề nghị giá
         CounterOffer = 3, // Đề nghị giá mới trong thương lượng
-        System = 4       // Thông báo hệ thống
+        System = 4,       // Thông báo hệ thống
+        Agreement = 5,    // Thông báo chấp nhận thương lượng
     }
 }
