@@ -486,8 +486,6 @@ namespace HomeCycle.Application.Mappings
 
             // ==================== OFFER / NEGOTIATION / MESSAGE ====================
 
-            CreateMap<offer, OfferResponse>();
-
             CreateMap<CreateOfferRequest, offer>()
                 .ForMember(dest => dest.OfferId, opt => opt.Ignore())
                 .ForMember(dest => dest.PostId, opt => opt.Ignore())
@@ -511,7 +509,9 @@ namespace HomeCycle.Application.Mappings
                 .ForMember(dest => dest.SenderId, opt => opt.Ignore())
                 .ForMember(dest => dest.ReceiverId, opt => opt.Ignore())
                 .ForMember(dest => dest.OfferStatus, opt => opt.Ignore())
-                .ForMember(dest => dest.CreatedAt, opt => opt.Ignore());
+                .ForMember(dest => dest.CreatedAt, opt => opt.Ignore())
+                .ForMember(dest => dest.OfferPrice, options => options.MapFrom(source => source.OfferPrice))
+                .ForMember(dest => dest.OfferQuantity, options => options.MapFrom(source => source.OfferQuantity));
 
             CreateMap<offer, negotiation>()
                 .ForMember(dest => dest.NegotiationId, opt => opt.Ignore())
@@ -539,6 +539,11 @@ namespace HomeCycle.Application.Mappings
                 .ForMember(dest => dest.CreatedAt, opt => opt.Ignore())
                 .ForMember(dest => dest.UpdatedAt, opt => opt.Ignore())
                 .ForMember(dest => dest.BasePriceSnapshot, opt => opt.Ignore());
+
+            CreateMap<user, OfferParticipantResponse>()
+                .ForMember(dest => dest.UserId, opt => opt.MapFrom(src => src.UserId))
+                .ForMember(dest => dest.DisplayName, opt => opt.MapFrom(src => src.Username))
+                .ForMember(dest => dest.AvatarUrl, opt => opt.MapFrom(src => src.AvatarUrl));
 
             CreateMap<negotiation, NegotiationResponse>();
             CreateMap<message, MessageResponse>();

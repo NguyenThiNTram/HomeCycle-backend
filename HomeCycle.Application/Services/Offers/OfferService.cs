@@ -172,8 +172,8 @@ namespace HomeCycle.Application.Services.Offers
             if (priceError is not null)
                 return Result<OfferResponse>.Fail(priceError);
 
-            offer.OfferPrice = request.OfferPrice.Value;
-            offer.OfferQuantity = request.OfferQuantity.Value;
+            //offer.OfferPrice = request.OfferPrice.Value;
+            //offer.OfferQuantity = request.OfferQuantity.Value;
 
             _mapper.Map(request, offer);
 
