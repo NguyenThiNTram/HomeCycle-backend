@@ -1,7 +1,9 @@
-﻿using FluentValidation;
+﻿using AutoMapper;
+using FluentValidation;
 using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Requests.Agreements;
 using HomeCycle.Application.DTOs.Responses.Agreements;
+using HomeCycle.Application.DTOs.Responses.Negotiations;
 using HomeCycle.Application.Interfaces.Generics;
 using HomeCycle.Application.Interfaces.Repositories.Agreements;
 using HomeCycle.Application.Interfaces.Repositories.Offers;
@@ -10,6 +12,7 @@ using HomeCycle.Application.Interfaces.Repositories.Products;
 using HomeCycle.Application.Interfaces.Services.Agreements;
 using HomeCycle.Domain.Entities;
 using HomeCycle.Domain.Enums;
+using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -24,6 +27,10 @@ namespace HomeCycle.Application.Services.Agreements
         private readonly IUnitOfWork _unitOfWork;
         private readonly IAgreementFormRepository _agreementRepo;
         private readonly INegotiationRepository _negotiationRepo;
+        private readonly IMessageRepository _messageRepo;
+        private readonly IChatRealtimePublisher _chatRealtimePublisher;
+        private readonly IMapper _mapper;
+        private readonly ILogger<AgreementFormService> _logger;
         private readonly IPostRepository _postRepo;
         private readonly IOfferRepository _offerRepo;
         private readonly IProductRepository _productRepo;
@@ -33,6 +40,10 @@ namespace HomeCycle.Application.Services.Agreements
             IUnitOfWork unitOfWork,
             IAgreementFormRepository agreementRepo,
             INegotiationRepository negotiationRepo,
+            IMessageRepository messageRepo,
+            IChatRealtimePublisher chatRealtimePublisher,
+            IMapper mapper,
+            ILogger<AgreementFormService> logger,
             IPostRepository postRepo,
             IOfferRepository offerRepo,
             IProductRepository productRepo,
@@ -42,6 +53,10 @@ namespace HomeCycle.Application.Services.Agreements
             _unitOfWork = unitOfWork;
             _agreementRepo = agreementRepo;
             _negotiationRepo = negotiationRepo;
+            _messageRepo = messageRepo;
+            _chatRealtimePublisher = chatRealtimePublisher;
+            _mapper = mapper;
+            _logger = logger;
             _postRepo = postRepo;
             _offerRepo = offerRepo;
             _productRepo = productRepo;
@@ -117,7 +132,6 @@ namespace HomeCycle.Application.Services.Agreements
                 if (existingAgreement != null)
                     return Result<Guid>.Fail(new Error("Agreement.AlreadyExists", "Thỏa thuận đã tồn tại."));
 
-
                 var post = await _postRepo.GetByIdAsync(negotiation.PostId, cancellationToken);
                 if (post == null)
                     return Result<Guid>.Fail(new Error("Post.NotFound", "Bài đăng không tồn tại."));
@@ -181,8 +195,25 @@ namespace HomeCycle.Application.Services.Agreements
                 await _agreementRepo.AddAsync(newAgreement, cancellationToken);
                 await _negotiationRepo.UpdateAsync(negotiation, cancellationToken);
 
+                var agreementMessage = new message
+                {
+                    MessageId = Guid.NewGuid(),
+                    NegotiationId = request.NegotiationId,
+                    SenderId = negotiation.SellerId,        // người tạo = seller -> hiện bên phải
+                    MessageType = MessageType.Agreement,
+                    MessageContent = "Đã tạo thỏa thuận mua bán, vui lòng kiểm tra và xác nhận.",
+                    IsRead = false,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
+                };
+                await _messageRepo.AddAsync(agreementMessage, cancellationToken);
+
+
                 await _unitOfWork.SaveChangesAsync();
                 await _unitOfWork.CommitTransactionAsync();
+
+                var response = _mapper.Map<MessageResponse>(agreementMessage);
+                await PublishMessageCreatedSafelyAsync(request.NegotiationId, response);
 
                 return Result<Guid>.Success(newAgreement.AgreementId);
             }
@@ -291,6 +322,19 @@ namespace HomeCycle.Application.Services.Agreements
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
             return Result<bool>.Success(true);
+        }
+
+        private async Task PublishMessageCreatedSafelyAsync(Guid negotiationId, MessageResponse response)
+        {
+            try
+            {
+                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                await _chatRealtimePublisher.PublishMessageCreatedAsync(negotiationId, response, timeout.Token);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Không thể phát MessageCreated cho MessageId {MessageId}.", response.MessageId);
+            }
         }
 
     }
