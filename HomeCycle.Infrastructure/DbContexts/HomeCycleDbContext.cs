@@ -389,7 +389,9 @@ public partial class HomeCycleDbContext : DbContext
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()");
             entity.Property(e => e.UpdatedAt).HasDefaultValueSql("now()");
             entity.Property(e => e.IsRead).HasDefaultValue(false);
-            entity.Property(x => x.ClientMessageId).IsRequired(false);
+
+            //entity.Property(x => x.ClientMessageId).IsRequired(false);
+            entity.Property(x => x.ClientMessageId);
 
             entity.HasIndex(x => new
             {

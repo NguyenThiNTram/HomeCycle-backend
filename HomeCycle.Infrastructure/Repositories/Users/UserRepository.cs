@@ -1,5 +1,7 @@
-﻿using HomeCycle.Application.Interfaces.Repositories.Users;
+﻿using HomeCycle.Application.Commons.Paginations;
+using HomeCycle.Application.Interfaces.Repositories.Users;
 using HomeCycle.Domain.Entities;
+using HomeCycle.Domain.Enums;
 using HomeCycle.Infrastructure.DbContexts;
 using HomeCycle.Infrastructure.Persistences.Mappers;
 using Microsoft.EntityFrameworkCore;
@@ -26,6 +28,56 @@ namespace HomeCycle.Infrastructure.Repositories.Users
             var entity = user.ToInfrastructure();
 
             await _db.Users.AddAsync(entity, cancellationToken);
+        }
+
+        public async Task<PagedResult<user>> GetPagedAsync(
+            UserRole? role,
+            UserStatus? status,
+            string? keyword,
+            PaginationRequest pagination,
+            CancellationToken cancellationToken = default)
+        {
+            var query = _db.Users.AsNoTracking();
+
+            if (role.HasValue)
+            {
+                query = query.Where(x => x.Role == (int)role.Value);
+            }
+
+            if (status.HasValue)
+            {
+                query = query.Where(x => x.Status == (int)status.Value);
+            }
+
+            if (!string.IsNullOrWhiteSpace(keyword))
+            {
+                var search = keyword.Trim().ToLower();
+
+                query = query.Where(x =>
+                    x.Username.ToLower().Contains(search) ||
+                    x.Email.ToLower().Contains(search) ||
+                    (x.PhoneNumber != null && x.PhoneNumber.Contains(search)));
+            }
+
+            var totalCount = await query.CountAsync(cancellationToken);
+
+            var entities = await query
+                .OrderByDescending(x => x.CreatedAt)
+                .Skip((pagination.PageNumber - 1) * pagination.PageSize)
+                .Take(pagination.PageSize)
+                .ToListAsync(cancellationToken);
+
+            var items = entities
+                .Select(x => x.ToDomain()!)
+                .ToList();
+
+            return new PagedResult<user>
+            {
+                Items = items,
+                PageNumber = pagination.PageNumber,
+                PageSize = pagination.PageSize,
+                TotalCount = totalCount
+            };
         }
 
         public async Task<bool> ExistsByEmailAsync(string email, CancellationToken cancellationToken = default)

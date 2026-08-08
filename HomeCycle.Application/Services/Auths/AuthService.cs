@@ -2,6 +2,7 @@
 using FluentValidation;
 using Google.Apis.Auth;
 using HomeCycle.Application.Commons.Errors;
+using HomeCycle.Application.Commons.Paginations;
 using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Requests.Auths;
 using HomeCycle.Application.DTOs.Responses;
@@ -599,6 +600,123 @@ namespace HomeCycle.Application.Services.Auths
             return $"biz_{Guid.NewGuid().ToString("N")[..16]}";
         }
 
+
+        //-----------------------------------------------------------------------------------------------------
+        // ADMIN: USER MANAGEMENT
+        //-----------------------------------------------------------------------------------------------------
+        public async Task<Result<PagedResult<UserAdminResponse>>> GetAllUsersAsync(
+            GetAllUsersRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            var paged = await _userRepository.GetPagedAsync(
+                request.Role,
+                request.Status,
+                request.Keyword,
+                new PaginationRequest
+                {
+                    PageNumber = request.PageNumber,
+                    PageSize = request.PageSize
+                },
+                cancellationToken);
+
+            var items = paged.Items
+                .Select(MapAdminUser)
+                .ToList();
+
+            var response = new PagedResult<UserAdminResponse>
+            {
+                Items = items,
+                PageNumber = paged.PageNumber,
+                PageSize = paged.PageSize,
+                TotalCount = paged.TotalCount
+            };
+
+            return Result<PagedResult<UserAdminResponse>>.Success(response);
+        }
+
+        public async Task<Result<UserAdminResponse>> LockUserAsync(
+            Guid adminId,
+            Guid targetUserId,
+            CancellationToken cancellationToken = default)
+        {
+            if (adminId == targetUserId)
+                return Result<UserAdminResponse>.Fail(AuthErrors.CannotLockSelf);
+
+            var target = await _userRepository.GetByIdAsync(targetUserId, cancellationToken);
+            if (target is null)
+                return Result<UserAdminResponse>.Fail(AuthErrors.UserNotFound);
+
+            if (target.Role == UserRole.Admin)
+                return Result<UserAdminResponse>.Fail(AuthErrors.CannotLockAdmin);
+
+            if (target.Status == UserStatus.Suspended)
+                return Result<UserAdminResponse>.Fail(AuthErrors.AlreadyLocked);
+
+            await _unitOfWork.BeginTransactionAsync(cancellationToken);
+
+            try
+            {
+                target.Status = UserStatus.Suspended;
+                await _userRepository.UpdateAsync(target, cancellationToken);
+
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+                await _unitOfWork.CommitTransactionAsync(cancellationToken);
+
+                return Result<UserAdminResponse>.Success(MapAdminUser(target));
+            }
+            catch
+            {
+                await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                throw;
+            }
+        }
+
+        public async Task<Result<UserAdminResponse>> UnlockUserAsync(
+            Guid adminId,
+            Guid targetUserId,
+            CancellationToken cancellationToken = default)
+        {
+            var target = await _userRepository.GetByIdAsync(targetUserId, cancellationToken);
+            if (target is null)
+                return Result<UserAdminResponse>.Fail(AuthErrors.UserNotFound);
+
+            if (target.Status != UserStatus.Suspended)
+                return Result<UserAdminResponse>.Fail(AuthErrors.NotLocked);
+
+            await _unitOfWork.BeginTransactionAsync(cancellationToken);
+
+            try
+            {
+                target.Status = UserStatus.Active;
+                await _userRepository.UpdateAsync(target, cancellationToken);
+
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+                await _unitOfWork.CommitTransactionAsync(cancellationToken);
+
+                return Result<UserAdminResponse>.Success(MapAdminUser(target));
+            }
+            catch
+            {
+                await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                throw;
+            }
+        }
+
+        private static UserAdminResponse MapAdminUser(user u)
+        {
+            return new UserAdminResponse
+            {
+                UserId = u.UserId,
+                Username = u.Username,
+                Email = u.Email,
+                PhoneNumber = u.PhoneNumber,
+                AvatarUrl = u.AvatarUrl,
+                Role = u.Role,
+                Status = u.Status,
+                IsEmailVerified = u.IsEmailVerified,
+                CreatedAt = u.CreatedAt
+            };
+        }
 
         //-----------------------------------------------------------------------------------------------------
         // HELPER METHODS

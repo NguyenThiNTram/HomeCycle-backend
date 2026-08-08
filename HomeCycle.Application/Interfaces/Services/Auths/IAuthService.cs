@@ -1,4 +1,5 @@
-﻿using HomeCycle.Application.Commons.Results;
+﻿using HomeCycle.Application.Commons.Paginations;
+using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Requests.Auths;
 using HomeCycle.Application.DTOs.Responses;
 using HomeCycle.Application.DTOs.Responses.Auths;
@@ -28,6 +29,13 @@ namespace HomeCycle.Application.Interfaces.Services.Auths
         Task<Result<LoginResponseDto>> RegisterBusinessAccountAsync(string registrationToken, RegisterBusinessAccountRequest request, CancellationToken cancellationToken = default);
 
         Task<Result<AuthResponse>> RegisterPersonalAsync(string email, RegisterPersonalRequest request, CancellationToken cancellationToken = default);
+
+        //admin: manage users
+        Task<Result<PagedResult<UserAdminResponse>>> GetAllUsersAsync(GetAllUsersRequest request, CancellationToken cancellationToken = default);
+
+        Task<Result<UserAdminResponse>> LockUserAsync(Guid adminId, Guid targetUserId, CancellationToken cancellationToken = default);
+
+        Task<Result<UserAdminResponse>> UnlockUserAsync(Guid adminId, Guid targetUserId, CancellationToken cancellationToken = default);
 
     }
 }
