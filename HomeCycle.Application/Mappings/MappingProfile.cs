@@ -537,6 +537,7 @@ namespace HomeCycle.Application.Mappings
                 .ForMember(dest => dest.MediaUrl, opt => opt.Ignore())
                 .ForMember(dest => dest.IsRead, opt => opt.Ignore())
                 .ForMember(dest => dest.CreatedAt, opt => opt.Ignore())
+                .ForMember(dest => dest.UpdatedAt, opt => opt.Ignore())
                 .ForMember(dest => dest.BasePriceSnapshot, opt => opt.Ignore());
 
             CreateMap<negotiation, NegotiationResponse>();

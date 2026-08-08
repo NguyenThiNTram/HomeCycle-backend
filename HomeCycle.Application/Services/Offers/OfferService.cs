@@ -418,7 +418,8 @@ namespace HomeCycle.Application.Services.Offers
                     MediaUrl = null,
                     BasePriceSnapshot = post.BasePrice,
                     IsRead = false,
-                    CreatedAt = now
+                    CreatedAt = now,
+                    UpdatedAt = now
                 };
 
                 // Offer lưu snapshot mới + Messages giữ lịch sử thay đổi
@@ -539,6 +540,7 @@ namespace HomeCycle.Application.Services.Offers
             initialMessage.IsRead = true;
             initialMessage.BasePriceSnapshot = basePrice;
             initialMessage.CreatedAt = now;
+            initialMessage.UpdatedAt = now;
 
             return initialMessage;
         }
