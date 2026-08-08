@@ -1,54 +1,59 @@
 ﻿using FluentValidation;
+using HomeCycle.Application.DTOs.Requests.Agreements;
 using HomeCycle.Application.Interfaces.Externals;
 using HomeCycle.Application.Interfaces.Generics;
 using HomeCycle.Application.Interfaces.Repositories;
 using HomeCycle.Application.Interfaces.Repositories.Agreements;
 using HomeCycle.Application.Interfaces.Repositories.Appointments;
 using HomeCycle.Application.Interfaces.Repositories.Banks;
-using HomeCycle.Application.Interfaces.Repositories.Orders;
-using HomeCycle.Application.Interfaces.Repositories.Payments;
-using HomeCycle.Application.Interfaces.Repositories.Profiles;
 using HomeCycle.Application.Interfaces.Repositories.Media;
 using HomeCycle.Application.Interfaces.Repositories.Offers;
+using HomeCycle.Application.Interfaces.Repositories.Orders;
+using HomeCycle.Application.Interfaces.Repositories.Payments;
 using HomeCycle.Application.Interfaces.Repositories.Posts;
 using HomeCycle.Application.Interfaces.Repositories.Products;
+using HomeCycle.Application.Interfaces.Repositories.Profiles;
 using HomeCycle.Application.Interfaces.Repositories.Shipments;
 using HomeCycle.Application.Interfaces.Repositories.Users;
 using HomeCycle.Application.Interfaces.Repositories.Wallets;
 using HomeCycle.Application.Interfaces.Security;
 using HomeCycle.Application.Interfaces.Services.Agreements;
 using HomeCycle.Application.Interfaces.Services.Auths;
-using HomeCycle.Application.Interfaces.Services.Moderators;
-using HomeCycle.Application.Interfaces.Services.Payments;
-using HomeCycle.Application.Interfaces.Services.Profiles;
 using HomeCycle.Application.Interfaces.Services.Externals;
+using HomeCycle.Application.Interfaces.Services.Moderators;
+using HomeCycle.Application.Interfaces.Services.Negotiates;
 using HomeCycle.Application.Interfaces.Services.Offers;
+using HomeCycle.Application.Interfaces.Services.Payments;
 using HomeCycle.Application.Interfaces.Services.Posts;
 using HomeCycle.Application.Interfaces.Services.Products;
+using HomeCycle.Application.Interfaces.Services.Profiles;
 using HomeCycle.Application.Interfaces.Services.Users;
 using HomeCycle.Application.Mappings;
 using HomeCycle.Application.Services.Agreements;
 using HomeCycle.Application.Services.Auths;
-using HomeCycle.Application.Services.Personals;
+using HomeCycle.Application.Services.Moderators;
+using HomeCycle.Application.Services.Negotiates;
 using HomeCycle.Application.Services.Offers;
+using HomeCycle.Application.Services.Payments;
+using HomeCycle.Application.Services.Personals;
 using HomeCycle.Application.Services.Posts;
 using HomeCycle.Application.Services.Products;
-using HomeCycle.Application.Services.Moderators;
-using HomeCycle.Application.Services.Payments;
 using HomeCycle.Application.Services.Profiles;
+using HomeCycle.Application.Validations.Agreements;
 using HomeCycle.Application.Validations.Auths;
 using HomeCycle.Application.Validations.Users;
 using HomeCycle.Infrastructure.DbContexts;
 using HomeCycle.Infrastructure.Externals;
+using HomeCycle.Infrastructure.Externals.GHN;
 using HomeCycle.Infrastructure.Repositories.Agreements;
 using HomeCycle.Infrastructure.Repositories.Appointments;
 using HomeCycle.Infrastructure.Repositories.Banks;
+using HomeCycle.Infrastructure.Repositories.Offers;
 using HomeCycle.Infrastructure.Repositories.Orders;
 using HomeCycle.Infrastructure.Repositories.Payments;
-using HomeCycle.Infrastructure.Repositories.Profiles;
-using HomeCycle.Infrastructure.Repositories.Offers;
 using HomeCycle.Infrastructure.Repositories.Posts;
 using HomeCycle.Infrastructure.Repositories.Products;
+using HomeCycle.Infrastructure.Repositories.Profiles;
 using HomeCycle.Infrastructure.Repositories.Shipments;
 using HomeCycle.Infrastructure.Repositories.Users;
 using HomeCycle.Infrastructure.Repositories.Wallets;
@@ -58,11 +63,9 @@ using MathNet.Numerics;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using HomeCycle.Application.Validations.Agreements;
-using HomeCycle.Application.DTOs.Requests.Agreements;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using HomeCycle.Application.Interfaces.Services.Negotiates;
-using HomeCycle.Application.Services.Negotiates;
+using Microsoft.Extensions.Options;
+using System.Net.Http.Headers;
 
 
 namespace HomeCycle.Infrastructure
@@ -176,6 +179,37 @@ namespace HomeCycle.Infrastructure
 
             services.Configure<PayOSSettings>(configuration.GetSection("PayOS"));
             services.AddScoped<IPaymentGatewayService, PayOSGatewayAdapter>();
+
+            services.AddOptions<GhnSettings>().Bind(configuration.GetSection(GhnSettings.SectionName))
+                .Validate(
+                    x => Uri.TryCreate(x.BaseUrl, UriKind.Absolute, out _), "GHN BaseUrl không hợp lệ.")
+                .Validate(
+                    x => x.BaseUrl.EndsWith("/", StringComparison.Ordinal), "GHN BaseUrl phải kết thúc bằng '/'.")
+                .Validate(
+                    x => !string.IsNullOrWhiteSpace(x.Token), "GHN Token chưa được cấu hình.")
+                .Validate(
+                    x => x.ShopId > 0, "GHN ShopId chưa được cấu hình.")
+                .Validate(
+                    x => x.TimeoutSeconds is >= 5 and <= 120, "GHN TimeoutSeconds phải từ 5 đến 120 giây.")
+                .ValidateOnStart();
+
+            services.AddMemoryCache();
+
+            services.AddHttpClient<IGhnService, GhnService>(
+                (serviceProvider, client) =>
+                {
+                    var settings = serviceProvider
+                        .GetRequiredService<IOptions<GhnSettings>>().Value;
+
+                    client.BaseAddress = new Uri(settings.BaseUrl);
+                    client.Timeout = TimeSpan.FromSeconds(settings.TimeoutSeconds);
+
+                    client.DefaultRequestHeaders.Accept.Add(
+                        new MediaTypeWithQualityHeaderValue("application/json"));
+
+                    client.DefaultRequestHeaders.TryAddWithoutValidation(
+                        "Token", settings.Token);
+                });
 
             return services;
         }
