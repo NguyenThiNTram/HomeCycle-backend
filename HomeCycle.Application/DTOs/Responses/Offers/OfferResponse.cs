@@ -21,7 +21,7 @@ namespace HomeCycle.Application.DTOs.Responses.Offers
 
         public int OfferQuantity { get; set; }
 
-        public int? OfferStatus { get; set; }
+        public OfferStatus? OfferStatus { get; set; }
 
         public DateTime CreatedAt { get; set; }
     }
