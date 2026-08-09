@@ -98,6 +98,8 @@ namespace HomeCycle.Application.Services.Offers
                         request.OfferQuantity,
                         post.RemainingQuantity));
 
+            var expectedBaseTotalPrice = post.BasePrice * request.OfferQuantity;
+
             var priceError = ValidatePriceRange(post.BasePrice, request.OfferPrice);
             if (priceError is not null)
                 return Result<OfferResponse>.Fail(priceError);
@@ -549,13 +551,13 @@ namespace HomeCycle.Application.Services.Offers
             return initialMessage;
         }
 
-        private Error? ValidatePriceRange(decimal? basePrice, decimal offerPrice)
+        private Error? ValidatePriceRange(decimal? expectedTotalPrice, decimal offerPrice)
         {
-            if (!basePrice.HasValue)
+            if (!expectedTotalPrice.HasValue)
                 return OfferErrors.PriceOutOfRange(0, 0);
 
-            var minPrice = basePrice.Value * MinPriceFactor;
-            var maxPrice = basePrice.Value * MaxPriceFactor;
+            var minPrice = expectedTotalPrice.Value * MinPriceFactor;
+            var maxPrice = expectedTotalPrice.Value * MaxPriceFactor;
 
             return offerPrice < minPrice || offerPrice > maxPrice
                 ? OfferErrors.PriceOutOfRange(minPrice, maxPrice)
