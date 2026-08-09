@@ -81,7 +81,8 @@ namespace HomeCycle.Application.Services.Agreements
                 response.AgreementId = agreement.AgreementId;
                 bool isPending = agreement.AgreementStatus == (int)AgreementStatus.Pending;
 
-                response.CanEdit = isSeller && isPending;
+ 
+                response.CanEdit = isPending;
                 if (isPending)
                 {
                     response.CanConfirm = isSeller ? agreement.SellerConfirmedAt == null : agreement.BuyerConfirmedAt == null;
@@ -227,70 +228,153 @@ namespace HomeCycle.Application.Services.Agreements
             return Result<AgreementDetailResponse>.Success(response);
         }
 
-        public async Task<Result<bool>> UpdateAgreementAsync(Guid agreementId, UpdateAgreementFormRequest request, Guid currentUserId, CancellationToken cancellationToken = default)
+        public async Task<Result<AgreementActionResponse>> UpdateAgreementAsync(Guid agreementId, UpdateAgreementFormRequest request, Guid currentUserId, CancellationToken cancellationToken = default)
         {
             var validationResult = await _updateValidator.ValidateAsync(request, cancellationToken);
             if (!validationResult.IsValid)
             {
                 var errorMessage = string.Join(" | ", validationResult.Errors.Select(e => e.ErrorMessage));
-                return Result<bool>.Fail(new Error("Validation.InvalidRequest", errorMessage));
+                return Result<AgreementActionResponse>.Fail(new Error("Validation.InvalidRequest", errorMessage));
             }
 
             var agreement = await _agreementRepo.GetByIdAsync(agreementId, cancellationToken);
             if (agreement == null)
-                return Result<bool>.Fail(new Error("Agreement.NotFound", "Không tìm thấy thỏa thuận."));
+                return Result<AgreementActionResponse>.Fail(new Error("Agreement.NotFound", "Không tìm thấy thỏa thuận."));
 
-            if (agreement.SellerId != currentUserId)
-                return Result<bool>.Fail(new Error("Auth.Forbidden", "Chỉ người bán mới được cập nhật thỏa thuận."));
-
-            if (agreement.BuyerConfirmedAt != null)
-                return Result<bool>.Fail(new Error("Agreement.Locked", "Không thể sửa đổi vì người mua đã xác nhận. Vui lòng hủy thỏa thuận nếu muốn thay đổi."));
+            bool isSeller = agreement.SellerId == currentUserId;
+            bool isBuyer = agreement.BuyerId == currentUserId;
+            if (!isSeller && !isBuyer)
+                return Result<AgreementActionResponse>.Fail(new Error("Auth.Forbidden", "Bạn không có quyền cập nhật thỏa thuận này."));
 
             if (agreement.AgreementStatus != (int)AgreementStatus.Pending)
-                return Result<bool>.Fail(new Error("Agreement.InvalidStatus", "Chỉ có thể sửa khi thỏa thuận đang chờ xác nhận."));
+                return Result<AgreementActionResponse>.Fail(new Error(
+                    "Agreement.InvalidStatus",
+                    "Thỏa thuận đã được cả hai bên chốt. Vui lòng yêu cầu mở lại (Request Edit) trước khi chỉnh sửa."));
 
-            // Nếu Seller sửa thì reset lại Confirmed của cả 2 bên (nếu trước đó đã có người lỡ ấn Confirm)
             agreement.AgreementType = (int)request.AgreementType;
             agreement.PaymentType = (int)request.PaymentType;
             agreement.AgreementDetailsJsonb = JsonSerializer.Serialize(request.AgreementDetails);
-            agreement.SellerConfirmedAt = DateTime.UtcNow;
+
+
+            var now = DateTime.UtcNow;
+            if (isSeller)
+            {
+                agreement.SellerConfirmedAt = now;
+                agreement.BuyerConfirmedAt = null;
+            }
+            else 
+            {
+                agreement.BuyerConfirmedAt = now;
+                agreement.SellerConfirmedAt = null;
+            }
+
+            await _agreementRepo.UpdateAsync(agreement, cancellationToken);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+            return Result<AgreementActionResponse>.Success(new AgreementActionResponse
+            {
+                Message = "Cập nhật thỏa thuận thành công. Bên còn lại cần xác nhận lại nội dung mới.",
+                AgreementId = agreement.AgreementId,
+                AgreementStatus = (AgreementStatus)agreement.AgreementStatus,
+                SellerConfirmed = agreement.SellerConfirmedAt != null,
+                BuyerConfirmed = agreement.BuyerConfirmedAt != null,
+                SellerConfirmedAt = agreement.SellerConfirmedAt,
+                BuyerConfirmedAt = agreement.BuyerConfirmedAt
+            });
+        }
+
+
+        public async Task<Result<AgreementActionResponse>> AcceptAgreementAsync(Guid agreementId, Guid currentUserId, CancellationToken cancellationToken = default)
+        {
+            // 1. Lấy dữ liệu
+            var agreement = await _agreementRepo.GetByIdAsync(agreementId, cancellationToken);
+            if (agreement == null)
+                return Result<AgreementActionResponse>.Fail(new Error("Agreement.NotFound", "Không tìm thấy thỏa thuận."));
+
+            // 2. Phân quyền: cả Seller và Buyer đều có thể tự accept phần của mình
+            bool isSeller = agreement.SellerId == currentUserId;
+            bool isBuyer = agreement.BuyerId == currentUserId;
+            if (!isSeller && !isBuyer)
+                return Result<AgreementActionResponse>.Fail(new Error("Auth.Forbidden", "Bạn không có quyền chấp nhận thỏa thuận này."));
+
+            // 3. State Machine: Chỉ được Accept khi đang Pending
+            if (agreement.AgreementStatus != (int)AgreementStatus.Pending)
+                return Result<AgreementActionResponse>.Fail(new Error("Agreement.InvalidStatus", "Thỏa thuận không ở trạng thái chờ xác nhận."));
+
+            // 4. Không cho accept lặp lại nếu bên đó đã confirm rồi (idempotent - tránh nhầm lẫn ở FE)
+            if (isSeller && agreement.SellerConfirmedAt != null)
+                return Result<AgreementActionResponse>.Fail(new Error("Agreement.AlreadyConfirmed", "Bạn đã xác nhận thỏa thuận này rồi."));
+            if (isBuyer && agreement.BuyerConfirmedAt != null)
+                return Result<AgreementActionResponse>.Fail(new Error("Agreement.AlreadyConfirmed", "Bạn đã xác nhận thỏa thuận này rồi."));
+
+            // 5. Set confirm cho đúng phần của người gọi (không đụng vào phần bên kia)
+            var now = DateTime.UtcNow;
+            if (isSeller)
+                agreement.SellerConfirmedAt = now;
+            else
+                agreement.BuyerConfirmedAt = now;
+
+            // 6. Nếu cả 2 đã confirm -> tự động chuyển sang chờ thanh toán
+            bool bothConfirmed = agreement.SellerConfirmedAt != null && agreement.BuyerConfirmedAt != null;
+            if (bothConfirmed)
+                agreement.AgreementStatus = (int)AgreementStatus.Awaiting_Payment;
+
+            // 7. Cập nhật DB (Không cần BeginTransaction vì chỉ tác động 1 bảng)
+            await _agreementRepo.UpdateAsync(agreement, cancellationToken);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+            return Result<AgreementActionResponse>.Success(new AgreementActionResponse
+            {
+                Message = bothConfirmed
+                    ? "Cả hai bên đã đồng ý. Vui lòng tiến hành thanh toán."
+                    : "Bạn đã xác nhận thỏa thuận. Đang chờ bên còn lại xác nhận.",
+                AgreementId = agreement.AgreementId,
+                AgreementStatus = (AgreementStatus)agreement.AgreementStatus,
+                SellerConfirmed = agreement.SellerConfirmedAt != null,
+                BuyerConfirmed = agreement.BuyerConfirmedAt != null,
+                SellerConfirmedAt = agreement.SellerConfirmedAt,
+                BuyerConfirmedAt = agreement.BuyerConfirmedAt
+            });
+        }
+
+        public async Task<Result<AgreementActionResponse>> RequestEditAsync(Guid agreementId, Guid currentUserId, CancellationToken cancellationToken = default)
+        {
+            // 1. Lấy dữ liệu
+            var agreement = await _agreementRepo.GetByIdAsync(agreementId, cancellationToken);
+            if (agreement == null)
+                return Result<AgreementActionResponse>.Fail(new Error("Agreement.NotFound", "Không tìm thấy thỏa thuận."));
+
+            // 2. Phân quyền: cả Seller và Buyer đều có quyền yêu cầu mở lại để chỉnh sửa
+            bool isSeller = agreement.SellerId == currentUserId;
+            bool isBuyer = agreement.BuyerId == currentUserId;
+            if (!isSeller && !isBuyer)
+                return Result<AgreementActionResponse>.Fail(new Error("Auth.Forbidden", "Bạn không có quyền yêu cầu chỉnh sửa thỏa thuận này."));
+
+            // 3. State Machine: chỉ dùng để MỞ LẠI khi đã Awaiting_Payment (cả 2 đã chốt).
+            //    Nếu còn Pending thì gọi thẳng Update là đủ, không cần qua bước này.
+            if (agreement.AgreementStatus != (int)AgreementStatus.Awaiting_Payment)
+                return Result<AgreementActionResponse>.Fail(new Error(
+                    "Agreement.InvalidStatus",
+                    "Chỉ có thể yêu cầu mở lại khi thỏa thuận đã được cả hai bên chốt và đang chờ thanh toán."));
+
+            // 4. Mở lại: đưa về Pending, reset cả 2 confirm (nội dung sắp bị sửa nên cả 2 phải xác nhận lại)
+            agreement.AgreementStatus = (int)AgreementStatus.Pending;
+            agreement.SellerConfirmedAt = null;
             agreement.BuyerConfirmedAt = null;
 
             await _agreementRepo.UpdateAsync(agreement, cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-            return Result<bool>.Success(true);
-        }
-
-
-        public async Task<Result<bool>> AcceptAgreementAsync(Guid agreementId, Guid buyerId, CancellationToken cancellationToken = default)
-        {
-            // 1. Lấy dữ liệu
-            var agreement = await _agreementRepo.GetByIdAsync(agreementId, cancellationToken);
-            if (agreement == null)
-                return Result<bool>.Fail(new Error("Agreement.NotFound", "Không tìm thấy thỏa thuận."));
-
-            // 2. Phân quyền: Chỉ Buyer mới có nút Accept
-            if (agreement.BuyerId != buyerId)
-                return Result<bool>.Fail(new Error("Auth.Forbidden", "Chỉ người mua mới có quyền chấp nhận thỏa thuận này."));
-
-            // 3. State Machine: Chỉ được Accept khi đang Pending
-            if (agreement.AgreementStatus != (int)AgreementStatus.Pending)
-                return Result<bool>.Fail(new Error("Agreement.InvalidStatus", "Thỏa thuận không ở trạng thái chờ xác nhận."));
-
-            // 4. Defensive Check: Đảm bảo Seller đã chốt rồi
-            if (agreement.SellerConfirmedAt == null)
-                return Result<bool>.Fail(new Error("Agreement.NotReady", "Người bán chưa chốt thỏa thuận, không thể chấp nhận."));
-
-            // 5. Thay đổi trạng thái
-            agreement.BuyerConfirmedAt = DateTime.UtcNow;
-            agreement.AgreementStatus = (int)AgreementStatus.Awaiting_Payment;
-
-            // 6. Cập nhật DB (Không cần BeginTransaction vì chỉ tác động 1 bảng)
-            await _agreementRepo.UpdateAsync(agreement, cancellationToken);
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
-
-            return Result<bool>.Success(true);
+            return Result<AgreementActionResponse>.Success(new AgreementActionResponse
+            {
+                Message = "Đã mở lại thỏa thuận để chỉnh sửa. Cả hai bên cần xác nhận lại sau khi cập nhật.",
+                AgreementId = agreement.AgreementId,
+                AgreementStatus = (AgreementStatus)agreement.AgreementStatus,
+                SellerConfirmed = false,
+                BuyerConfirmed = false,
+                SellerConfirmedAt = null,
+                BuyerConfirmedAt = null
+            });
         }
 
     }
