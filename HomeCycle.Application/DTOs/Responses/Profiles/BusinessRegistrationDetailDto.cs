@@ -1,4 +1,5 @@
-﻿using System;
+﻿using HomeCycle.Domain.Enums;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -18,11 +19,11 @@ namespace HomeCycle.Application.DTOs.Responses.Profiles
         public string City { get; set; } = null!;
         public string IdentityNumber { get; set; } = null!;
         public string IdentityName { get; set; }
-        public DateTime IdentityDob { get; set; }
+        public DateOnly IdentityDob { get; set; }
         public string IdentityAddress { get; set; }
         public string? OperatingScope { get; set; }
-        public int BusinessModel { get; set; } 
-        public int Status { get; set; } 
+        public BusinessModel BusinessModel { get; set; } 
+        public BusinessProfileStatus Status { get; set; } 
         public string? RejectReason { get; set; }   
 
 
@@ -34,7 +35,7 @@ namespace HomeCycle.Application.DTOs.Responses.Profiles
        
         public List<BusinessRegistrationDocumentDto> Documents { get; set; } = new();
 
-        public List<BusinessRegistrationServiceAreaDto> ServiceAreas { get; set; } = new();
+        public BusinessRegistrationServiceAreaDto ServiceAreas { get; set; }
     }
 
     public class BusinessRegistrationDocumentDto
@@ -46,8 +47,9 @@ namespace HomeCycle.Application.DTOs.Responses.Profiles
 
     public class BusinessRegistrationServiceAreaDto
     {
+        public Guid BusinessServiceAreaId { get; set; }
         public string City { get; set; } = null!;
-        public string District { get; set; } = null!;
+        public string Street { get; set; } = null!;
         public string Ward { get; set; } = null!;
     }
 }

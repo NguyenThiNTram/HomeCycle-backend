@@ -29,8 +29,9 @@ public partial class Business_Profile
 
     [StringLength(20)]
     public string IdentityNumber { get; set; }
-    public string IdentityName { get; set; } 
-    public DateTime IdentityDob { get; set; } 
+    public string IdentityName { get; set; }
+    [Column(TypeName = "date")]
+    public DateOnly IdentityDob { get; set; } 
     public string IdentityAddress { get; set; } 
 
     public string? BusinessAddress { get; set; }

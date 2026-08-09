@@ -40,7 +40,8 @@ namespace HomeCycle.Application.Validations.Profiles
 
             RuleFor(x => x.IdentityDob)
                 .NotEmpty().WithMessage("Date of birth on Identity Card is required.")
-                .Must(dob => dob != default(DateTime)).WithMessage("Invalid date of birth.");
+                .Must(dob => dob != default(DateOnly)).WithMessage("Invalid date of birth.")
+                .Must(dob => dob <= DateOnly.FromDateTime(DateTime.UtcNow)).WithMessage("Date of birth cannot be in the future.");
 
             RuleFor(x => x.IdentityAddress)
                 .NotEmpty().WithMessage("Address on Identity Card is required.");
@@ -86,20 +87,20 @@ namespace HomeCycle.Application.Validations.Profiles
                     if (isResubmit && existingActiveTypes.Contains(reqType)) continue;
 
                     // Còn lại -> Thiếu file, quăng lỗi
-                    context.AddFailure("Documents", $"Bắt buộc phải đính kèm tài liệu loại {reqType} (CCCD/Giấy ĐKKD).");
+                    context.AddFailure("Documents", $"Bắt buộc phải đính kèm tài liệu loại {reqType} (CCCD mặt trước/CCCD mặt sau/Giấy ĐKKD).");
                 }
             });
 
             // 7. Chốt chặn phân vùng kho bãi hoạt động (Chỉ ép buộc đối với Enterprise)
-            RuleFor(x => x.ServiceAreas)
+            RuleFor(x => x.ServiceArea)
                 .NotEmpty().WithMessage("Enterprises are required to register at least one warehouse/service area (Business Service Area).")
                 .When(x => x.BusinessModel == 1);
 
-            RuleForEach(x => x.ServiceAreas).ChildRules(area =>
+            When(x => x.ServiceArea != null, () =>
             {
-                area.RuleFor(a => a.City).NotEmpty().WithMessage("Warehouse City is required.");
-                area.RuleFor(a => a.District).NotEmpty().WithMessage("Warehouse District is required.");
-                area.RuleFor(a => a.Ward).NotEmpty().WithMessage("Warehouse Ward is required.");
+                RuleFor(x => x.ServiceArea!.City).NotEmpty().WithMessage("Warehouse City is required.");
+                RuleFor(x => x.ServiceArea!.Street).NotEmpty().WithMessage("Warehouse Street/Address is required.");
+                RuleFor(x => x.ServiceArea!.Ward).NotEmpty().WithMessage("Warehouse Ward is required.");
             });
         }
 

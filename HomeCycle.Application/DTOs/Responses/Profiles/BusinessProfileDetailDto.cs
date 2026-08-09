@@ -1,4 +1,5 @@
 ﻿using HomeCycle.Application.DTOs.Responses.Banks;
+using HomeCycle.Domain.Enums;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -27,11 +28,11 @@ namespace HomeCycle.Application.DTOs.Responses.Profiles
         public string City { get; set; } = string.Empty;
         public string IdentityNumber { get; set; } = string.Empty;
         public string IdentityName { get; set; }
-        public DateTime IdentityDob { get; set; }
+        public DateOnly IdentityDob { get; set; }
         public string IdentityAddress { get; set; }
         public string? OperatingScope { get; set; }
-        public int BusinessModel { get; set; }
-        public int Status { get; set; }
+        public BusinessModel BusinessModel { get; set; }
+        public BusinessProfileStatus Status { get; set; }
         public int ReputationScore { get; set; }
 
         // 3. Thông tin Liên kết (Tài khoản ngân hàng, Giấy tờ, Khu vực hoạt động)
@@ -49,8 +50,9 @@ namespace HomeCycle.Application.DTOs.Responses.Profiles
 
     public class BusinessServiceAreaResponseDto
     {
+        public Guid BusinessServiceAreaId { get; set; }
         public string City { get; set; } = string.Empty;
-        public string District { get; set; } = string.Empty;
+        public string Street { get; set; } = string.Empty;
         public string Ward { get; set; } = string.Empty;
     }
 }

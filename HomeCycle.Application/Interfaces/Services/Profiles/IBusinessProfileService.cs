@@ -24,7 +24,7 @@ namespace HomeCycle.Application.Interfaces.Services.Profiles
             CancellationToken cancellationToken = default);
         Task<Result> SaveProcurementPreferenceAsync(Guid userId, SubmitBusinessSurveyRequest request, CancellationToken cancellationToken);
         Task<Result<BusinessSurveyDetailResponse>> GetProcurementPreferenceAsync(Guid userId, CancellationToken cancellationToken);
-        Task<Result<BusinessOnboardingStatus>> GetOnboardingStatusAsync(Guid userId, CancellationToken cancellationToken);
+        Task<Result<BusinessOnboardingStatusDto>> GetOnboardingStatusAsync(Guid userId, CancellationToken cancellationToken);
 
         Task<Result<BusinessProfileDetailDto>> GetBusinessProfileAsync(Guid userId, CancellationToken cancellationToken = default);
         Task<Result> UpdateUsernameAsync(Guid userId, UpdateUsernameRequest request, CancellationToken cancellationToken = default);
@@ -35,6 +35,8 @@ namespace HomeCycle.Application.Interfaces.Services.Profiles
         Task<Result> UpdateBusinessServiceAreasAsync(Guid userId, UpdateBusinessServiceAreasRequest request, CancellationToken cancellationToken = default);
         Task<Result> UpdateIdentityAsync(Guid userId, UpdateIdentityRequest request, CancellationToken cancellationToken = default);
         Task<Result> UpdateBusinessRegistrationAsync(Guid userId, UpdateBusinessRegistrationRequest request, CancellationToken cancellationToken = default);
-
+        Task<Result<Guid>> CreateBusinessServiceAreaAsync(Guid userId, BusinessServiceAreaRequestDto request, CancellationToken cancellationToken = default);
+        Task<Result> UpdateBusinessServiceAreaAsync(Guid userId, Guid businessServiceAreaId, BusinessServiceAreaRequestDto request, CancellationToken cancellationToken = default);
+        Task<Result> DeleteBusinessServiceAreaAsync(Guid userId, Guid businessServiceAreaId, CancellationToken cancellationToken = default);
     }
 }

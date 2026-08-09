@@ -67,5 +67,29 @@ namespace HomeCycle.Infrastructure.Repositories.Profiles
             if (entities.Any())
                 _db.Business_Service_Areas.RemoveRange(entities);
         }
+
+        public async Task<business_service_area?> GetByIdAsync(Guid businessServiceAreaId, CancellationToken cancellationToken = default)
+        {
+            var entity = await _db.Business_Service_Areas
+                .AsNoTracking()
+                .FirstOrDefaultAsync(x => x.BusinessServiceAreaId == businessServiceAreaId, cancellationToken);
+
+            return entity?.ToDomain();
+        }
+
+        public void Update(business_service_area serviceArea)
+        {
+            var entity = serviceArea.ToInfrastructure();
+            _db.Business_Service_Areas.Update(entity);
+        }
+
+        public async Task DeleteAsync(Guid businessServiceAreaId, CancellationToken cancellationToken = default)
+        {
+            var entity = await _db.Business_Service_Areas
+                .FirstOrDefaultAsync(x => x.BusinessServiceAreaId == businessServiceAreaId, cancellationToken);
+
+            if (entity != null)
+                _db.Business_Service_Areas.Remove(entity);
+        }
     }
 }

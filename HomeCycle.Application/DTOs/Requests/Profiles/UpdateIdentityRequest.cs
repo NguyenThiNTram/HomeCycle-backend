@@ -12,7 +12,7 @@ namespace HomeCycle.Application.DTOs.Requests.Profiles
         public string FullName { get; set; } = string.Empty;
         public string IdentityNumber { get; set; } = string.Empty;
         public string IdentityName { get; set; } = string.Empty;
-        public DateTime IdentityDob { get; set; }
+        public DateOnly IdentityDob { get; set; }
         public string IdentityAddress { get; set; } = string.Empty;
 
         public IFormFile CccdFront { get; set; } = null!;
