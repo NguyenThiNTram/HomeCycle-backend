@@ -25,7 +25,7 @@ namespace HomeCycle.Application.Services.Payments
     {
         // Tech Lead Note: Hằng số thay cho Magic Numbers. 
         // Đặt ở đây để dễ dàng thay đổi theo Business rule mà không phải lục tìm trong logic.
-        private const decimal DEPOSIT_RATE = 0.10m;
+        private const decimal DEPOSIT_RATE = 0.20m;
 
         private readonly IUnitOfWork _unitOfWork;
         private readonly IPaymentGatewayService _gatewayService;

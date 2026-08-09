@@ -185,8 +185,8 @@ namespace HomeCycle.Application.Services.Moderators
                 City = profile.City,
                 IdentityNumber = profile.IdentityNumber,
                 OperatingScope = profile.OperatingScope,
-                BusinessModel = profile.BusinessModel,
-                Status = profile.Status,
+                BusinessModel = (BusinessModel)profile.BusinessModel,
+                Status = (BusinessProfileStatus)profile.Status,
                 RejectReason = profile.RejectReason,
 
                 // Thông tin ngân hàng (Lấy từ bankAccount object, handle null an toàn)
@@ -206,10 +206,11 @@ namespace HomeCycle.Application.Services.Moderators
                 // Map danh sách khu vực hoạt động
                 ServiceAreas = serviceAreas.Select(sa => new BusinessRegistrationServiceAreaDto
                 {
+                    BusinessServiceAreaId = sa.BusinessServiceAreaId,
                     City = sa.City,
-                    District = sa.District,
+                    Street = sa.Street,
                     Ward = sa.Ward
-                }).ToList()
+                }).FirstOrDefault()
             };
 
             return Result<BusinessRegistrationDetailDto>.Success(detailDto);

@@ -10,7 +10,7 @@ namespace HomeCycle.API.Controllers
 {
     [Route("api/moderator")]
     [ApiController]
-    //[Authorize(Roles = "Moderator")]
+    [Authorize(Roles = "Moderator")]
     public class ModeratorController : ControllerBase
     {
         private readonly IModeratorService _moderatorService;
@@ -50,7 +50,7 @@ namespace HomeCycle.API.Controllers
             });
         }
 
-        [HttpGet("business-profiles/{id}")]
+        [HttpGet("business-profiles/{profileId}")]
         public async Task<IActionResult> GetBusinessProfileDetail(
             [FromRoute] Guid profileId,
             CancellationToken cancellationToken)

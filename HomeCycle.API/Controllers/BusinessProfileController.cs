@@ -11,7 +11,7 @@ namespace HomeCycle.API.Controllers
 {
     [Route("api/business-profiles")]
     [ApiController]
-    //[Authorize]
+    [Authorize]
     public class BusinessProfileController : ControllerBase
     {
         private readonly IBusinessProfileService _businessProfileService;
@@ -24,11 +24,8 @@ namespace HomeCycle.API.Controllers
         [HttpGet("registration-detail")]
         public async Task<IActionResult> GetRegistrationDetail(CancellationToken cancellationToken)
         {
-            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            if (string.IsNullOrEmpty(userIdClaim))
-                return Unauthorized(new { success = false, message = "Không tìm thấy thông tin tài khoản trong phiên làm việc." });
 
-            var userId = Guid.Parse(userIdClaim);
+            var userId = GetCurrentUserId();
             var result = await _businessProfileService.GetRegistrationDetailAsync(userId, cancellationToken);
 
             if (!result.IsSuccess)
@@ -57,7 +54,7 @@ namespace HomeCycle.API.Controllers
             var userId = GetCurrentUserId();
             var result = await _businessProfileService.GetOnboardingStatusAsync(userId, cancellationToken);
 
-            return result.IsSuccess ? Ok(new { success = true, data = (int)result.Data }) : BadRequest(result.Error);
+            return result.IsSuccess ? Ok(new { success = true, data = result.Data }) : BadRequest(result.Error);
         }
 
         [HttpPost("survey")]
@@ -163,19 +160,19 @@ namespace HomeCycle.API.Controllers
             return Ok(result);
         }
 
-        [HttpPut("service-areas")]
-        public async Task<IActionResult> UpdateServiceAreas(
-            [FromBody] UpdateBusinessServiceAreasRequest request,
-            CancellationToken cancellationToken)
-        {
-            var userId = GetCurrentUserId();
-            var result = await _businessProfileService.UpdateBusinessServiceAreasAsync(userId, request, cancellationToken);
+        //[HttpPut("service-areas")]
+        //public async Task<IActionResult> UpdateServiceAreas(
+        //    [FromBody] UpdateBusinessServiceAreasRequest request,
+        //    CancellationToken cancellationToken)
+        //{
+        //    var userId = GetCurrentUserId();
+        //    var result = await _businessProfileService.UpdateBusinessServiceAreasAsync(userId, request, cancellationToken);
 
-            if (!result.IsSuccess)
-                return BadRequest(result);
+        //    if (!result.IsSuccess)
+        //        return BadRequest(result);
 
-            return Ok(result);
-        }
+        //    return Ok(result);
+        //}
 
         [HttpPut("identity")]
         public async Task<IActionResult> UpdateIdentity(
@@ -204,10 +201,56 @@ namespace HomeCycle.API.Controllers
 
             return Ok(result);
         }
+
+        [HttpPost("service-areas")]
+        public async Task<IActionResult> CreateServiceArea(
+            [FromBody] BusinessServiceAreaRequestDto request,
+            CancellationToken cancellationToken)
+        {
+            var userId = GetCurrentUserId();
+            var result = await _businessProfileService.CreateBusinessServiceAreaAsync(userId, request, cancellationToken);
+
+            if (!result.IsSuccess)
+                return BadRequest(new { success = false, code = result.Error.Code, message = result.Error.Message });
+
+            return Ok(new { success = true, data = new { businessServiceAreaId = result.Data } });
+        }
+
+        [HttpPut("service-areas/{businessServiceAreaId:guid}")]
+        public async Task<IActionResult> UpdateServiceArea(
+            [FromRoute] Guid businessServiceAreaId,
+            [FromBody] BusinessServiceAreaRequestDto request,
+            CancellationToken cancellationToken)
+        {
+            var userId = GetCurrentUserId();
+            var result = await _businessProfileService.UpdateBusinessServiceAreaAsync(userId, businessServiceAreaId, request, cancellationToken);
+
+            if (!result.IsSuccess)
+                return BadRequest(new { success = false, code = result.Error.Code, message = result.Error.Message });
+
+            return Ok(new { success = true });
+        }
+
+        [HttpDelete("service-areas/{businessServiceAreaId:guid}")]
+        public async Task<IActionResult> DeleteServiceArea(
+            [FromRoute] Guid businessServiceAreaId,
+            CancellationToken cancellationToken)
+        {
+            var userId = GetCurrentUserId();
+            var result = await _businessProfileService.DeleteBusinessServiceAreaAsync(userId, businessServiceAreaId, cancellationToken);
+
+            if (!result.IsSuccess)
+                return BadRequest(new { success = false, code = result.Error.Code, message = result.Error.Message });
+
+            return Ok(new { success = true });
+        }
         private Guid GetCurrentUserId()
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            return Guid.Parse(userIdClaim ?? Guid.Empty.ToString());
+            if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
+                throw new UnauthorizedAccessException("Token không hợp lệ hoặc thiếu thông tin định danh người dùng.");
+
+            return userId;
         }
     }
 }

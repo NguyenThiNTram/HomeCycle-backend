@@ -14,7 +14,7 @@ namespace HomeCycle.Application.DTOs.Requests.Profiles
     public class BusinessServiceAreaRequestDto
     {
         public string City { get; set; } = string.Empty;
-        public string District { get; set; } = string.Empty;
+        public string Street { get; set; } = string.Empty;
         public string Ward { get; set; } = string.Empty;
     }
 }

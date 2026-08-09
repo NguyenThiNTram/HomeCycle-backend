@@ -21,7 +21,7 @@ namespace HomeCycle.Application.Validations.Profiles
                     .NotEmpty().WithMessage("Tỉnh/Thành phố không được để trống.")
                     .MaximumLength(100).WithMessage("Tên Tỉnh/Thành phố quá dài.");
 
-                area.RuleFor(a => a.District)
+                area.RuleFor(a => a.Street)
                     .NotEmpty().WithMessage("Quận/Huyện không được để trống.")
                     .MaximumLength(100).WithMessage("Tên Quận/Huyện quá dài.");
 

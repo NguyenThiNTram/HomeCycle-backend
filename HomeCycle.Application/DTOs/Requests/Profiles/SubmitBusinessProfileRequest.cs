@@ -16,7 +16,7 @@ namespace HomeCycle.Application.DTOs.Requests.Profiles
         public string TaxCode { get; set; } = null!;
         public string IdentityNumber { get; set; } = null!;
         public string IdentityName { get; set; }
-        public DateTime IdentityDob { get; set; }
+        public DateOnly IdentityDob { get; set; }
         public string IdentityAddress { get; set; }
         public string BusinessAddress { get; set; } = null!;
         public string Ward { get; set; } = null!;
@@ -32,7 +32,7 @@ namespace HomeCycle.Application.DTOs.Requests.Profiles
 
      
         public List<BusinessDocumentDto> Documents { get; set; } = new();
-        public List<BusinessServiceAreaDto> ServiceAreas { get; set; } = new();
+        public BusinessServiceAreaDto ServiceArea { get; set; }
     }
 
     public class BusinessDocumentDto
@@ -44,7 +44,7 @@ namespace HomeCycle.Application.DTOs.Requests.Profiles
     public class BusinessServiceAreaDto
     {
         public string City { get; set; } = null!;
-        public string District { get; set; } = null!;
+        public string Street { get; set; } = null!;
         public string Ward { get; set; } = null!;
     }
 }

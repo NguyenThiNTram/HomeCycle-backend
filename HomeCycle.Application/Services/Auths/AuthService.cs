@@ -566,7 +566,11 @@ namespace HomeCycle.Application.Services.Auths
                 return Result<LoginResponseDto>.Success(new LoginResponseDto
                 {
                     AccessToken = accessToken,
-                    RefreshToken = refreshToken
+                    RefreshToken = refreshToken,
+                    UserId = newUser.UserId,
+                    Email = newUser.Email,
+                    Role = newUser.Role.ToString(),
+                    Message = "Đăng ký tài khoản doanh nghiệp thành công."
                 });
             }
             catch (Exception)

@@ -175,7 +175,7 @@ namespace HomeCycle.Application.Mappings
                 .ForMember(dest => dest.Priority, opt => opt.Ignore())
                 .ForMember(dest => dest.CreatedAt, opt => opt.Ignore())
                 .ForMember(dest => dest.City, opt => opt.MapFrom(src => src.City.Trim()))
-                .ForMember(dest => dest.District, opt => opt.MapFrom(src => src.District.Trim()))
+                .ForMember(dest => dest.Street, opt => opt.MapFrom(src => src.Street.Trim()))
                 .ForMember(dest => dest.Ward, opt => opt.MapFrom(src => src.Ward.Trim()));
 
             CreateMap<BusinessServiceAreaRequestDto, business_service_area>()
@@ -184,7 +184,7 @@ namespace HomeCycle.Application.Mappings
                 .ForMember(dest => dest.Priority, opt => opt.Ignore())
                 .ForMember(dest => dest.CreatedAt, opt => opt.Ignore())
                 .ForMember(dest => dest.City, opt => opt.MapFrom(src => src.City.Trim()))
-                .ForMember(dest => dest.District, opt => opt.MapFrom(src => src.District.Trim()))
+                .ForMember(dest => dest.Street, opt => opt.MapFrom(src => src.Street.Trim()))
                 .ForMember(dest => dest.Ward, opt => opt.MapFrom(src => src.Ward.Trim()));
 
             // ==================== PROCUREMENT PREFERENCE / SURVEY ====================

@@ -16,7 +16,7 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 BusinessServiceAreaId = entity.BusinessServiceAreaId,
                 BusinessProfileId = entity.BusinessProfileId,
                 City = entity.City,
-                District = entity.District,
+                Street = entity.Street,
                 Ward = entity.Ward,
                 Priority = entity.Priority,
                 CreatedAt = entity.CreatedAt
@@ -29,7 +29,7 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 BusinessServiceAreaId = entity.BusinessServiceAreaId,
                 BusinessProfileId = entity.BusinessProfileId,
                 City = entity.City,
-                District = entity.District,
+                Street = entity.Street,
                 Ward = entity.Ward,
                 Priority = entity.Priority,
                 CreatedAt = entity.CreatedAt

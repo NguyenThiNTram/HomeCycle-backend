@@ -26,7 +26,13 @@ namespace HomeCycle.Application.Validations.Profiles
                 .Matches(@"^[0-9]{12}$").WithMessage("CCCD phải đúng 12 số.");
 
             RuleFor(x => x.IdentityName).NotEmpty().MaximumLength(255);
-            RuleFor(x => x.IdentityDob).NotEmpty().Must(dob => dob != default(DateTime));
+
+            RuleFor(x => x.IdentityDob)
+                .NotEmpty()
+                .Must(dob => dob != default(DateOnly)).WithMessage("Ngày sinh không hợp lệ.")
+                .Must(dob => dob <= DateOnly.FromDateTime(DateTime.UtcNow)).WithMessage("Ngày sinh không được lớn hơn ngày hiện tại.");
+
+
             RuleFor(x => x.IdentityAddress).NotEmpty();
 
             // --- File Rules ---
