@@ -86,7 +86,7 @@ namespace HomeCycle.API.Controllers
             );
         }
 
-        [HttpPut("update/sell/{postId:guid}")]
+        [HttpPatch("update/sell/{postId:guid}")]
         [SwaggerOperation(
             Summary = "Cập nhật bài đăng bán",
             Description = "Cập nhật thông tin bài đăng bán sản phẩm."

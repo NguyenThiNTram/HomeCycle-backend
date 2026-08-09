@@ -550,7 +550,6 @@ namespace HomeCycle.Application.Mappings
                 .ForMember(dest => dest.CurrentOfferPrice, opt => opt.MapFrom(src => src.Offer.OfferPrice))
                 .ForMember(dest => dest.CurrentOfferQuantity, opt => opt.MapFrom(src => src.Offer.OfferQuantity));
 
-
             CreateMap<message, MessageResponse>();
         }
     }

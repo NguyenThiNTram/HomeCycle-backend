@@ -239,6 +239,7 @@ namespace HomeCycle.Application.Services.Negotiates
                 // Đồng bộ Offer về proposal mới nhất; lịch sử vẫn nằm trong Messages.
                 offer.OfferPrice = request.OfferPrice;
                 offer.OfferQuantity = request.OfferQuantity;
+
                 await _offerRepository.UpdateAsync(offer, cancellationToken);
 
                 await _messageRepository.AddAsync(counterMessage, cancellationToken);
@@ -399,6 +400,7 @@ namespace HomeCycle.Application.Services.Negotiates
 
                 offer.OfferPrice = proposal.OfferPrice;
                 offer.OfferQuantity = proposal.OfferQuantity;
+
                 await _offerRepository.UpdateAsync(offer, cancellationToken);
 
                 // Agreement KHÔNG tạo tự động tại đây — Negotiation.Agreed chỉ là điều kiện đủ để
