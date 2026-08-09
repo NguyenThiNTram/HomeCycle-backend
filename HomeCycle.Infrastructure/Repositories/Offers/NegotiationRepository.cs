@@ -53,6 +53,8 @@ namespace HomeCycle.Infrastructure.Repositories.Offers
                     FROM ""Negotiation""
                     WHERE ""NegotiationId"" = {negotiationId}
                     FOR UPDATE")
+                        .Include(x => x.Offer) // Bổ sung Include Offer
+                        .Include(x => x.Post)
                         .AsNoTracking()
                         .SingleOrDefaultAsync(cancellationToken);
 
