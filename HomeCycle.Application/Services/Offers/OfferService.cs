@@ -433,6 +433,9 @@ namespace HomeCycle.Application.Services.Offers
                 offer.OfferQuantity = request.OfferQuantity;
                 offer.OfferStatus = OfferStatus.Accepted;
 
+                // Gắn Offer vào negotiation để response phản ánh mức counter hiện tại.
+                negotiation.Offer = offer;
+
                 await _offerRepository.UpdateAsync(offer, cancellationToken);
                 await _negotiationRepository.AddAsync(negotiation, cancellationToken);
                 await _messageRepository.AddAsync(initialOfferMessage, cancellationToken);
