@@ -1,6 +1,5 @@
 ﻿using HomeCycle.Application.DTOs.Requests.GHN;
 using HomeCycle.Application.DTOs.Responses.GHN;
-using HomeCycle.Application.DTOs.Responses.Shippings;
 using HomeCycle.Application.Interfaces.Externals;
 using HomeCycle.Infrastructure.Externals.GHN;
 using Microsoft.AspNetCore.Http;

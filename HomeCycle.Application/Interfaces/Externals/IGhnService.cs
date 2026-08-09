@@ -1,6 +1,5 @@
 ﻿using HomeCycle.Application.DTOs.Requests.GHN;
 using HomeCycle.Application.DTOs.Responses.GHN;
-using HomeCycle.Application.DTOs.Responses.Shippings;
 using System;
 using System.Collections.Generic;
 using System.Linq;

@@ -1,6 +1,5 @@
 ﻿using HomeCycle.Application.DTOs.Requests.GHN;
 using HomeCycle.Application.DTOs.Responses.GHN;
-using HomeCycle.Application.DTOs.Responses.Shippings;
 using HomeCycle.Application.Interfaces.Externals;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
@@ -275,7 +274,7 @@ namespace HomeCycle.Infrastructure.Externals.GHN
 
         private static GhnCalculateFeeApiRequest MapFeeRequest(GhnFeeQuoteRequest request)
         {
-            // Logic nhận diện gói dịch vụ: Chuyển phát thương mại điện tử (2) hoặc Đi bộ/Hàng nặng (5)
+            // nhận diện gói dịch vụ
             bool isLightGoods = request.ServiceTypeId == 2;
             bool isHeavyGoods = request.ServiceTypeId == 5;
 
