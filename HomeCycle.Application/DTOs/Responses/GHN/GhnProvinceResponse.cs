@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace HomeCycle.Application.DTOs.Responses.Shippings
+namespace HomeCycle.Application.DTOs.Responses.GHN
 {
     public sealed record GhnProvinceResponse(
         int ProvinceId,

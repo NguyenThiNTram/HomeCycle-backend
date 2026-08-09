@@ -22,6 +22,7 @@ using HomeCycle.Application.DTOs.Responses.Products;
 using HomeCycle.Application.DTOs.Responses.Profiles;
 using HomeCycle.Application.DTOs.Responses.Users;
 using HomeCycle.Domain.Entities;
+using HomeCycle.Domain.Enums;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -545,8 +546,13 @@ namespace HomeCycle.Application.Mappings
                 .ForMember(dest => dest.DisplayName, opt => opt.MapFrom(src => src.Username))
                 .ForMember(dest => dest.AvatarUrl, opt => opt.MapFrom(src => src.AvatarUrl));
 
-            CreateMap<negotiation, NegotiationResponse>();
+            CreateMap<negotiation, NegotiationResponse>()
+                .ForMember(dest => dest.CurrentOfferPrice, opt => opt.MapFrom(src => src.Offer.OfferPrice))
+                .ForMember(dest => dest.CurrentOfferQuantity, opt => opt.MapFrom(src => src.Offer.OfferQuantity));
+
+
             CreateMap<message, MessageResponse>();
         }
     }
 }
+

@@ -4,12 +4,14 @@ using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Requests.Agreements;
 using HomeCycle.Application.DTOs.Responses.Agreements;
 using HomeCycle.Application.DTOs.Responses.Negotiations;
+using HomeCycle.Application.Interfaces.Externals;
 using HomeCycle.Application.Interfaces.Generics;
 using HomeCycle.Application.Interfaces.Repositories.Agreements;
 using HomeCycle.Application.Interfaces.Repositories.Offers;
 using HomeCycle.Application.Interfaces.Repositories.Posts;
 using HomeCycle.Application.Interfaces.Repositories.Products;
 using HomeCycle.Application.Interfaces.Services.Agreements;
+using HomeCycle.Application.Interfaces.Services.Posts;
 using HomeCycle.Domain.Entities;
 using HomeCycle.Domain.Enums;
 using Microsoft.Extensions.Logging;
@@ -29,6 +31,8 @@ namespace HomeCycle.Application.Services.Agreements
         private readonly INegotiationRepository _negotiationRepo;
         private readonly IMessageRepository _messageRepo;
         private readonly IChatRealtimePublisher _chatRealtimePublisher;
+        private readonly IMediaService _mediaService;
+        private readonly IGhnService _ghnService;
         private readonly IMapper _mapper;
         private readonly ILogger<AgreementFormService> _logger;
         private readonly IPostRepository _postRepo;
@@ -42,6 +46,8 @@ namespace HomeCycle.Application.Services.Agreements
             INegotiationRepository negotiationRepo,
             IMessageRepository messageRepo,
             IChatRealtimePublisher chatRealtimePublisher,
+            IMediaService mediaService,
+            IGhnService ghnService,
             IMapper mapper,
             ILogger<AgreementFormService> logger,
             IPostRepository postRepo,
@@ -55,6 +61,8 @@ namespace HomeCycle.Application.Services.Agreements
             _negotiationRepo = negotiationRepo;
             _messageRepo = messageRepo;
             _chatRealtimePublisher = chatRealtimePublisher;
+            _mediaService = mediaService;
+            _ghnService = ghnService;
             _mapper = mapper;
             _logger = logger;
             _postRepo = postRepo;
@@ -336,6 +344,5 @@ namespace HomeCycle.Application.Services.Agreements
                 _logger.LogWarning(ex, "Không thể phát MessageCreated cho MessageId {MessageId}.", response.MessageId);
             }
         }
-
     }
 }
