@@ -1,6 +1,7 @@
 ﻿using HomeCycle.Application.DTOs.Responses.Negotiations;
 using HomeCycle.Application.Interfaces.Repositories.Offers;
 using Microsoft.AspNetCore.SignalR;
+using System.Linq;
 
 namespace HomeCycle.API.Hubs
 {
@@ -39,6 +40,15 @@ namespace HomeCycle.API.Hubs
             return _hubContext.Clients
                 .Group(ChatGroupName.ForNegotiation(negotiationId))
                 .MessagesRead(response);
+        }
+
+        public Task PublishConversationUpdatedAsync(IReadOnlyList<Guid> userIds, ConversationUpdatedResponse response, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            return _hubContext.Clients
+                .Users(userIds.Select(u => u.ToString()))
+                .ConversationUpdated(response);
         }
     }
 }

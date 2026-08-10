@@ -65,6 +65,12 @@ namespace HomeCycle.Application.Services.Negotiates
 
             MessageResponse createdResponse;
 
+            Guid negotiationSellerId = Guid.Empty;
+            Guid negotiationBuyerId = Guid.Empty;
+            NegotiationStatus negotiationStatus = NegotiationStatus.Open;
+            decimal? negotiationOfferPrice = null;
+            int negotiationOfferQuantity = 0;
+
             await _unitOfWork.BeginTransactionAsync(cancellationToken);
 
             try
@@ -87,6 +93,12 @@ namespace HomeCycle.Application.Services.Negotiates
                     await _unitOfWork.RollbackTransactionAsync(cancellationToken);
                     return Result<MessageResponse>.Fail(NegotiationErrors.Forbidden);
                 }
+
+                negotiationSellerId = negotiation.SellerId;
+                negotiationBuyerId = negotiation.BuyerId;
+                negotiationStatus = negotiation.NegotiationStatus ?? NegotiationStatus.Open;
+                negotiationOfferPrice = negotiation.Offer?.OfferPrice;
+                negotiationOfferQuantity = negotiation.Offer?.OfferQuantity ?? 0;
 
                 /*
                  * Kiểm tra chống gửi trùng.
@@ -175,6 +187,16 @@ namespace HomeCycle.Application.Services.Negotiates
                 negotiationId,
                 createdResponse);
 
+            // Realtime: cập nhật thẻ chat ngoài list cho cả 2 bên.
+            await PublishConversationUpdatedSafelyAsync(
+                negotiationId,
+                negotiationSellerId,
+                negotiationBuyerId,
+                createdResponse,
+                negotiationStatus,
+                negotiationOfferPrice,
+                negotiationOfferQuantity);
+
             return Result<MessageResponse>.Success(createdResponse);
         }
 
@@ -259,6 +281,26 @@ namespace HomeCycle.Application.Services.Negotiates
             };
 
             await PublishMessagesReadSafelyAsync(negotiationId, readResponse);
+
+            // Realtime: cập nhật badge unread trên thẻ chat ngoài list cho cả 2 bên.
+            var lastMessages = await _messageRepository.GetByNegotiationIdAsync(
+                negotiationId,
+                new PaginationRequest { PageNumber = 1, PageSize = 1 },
+                cancellationToken);
+
+            var lastMessage = lastMessages.Items.FirstOrDefault();
+            if (lastMessage is not null)
+            {
+                await PublishConversationUpdatedSafelyAsync(
+                    negotiationId,
+                    negotiation.SellerId,
+                    negotiation.BuyerId,
+                    _mapper.Map<MessageResponse>(lastMessage),
+                    negotiation.NegotiationStatus ?? NegotiationStatus.Open,
+                    negotiation.Offer?.OfferPrice,
+                    negotiation.Offer?.OfferQuantity ?? 0);
+            }
+
             return Result.Success();
         }
 
@@ -308,6 +350,55 @@ namespace HomeCycle.Application.Services.Negotiates
                     "{NegotiationId}. Trạng thái đã đọc đã được lưu.",
                     negotiationId);
             }
+        }
+
+        private async Task PublishConversationUpdatedSafelyAsync(
+            Guid negotiationId, Guid sellerId, Guid buyerId,
+            MessageResponse lastMessage, NegotiationStatus status,
+            decimal? price, int quantity)
+        {
+            try
+            {
+                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+                var unread = await _messageRepository.GetUnreadCountsByNegotiationAsync(
+                    negotiationId, buyerId, sellerId, timeout.Token);
+
+                await _realtimePublisher.PublishConversationUpdatedAsync(
+                    new[] { sellerId, buyerId },
+                    new ConversationUpdatedResponse
+                    {
+                        NegotiationId = negotiationId,
+                        LastSenderId = lastMessage.SenderId,
+                        LastMessagePreview = BuildConversationPreview(lastMessage),
+                        LastMessageType = lastMessage.MessageType,
+                        LastMessageAt = lastMessage.CreatedAt,
+                        CurrentOfferPrice = price,
+                        CurrentOfferQuantity = quantity,
+                        NegotiationStatus = status,
+                        UnreadCountByUser = unread
+                    },
+                    timeout.Token);
+            }
+            catch (Exception exception)
+            {
+                _logger.LogWarning(
+                    exception,
+                    "Không thể phát ConversationUpdated cho NegotiationId {NegotiationId}.",
+                    negotiationId);
+            }
+        }
+
+        private static string BuildConversationPreview(MessageResponse m)
+        {
+            return m.MessageType switch
+            {
+                MessageType.Text => m.MessageContent ?? string.Empty,
+                MessageType.Media => "[Hình ảnh]",
+                MessageType.Offer or MessageType.CounterOffer =>
+                    $"Đề nghị {m.OfferPrice:N0}đ x {m.OfferQuantity}",
+                _ => "[Hệ thống]"
+            };
         }
     }
 }

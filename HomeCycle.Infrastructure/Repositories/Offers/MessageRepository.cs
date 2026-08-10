@@ -193,6 +193,41 @@ namespace HomeCycle.Infrastructure.Repositories.Offers
                     cancellationToken);
         }
 
+        public async Task<int> CountUnreadByNegotiationForUserAsync(Guid negotiationId, Guid userId, CancellationToken cancellationToken = default)
+        {
+            return await _db.Messages
+                .AsNoTracking()
+                .CountAsync(
+                    m => m.NegotiationId == negotiationId &&
+                         m.SenderId != userId &&
+                         !m.IsRead,
+                    cancellationToken);
+        }
+
+        public async Task<Dictionary<Guid, int>> GetUnreadCountsByNegotiationAsync(Guid negotiationId, Guid buyerId, Guid sellerId, CancellationToken cancellationToken = default)
+        {
+            var result = new Dictionary<Guid, int>
+            {
+                [buyerId] = 0,
+                [sellerId] = 0
+            };
+
+            var counts = await _db.Messages
+                .AsNoTracking()
+                .Where(m => m.NegotiationId == negotiationId && !m.IsRead)
+                .GroupBy(m => m.SenderId)
+                .Select(g => new { SenderId = g.Key, Count = g.Count() })
+                .ToListAsync(cancellationToken);
+
+            foreach (var c in counts)
+            {
+                if (c.SenderId == buyerId) result[sellerId] += c.Count;
+                else if (c.SenderId == sellerId) result[buyerId] += c.Count;
+            }
+
+            return result;
+        }
+
         private void EnsureActiveTransaction()
         {
             if (_db.Database.CurrentTransaction is null)

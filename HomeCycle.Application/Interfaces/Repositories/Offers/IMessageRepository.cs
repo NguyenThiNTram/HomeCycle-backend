@@ -38,5 +38,9 @@ namespace HomeCycle.Application.Interfaces.Repositories.Offers
         Task<bool> TryUpdateProposalStatusAsync(Guid messageId, MessageOfferStatus expectedStatus, MessageOfferStatus newStatus, DateTime updatedAt, CancellationToken cancellationToken = default);
 
         Task<int> MarkAsReadAsync(Guid negotiationId, Guid readerId, DateTime readAt, CancellationToken cancellationToken = default);
+
+        Task<int> CountUnreadByNegotiationForUserAsync(Guid negotiationId, Guid userId, CancellationToken cancellationToken = default);
+
+        Task<Dictionary<Guid, int>> GetUnreadCountsByNegotiationAsync(Guid negotiationId, Guid buyerId, Guid sellerId, CancellationToken cancellationToken = default);
     }
 }

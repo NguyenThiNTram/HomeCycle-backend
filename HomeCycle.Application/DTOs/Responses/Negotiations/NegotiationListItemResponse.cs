@@ -24,5 +24,7 @@ namespace HomeCycle.Application.DTOs.Responses.Negotiations
 
         public DateTime? LastMessageAt { get; set; }
         public DateTime CreatedAt { get; set; }
+
+        public int UnreadCount { get; set; }
     }
 }

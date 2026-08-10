@@ -14,5 +14,7 @@ namespace HomeCycle.Application.Interfaces.Repositories.Offers
         Task MessageUpdated(MessageResponse message);
 
         Task MessagesRead(MessagesReadResponse response);
+
+        Task ConversationUpdated(ConversationUpdatedResponse response);
     }
 }

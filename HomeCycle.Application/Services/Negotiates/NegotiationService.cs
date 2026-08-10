@@ -99,9 +99,17 @@ namespace HomeCycle.Application.Services.Negotiates
         {
             var paged = await _negotiationRepository.GetByParticipantAsync(userId, request, cancellationToken);
 
-            var items = paged.Items
-                .Select(n => ToListItemResponse(n, userId))
-                .ToList();
+            var items = new List<NegotiationListItemResponse>();
+            foreach (var n in paged.Items)
+            {
+                var item = ToListItemResponse(n, userId);
+                item.UnreadCount =
+                    await _messageRepository.CountUnreadByNegotiationForUserAsync(
+                        n.NegotiationId,
+                        userId,
+                        cancellationToken);
+                items.Add(item);
+            }
 
             var response = new PagedResult<NegotiationListItemResponse>
             {
@@ -254,6 +262,16 @@ namespace HomeCycle.Application.Services.Negotiates
                 await PublishMessageCreatedSafelyAsync(
                     negotiationId,
                     _mapper.Map<MessageResponse>(counterMessage));
+
+                // Realtime: cập nhật thẻ chat ngoài list cho cả 2 bên.
+                await PublishConversationUpdatedSafelyAsync(
+                    negotiationId,
+                    negotiation.SellerId,
+                    negotiation.BuyerId,
+                    _mapper.Map<MessageResponse>(counterMessage),
+                    negotiation.NegotiationStatus ?? NegotiationStatus.Open,
+                    counterMessage.OfferPrice,
+                    counterMessage.OfferQuantity);
 
                 // Realtime: proposal Pending cũ bị supersede → cập nhật trạng thái thẻ.
                 if (pendingMessage is not null)
@@ -421,6 +439,16 @@ namespace HomeCycle.Application.Services.Negotiates
                 await PublishMessageUpdatedSafelyAsync(
                     negotiationId,
                     _mapper.Map<MessageResponse>(proposal));
+
+                // Realtime: cập nhật thẻ chat ngoài list khi negotiation sang trạng thái Agreed.
+                await PublishConversationUpdatedSafelyAsync(
+                    negotiationId,
+                    negotiation.SellerId,
+                    negotiation.BuyerId,
+                    _mapper.Map<MessageResponse>(proposal),
+                    NegotiationStatus.Agreed,
+                    proposal.OfferPrice,
+                    proposal.OfferQuantity);
 
                 return Result<NegotiationResponse>.Success(
                     _mapper.Map<NegotiationResponse>(negotiation));
@@ -775,6 +803,55 @@ namespace HomeCycle.Application.Services.Negotiates
                     "Không thể phát MessageUpdated cho MessageId {MessageId}. Trạng thái đã được lưu vào database.",
                     response.MessageId);
             }
+        }
+
+        private async Task PublishConversationUpdatedSafelyAsync(
+            Guid negotiationId, Guid sellerId, Guid buyerId,
+            MessageResponse lastMessage, NegotiationStatus status,
+            decimal? price, int quantity)
+        {
+            try
+            {
+                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+                var unread = await _messageRepository.GetUnreadCountsByNegotiationAsync(
+                    negotiationId, buyerId, sellerId, timeout.Token);
+
+                await _realtimePublisher.PublishConversationUpdatedAsync(
+                    new[] { sellerId, buyerId },
+                    new ConversationUpdatedResponse
+                    {
+                        NegotiationId = negotiationId,
+                        LastSenderId = lastMessage.SenderId,
+                        LastMessagePreview = BuildConversationPreview(lastMessage),
+                        LastMessageType = lastMessage.MessageType,
+                        LastMessageAt = lastMessage.CreatedAt,
+                        CurrentOfferPrice = price,
+                        CurrentOfferQuantity = quantity,
+                        NegotiationStatus = status,
+                        UnreadCountByUser = unread
+                    },
+                    timeout.Token);
+            }
+            catch (Exception exception)
+            {
+                _logger.LogWarning(
+                    exception,
+                    "Không thể phát ConversationUpdated cho NegotiationId {NegotiationId}.",
+                    negotiationId);
+            }
+        }
+
+        private static string BuildConversationPreview(MessageResponse m)
+        {
+            return m.MessageType switch
+            {
+                MessageType.Text => m.MessageContent ?? string.Empty,
+                MessageType.Media => "[Hình ảnh]",
+                MessageType.Offer or MessageType.CounterOffer =>
+                    $"Đề nghị {m.OfferPrice:N0}đ x {m.OfferQuantity}",
+                _ => "[Hệ thống]"
+            };
         }
     }
 }

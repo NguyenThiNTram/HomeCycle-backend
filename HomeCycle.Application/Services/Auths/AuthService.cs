@@ -66,7 +66,6 @@ namespace HomeCycle.Application.Services.Auths
             IValidator<RegisterBusinessAccountRequest> registerBusinessValidator,
             IFileStorageService fileStorageService
             )
-        //public AuthService(IUserRepository userRepository, IUnitOfWork unitOfWork, IPasswordHasher passwordHasher, IJwtService jwtService, IMapper mapper, IConfiguration configuration, IValidator<RegisterPersonalRequest> validator, IValidator<LoginPersonalRequest> _loginPersonalValidator, IValidator<LoginRequest> loginValidator, IPersonalProfileRepository personalProfileRepository, IOtpRepository otpRepository, IEmailService emailService, IBankAccountRepository bankAccountRepository, ILogger<AuthService> logger, IFileStorageService fileStorageService)
         {
             _userRepository = userRepository;
             _unitOfWork = unitOfWork;
