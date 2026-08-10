@@ -120,6 +120,8 @@ namespace HomeCycle.Application.Commons.Errors
 
         public static readonly Error PostExpired = new("POST_EXPIRED", "Bài đăng đã hết thời hạn cho phép chỉnh sửa.");
 
+        public static readonly Error RoleNotAllowed = new("POST_ROLE_NOT_ALLOWED", "Your account role is not allowed to create this type of post.");
+
         public static Error InvalidUpdateQuantity(int soldQuantity, int requestedQuantity)
             => new(
                 "POST_INVALID_QUANTITY",

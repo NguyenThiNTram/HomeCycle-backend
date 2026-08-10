@@ -582,6 +582,11 @@ public partial class HomeCycleDbContext : DbContext
             //---
             entity.Property(x => x.PostType).HasConversion<int>();
             entity.Property(x => x.Status).HasConversion<int>();
+
+            entity.HasOne(p => p.User)
+               .WithMany() // Hoặc .WithMany(u => u.Posts) nếu bên User có Collection Posts
+               .HasForeignKey(p => p.OwnerId)
+               .OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<Product>(entity =>

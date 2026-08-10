@@ -1,4 +1,5 @@
-﻿using HomeCycle.Application.DTOs.Responses.Shippings;
+﻿using HomeCycle.Application.DTOs.Requests.GHN;
+using HomeCycle.Application.DTOs.Responses.GHN;
 using HomeCycle.Application.Interfaces.Externals;
 using HomeCycle.Infrastructure.Externals.GHN;
 using Microsoft.AspNetCore.Http;
@@ -11,61 +12,109 @@ namespace HomeCycle.API.Controllers
     [ApiController]
     public class GHNController : ControllerBase
     {
-        private readonly IGhnService ghnAddressService;
+        private readonly IGhnService _ghnService;
 
-        public GHNController(IGhnService ghnAddressService)
+        public GHNController(IGhnService ghnService)
         {
-            this.ghnAddressService = ghnAddressService;
+            _ghnService = ghnService;
         }
 
         [HttpGet("provinces")]
         [SwaggerOperation(Summary = "Lấy danh sách tỉnh/thành theo GHN")]
-        [ProducesResponseType(
-        typeof(IReadOnlyList<GhnProvinceResponse>),
-        StatusCodes.Status200OK)]
-        public async Task<ActionResult<IReadOnlyList<GhnProvinceResponse>>>
-        GetProvinces(CancellationToken cancellationToken)
+        [ProducesResponseType(typeof(IReadOnlyList<GhnProvinceResponse>), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        public async Task<ActionResult<IReadOnlyList<GhnProvinceResponse>>> GetProvinces(
+            CancellationToken cancellationToken)
         {
-            var result = await ghnAddressService.GetProvincesAsync(
-                cancellationToken);
-
-            return Ok(result);
+            try
+            {
+                var result = await _ghnService.GetProvincesAsync(cancellationToken);
+                return Ok(result);
+            }
+            catch (GhnApiException ex)
+            {
+                return HandleGhnException(ex);
+            }
         }
 
         [HttpGet("provinces/{provinceId:int:min(1)}/districts")]
-        [SwaggerOperation(
-            Summary = "Lấy danh sách quận/huyện theo ProvinceID của GHN")]
-        [ProducesResponseType(
-            typeof(IReadOnlyList<GhnDistrictResponse>),
-            StatusCodes.Status200OK)]
-        public async Task<ActionResult<IReadOnlyList<GhnDistrictResponse>>>
-            GetDistricts(
-                int provinceId,
-                CancellationToken cancellationToken)
+        [SwaggerOperation(Summary = "Lấy danh sách quận/huyện theo ProvinceID của GHN")]
+        [ProducesResponseType(typeof(IReadOnlyList<GhnDistrictResponse>), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        public async Task<ActionResult<IReadOnlyList<GhnDistrictResponse>>> GetDistricts(
+            int provinceId,
+            CancellationToken cancellationToken)
         {
-            var result = await ghnAddressService.GetDistrictsAsync(
-                provinceId,
-                cancellationToken);
-
-            return Ok(result);
+            try
+            {
+                var result = await _ghnService.GetDistrictsAsync(provinceId, cancellationToken);
+                return Ok(result);
+            }
+            catch (GhnApiException ex)
+            {
+                return HandleGhnException(ex);
+            }
         }
 
         [HttpGet("districts/{districtId:int:min(1)}/wards")]
-        [SwaggerOperation(
-            Summary = "Lấy danh sách phường/xã theo DistrictID của GHN")]
-        [ProducesResponseType(
-            typeof(IReadOnlyList<GhnWardResponse>),
-            StatusCodes.Status200OK)]
-        public async Task<ActionResult<IReadOnlyList<GhnWardResponse>>>
-            GetWards(
-                int districtId,
-                CancellationToken cancellationToken)
+        [SwaggerOperation(Summary = "Lấy danh sách phường/xã theo DistrictID của GHN")]
+        [ProducesResponseType(typeof(IReadOnlyList<GhnWardResponse>), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        public async Task<ActionResult<IReadOnlyList<GhnWardResponse>>> GetWards(
+            int districtId,
+            CancellationToken cancellationToken)
         {
-            var result = await ghnAddressService.GetWardsAsync(
-                districtId,
-                cancellationToken);
+            try
+            {
+                var result = await _ghnService.GetWardsAsync(districtId, cancellationToken);
+                return Ok(result);
+            }
+            catch (GhnApiException ex)
+            {
+                return HandleGhnException(ex);
+            }
+        }
 
-            return Ok(result);
+        [HttpPost("calculate-fee")]
+        [SwaggerOperation(Summary = "Tính phí vận chuyển dựa trên địa chỉ và thông số gói hàng")]
+        [ProducesResponseType(typeof(GhnFeeQuoteResponse), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        public async Task<ActionResult<GhnFeeQuoteResponse>> CalculateFee(
+            [FromBody] GhnFeeQuoteRequest request,
+            CancellationToken cancellationToken)
+        {
+            try
+            {
+                // Gọi tầng Application để thực hiện tính phí
+                var result = await _ghnService.GetShippingFeeAsync(request, cancellationToken);
+                return Ok(result);
+            }
+            catch (GhnApiException ex)
+            {
+                // Tái sử dụng hàm bóc tách lỗi nghiệp vụ chuẩn có sẵn của bạn
+                return HandleGhnException(ex);
+            }
+        }
+
+
+        /// <summary>
+        /// Hàm bổ trợ dùng chung để bóc tách lỗi nghiệp vụ của GHN và gán mã HTTP phù hợp cho Frontend
+        /// </summary>
+        private ActionResult HandleGhnException(GhnApiException ex)
+        {
+            // Kiểm tra nếu nội dung thông báo từ GHN báo lỗi không tồn tại hoặc tham số sai, ép về HTTP 400
+            bool isClientError = ex.Message.Contains("khong ton tai", System.StringComparison.OrdinalIgnoreCase) ||
+                                 ex.CodeMessage == "INVALID_PARAMETER";
+
+            int finalStatusCode = isClientError ? StatusCodes.Status400BadRequest : (int)ex.StatusCode;
+
+            return StatusCode(finalStatusCode, new
+            {
+                Title = "Lỗi dịch vụ giao hàng (GHN)",
+                Status = finalStatusCode,
+                Detail = ex.Message,
+                GhnCode = ex.CodeMessage
+            });
         }
     }
 }

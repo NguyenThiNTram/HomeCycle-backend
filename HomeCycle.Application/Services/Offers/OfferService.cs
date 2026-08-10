@@ -98,6 +98,8 @@ namespace HomeCycle.Application.Services.Offers
                         request.OfferQuantity,
                         post.RemainingQuantity));
 
+            var expectedBaseTotalPrice = post.BasePrice * request.OfferQuantity;
+
             var priceError = ValidatePriceRange(post.BasePrice, request.OfferPrice);
             if (priceError is not null)
                 return Result<OfferResponse>.Fail(priceError);
@@ -135,7 +137,11 @@ namespace HomeCycle.Application.Services.Offers
                 return Result<OfferResponse>.Fail(OfferErrors.DuplicatePending);
             }
 
-            return Result<OfferResponse>.Success(_mapper.Map<OfferResponse>(offer));
+            var created = await _offerRepository.GetByIdAsync(offer.OfferId, cancellationToken);
+            if (created is null)
+                return Result<OfferResponse>.Fail(OfferErrors.NotFound);
+
+            return Result<OfferResponse>.Success(_mapper.Map<OfferResponse>(created));
         }
 
         // Người gửi chỉ được sửa giá và số lượng khi request ban đầu còn Pending
@@ -427,6 +433,9 @@ namespace HomeCycle.Application.Services.Offers
                 offer.OfferQuantity = request.OfferQuantity;
                 offer.OfferStatus = OfferStatus.Accepted;
 
+                // Gắn Offer vào negotiation để response phản ánh mức counter hiện tại.
+                negotiation.Offer = offer;
+
                 await _offerRepository.UpdateAsync(offer, cancellationToken);
                 await _negotiationRepository.AddAsync(negotiation, cancellationToken);
                 await _messageRepository.AddAsync(initialOfferMessage, cancellationToken);
@@ -545,13 +554,13 @@ namespace HomeCycle.Application.Services.Offers
             return initialMessage;
         }
 
-        private Error? ValidatePriceRange(decimal? basePrice, decimal offerPrice)
+        private Error? ValidatePriceRange(decimal? expectedTotalPrice, decimal offerPrice)
         {
-            if (!basePrice.HasValue)
+            if (!expectedTotalPrice.HasValue)
                 return OfferErrors.PriceOutOfRange(0, 0);
 
-            var minPrice = basePrice.Value * MinPriceFactor;
-            var maxPrice = basePrice.Value * MaxPriceFactor;
+            var minPrice = expectedTotalPrice.Value * MinPriceFactor;
+            var maxPrice = expectedTotalPrice.Value * MaxPriceFactor;
 
             return offerPrice < minPrice || offerPrice > maxPrice
                 ? OfferErrors.PriceOutOfRange(minPrice, maxPrice)

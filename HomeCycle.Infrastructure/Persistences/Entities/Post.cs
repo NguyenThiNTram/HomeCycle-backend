@@ -66,4 +66,7 @@ public partial class Post
 
     [InverseProperty("Post")]
     public virtual Product? Product { get; set; }
+
+    [ForeignKey(nameof(OwnerId))]
+    public virtual User? User { get; set; }
 }

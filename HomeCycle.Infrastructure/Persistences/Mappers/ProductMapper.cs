@@ -12,6 +12,12 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
     {
         public static product ToDomain(this Product entity)
         {
+            if (entity == null) return null;
+
+            var CategoryDomain = entity.Category?.ToDomain();
+            var ProductTypeDomain = entity.ProductType?.ToDomain();
+            var BrandDomain = entity.Brand?.ToDomain();
+
             return new product
             {
                 ProductId = entity.ProductId,
@@ -36,7 +42,11 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 DetailDescription = entity.DetailDescription,
                 Product_Attribute_Values = entity.Product_Attribute_Values?
                     .Select(x => x.ToDomain())
-                    .ToList()
+                    .ToList(),
+
+                Category = CategoryDomain,
+                ProductType = ProductTypeDomain,
+                Brand = BrandDomain
             };
         }
         public static Product ToInfrastructure(this product entity)

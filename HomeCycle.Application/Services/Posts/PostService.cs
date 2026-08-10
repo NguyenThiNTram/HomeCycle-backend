@@ -9,6 +9,7 @@ using HomeCycle.Application.DTOs.Responses.Media;
 using HomeCycle.Application.DTOs.Responses.Posts;
 using HomeCycle.Application.Interfaces.Generics;
 using HomeCycle.Application.Interfaces.Repositories.Posts;
+using HomeCycle.Application.Interfaces.Repositories.Users;
 using HomeCycle.Application.Interfaces.Services.Posts;
 using HomeCycle.Application.Interfaces.Services.Products;
 using HomeCycle.Domain.Entities;
@@ -28,6 +29,7 @@ namespace HomeCycle.Application.Services.Posts
         private readonly IPostRepository _postRepository;
         private readonly IProductService _productService;
         private readonly IMediaService _mediaService;
+        private readonly IUserRepository _userRepository;
         private readonly IValidator<CreateSellPostRequest> _createSellValidator;
         private readonly IValidator<CreateBuyPostRequest> _createBuyValidator;
         private readonly IValidator<UpdateSellPostRequest> _updateSellValidator;
@@ -43,6 +45,7 @@ namespace HomeCycle.Application.Services.Posts
             IPostRepository postRepository,
             IProductService productService,
             IMediaService mediaService,
+            IUserRepository userRepository,
             IValidator<CreateSellPostRequest> createSellValidator,
             IValidator<CreateBuyPostRequest> createBuyValidator,
             IValidator<UpdateSellPostRequest> updateSellValidator,
@@ -54,6 +57,7 @@ namespace HomeCycle.Application.Services.Posts
             _postRepository = postRepository;
             _productService = productService;
             _mediaService = mediaService;
+            _userRepository = userRepository;
             _createSellValidator = createSellValidator;
             _createBuyValidator = createBuyValidator;
             _updateSellValidator = updateSellValidator;
@@ -72,6 +76,10 @@ namespace HomeCycle.Application.Services.Posts
             if (!validation.IsValid)
                 return Result<PostResponse>.Fail(
                     ValidationErrors.InvalidRequest(string.Join("\n", validation.Errors.Select(e => e.ErrorMessage))));
+
+            var roleError = await ValidateCreateRoleAsync(ownerId, UserRole.Personal, cancellationToken);
+            if (roleError is not null)
+                return Result<PostResponse>.Fail(roleError);
 
             if (request.Medias == null || !request.Medias.Any())
             {
@@ -140,6 +148,10 @@ namespace HomeCycle.Application.Services.Posts
             if (!validation.IsValid)
                 return Result<PostResponse>.Fail(
                     ValidationErrors.InvalidRequest(string.Join("\n", validation.Errors.Select(e => e.ErrorMessage))));
+
+            var roleError = await ValidateCreateRoleAsync(ownerId, UserRole.Business, cancellationToken);
+            if (roleError is not null)
+                return Result<PostResponse>.Fail(roleError);
 
             var now = DateTime.UtcNow;
             var post = _mapper.Map<post>(request);
@@ -227,14 +239,19 @@ namespace HomeCycle.Application.Services.Posts
                     return Result<PostResponse>.Fail(productResult.Error!);
                 }
 
-                var mediaResult = await _mediaService.ReplaceMediaAsync(
-                    postId, PostMediaTargetType, PostMediaFolder, request.Medias, cancellationToken);
-
-                if (!mediaResult.IsSuccess)
+                // Kiểm tra xem request có chứa danh sách ảnh mới không
+                if (request.Medias != null && request.Medias.Any())
                 {
-                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
-                    return Result<PostResponse>.Fail(mediaResult.Error!);
+                    var mediaResult = await _mediaService.ReplaceMediaAsync(
+                        postId, PostMediaTargetType, PostMediaFolder, request.Medias, cancellationToken);
+
+                    if (!mediaResult.IsSuccess)
+                    {
+                        await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                        return Result<PostResponse>.Fail(mediaResult.Error!);
+                    }
                 }
+                // Nếu không có Medias trong request -> Bỏ qua, giữ nguyên ảnh hiện tại trong DB.
 
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync(cancellationToken);
@@ -284,13 +301,17 @@ namespace HomeCycle.Application.Services.Posts
                     return Result<PostResponse>.Fail(productResult.Error!);
                 }
 
-                var mediaResult = await _mediaService.ReplaceMediaAsync(
-                    postId, PostMediaTargetType, PostMediaFolder, request.Medias, cancellationToken);
-
-                if (!mediaResult.IsSuccess)
+                // Kiểm tra xem request có chứa danh sách ảnh mới không
+                if (request.Medias != null && request.Medias.Any())
                 {
-                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
-                    return Result<PostResponse>.Fail(mediaResult.Error!);
+                    var mediaResult = await _mediaService.ReplaceMediaAsync(
+                        postId, PostMediaTargetType, PostMediaFolder, request.Medias, cancellationToken);
+
+                    if (!mediaResult.IsSuccess)
+                    {
+                        await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                        return Result<PostResponse>.Fail(mediaResult.Error!);
+                    }
                 }
 
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -657,6 +678,18 @@ namespace HomeCycle.Application.Services.Posts
 
             await _unitOfWork.SaveChangesAsync(cancellationToken);
             return Result<bool>.Success(true);
+        }
+
+        private async Task<Error?> ValidateCreateRoleAsync(
+            Guid ownerId, UserRole requiredRole, CancellationToken cancellationToken)
+        {
+            var owner = await _userRepository.GetByIdAsync(ownerId, cancellationToken);
+            if (owner is null)
+                return PostErrors.RoleNotAllowed;
+
+            return owner.Role == requiredRole
+                ? null
+                : PostErrors.RoleNotAllowed;
         }
 
         private Error? ValidateOwnershipAndComputeRemaining(

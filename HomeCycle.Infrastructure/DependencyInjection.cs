@@ -92,6 +92,9 @@ namespace HomeCycle.Infrastructure
 
             services.AddScoped<IPasswordHasher, PasswordHasherService>();
 
+            //register GHN settings
+            services.Configure<GhnSettings>(configuration.GetSection("GHNSettings"));
+
             //register JWT
             services.AddScoped<IJwtService, JwtService>();
 
@@ -198,17 +201,23 @@ namespace HomeCycle.Infrastructure
             services.AddHttpClient<IGhnService, GhnService>(
                 (serviceProvider, client) =>
                 {
-                    var settings = serviceProvider
-                        .GetRequiredService<IOptions<GhnSettings>>().Value;
+                    var settings = serviceProvider.GetRequiredService<IOptions<GhnSettings>>().Value;
+
+                    // Kiểm tra tính hợp lệ của cấu hình trước khi chạy ứng dụng
+                    ArgumentException.ThrowIfNullOrWhiteSpace(settings.BaseUrl);
+                    ArgumentException.ThrowIfNullOrWhiteSpace(settings.Token);
 
                     client.BaseAddress = new Uri(settings.BaseUrl);
                     client.Timeout = TimeSpan.FromSeconds(settings.TimeoutSeconds);
 
-                    client.DefaultRequestHeaders.Accept.Add(
-                        new MediaTypeWithQualityHeaderValue("application/json"));
+                    // Thiết lập các Header mặc định bắt buộc theo quy định của GHN API
+                    client.DefaultRequestHeaders.Accept.Clear();
+                    client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
 
-                    client.DefaultRequestHeaders.TryAddWithoutValidation(
-                        "Token", settings.Token);
+                    client.DefaultRequestHeaders.TryAddWithoutValidation("Token", settings.Token);
+
+                    // Thiết lập timeout mặc định nếu chưa được cấu hình
+                    client.Timeout = TimeSpan.FromSeconds(15);
                 });
 
             return services;
