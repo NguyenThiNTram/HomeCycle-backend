@@ -79,6 +79,17 @@ namespace HomeCycle.API.Controllers
                 return StatusCode(500, "Internal server error processing webhook.");
             }
         }
+
+        [HttpGet("{agreementId:guid}/status")]
+        public async Task<IActionResult> SyncPaymentStatus(Guid agreementId, CancellationToken ct)
+        {
+            var userId = GetUserIdFromToken();
+            var result = await _paymentService.SyncPaymentStatusAsync(agreementId, userId, ct);
+            if (!result.IsSuccess)
+                return BadRequest(result.Error);
+
+            return Ok(result.Data);
+        }
         private Guid GetUserIdFromToken()
         {
 

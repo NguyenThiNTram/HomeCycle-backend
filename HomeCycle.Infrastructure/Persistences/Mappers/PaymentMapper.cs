@@ -23,7 +23,9 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 Amount = entity.Amount,
                 Description = entity.Description,
                 PaymentStatus = entity.PaymentStatus,
-                PaidAt = entity.PaidAt
+                PaidAt = entity.PaidAt,
+                ExpiredAt = entity.ExpiredAt,
+                CreatedAt = entity.CreatedAt
             };
         }
         public static Payment ToInfrastructure(this payment entity)
@@ -40,7 +42,9 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 Amount = entity.Amount,
                 Description = entity.Description,
                 PaymentStatus = entity.PaymentStatus,
-                PaidAt = entity.PaidAt
+                PaidAt = entity.PaidAt,
+                ExpiredAt = entity.ExpiredAt,
+                CreatedAt = entity.CreatedAt
             };
         }
     }

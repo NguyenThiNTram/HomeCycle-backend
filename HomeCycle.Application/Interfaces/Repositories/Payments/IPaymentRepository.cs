@@ -10,6 +10,7 @@ namespace HomeCycle.Application.Interfaces.Repositories.Payments
     public interface IPaymentRepository
     {
         Task<payment?> GetByIdAsync(Guid paymentId, CancellationToken ct = default);
+        Task<payment?> GetLatestPendingByAgreementAsync(Guid agreementId, CancellationToken ct = default); 
         Task AddAsync(payment payment, CancellationToken ct = default);
         Task UpdateAsync(payment payment, CancellationToken ct = default);
     }

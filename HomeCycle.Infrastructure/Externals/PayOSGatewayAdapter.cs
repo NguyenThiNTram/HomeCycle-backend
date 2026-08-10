@@ -98,5 +98,27 @@ namespace HomeCycle.Infrastructure.Externals
                 return Result<GatewayWebhookResult>.Fail(new Error("PayOS.WebhookInvalid", $"Dữ liệu Webhook không hợp lệ hoặc sai chữ ký: {ex.Message}"));
             }
         }
+        public async Task<Result<GatewayPaymentStatusResponse>> GetPaymentStatusAsync(string payOSOrderCode, CancellationToken ct = default)
+        {
+            try
+            {
+                var paymentLink = await _payOSClient.PaymentRequests.GetAsync(payOSOrderCode);
+
+                if (paymentLink == null)
+                    return Result<GatewayPaymentStatusResponse>.Fail(new Error("PayOS.NotFound", "Không tìm thấy đơn hàng trên PayOS."));
+
+                return Result<GatewayPaymentStatusResponse>.Success(new GatewayPaymentStatusResponse
+                {
+                    Status = paymentLink.Status.ToString(),          // "PAID" | "PENDING" | "PROCESSING" | "CANCELLED"
+                    TransactionId = paymentLink.Transactions?.LastOrDefault()?.Reference
+                });
+            }
+            catch (Exception ex)
+            {
+                return Result<GatewayPaymentStatusResponse>.Fail(new Error("PayOS.GetStatusFailed", $"Lỗi khi lấy trạng thái thanh toán từ PayOS: {ex.Message}"));
+            }
+        }
+
+
     }
 }

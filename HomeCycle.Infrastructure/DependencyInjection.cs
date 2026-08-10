@@ -68,6 +68,10 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using System.Net.Http.Headers;
 
+using HomeCycle.Application.Interfaces.Services.Appointments;
+using HomeCycle.Application.Interfaces.Services.Orders;
+using HomeCycle.Application.Services.Appointments;
+using HomeCycle.Application.Services.Orders;
 
 namespace HomeCycle.Infrastructure
 {
@@ -178,6 +182,8 @@ namespace HomeCycle.Infrastructure
             services.AddScoped<IMessageService, MessageService>();
             services.AddScoped<IAgreementFormService, AgreementFormService>();
             services.AddScoped<IPaymentService, PaymentService>();
+            services.AddScoped<IAppointmentService, AppointmentService>();
+            services.AddScoped<IOrderService, OrderService>();
 
 
 
