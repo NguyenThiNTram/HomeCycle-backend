@@ -1,6 +1,7 @@
 ﻿using HomeCycle.Application.Commons.Paginations;
 using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Requests.Orders;
+using HomeCycle.Application.DTOs.Responses.Orders;
 using HomeCycle.Application.Interfaces.Repositories.Agreements;
 using HomeCycle.Application.Interfaces.Repositories.Orders;
 using HomeCycle.Application.Interfaces.Services.Orders;
@@ -24,24 +25,28 @@ namespace HomeCycle.Application.Services.Orders
             _agreementRepo = agreementRepo;
         }
 
-        public async Task<Result<PagedResult<order>>> GetMyOrdersAsync(
+        public async Task<Result<PagedResult<OrderListItemDto>>> GetMyOrdersAsync(
             Guid userId, bool isSeller, OrderSearchRequest request, CancellationToken ct = default)
         {
             var result = await _orderRepo.GetPagedByUserAsync(userId, isSeller, request, ct);
-            return Result<PagedResult<order>>.Success(result);
+            return Result<PagedResult<OrderListItemDto>>.Success(result);
         }
 
-        public async Task<Result<order>> GetDetailAsync(Guid orderId, Guid userId, CancellationToken ct = default)
+        public async Task<Result<OrderDetailDto>> GetDetailAsync(Guid orderId, Guid userId, CancellationToken ct = default)
         {
             var order = await _orderRepo.GetByIdAsync(orderId, ct);
             if (order == null)
-                return Result<order>.Fail(new Error("Order.NotFound", "Không tìm thấy đơn hàng."));
+                return Result<OrderDetailDto>.Fail(new Error("Order.NotFound", "Không tìm thấy đơn hàng."));
 
             var authResult = await CheckOwnershipAsync(order.AgreementId, userId, ct);
             if (!authResult.IsSuccess)
-                return Result<order>.Fail(authResult.Error);
+                return Result<OrderDetailDto>.Fail(authResult.Error);
 
-            return Result<order>.Success(order);
+            var detail = await _orderRepo.GetDetailWithRelationsAsync(orderId, ct);
+            if (detail == null)
+                return Result<OrderDetailDto>.Fail(new Error("Order.NotFound", "Không tìm thấy đơn hàng."));
+
+            return Result<OrderDetailDto>.Success(detail);
         }
 
         public async Task<Result<order>> GetByAgreementAsync(Guid agreementId, Guid userId, CancellationToken ct = default)

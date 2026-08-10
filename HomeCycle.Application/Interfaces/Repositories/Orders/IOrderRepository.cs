@@ -1,5 +1,6 @@
 ﻿using HomeCycle.Application.Commons.Paginations;
 using HomeCycle.Application.DTOs.Requests.Orders;
+using HomeCycle.Application.DTOs.Responses.Orders;
 using HomeCycle.Domain.Entities;
 using System;
 using System.Collections.Generic;
@@ -15,10 +16,9 @@ namespace HomeCycle.Application.Interfaces.Repositories.Orders
         Task AddAsync(order order, CancellationToken ct = default);
         Task UpdateAsync(order order, CancellationToken ct = default);
         Task<order?> GetByAgreementIdAsync(Guid agreementId, CancellationToken ct = default);
-        Task<PagedResult<order>> GetPagedByUserAsync(
-            Guid userId,
-            bool isSeller,
-            OrderSearchRequest request,
-            CancellationToken ct = default);
+        Task<PagedResult<OrderListItemDto>> GetPagedByUserAsync(
+           Guid userId, bool isSeller, OrderSearchRequest request, CancellationToken ct = default);
+
+        Task<OrderDetailDto?> GetDetailWithRelationsAsync(Guid orderId, CancellationToken ct = default);
     }
 }

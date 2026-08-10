@@ -14,11 +14,14 @@ namespace HomeCycle.Application.Interfaces.Services.Appointments
     public interface IAppointmentService
     {
 
-        Task<Result<PagedResult<appointment>>> GetInspectionListAsync(
+        Task<Result<PagedResult<InspectionAppointmentListItemDto>>> GetInspectionListAsync(
             Guid userId, bool isSeller, AppointmentSearchRequest request, CancellationToken ct = default);
 
-        Task<Result<PagedResult<appointment>>> GetCollectionListAsync(
+        Task<Result<PagedResult<CollectionAppointmentListItemDto>>> GetCollectionListAsync(
             Guid userId, bool isSeller, AppointmentSearchRequest request, CancellationToken ct = default);
+
+        Task<Result<AppointmentCheckInResponseDto>> CheckInAsync(
+            Guid appointmentId, Guid userId, CancellationToken ct = default);
 
 
         Task<Result<AppointmentDetailDto>> GetDetailAsync(Guid appointmentId, Guid userId, CancellationToken ct = default);

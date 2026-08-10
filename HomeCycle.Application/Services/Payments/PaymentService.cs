@@ -368,65 +368,91 @@ namespace HomeCycle.Application.Services.Payments
             }
         }
 
-        //public async Task<Result<string>> SyncPaymentStatusAsync(Guid agreementId, Guid payerId, CancellationToken ct = default)
-        //{
-        //    var agreement = await _agreementRepo.GetByIdAsync(agreementId, ct);
-        //    if (agreement == null)
-        //        return Result<string>.Fail(new Error("Agreement.NotFound", "Không tìm thấy thỏa thuận."));
+        public async Task<Result<string>> SyncPaymentStatusAsync(Guid agreementId, Guid payerId, CancellationToken ct = default)
+        {
+            var agreement = await _agreementRepo.GetByIdAsync(agreementId, ct);
+            if (agreement == null)
+                return Result<string>.Fail(new Error("Agreement.NotFound", "Không tìm thấy thỏa thuận."));
 
-        //    if (agreement.BuyerId != payerId)
-        //        return Result<string>.Fail(new Error("Auth.Forbidden", "Chỉ người mua mới có quyền xem trạng thái thanh toán này."));
+            if (agreement.BuyerId != payerId)
+                return Result<string>.Fail(new Error("Auth.Forbidden", "Chỉ người mua mới có quyền xem trạng thái thanh toán này."));
 
-        //    var pending = await _paymentRepo.GetLatestPendingByAgreementAsync(agreementId, ct);
-        //    if (pending == null)
-        //    {
-        //        var currentStatus = agreement.AgreementStatus == (int)AgreementStatus.Confirmed
-        //            ? PaymentStatus.Completed
-        //            : PaymentStatus.Pending;
-        //        return Result<string>.Success(currentStatus.ToString());
-        //    }
+            var pending = await _paymentRepo.GetLatestPendingByAgreementAsync(agreementId, ct);
+            if (pending == null)
+            {
+                var currentStatus = agreement.AgreementStatus == (int)AgreementStatus.Confirmed
+                    ? PaymentStatus.Completed
+                    : PaymentStatus.Pending;
+                return Result<string>.Success(currentStatus.ToString());
+            }
 
-        //    var tx = await _paymentTxRepo.GetLatestByPaymentIdAsync(pending.PaymentId, ct);
-        //    if (tx == null)
-        //        return Result<string>.Fail(new Error("Payment.TransactionNotFound", "Không tìm thấy giao dịch tương ứng."));
+            var tx = await _paymentTxRepo.GetLatestByPaymentIdAsync(pending.PaymentId, ct);
+            if (tx == null)
+                return Result<string>.Fail(new Error("Payment.TransactionNotFound", "Không tìm thấy giao dịch tương ứng."));
 
-        //    var statusResult = await _gatewayService.GetPaymentStatusAsync(tx.PayOSOrderCode, ct);
-        //    if (!statusResult.IsSuccess)
-        //        return Result<string>.Fail(statusResult.Error);
+            // Nếu đã hết hạn từ trước, không cần gọi PayOS nữa -> trả Expired ngay và đồng bộ cả 2 bảng.
+            if (pending.ExpiredAt.HasValue && pending.ExpiredAt.Value <= DateTime.UtcNow
+                && pending.PaymentStatus != (int)PaymentStatus.Completed)
+            {
+                pending.PaymentStatus = (int)PaymentStatus.Expired;
+                tx.PaymentTransactionStatus = (int)PaymentTransactionStatus.Failed;
+                tx.UpdatedAt = DateTime.UtcNow;
+                await _paymentRepo.UpdateAsync(pending, ct);
+                await _paymentTxRepo.UpdateAsync(tx, ct);
+                await _unitOfWork.SaveChangesAsync(ct);
+                return Result<string>.Success(PaymentStatus.Expired.ToString());
+            }
 
-        //    switch (statusResult.Data.Status)
-        //    {
-        //        case "PAID":
-        //            // Webhook có thể bị delay/miss — chủ động fulfill luôn nếu phát hiện đã PAID thật.
-        //            await ExecuteSuccessfulPaymentCoreAsync(tx.PayOSOrderCode, statusResult.Data.TransactionId ?? string.Empty, ct);
-        //            return Result<string>.Success(PaymentStatus.Completed.ToString());
+            var statusResult = await _gatewayService.GetPaymentStatusAsync(tx.PayOSOrderCode, ct);
+            if (!statusResult.IsSuccess)
+            {
+                _logger.LogWarning("SyncPaymentStatusAsync: gọi PayOS thất bại cho OrderCode {OrderCode}, Agreement {AgreementId}",
+                    tx.PayOSOrderCode, agreementId);
+                return Result<string>.Fail(statusResult.Error);
+            }
 
-        //        case "CANCELLED":
-        //            pending.PaymentStatus = (int)PaymentStatus.Cancelled;
-        //            tx.PaymentTransactionStatus = (int)PaymentTransactionStatus.Cancelled;
-        //            tx.UpdatedAt = DateTime.UtcNow;
-        //            await _paymentRepo.UpdateAsync(pending, ct);
-        //            await _paymentTxRepo.UpdateAsync(tx, ct);
+            switch (statusResult.Data.Status)
+            {
+                case "PAID":
+                    // Webhook có thể bị delay/miss — chủ động fulfill luôn nếu phát hiện đã PAID thật.
+                    // ExecuteSuccessfulPaymentCoreAsync đã có guard idempotent (check PaymentTransactionStatus == Success).
+                    await ExecuteSuccessfulPaymentCoreAsync(tx.PayOSOrderCode, statusResult.Data.TransactionId ?? string.Empty, ct);
+                    return Result<string>.Success(PaymentStatus.Completed.ToString());
 
-        //            return Result<string>.Success(PaymentStatus.Cancelled.ToString());
+                case "CANCELLED":
+                    pending.PaymentStatus = (int)PaymentStatus.Cancelled;
+                    tx.PaymentTransactionStatus = (int)PaymentTransactionStatus.Cancelled;
+                    tx.UpdatedAt = DateTime.UtcNow;
+                    await _paymentRepo.UpdateAsync(pending, ct);
+                    await _paymentTxRepo.UpdateAsync(tx, ct);
+                    await _unitOfWork.SaveChangesAsync(ct);
+                    return Result<string>.Success(PaymentStatus.Cancelled.ToString());
 
-        //        case "PENDING":
-        //        case "PROCESSING":
-        //            if (pending.ExpiredAt.HasValue && pending.ExpiredAt.Value <= DateTime.UtcNow)
-        //            {
-        //                pending.PaymentStatus = (int)PaymentStatus.Expired;
-        //                await _paymentRepo.UpdateAsync(pending, ct);
-        //                return Result<string>.Success(PaymentStatus.Expired.ToString());
-        //            }
-        //            return Result<string>.Success(PaymentStatus.Pending.ToString());
+                case "PENDING":
+                case "PROCESSING":
+                    if (pending.ExpiredAt.HasValue && pending.ExpiredAt.Value <= DateTime.UtcNow)
+                    {
+                        pending.PaymentStatus = (int)PaymentStatus.Expired;
+                        tx.PaymentTransactionStatus = (int)PaymentTransactionStatus.Failed;
+                        tx.UpdatedAt = DateTime.UtcNow;
+                        await _paymentRepo.UpdateAsync(pending, ct);
+                        await _paymentTxRepo.UpdateAsync(tx, ct);
+                        await _unitOfWork.SaveChangesAsync(ct);
+                        return Result<string>.Success(PaymentStatus.Expired.ToString());
+                    }
+                    return Result<string>.Success(PaymentStatus.Pending.ToString());
 
-        //        default:
-        //            return Result<string>.Success(PaymentStatus.Pending.ToString());
-        //    }
-        //}
+                default:
+                    _logger.LogWarning("SyncPaymentStatusAsync: nhận status lạ '{Status}' từ PayOS cho OrderCode {OrderCode}",
+                        statusResult.Data.Status, tx.PayOSOrderCode);
+                    return Result<string>.Success(PaymentStatus.Pending.ToString());
+            }
+        }
 
 
-        //Helper
+
+
+        //=========================== HELPER =================================
         private async Task ExecuteSuccessfulPaymentCoreAsync(string payOsOrderCode, string payOsTransactionId, CancellationToken ct)
         {
             var paymentTx = await _paymentTxRepo.GetByPayOSOrderCodeAsync(payOsOrderCode, ct);

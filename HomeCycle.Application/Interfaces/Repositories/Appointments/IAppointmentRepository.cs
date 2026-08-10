@@ -1,5 +1,6 @@
 ﻿using HomeCycle.Application.Commons.Paginations;
 using HomeCycle.Application.DTOs.Requests.Appointments;
+using HomeCycle.Application.DTOs.Responses.Appointments;
 using HomeCycle.Domain.Entities;
 using HomeCycle.Domain.Enums;
 using System;
@@ -22,5 +23,10 @@ namespace HomeCycle.Application.Interfaces.Repositories.Appointments
             bool isSeller,
             AppointmentSearchRequest request,
             CancellationToken ct = default);
+        Task<PagedResult<InspectionAppointmentListItemDto>> GetPagedInspectionListAsync(
+            Guid userId, bool isSeller, AppointmentSearchRequest request, CancellationToken ct = default);
+
+        Task<PagedResult<CollectionAppointmentListItemDto>> GetPagedCollectionListAsync(
+            Guid userId, bool isSeller, AppointmentSearchRequest request, CancellationToken ct = default);
     }
 }
