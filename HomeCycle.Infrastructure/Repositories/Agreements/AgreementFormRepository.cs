@@ -79,8 +79,7 @@ namespace HomeCycle.Infrastructure.Repositories.Agreements
                 Items = items.Select(x => x.ToDomain()).ToList(),
                 PageNumber = request.PageNumber,
                 PageSize = request.PageSize,
-                TotalCount = totalCount,
-                TotalPages = (int)Math.Ceiling(totalCount / (double)request.PageSize)
+                TotalCount = totalCount
             };
         }
 
