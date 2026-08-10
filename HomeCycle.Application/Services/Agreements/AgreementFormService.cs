@@ -2,7 +2,9 @@
 using FluentValidation;
 using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Requests.Agreements;
+using HomeCycle.Application.DTOs.Requests.GHN;
 using HomeCycle.Application.DTOs.Responses.Agreements;
+using HomeCycle.Application.DTOs.Responses.GHN;
 using HomeCycle.Application.DTOs.Responses.Negotiations;
 using HomeCycle.Application.Interfaces.Externals;
 using HomeCycle.Application.Interfaces.Generics;
@@ -149,29 +151,9 @@ namespace HomeCycle.Application.Services.Agreements
                 if (offer == null)
                     return Result<Guid>.Fail(new Error("Offer.NotFound", "Không tìm thấy Offer ban đầu."));
 
-                var product = await _productRepo.GetByPostIdAsync(post.PostId, cancellationToken);
-                if (product == null)
-                    return Result<Guid>.Fail(new Error("Product.NotFound", "Không tìm thấy sản phẩm liên kết với bài đăng."));
-
-                var pSnapshot = new
-                {
-                    PostInfo = new
-                    {
-                        PostId = post.PostId,
-                        Description = post.Description,
-                        BasePrice = post.BasePrice,
-                        PostType = post.PostType
-                    },
-                    ProductInfo = new
-                    {
-                        ProductId = product.ProductId,
-                        ProductName = product.ProductName,
-                        BrandName = product.BrandName,
-                        OriginalPrice = product.OriginalPrice,
-                        Condition = product.FunctionalityStatus // Lưu lại tình trạng thực tế lúc chốt
-                        // Tùy chọn: Include thêm danh sách Product_Attribute_Value nếu hệ thống yêu cầu gắt gao về bằng chứng pháp lý
-                    }
-                };
+                var snapshotResult = await BuildProductSnapshotAsync(post.PostId, cancellationToken);
+                if (!snapshotResult.IsSuccess)
+                    return Result<Guid>.Fail(snapshotResult.Error!);
 
                 var newAgreement = new agreement_form
                 {
@@ -190,7 +172,7 @@ namespace HomeCycle.Application.Services.Agreements
                     PaymentType = (int)request.PaymentType,
                     AgreementStatus = (int)AgreementStatus.Pending,
 
-                    PSnapshot = JsonSerializer.Serialize(pSnapshot),
+                    PSnapshot = JsonSerializer.Serialize(snapshotResult.Data),
                     AgreementDetailsJsonb = JsonSerializer.Serialize(request.AgreementDetails),
 
                     CreatedAt = DateTime.UtcNow,
@@ -344,5 +326,138 @@ namespace HomeCycle.Application.Services.Agreements
                 _logger.LogWarning(ex, "Không thể phát MessageCreated cho MessageId {MessageId}.", response.MessageId);
             }
         }
+
+        public async Task<Result<GhnFeeQuoteResponse>> PreviewShippingFeeAsync(
+            Guid negotiationId,
+            ShippingFeePreviewRequest request,
+            Guid currentUserId,
+            CancellationToken cancellationToken = default)
+        {
+            var negotiation = await _negotiationRepo.GetByIdAsync(negotiationId, cancellationToken);
+            if (negotiation == null)
+                return Result<GhnFeeQuoteResponse>.Fail(new Error("Negotiation.NotFound", "Không tìm thấy cuộc thương lượng."));
+
+            bool isSeller = negotiation.SellerId == currentUserId;
+            bool isBuyer = negotiation.BuyerId == currentUserId;
+
+            if (!isSeller && !isBuyer)
+                return Result<GhnFeeQuoteResponse>.Fail(new Error("Auth.Forbidden", "Bạn không có quyền xem phí vận chuyển."));
+
+            var post = await _postRepo.GetByIdAsync(negotiation.PostId, cancellationToken);
+            if (post == null)
+                return Result<GhnFeeQuoteResponse>.Fail(new Error("Post.NotFound", "Bài đăng không tồn tại."));
+
+            var product = await _productRepo.GetDetailByPostIdAsync(post.PostId, cancellationToken);
+            if (product == null)
+                return Result<GhnFeeQuoteResponse>.Fail(new Error("Product.NotFound", "Không tìm thấy sản phẩm liên kết với bài đăng."));
+
+            var quoteRequest = new GhnFeeQuoteRequest
+            {
+                FromDistrictId = request.FromDistrictId,
+                FromWardCode = request.FromWardCode,
+                ToDistrictId = request.ToDistrictId,
+                ToWardCode = request.ToWardCode,
+                ServiceTypeId = request.ServiceTypeId,
+
+                // Tự động lấy thông số kiện hàng từ Product để FE không cần nhập
+                WeightGram = product.Weight > 0 ? (int)(product.Weight.Value * 1000) : null,
+                LengthCm = product.Length > 0 ? (int)product.Length.Value : null,
+                WidthCm = product.Width > 0 ? (int)product.Width.Value : null,
+                HeightCm = product.Height > 0 ? (int)product.Height.Value : null
+            };
+
+            try
+            {
+                var quote = await _ghnService.GetShippingFeeAsync(quoteRequest, cancellationToken);
+                return Result<GhnFeeQuoteResponse>.Success(quote);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Tính phí vận chuyển thất bại cho NegotiationId {NegotiationId}.", negotiationId);
+                return Result<GhnFeeQuoteResponse>.Fail(new Error("Ghn.CalculateFeeFailed", ex.Message));
+            }
+        }
+
+        private async Task<Result<AgreementProductSnapshot>> BuildProductSnapshotAsync(Guid postId, CancellationToken cancellationToken)
+        {
+            var post = await _postRepo.GetByIdAsync(postId, cancellationToken);
+            if (post is null)
+                return Result<AgreementProductSnapshot>.Fail(
+                    new Error("Post.NotFound", "Không tìm thấy bài đăng."));
+
+            var product = await _productRepo.GetDetailByPostIdAsync(postId, cancellationToken);
+            if (product is null)
+                return Result<AgreementProductSnapshot>.Fail(
+                    new Error("Product.NotFound", "Không tìm thấy sản phẩm liên kết với bài đăng này."));
+
+            var mediaResult = await _mediaService.GetByTargetsAsync(
+                targetIds: new[] { postId },
+                targetType: "Post",
+                cancellationToken);
+
+            var mediaList = Array.Empty<PostMediaSnapshotInfo>();
+
+            // Kiểm tra kết quả trả về từ MediaService và danh sách theo postId
+            if (mediaResult.IsSuccess && mediaResult.Data != null && mediaResult.Data.TryGetValue(postId, out var responseMedias))
+            {
+                mediaList = responseMedias
+                    .Select(m => new PostMediaSnapshotInfo
+                    {
+                        MediaId = m.MediaId,
+                        Url = m.Url,
+                        FileName = m.FileName,
+                        FileSize = m.FileSize,
+                        DisplayOrder = m.DisplayOrder
+                    })
+                    .ToArray();
+            }
+
+            var snapshot = new AgreementProductSnapshot
+            {
+                PostInfo = new PostSnapshotInfo
+                {
+                    PostId = post.PostId,
+                    OwnerId = post.OwnerId,
+                    Description = post.Description,
+                    BasePrice = post.BasePrice,
+                    PostType = post.PostType,
+                    PostedQuantity = post.Quantity,
+                    CreatedAt = post.CreatedAt
+                },
+
+                ProductInfo = new ProductSnapshotInfo
+                {
+                    ProductId = product.ProductId,
+                    CategoryId = product.CategoryId,
+                    CategoryName = product.Category?.CategoryName,
+                    ProductTypeId = product.ProductTypeId,
+                    ProductTypeName = product.ProductType?.ProductTypeName,
+                    BrandId = product.BrandId,
+                    BrandName = product.Brand?.BrandName,
+                    ProductName = product.ProductName,
+                    ModelNumber = product.ModelNumber,
+                    OriginalPrice = product.OriginalPrice,
+                    SpaceUsage = product.SpaceUsage,
+                    FunctionalityStatus = product.FunctionalityStatus,
+                    DamageLevel = product.DamageLevel,
+                    UsageDuration = product.UsageDuration,
+
+                    Measurements = new ProductMeasurementSnapshotInfo
+                    {
+                        // Map trực tiếp từ các trường Measurements nằm ở gốc thực thể Product
+                        Weight = product.Weight,
+                        Length = product.Length,
+                        Width = product.Width,
+                        Height = product.Height
+                    }
+                },
+
+                // Gán danh sách Media đã chuẩn hóa
+                Medias = mediaList
+            };
+
+            return Result<AgreementProductSnapshot>.Success(snapshot);
+        }
+
     }
 }

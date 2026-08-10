@@ -274,10 +274,6 @@ namespace HomeCycle.Infrastructure.Externals.GHN
 
         private static GhnCalculateFeeApiRequest MapFeeRequest(GhnFeeQuoteRequest request)
         {
-            // nhận diện gói dịch vụ
-            bool isLightGoods = request.ServiceTypeId == 2;
-            bool isHeavyGoods = request.ServiceTypeId == 5;
-
             return new GhnCalculateFeeApiRequest
             {
                 FromDistrictId = request.FromDistrictId,
@@ -285,12 +281,14 @@ namespace HomeCycle.Infrastructure.Externals.GHN
                 ToDistrictId = request.ToDistrictId,
                 ToWardCode = request.ToWardCode,
                 ServiceTypeId = request.ServiceTypeId,
-                WeightGram = request.WeightGram,
+
+                // Chuẩn hóa weight: Bắt buộc > 0 với GHN, thiếu thì mặc định 500g để tránh lỗi
+                WeightGram = request.WeightGram > 0 ? request.WeightGram.Value : 500,
 
                 // Chuẩn hóa kích thước: Nếu client truyền thiếu/bằng 0, tự động lấy 10cm để tránh lỗi API GHN
-                LengthCm = request.LengthCm > 0 ? request.LengthCm : 10,
-                WidthCm = request.WidthCm > 0 ? request.WidthCm : 10,
-                HeightCm = request.HeightCm > 0 ? request.HeightCm : 10
+                LengthCm = request.LengthCm > 0 ? request.LengthCm.Value : 10,
+                WidthCm = request.WidthCm > 0 ? request.WidthCm.Value : 10,
+                HeightCm = request.HeightCm > 0 ? request.HeightCm.Value : 10
             };
         }
     }

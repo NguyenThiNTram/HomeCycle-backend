@@ -1,6 +1,7 @@
 ﻿using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Requests.Agreements;
 using HomeCycle.Application.DTOs.Responses.Agreements;
+using HomeCycle.Application.DTOs.Responses.GHN;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -16,5 +17,6 @@ namespace HomeCycle.Application.Interfaces.Services.Agreements
         Task<Result<AgreementDetailResponse>> GetDetailAsync(Guid agreementId, Guid currentUserId, CancellationToken cancellationToken = default);
         Task<Result<bool>> UpdateAgreementAsync(Guid agreementId, UpdateAgreementFormRequest request, Guid currentUserId, CancellationToken cancellationToken = default);
         Task<Result<bool>> AcceptAgreementAsync(Guid agreementId, Guid buyerId, CancellationToken cancellationToken = default);
+        Task<Result<GhnFeeQuoteResponse>> PreviewShippingFeeAsync(Guid negotiationId, ShippingFeePreviewRequest request, Guid currentUserId, CancellationToken cancellationToken = default);
     }
 }

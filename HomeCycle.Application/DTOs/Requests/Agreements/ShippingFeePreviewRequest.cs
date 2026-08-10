@@ -1,12 +1,12 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace HomeCycle.Application.DTOs.Requests.GHN
+namespace HomeCycle.Application.DTOs.Requests.Agreements
 {
-    public sealed class GhnFeeQuoteRequest
+    public sealed class ShippingFeePreviewRequest
     {
         public int FromDistrictId { get; init; }
         public required string FromWardCode { get; init; }
@@ -16,11 +16,5 @@ namespace HomeCycle.Application.DTOs.Requests.GHN
 
         // 2 = Hàng nhẹ, 5 = Hàng nặng (mặc định Hàng nhẹ)
         public int ServiceTypeId { get; init; } = 2;
-
-        // Tùy chọn: nếu không truyền, service sẽ lấy từ sản phẩm hoặc dùng giá trị mặc định
-        public int? WeightGram { get; init; }
-        public int? LengthCm { get; init; }
-        public int? WidthCm { get; init; }
-        public int? HeightCm { get; init; }
     }
 }

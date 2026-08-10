@@ -1,4 +1,5 @@
 ﻿using HomeCycle.Application.DTOs.Requests.Agreements;
+using HomeCycle.Application.DTOs.Responses.GHN;
 using HomeCycle.Application.Interfaces.Services.Agreements;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;

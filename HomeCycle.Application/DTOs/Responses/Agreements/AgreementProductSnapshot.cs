@@ -21,7 +21,7 @@ namespace HomeCycle.Application.DTOs.Responses.Agreements
         public Guid OwnerId { get; set; }
         public string? Description { get; set; }
         public decimal? BasePrice { get; set; }
-        public PostType PostType { get; set; }
+        public PostType? PostType { get; set; }
         public int PostedQuantity { get; init; }
         public DateTimeOffset CreatedAt { get; init; }
     }
@@ -45,7 +45,7 @@ namespace HomeCycle.Application.DTOs.Responses.Agreements
 
         public SpaceUsage? SpaceUsage { get; init; }
         public FunctionalityStatus? FunctionalityStatus { get; init; }
-        public int? DamageLevel { get; init; }
+        public DamageLevel? DamageLevel { get; init; }
         public int? UsageDuration { get; init; }
 
         //public decimal? Weight { get; set; }
@@ -55,8 +55,8 @@ namespace HomeCycle.Application.DTOs.Responses.Agreements
 
         public ProductMeasurementSnapshotInfo? Measurements { get; init; }
 
-        public IReadOnlyList<ProductAttributeSnapshotInfo> Attributes { get; init; }
-            = Array.Empty<ProductAttributeSnapshotInfo>();
+        //public IReadOnlyList<ProductAttributeSnapshotInfo> Attributes { get; init; }
+        //    = Array.Empty<ProductAttributeSnapshotInfo>();
     }
 
     public sealed class ProductMeasurementSnapshotInfo
