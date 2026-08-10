@@ -1,5 +1,6 @@
 ﻿using AutoMapper;
 using FluentValidation;
+using HomeCycle.Application.Commons.Paginations;
 using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Requests.Agreements;
 using HomeCycle.Application.DTOs.Responses.Agreements;
@@ -414,6 +415,13 @@ namespace HomeCycle.Application.Services.Agreements
                 SellerConfirmedAt = null,
                 BuyerConfirmedAt = null
             });
+        }
+
+        public async Task<Result<PagedResult<agreement_form>>> GetPendingPaymentAsync(
+            Guid buyerId, PendingAgreementSearchRequest request, CancellationToken cancellationToken = default)
+        {
+            var result = await _agreementRepo.GetPendingPaymentByBuyerAsync(buyerId, request, cancellationToken);
+            return Result<PagedResult<agreement_form>>.Success(result);
         }
 
         private async Task PublishMessageCreatedSafelyAsync(Guid negotiationId, MessageResponse response)

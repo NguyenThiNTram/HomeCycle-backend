@@ -32,7 +32,9 @@ public partial class Payment
 
     public int? PaymentStatus { get; set; }
 
+    public DateTime CreatedAt { get; set; }
     public DateTime? PaidAt { get; set; }
+    public DateTime? ExpiredAt { get; set; }
 
     [ForeignKey("AgreementId")]
     [InverseProperty("Payments")]

@@ -20,7 +20,9 @@ public class payment
 
     public int? PaymentStatus { get; set; }
 
+    public DateTime CreatedAt { get; set; }
     public DateTime? PaidAt { get; set; }
+    public DateTime? ExpiredAt { get; set; }
 
     public payment()
     {

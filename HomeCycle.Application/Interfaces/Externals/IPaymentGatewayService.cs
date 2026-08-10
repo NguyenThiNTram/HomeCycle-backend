@@ -14,6 +14,7 @@ namespace HomeCycle.Application.Interfaces.Externals
         Task<Result<GatewayPaymentResponse>> CreatePaymentLinkAsync(GatewayPaymentRequest request, CancellationToken ct = default);
 
         Task<Result<GatewayWebhookResult>> VerifyAndParseWebhookAsync(string webhookBody);
+        Task<Result<GatewayPaymentStatusResponse>> GetPaymentStatusAsync(string payOSOrderCode, CancellationToken ct = default);
     }
 }
 

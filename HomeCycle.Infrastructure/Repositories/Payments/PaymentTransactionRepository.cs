@@ -36,5 +36,22 @@ namespace HomeCycle.Infrastructure.Repositories.Payments
             _db.Payment_Transactions.Update(entity);
             return Task.CompletedTask;
         }
+
+        public async Task<payment_transaction?> GetLatestByPaymentIdAsync(Guid paymentId, CancellationToken ct = default)
+        {
+            var entity = await _db.Payment_Transactions
+                .AsNoTracking()
+                .Where(x => x.PaymentId == paymentId)
+                .OrderByDescending(x => x.CreatedAt)
+                .FirstOrDefaultAsync(ct);
+            return entity?.ToDomain();
+        }
+
+        public async Task<bool> ExistsByPayOSOrderCodeAsync(string payOSOrderCode, CancellationToken ct = default)
+        {
+            return await _db.Payment_Transactions
+                .AsNoTracking()
+                .AnyAsync(x => x.PayOSOrderCode == payOSOrderCode, ct);
+        }
     }
 }

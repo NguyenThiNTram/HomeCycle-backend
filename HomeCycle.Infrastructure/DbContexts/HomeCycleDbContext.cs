@@ -518,6 +518,7 @@ public partial class HomeCycleDbContext : DbContext
             entity.HasKey(e => e.PaymentId).HasName("Payment_pkey");
 
             entity.Property(e => e.PaymentId).ValueGeneratedNever();
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()");
 
             entity.HasOne(d => d.Agreement).WithMany(p => p.Payments).HasConstraintName("FK_Payment_AgreementId");
 

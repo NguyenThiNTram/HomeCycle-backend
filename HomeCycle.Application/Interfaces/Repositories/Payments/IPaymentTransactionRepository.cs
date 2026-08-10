@@ -12,5 +12,7 @@ namespace HomeCycle.Application.Interfaces.Repositories.Payments
         Task<payment_transaction?> GetByPayOSOrderCodeAsync(string payOSOrderCode, CancellationToken ct = default);
         Task AddAsync(payment_transaction transaction, CancellationToken ct = default);
         Task UpdateAsync(payment_transaction transaction, CancellationToken ct = default);
+        Task<payment_transaction?> GetLatestByPaymentIdAsync(Guid paymentId, CancellationToken ct = default);
+        Task<bool> ExistsByPayOSOrderCodeAsync(string payOSOrderCode, CancellationToken ct = default);
     }
 }
