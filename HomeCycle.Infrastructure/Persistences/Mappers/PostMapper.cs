@@ -15,6 +15,7 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
             if (entity == null) return null;
 
             var productDomain = entity.Product?.ToDomain();
+            var userDomain = entity.User?.ToDomain();
 
             return new post
             {
@@ -38,6 +39,8 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 ExpiryDate = entity.ExpiryDate,
 
                 Product = productDomain,
+                User = userDomain
+
             };
         }
         public static Post ToInfrastructure(this post entity)

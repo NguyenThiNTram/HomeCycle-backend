@@ -12,8 +12,6 @@ public class post
     public Guid PostId { get; set; }
     public Guid OwnerId { get; set; }
 
-    //public string? ProductName { get; set; }
-
     public string? Description { get; set; }
     public int Quantity { get; set; }
     public int RemainingQuantity { get; set; }
@@ -35,6 +33,8 @@ public class post
     public DateTime? ExpiryDate { get; set; }
 
     public virtual product? Product { get; set; }
+    public virtual user? User { get; set; }
+
     //public virtual ICollection<media> PostImages { get; set; } = new List<media>();
 
     public post()

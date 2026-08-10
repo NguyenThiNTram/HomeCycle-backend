@@ -406,6 +406,11 @@ namespace HomeCycle.Application.Mappings
                         s.Product == null
                             ? Guid.Empty
                             : s.Product.ProductId))
+                .ForMember(d => d.AvataUrl,
+                    o => o.MapFrom(s =>
+                        s.User == null
+                            ? string.Empty
+                            : s.User.AvatarUrl))
                 .ForMember(d => d.ProductName,
                     o => o.MapFrom(s =>
                         s.Product == null
