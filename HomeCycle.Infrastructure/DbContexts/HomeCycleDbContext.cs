@@ -35,6 +35,8 @@ public partial class HomeCycleDbContext : DbContext
 
     public virtual DbSet<Category> Categories { get; set; }
 
+    public virtual DbSet<Cart_Item> Cart_Items { get; set; }
+
     public virtual DbSet<Collection_Appointment> Collection_Appointments { get; set; }
 
     public virtual DbSet<Dispute> Disputes { get; set; }
@@ -298,6 +300,30 @@ public partial class HomeCycleDbContext : DbContext
             entity.Property(e => e.CategoryId).ValueGeneratedNever();
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()");
             entity.Property(e => e.IsActive).HasDefaultValue(true);
+        });
+
+        modelBuilder.Entity<Cart_Item>(entity =>
+        {
+            entity.HasKey(e => e.CartItemId).HasName("Cart_Item_pkey");
+
+            entity.Property(e => e.CartItemId).ValueGeneratedNever();
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()");
+
+            // Mỗi người dùng chỉ có 1 dòng cart cho 1 bài đăng
+            entity.HasIndex(e => new { e.UserId, e.PostId })
+                .IsUnique()
+                .HasDatabaseName("uq_cart_item_user_post");
+
+            entity.HasOne(d => d.User).WithMany(p => p.Cart_Items)
+                .HasForeignKey(d => d.UserId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("fk_cart_item_user");
+
+            // Bài đăng bị xóa → sản phẩm trong giỏ hàng cũng bị xóa
+            entity.HasOne(d => d.Post).WithMany(p => p.Cart_Items)
+                .HasForeignKey(d => d.PostId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("fk_cart_item_post");
         });
 
         modelBuilder.Entity<Collection_Appointment>(entity =>

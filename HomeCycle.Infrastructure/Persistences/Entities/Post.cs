@@ -56,6 +56,9 @@ public partial class Post
     public virtual ICollection<Agreement_Form> Agreement_Forms { get; set; } = new List<Agreement_Form>();
 
     [InverseProperty("Post")]
+    public virtual ICollection<Cart_Item> Cart_Items { get; set; } = new List<Cart_Item>();
+
+    [InverseProperty("Post")]
     public virtual ICollection<Negotiation> Negotiations { get; set; } = new List<Negotiation>();
 
     [InverseProperty("Post")]

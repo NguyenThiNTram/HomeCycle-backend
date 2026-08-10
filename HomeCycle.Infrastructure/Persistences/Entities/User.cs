@@ -48,6 +48,9 @@ public partial class User
     public virtual ICollection<Bank_Account> Bank_Accounts { get; set; } = new List<Bank_Account>();
 
     [InverseProperty("User")]
+    public virtual ICollection<Cart_Item> Cart_Items { get; set; } = new List<Cart_Item>();
+
+    [InverseProperty("User")]
     public virtual Business_Profile? Business_Profile { get; set; }
 
     [InverseProperty("Moderator")]

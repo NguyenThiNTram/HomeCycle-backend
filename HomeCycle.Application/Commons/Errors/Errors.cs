@@ -181,4 +181,25 @@ namespace HomeCycle.Application.Commons.Errors
         public static readonly Error InvalidMessage = new("MESSAGE_INVALID", "The message is invalid or cannot be processed.");
         public static readonly Error NegotiationReadOnly = new("MESSAGE_NEGOTIATION_READ_ONLY", "Cannot send messages in a negotiation that is not open.");
     }
+
+    public static class CartErrors
+    {
+        public static readonly Error ItemNotFound = new("CART_ITEM_NOT_FOUND", "The cart item is not found.");
+
+        public static readonly Error ItemExists = new("CART_ITEM_EXISTS", "The post is already in your cart.");
+
+        public static readonly Error PostNotFound = new("CART_POST_NOT_FOUND", "The post does not exist.");
+
+        public static readonly Error PostNotActive = new("CART_POST_NOT_ACTIVE", "The post is not active.");
+
+        public static readonly Error CannotAddOwnPost = new("CART_CANNOT_ADD_OWN_POST", "You cannot add your own post to the cart.");
+
+        public static readonly Error InvalidQuantity = new("CART_INVALID_QUANTITY", "Quantity must be greater than zero.");
+
+        public static Error QuantityExceedsRemaining(int requested, int remaining)
+            => new("CART_QUANTITY_EXCEEDS_REMAINING",
+                   $"Quantity ({requested}) exceeds the remaining quantity ({remaining}).");
+
+        public static readonly Error Forbidden = new("CART_FORBIDDEN", "You do not have permission to access this cart item.");
+    }
 }

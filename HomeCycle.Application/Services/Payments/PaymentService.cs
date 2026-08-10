@@ -24,8 +24,6 @@ namespace HomeCycle.Application.Services.Payments
 {
     public class PaymentService : IPaymentService
     {
-        // Tech Lead Note: Hằng số thay cho Magic Numbers. 
-        // Đặt ở đây để dễ dàng thay đổi theo Business rule mà không phải lục tìm trong logic.
         private const decimal DEPOSIT_RATE = 0.20m;
         private static readonly TimeSpan PAYMENT_TTL = TimeSpan.FromMinutes(15);
 
@@ -117,7 +115,26 @@ namespace HomeCycle.Application.Services.Payments
                 return Result<string>.Fail(new Error("Data.InvalidFormat", "Dữ liệu JSONB cấu hình thỏa thuận bị lỗi."));
             }
 
+            if (details?.EstimatedShippingFee is < 0)
+                return Result<string>.Fail(new Error("Payment.InvalidShippingFee", "Phí vận chuyển không được nhỏ hơn 0."));
+
+            if (details?.DeliveryMethod == DeliveryMethod.GhnDelivery
+                && details?.EstimatedShippingFee is null)
+            {
+                return Result<string>.Fail(new Error(
+                    "Payment.GhnShippingFeeMissing",
+                    "Chưa có phí vận chuyển GHN. Vui lòng tính lại phí giao hàng trước khi thanh toán."));
+            }
+
             var calc = CalculatePaymentAmount(agreement, details);
+
+            if (calc.BasePrice <= 0 || calc.AmountToPay <= 0 || calc.AmountToPay > int.MaxValue)
+            {
+                return Result<string>.Fail(new Error(
+                    "Payment.InvalidAmount",
+                    "Số tiền thanh toán không hợp lệ hoặc vượt quá giới hạn cho phép."));
+            }
+
             agreement.PaymentType = calc.PaymentType;
 
             long orderCode = 0;
@@ -144,6 +161,13 @@ namespace HomeCycle.Application.Services.Payments
             var gatewayResult = await _gatewayService.CreatePaymentLinkAsync(gatewayRequest, ct);
             if (!gatewayResult.IsSuccess)
                 return Result<string>.Fail(gatewayResult.Error);
+
+            if (gatewayResult.Data == null || string.IsNullOrWhiteSpace(gatewayResult.Data.CheckoutUrl))
+            {
+                return Result<string>.Fail(new Error(
+                    "Payment.InvalidGatewayResponse",
+                    "PayOS không trả về đường dẫn thanh toán hợp lệ."));
+            }
 
             var paymentId = Guid.NewGuid();
             var now = DateTime.UtcNow;
@@ -235,6 +259,17 @@ namespace HomeCycle.Application.Services.Payments
                 return Result<bool>.Fail(new Error("Data.InvalidFormat", "Dữ liệu JSONB bị lỗi."));
             }
 
+            if (details?.EstimatedShippingFee is < 0)
+                return Result<bool>.Fail(new Error("Payment.InvalidShippingFee", "Phí vận chuyển không được nhỏ hơn 0."));
+
+            if (details?.DeliveryMethod == DeliveryMethod.GhnDelivery
+                && details?.EstimatedShippingFee is null)
+            {
+                return Result<bool>.Fail(new Error(
+                    "Payment.GhnShippingFeeMissing",
+                    "Chưa có phí vận chuyển GHN. Vui lòng tính lại phí giao hàng trước khi thanh toán."));
+            }
+
             DateTime? inspectionDate = details?.InspectionDate;
             string? inspectionAddress = details?.InspectionAddress;
             DateTime? collectionDate = details?.CollectionDate;
@@ -245,6 +280,10 @@ namespace HomeCycle.Application.Services.Payments
             var calc = CalculatePaymentAmount(agreement, details);
             decimal basePrice = calc.BasePrice;
             decimal amountToPay = calc.AmountToPay;
+
+            if (basePrice <= 0 || amountToPay <= 0)
+                return Result<bool>.Fail(new Error("Payment.InvalidAmount", "Số tiền thanh toán không hợp lệ."));
+
             agreement.PaymentType = calc.PaymentType;
 
             // 3. KIỂM TRA VÍ NGƯỜI MUA
@@ -256,7 +295,7 @@ namespace HomeCycle.Application.Services.Payments
             if (sellerWallet == null)
                 return Result<bool>.Fail(new Error("Wallet.SellerNotFound", "Không tìm thấy ví của người bán."));
 
-            // 4. BẮT ĐẦU TRANSACTION CORE LÕI
+            // TRANSACTION CORE LÕI
             await _unitOfWork.BeginTransactionAsync();
             try
             {
@@ -264,7 +303,7 @@ namespace HomeCycle.Application.Services.Payments
                 var orderId = Guid.NewGuid();
                 var now = DateTime.UtcNow;
 
-                // 4.1 Trừ tiền ví người mua (Dòng tiền ra)
+                // Trừ tiền ví người mua (tiền ra)
                 var buyerWalletTx = new wallet_transaction
                 {
                     WalletTransactionId = Guid.NewGuid(),
@@ -296,7 +335,7 @@ namespace HomeCycle.Application.Services.Payments
                 buyerWallet.AvailableBalance -= amountToPay;
                 buyerWallet.UpdatedAt = DateTime.UtcNow;
 
-                // 4.2 Cộng tiền ví tạm giữ Escrow người bán (Dòng tiền vào)
+                // Cộng tiền ví -> tạm giữ Escrow người bán (tiền vào)
                 var sellerWalletTx = new wallet_transaction
                 {
                     WalletTransactionId = Guid.NewGuid(),
@@ -328,7 +367,7 @@ namespace HomeCycle.Application.Services.Payments
                 sellerWallet.HoldBalance += amountToPay;
                 sellerWallet.UpdatedAt = DateTime.UtcNow;
 
-                // 4.3 Khởi tạo thực thể Payment (Wallet-specific: Completed ngay lập tức, không qua gateway ngoài)
+                // Khởi tạo thực thể Payment (Wallet-specific: Completed ngay lập tức, không qua gateway ngoài)
                 var payment = new payment
                 {
                     PaymentId = paymentId,
@@ -343,10 +382,10 @@ namespace HomeCycle.Application.Services.Payments
                     PaidAt = now
                 };
 
-                // 4.4 Hiện thực hóa Agreement -> Order/Appointment/trừ Quantity/Confirmed (dùng chung với PayOS)
+                // Hiện thực hóa Agreement -> Order/Appointment/trừ Quantity/Confirmed (dùng chung với PayOS)
                 await FulfillAgreementAsync(agreement, basePrice, amountToPay, details, ct, orderIdOverride: orderId);
 
-                // 4.5 Lưu Data
+                // Lưu Data
                 await _walletRepo.UpdateAsync(buyerWallet, ct);
                 await _walletRepo.UpdateAsync(sellerWallet, ct);
                 await _walletTxRepo.AddAsync(buyerWalletTx, ct);
@@ -449,15 +488,12 @@ namespace HomeCycle.Application.Services.Payments
             }
         }
 
-
-
-
         //=========================== HELPER =================================
         private async Task ExecuteSuccessfulPaymentCoreAsync(string payOsOrderCode, string payOsTransactionId, CancellationToken ct)
         {
             var paymentTx = await _paymentTxRepo.GetByPayOSOrderCodeAsync(payOsOrderCode, ct);
             if (paymentTx == null || paymentTx.PaymentTransactionStatus == (int)PaymentTransactionStatus.Success)
-                return; // Ngăn chặn Webhook gọi 2 lần (Idempotency)
+                return; // chặn Webhook gọi 2 lần 
 
             var payment = await _paymentRepo.GetByIdAsync(paymentTx.PaymentId, ct);
             var agreement = await _agreementRepo.GetByIdAsync(payment.AgreementId.Value, ct);
@@ -481,7 +517,6 @@ namespace HomeCycle.Application.Services.Payments
             await _unitOfWork.BeginTransactionAsync();
             try
             {
-                // 1. Cập nhật trạng thái thanh toán (PayOS-specific)
                 paymentTx.PaymentTransactionStatus = (int)PaymentTransactionStatus.Success;
                 paymentTx.PayOSTransactionId = payOsTransactionId;
                 paymentTx.UpdatedAt = DateTime.UtcNow;
@@ -489,11 +524,10 @@ namespace HomeCycle.Application.Services.Payments
                 payment.PaymentStatus = (int)PaymentStatus.Completed;
                 payment.PaidAt = DateTime.UtcNow;
 
-                // 2. Hiện thực hóa Agreement -> Order/Appointment/trừ Quantity/Confirmed (dùng chung với Wallet)
+                // Hiện thực hóa Agreement -> Order/Appointment/trừ Quantity/Confirmed (dùng chung với Wallet)
                 var fulfillment = await FulfillAgreementAsync(agreement, basePrice, paidAmount, details, ct);
 
-                // 3. Hạch toán ví (Escrow Logic) — chỉ ghi nhận CHIỀU VÀO cho seller,
-                // vì tiền buyer đã rời hệ thống qua PayOS, không qua ví nội bộ.
+                // Hạch toán ví (Escrow Logic) — chỉ ghi nhận CHIỀU VÀO cho seller, vì tiền buyer đã rời hệ thống qua PayOS, không qua ví nội bộ.
                 var newWalletTx = new wallet_transaction
                 {
                     WalletTransactionId = Guid.NewGuid(),
@@ -526,7 +560,6 @@ namespace HomeCycle.Application.Services.Payments
                 sellerWallet.HoldBalance += paidAmount;
                 sellerWallet.UpdatedAt = DateTime.UtcNow;
 
-                // 4. Lưu vào Database
                 await _paymentTxRepo.UpdateAsync(paymentTx, ct);
                 await _paymentRepo.UpdateAsync(payment, ct);
                 await _walletTxRepo.AddAsync(newWalletTx, ct);
@@ -558,7 +591,9 @@ namespace HomeCycle.Application.Services.Payments
             decimal basePrice = unitPrice * Math.Max(agreement.Quantity, 1);
 
             var deliveryMethod = details?.DeliveryMethod;
-            decimal shippingFee = details?.EstimatedShippingFee ?? 0;
+            //decimal shippingFee = details?.EstimatedShippingFee ?? 0;
+            decimal configuredShippingFee = details?.EstimatedShippingFee ?? 0;
+            decimal shippingFee = 0;
 
             decimal amountToPay;
             int paymentType;
@@ -570,7 +605,9 @@ namespace HomeCycle.Application.Services.Payments
             }
             else if (deliveryMethod == DeliveryMethod.GhnDelivery)
             {
-                amountToPay = basePrice;
+                // GHN -> thanh toán toàn bộ tiền hàng + phí giao hàng đã chốt (đã tính qua API GHN)
+                shippingFee = configuredShippingFee;
+                amountToPay = basePrice + shippingFee;
                 paymentType = (int)PaymentType.Full_Payment;
             }
             else
@@ -578,7 +615,11 @@ namespace HomeCycle.Application.Services.Payments
                 // BuyerPickUp / SellerDelivers / fallback: giữ nguyên loại thanh toán đã chốt lúc tạo Agreement.
                 paymentType = agreement.PaymentType ?? (int)PaymentType.Full_Payment;
                 decimal itemPay = paymentType == (int)PaymentType.Deposit ? basePrice * DEPOSIT_RATE : basePrice;
-                amountToPay = deliveryMethod == DeliveryMethod.SellerDelivers ? itemPay + shippingFee : itemPay;
+                //amountToPay = deliveryMethod == DeliveryMethod.SellerDelivers ? itemPay + shippingFee : itemPay;
+                if (deliveryMethod == DeliveryMethod.SellerDelivers)
+                    shippingFee = configuredShippingFee;
+
+                amountToPay = itemPay + shippingFee;
             }
 
             amountToPay = Math.Round(amountToPay, 0, MidpointRounding.AwayFromZero);
@@ -628,6 +669,15 @@ namespace HomeCycle.Application.Services.Payments
             Guid? orderIdOverride = null)
         {
             var orderId = orderIdOverride ?? Guid.NewGuid();
+
+            // Tổng đơn phải bao gồm đúng khoản phí vận chuyển đã được thu.
+            // Inspection chưa thu phí giao hàng; BuyerPickUp không có phí giao hàng.
+            decimal shippingFee = agreement.AgreementType != (int)AgreementType.Inspection
+                && details?.DeliveryMethod is DeliveryMethod.GhnDelivery or DeliveryMethod.SellerDelivers
+                    ? details?.EstimatedShippingFee ?? 0
+                    : 0;
+            decimal finalTotalAmount = basePrice + shippingFee;
+
             var order = new order
             {
                 OrderId = orderId,
@@ -635,9 +685,10 @@ namespace HomeCycle.Application.Services.Payments
                 PostId = agreement.PostId,
                 Quantity = agreement.Quantity,
                 OriginalTotalAmount = basePrice,
-                FinalTotalAmount = basePrice,
+                FinalTotalAmount = finalTotalAmount,
                 AmountPaid = paidAmount,
-                AmountRemaining = basePrice - paidAmount > 0 ? basePrice - paidAmount : 0,
+                //AmountRemaining = basePrice - paidAmount > 0 ? basePrice - paidAmount : 0,
+                AmountRemaining = finalTotalAmount - paidAmount > 0 ? finalTotalAmount - paidAmount : 0,
                 PaymentStatus = agreement.PaymentType == (int)PaymentType.Deposit ? (int)PaymentStatus.Pending : (int)PaymentStatus.Completed,
                 OrderStatus = (int)OrderStatus.Processing,
                 CreatedAt = DateTime.UtcNow
