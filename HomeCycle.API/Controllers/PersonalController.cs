@@ -13,7 +13,7 @@ namespace HomeCycle.API.Controllers
 {
     [Route("api/personal-profiles")]
     [ApiController]
-    //[Authorize(Roles = "Personal")]
+    [Authorize(Roles = "Personal")]
     public class PersonalController : ControllerBase
     {
         private readonly IPersonalProfileService _personalProfileService;

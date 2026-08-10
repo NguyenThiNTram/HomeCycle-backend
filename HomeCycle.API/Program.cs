@@ -186,6 +186,26 @@ namespace HomeCycle.API
 
             var app = builder.Build();
 
+            app.Use(async (context, next) =>
+            {
+                try
+                {
+                    await next();
+                }
+                catch (UnauthorizedAccessException)
+                {
+                    if (context.Response.HasStarted) throw;
+                    context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                    await context.Response.WriteAsJsonAsync(new { message = "Token không hợp lệ hoặc đã hết hạn." });
+                }
+                catch (Exception)
+                {
+                    if (context.Response.HasStarted) throw;
+                    context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+                    await context.Response.WriteAsJsonAsync(new { message = "Internal server error." });
+                }
+            });
+
             app.UseSwagger();
             app.UseSwaggerUI(c =>
             {
