@@ -3,6 +3,7 @@ using HomeCycle.Application.DTOs.Responses.GHN;
 using HomeCycle.Application.Interfaces.Externals;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
+using Org.BouncyCastle.Asn1.Ocsp;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -11,6 +12,7 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
+using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace HomeCycle.Infrastructure.Externals.GHN
 {
@@ -254,43 +256,126 @@ namespace HomeCycle.Infrastructure.Externals.GHN
             return payload.Data;
         }
 
-        public async Task<GhnFeeQuoteResponse> GetShippingFeeAsync(GhnFeeQuoteRequest request, CancellationToken cancellationToken = default)
+        public async Task<GhnFeeQuoteResponse> GetShippingFeeAsync(CalculateGhnFeeRequest request, CancellationToken cancellationToken = default)
         {
+            ArgumentNullException.ThrowIfNull(request);
+
             var apiRequest = MapFeeRequest(request);
 
-            // Sử dụng hàm SendSingleAsync mới để xử lý JSON Object đơn lẻ thay vì List
-            // endpoint của GHN tính phí ship: "shipping-order/fee" (hoặc truyền endpoint từ _settings tùy cấu hình)
+            // endpoint của GHN tính phí ship: "shipping-order/fee" 
             var response = await SendSingleAsync<GhnCalculateFeeData>(
                 HttpMethod.Post,
                 "v2/shipping-order/fee",
                 apiRequest,
                 cancellationToken);
 
-            // Khớp với Record / Class GhnFeeQuoteResponse ở tầng Application của bạn
             return new GhnFeeQuoteResponse(
-                ServiceFee: response.ServiceFee,
-                TotalFee: response.Total);
+                 TotalFee: response.Total,
+                 Breakdown: new GhnFeeBreakdownSnapshotDto
+                 {
+                     ServiceFee = response.ServiceFee,
+                     InsuranceFee = response.InsuranceFee,
+                     PickStationFee = response.PickStationFee,
+                     CouponValue = response.CouponValue,
+                     R2sFee = response.R2sFee,
+                     DocumentReturnFee = response.DocumentReturnFee,
+                     DoubleCheckFee = response.DoubleCheckFee,
+                     CodFee = response.CodFee,
+                     PickRemoteAreasFee = response.PickRemoteAreasFee,
+                     DeliverRemoteAreasFee = response.DeliverRemoteAreasFee,
+                     CodFailedFee = response.CodFailedFee
+                 });
         }
 
-        private static GhnCalculateFeeApiRequest MapFeeRequest(GhnFeeQuoteRequest request)
+        private static GhnCalculateFeeApiRequest MapFeeRequest(CalculateGhnFeeRequest request)
         {
-            // nhận diện gói dịch vụ
-            bool isLightGoods = request.ServiceTypeId == 2;
-            bool isHeavyGoods = request.ServiceTypeId == 5;
+            if (request.FromDistrictId <= 0 ||
+                string.IsNullOrWhiteSpace(request.FromWardCode))
+            {
+                throw new ArgumentException("Địa chỉ người gửi không hợp lệ.", nameof(request));
+            }
+
+            if (request.ToDistrictId <= 0 || string.IsNullOrWhiteSpace(request.ToWardCode))
+            {
+                throw new ArgumentException("Địa chỉ người nhận không hợp lệ.", nameof(request));
+            }
+
+            if (request.WeightGram <= 0)
+            {
+                throw new ArgumentException("Khối lượng phải lớn hơn 0.", nameof(request));
+            }
+
+            var isLight = request.ServiceTypeId == 2;
+            var isHeavy = request.ServiceTypeId == 5;
+
+            if (!isLight && !isHeavy)
+            {
+                throw new ArgumentException("ServiceTypeId chỉ nhận 2 hoặc 5.", nameof(request));
+            }
+
+            if (isLight &&
+                (request.LengthCm is null or <= 0 ||
+                 request.WidthCm is null or <= 0 ||
+                 request.HeightCm is null or <= 0))
+            {
+                throw new ArgumentException("Hàng nhẹ phải có đầy đủ dài, rộng và cao.", nameof(request));
+            }
+
+            if (isHeavy && request.Items.Count == 0)
+            {
+                throw new ArgumentException("Hàng nặng phải có ít nhất một kiện hàng.", nameof(request));
+            }
 
             return new GhnCalculateFeeApiRequest
             {
                 FromDistrictId = request.FromDistrictId,
-                FromWardCode = request.FromWardCode,
+                FromWardCode = request.FromWardCode.Trim(),
+
                 ToDistrictId = request.ToDistrictId,
-                ToWardCode = request.ToWardCode,
+                ToWardCode = request.ToWardCode.Trim(),
+
                 ServiceTypeId = request.ServiceTypeId,
                 WeightGram = request.WeightGram,
 
-                // Chuẩn hóa kích thước: Nếu client truyền thiếu/bằng 0, tự động lấy 10cm để tránh lỗi API GHN
-                LengthCm = request.LengthCm > 0 ? request.LengthCm : 10,
-                WidthCm = request.WidthCm > 0 ? request.WidthCm : 10,
-                HeightCm = request.HeightCm > 0 ? request.HeightCm : 10
+                LengthCm = isLight ? request.LengthCm : null,
+                WidthCm = isLight ? request.WidthCm : null,
+                HeightCm = isLight ? request.HeightCm : null,
+
+                InsuranceValue = 0,
+                CodValue = 0,
+                CodFailedAmount = 0,
+                Coupon = null,
+
+                Items = isHeavy
+                    ? request.Items.Select(MapItem).ToList()
+                    : null
+            };
+        }
+
+        private static GhnCalculateFeeItemApiRequest MapItem(CalculateGhnFeeItemRequest item)
+        {
+            // quy ước: cạnh lớn nhất là dài, nhỏ nhất là cao.
+            var sides = new[]
+            {
+                item.LengthCm,
+                item.WidthCm,
+                item.HeightCm
+            }
+
+            .OrderByDescending(x => x)
+            .ToArray();
+
+            return new GhnCalculateFeeItemApiRequest
+            {
+                Name = item.Name.Trim(),
+                Code = string.IsNullOrWhiteSpace(item.Code)
+                    ? null
+                    : item.Code.Trim(),
+                Quantity = item.Quantity,
+                WeightGram = item.WeightGram,
+                LengthCm = sides[0],
+                WidthCm = sides[1],
+                HeightCm = sides[2]
             };
         }
     }

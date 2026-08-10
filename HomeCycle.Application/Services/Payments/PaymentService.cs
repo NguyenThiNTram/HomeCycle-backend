@@ -115,7 +115,7 @@ namespace HomeCycle.Application.Services.Payments
             {
                 if (deliveryMethod == DeliveryMethod.GhnDelivery)
                 {
-                    amountToPay = basePrice;
+                    amountToPay = basePrice + shippingFee;
                     agreement.PaymentType = (int)PaymentType.Full_Payment;
                 }
                 else if (deliveryMethod == DeliveryMethod.BuyerPickUp)
@@ -437,7 +437,7 @@ namespace HomeCycle.Application.Services.Payments
             {
                 if (deliveryMethod == DeliveryMethod.GhnDelivery)
                 {
-                    amountToPay = basePrice;
+                    amountToPay = basePrice + shippingFee;
                     agreement.PaymentType = (int)PaymentType.Full_Payment;
                 }
                 else if (deliveryMethod == DeliveryMethod.BuyerPickUp || deliveryMethod == DeliveryMethod.SellerDelivers)

@@ -16,6 +16,6 @@ namespace HomeCycle.Application.Interfaces.Externals
 
         Task<IReadOnlyList<GhnWardResponse>> GetWardsAsync(int districtId, CancellationToken cancellationToken = default);
 
-        Task<GhnFeeQuoteResponse> GetShippingFeeAsync(GhnFeeQuoteRequest request, CancellationToken cancellationToken = default);
+        Task<GhnFeeQuoteResponse> GetShippingFeeAsync(CalculateGhnFeeRequest request, CancellationToken cancellationToken = default);
     }
 }

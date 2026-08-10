@@ -18,7 +18,7 @@ namespace HomeCycle.Application.DTOs.Requests.Posts
         public Guid? ProductTypeId { get; set; }
         public Guid? BrandId { get; set; }
 
-        public string? SpaceUsage { get; set; }
+        public SpaceUsage? SpaceUsage { get; set; }
         public FunctionalityStatus? FunctionalityStatus { get; set; }
         public int? MinUsageDuration { get; set; }
         public int? MaxUsageDuration { get; set; }

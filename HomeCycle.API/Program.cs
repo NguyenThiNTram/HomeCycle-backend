@@ -6,6 +6,7 @@ using HomeCycle.Application.Services.Negotiates;
 using HomeCycle.Infrastructure;
 using HomeCycle.Infrastructure.DbContexts;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
@@ -28,6 +29,8 @@ namespace HomeCycle.API
             builder.Services.AddSignalR();
             builder.Services.AddScoped<IMessageService, MessageService>();
             builder.Services.AddSingleton<IChatRealtimePublisher, SignalRChatRealtimePublisher>();
+
+            builder.Services.AddScoped<IAuthorizationHandler, ActiveUserHandler>();
 
             // Config CORS
             //builder.Services.AddCors(options =>
@@ -170,7 +173,16 @@ namespace HomeCycle.API
                 };
             });
 
-            builder.Services.AddAuthorization();
+            ////builder.Services.AddAuthorization();
+            //builder.Services.AddAuthorization(options =>
+            //{
+            //    options.FallbackPolicy = new AuthorizationPolicyBuilder()
+            //        .RequireAuthenticatedUser()
+            //        .AddRequirements(new ActiveUserRequirement())
+            //        .Build();
+            //    // FallbackPolicy áp dụng cho MỌI endpoint có [Authorize] (không có tên Policy cụ thể) —
+            //    // tự động phủ toàn bộ Controller hiện có, không cần sửa từng Controller một.
+            //});
 
             var app = builder.Build();
 

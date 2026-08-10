@@ -225,7 +225,8 @@ namespace HomeCycle.Infrastructure.Repositories.Posts
                     .ThenInclude(x => x!.Brand)
                 .Where(x =>
                     x.Status == (int)PostStatus.Active &&
-                    x.Product != null);
+                    x.Product != null &&
+                    x.User!.Status == (int)UserStatus.Active);
 
             // ==================== KEYWORD ====================
 
@@ -240,10 +241,11 @@ namespace HomeCycle.Infrastructure.Repositories.Posts
                     EF.Functions.ILike(x.Product.ProductType.ProductTypeName ?? string.Empty, keyword) ||
 
                     (x.Product.Brand != null &&
-                     EF.Functions.ILike(x.Product.Brand.BrandName ?? string.Empty, keyword)) ||
-                     EF.Functions.ILike(x.City ?? string.Empty, keyword) ||
-                     EF.Functions.ILike(x.Ward ?? string.Empty, keyword) ||
-                     EF.Functions.ILike(x.StreetAddress ?? string.Empty, keyword));
+                    EF.Functions.ILike(x.Product.Brand.BrandName ?? string.Empty, keyword)));
+                    //EF.Functions.ILike(x.Product.Brand.BrandName ?? string.Empty, keyword)) ||
+                    //EF.Functions.ILike(x.City ?? string.Empty, keyword) ||
+                    //EF.Functions.ILike(x.Ward ?? string.Empty, keyword) ||
+                    //EF.Functions.ILike(x.StreetAddress ?? string.Empty, keyword));
             }
 
             // ==================== POST TYPE + CATEGORY + PRODUCT TYPE + BRAND + CITY ====================
@@ -287,6 +289,12 @@ namespace HomeCycle.Infrastructure.Repositories.Posts
             {
                 var functionalityStatus = (int)request.FunctionalityStatus.Value;
                 query = query.Where(x => x.Product!.FunctionalityStatus == functionalityStatus);
+            }
+
+            if (request.SpaceUsage.HasValue)
+            {
+                var spaceUsage = (int)request.SpaceUsage.Value;
+                query = query.Where(x => x.Product!.SpaceUsage == spaceUsage);
             }
 
             if (request.MinUsageDuration.HasValue)

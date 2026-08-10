@@ -13,10 +13,12 @@ namespace HomeCycle.API.Controllers
     public class GHNController : ControllerBase
     {
         private readonly IGhnService _ghnService;
+        private readonly ILogger<GHNController> _logger;
 
-        public GHNController(IGhnService ghnService)
+        public GHNController(IGhnService ghnService, ILogger<GHNController> logger)
         {
             _ghnService = ghnService;
+            _logger = logger;
         }
 
         [HttpGet("provinces")]
@@ -76,30 +78,26 @@ namespace HomeCycle.API.Controllers
         }
 
         [HttpPost("calculate-fee")]
-        [SwaggerOperation(Summary = "Tính phí vận chuyển dựa trên địa chỉ và thông số gói hàng")]
-        [ProducesResponseType(typeof(GhnFeeQuoteResponse), StatusCodes.Status200OK)]
+        [SwaggerOperation(
+        Summary = "Tính phí vận chuyển dựa trên địa chỉ và thông số gói hàng")]
+            [ProducesResponseType(
+        typeof(GhnFeeQuoteResponse),
+        StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
-        public async Task<ActionResult<GhnFeeQuoteResponse>> CalculateFee(
-            [FromBody] GhnFeeQuoteRequest request,
-            CancellationToken cancellationToken)
+        [ProducesResponseType(StatusCodes.Status502BadGateway)]
+        public async Task<ActionResult<GhnFeeQuoteResponse>> CalculateFee([FromBody] CalculateGhnFeeRequest request, CancellationToken cancellationToken)
         {
             try
             {
-                // Gọi tầng Application để thực hiện tính phí
                 var result = await _ghnService.GetShippingFeeAsync(request, cancellationToken);
                 return Ok(result);
             }
             catch (GhnApiException ex)
             {
-                // Tái sử dụng hàm bóc tách lỗi nghiệp vụ chuẩn có sẵn của bạn
                 return HandleGhnException(ex);
             }
         }
 
-
-        /// <summary>
-        /// Hàm bổ trợ dùng chung để bóc tách lỗi nghiệp vụ của GHN và gán mã HTTP phù hợp cho Frontend
-        /// </summary>
         private ActionResult HandleGhnException(GhnApiException ex)
         {
             // Kiểm tra nếu nội dung thông báo từ GHN báo lỗi không tồn tại hoặc tham số sai, ép về HTTP 400

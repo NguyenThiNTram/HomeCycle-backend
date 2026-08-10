@@ -8,24 +8,29 @@ namespace HomeCycle.Application.DTOs.Requests.GHN
 {
     public sealed class CalculateGhnFeeRequest
     {
-        // 2 = Hàng nhẹ, 5 = Hàng nặng
-        public int ServiceTypeId { get; init; }
+        public int FromDistrictId { get; init; }
+        public required string FromWardCode { get; init; }
 
-        // GHN yêu cầu weight cấp đơn
+        public int ToDistrictId { get; init; }
+        public required string ToWardCode { get; init; }
+        
+        public int ServiceTypeId { get; init; } // 2 = Hàng nhẹ, 5 = Hàng nặng
         public int WeightGram { get; init; }
 
-        // Bắt buộc khi ServiceTypeId = 2
+        // ServiceTypeId = 2
         public int? LengthCm { get; init; }
         public int? WidthCm { get; init; }
         public int? HeightCm { get; init; }
 
-        // Bắt buộc khi ServiceTypeId = 5
+        // ServiceTypeId = 5
         public IReadOnlyList<CalculateGhnFeeItemRequest> Items { get; init; }
             = Array.Empty<CalculateGhnFeeItemRequest>();
     }
 
     public sealed class CalculateGhnFeeItemRequest
     {
+        public required string Name { get; init; }
+        public string? Code { get; init; }
         public int Quantity { get; init; }
 
         public int WeightGram { get; init; }

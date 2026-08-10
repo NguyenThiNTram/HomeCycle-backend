@@ -31,6 +31,19 @@ namespace HomeCycle.Application.Validations.Agreements
                     .NotEmpty().WithMessage("Delivery address is required for delivery.");
             });
 
+            // Case 2b: Giao hàng qua GHN -> bắt buộc có thông tin vận chuyển GHN
+            When(x => x.DeliveryMethod == DeliveryMethod.GhnDelivery, () =>
+            {
+                RuleFor(x => x.GhnInfo)
+                    .NotNull().WithMessage("GHN shipping info is required for GHN delivery.");
+
+                When(x => x.GhnInfo != null, () =>
+                {
+                    RuleFor(x => x.GhnInfo!.Sender).NotNull().WithMessage("GHN sender info is required.");
+                    RuleFor(x => x.GhnInfo!.Receiver).NotNull().WithMessage("GHN receiver info is required.");
+                });
+            });
+
             // Case 3: Có kiểm định
             When(x => agreementType == AgreementType.Inspection, () =>
             {

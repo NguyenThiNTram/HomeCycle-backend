@@ -4,33 +4,27 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace HomeCycle.Application.DTOs.Responses.GHN
+namespace HomeCycle.Application.DTOs.Responses.Agreements
 {
-    public sealed class GhnQuoteSnapshotDto
+    public class ShippingFeePreviewResponse
     {
-        public decimal TotalFee { get; init; }
+        public Guid NegotiationId { get; init; }
+        public int ServiceTypeId { get; init; }
+        public decimal EstimatedShippingFee { get; init; }
+        public string Currency { get; init; } = "VND";
 
-        public required GhnFeeBreakdownSnapshotDto Breakdown { get; init; }
-
-        public DateTimeOffset QuotedAt { get; init; }
-
-        public required string InputHash { get; init; }
-        public DateTimeOffset ExpectedDeliveryAt { get; init; }
+        public required ShippingFeeBreakdownResponse Breakdown { get; init; }
     }
 
-    public sealed record GhnFeeQuoteResponse(decimal TotalFee, GhnFeeBreakdownSnapshotDto Breakdown);
-
-    public sealed class GhnFeeBreakdownSnapshotDto
+    public sealed class ShippingFeeBreakdownResponse
     {
         public decimal ServiceFee { get; init; }
         public decimal InsuranceFee { get; init; }
         public decimal PickStationFee { get; init; }
         public decimal CouponValue { get; init; }
         public decimal R2sFee { get; init; }
-
         public decimal DocumentReturnFee { get; init; }
         public decimal DoubleCheckFee { get; init; }
-
         public decimal CodFee { get; init; }
         public decimal PickRemoteAreasFee { get; init; }
         public decimal DeliverRemoteAreasFee { get; init; }

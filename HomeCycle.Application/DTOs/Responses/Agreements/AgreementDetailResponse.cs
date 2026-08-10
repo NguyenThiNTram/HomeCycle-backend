@@ -26,6 +26,10 @@ namespace HomeCycle.Application.DTOs.Responses.Agreements
 
         public AgreementDetailsDto? AgreementDetails { get; set; }
 
+        // Phí ship (GHN hoặc tự thỏa thuận) và tổng số tiền hợp đồng
+        public decimal EstimatedShippingFee { get; set; }
+        public decimal TotalAmount { get; set; }
+
         public DateTime? BuyerConfirmedAt { get; set; }
         public DateTime? SellerConfirmedAt { get; set; }
         public DateTime CreatedAt { get; set; }

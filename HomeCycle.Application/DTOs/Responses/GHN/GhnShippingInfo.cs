@@ -1,4 +1,5 @@
 ﻿using HomeCycle.Application.DTOs.Requests.Agreements;
+using HomeCycle.Domain.Enums;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -12,19 +13,25 @@ namespace HomeCycle.Application.DTOs.Responses.GHN
         public GhnContactSnapshotDto? Sender { get; init; }
         public GhnContactSnapshotDto? Receiver { get; init; }   // Address/District/Ward có thể null nếu Buyer chưa điền
 
-        //  1 - Express, 2 - Standard
+        // 2 = Hàng nhẹ, 5 = Hàng nặng.
         public int? ServiceTypeId { get; init; }
 
-        // 1 - Shop/Seller. 2 - Buyer/Consignee
-        public int? PaymentTypeId { get; init; }
+        // MVP cố định buyer/consignee trả phí.
+        // Không nhận trường này từ FE.
+        public int PaymentTypeId { get; init; } = 2;
 
         public string? RequiredNote { get; init; } //CHOTHUHANG, CHOXEMHANGKHONGTHU, KHONGCHOXEMHANG 
 
-        // Thông số kiện đã dùng để tính phí/preview
+        // Chỉ sử dụng khi ServiceTypeId = 2.
+        public GhnLightParcelSnapshotDto? LightParcel { get; init; }
+
+        // Chỉ sử dụng khi ServiceTypeId = 5.
         public IReadOnlyList<GhnItemSnapshotDto> Items { get; init; }
             = Array.Empty<GhnItemSnapshotDto>();
 
-        // Chỉ có sau khi Preview thành công
+        public GhnQuoteStatus QuoteStatus { get; init; } = GhnQuoteStatus.NotCalculated;
+
+        // Chỉ tồn tại sau khi tính phí thành công.
         public GhnQuoteSnapshotDto? Quote { get; init; }
     }
 }

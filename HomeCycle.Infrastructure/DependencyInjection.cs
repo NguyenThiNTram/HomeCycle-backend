@@ -60,6 +60,7 @@ using HomeCycle.Infrastructure.Repositories.Wallets;
 using HomeCycle.Infrastructure.Security;
 using HomeCycle.Infrastructure.UnitOfWorks;
 using MathNet.Numerics;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;

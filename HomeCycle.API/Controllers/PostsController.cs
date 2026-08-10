@@ -252,7 +252,7 @@ namespace HomeCycle.API.Controllers
             Summary = "Xóa bài đăng",
             Description = "Admin xóa bài đăng của người dùng hiện tại khỏi hệ thống."
         )]
-        //[Authorize(Roles = "Personal,Business")]
+        [Authorize(Roles = "Admin")]
         //[ProducesResponseType(StatusCodes.Status200OK)]
         //[ProducesResponseType(StatusCodes.Status403Forbidden)]
         //[ProducesResponseType(StatusCodes.Status404NotFound)]

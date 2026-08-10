@@ -8,39 +8,89 @@ using System.Threading.Tasks;
 
 namespace HomeCycle.Application.Validations.GHN
 {
-    public sealed class CalculateGhnFeeRequestValidator
-    : AbstractValidator<CalculateGhnFeeRequest>
+    public sealed class CalculateGhnFeeRequestValidator : AbstractValidator<CalculateGhnFeeRequest>
     {
+        private const int LightGoodsServiceTypeId = 2;
+        private const int HeavyGoodsServiceTypeId = 5;
+
+        private const int MaxWeightGram = 1_600_000;
+        private const int MaxDimensionCm = 200;
+
         public CalculateGhnFeeRequestValidator()
         {
+            RuleFor(x => x.FromDistrictId)
+                .GreaterThan(0)
+                .WithMessage("Mã quận/huyện người gửi không hợp lệ.");
+
+            RuleFor(x => x.FromWardCode)
+                .NotEmpty()
+                .WithMessage("Mã phường/xã người gửi không được để trống.");
+
+            RuleFor(x => x.ToDistrictId)
+                .GreaterThan(0)
+                .WithMessage("Mã quận/huyện người nhận không hợp lệ.");
+
+            RuleFor(x => x.ToWardCode)
+                .NotEmpty()
+                .WithMessage("Mã phường/xã người nhận không được để trống.");
+
             RuleFor(x => x.ServiceTypeId)
-                .Must(x => x is 2 or 5)
-                .WithMessage("ServiceTypeId chỉ chấp nhận 2 hoặc 5.");
+                .Must(value =>
+                    value is LightGoodsServiceTypeId or HeavyGoodsServiceTypeId)
+                .WithMessage(
+                    "Loại dịch vụ GHN chỉ nhận 2 (hàng nhẹ) hoặc 5 (hàng nặng).");
 
             RuleFor(x => x.WeightGram)
-                .GreaterThan(0)
-                .LessThanOrEqualTo(1_600_000);
+                .InclusiveBetween(1, MaxWeightGram)
+                .WithMessage(
+                    $"Khối lượng phải từ 1 đến {MaxWeightGram} gram.");
 
-            When(x => x.ServiceTypeId == 2, () =>
-            {
-                RuleFor(x => x.LengthCm).NotNull().InclusiveBetween(1, 200);
-                RuleFor(x => x.WidthCm).NotNull().InclusiveBetween(1, 200);
-                RuleFor(x => x.HeightCm).NotNull().InclusiveBetween(1, 200);
-            });
-
-            When(x => x.ServiceTypeId == 5, () =>
-            {
-                RuleFor(x => x.Items).NotEmpty();
-
-                RuleForEach(x => x.Items).ChildRules(item =>
+            When(
+                x => x.ServiceTypeId == LightGoodsServiceTypeId,
+                () =>
                 {
-                    item.RuleFor(x => x.Quantity).GreaterThan(0);
-                    item.RuleFor(x => x.WeightGram).GreaterThan(0);
-                    item.RuleFor(x => x.LengthCm).InclusiveBetween(1, 200);
-                    item.RuleFor(x => x.WidthCm).InclusiveBetween(1, 200);
-                    item.RuleFor(x => x.HeightCm).InclusiveBetween(1, 200);
+                    ValidateLightGoodsDimension(
+                        x => x.LengthCm,
+                        "Chiều dài");
+
+                    ValidateLightGoodsDimension(
+                        x => x.WidthCm,
+                        "Chiều rộng");
+
+                    ValidateLightGoodsDimension(
+                        x => x.HeightCm,
+                        "Chiều cao");
                 });
-            });
+
+            When(
+                x => x.ServiceTypeId == HeavyGoodsServiceTypeId,
+                () =>
+                {
+                    RuleFor(x => x.Items)
+                        .NotNull()
+                        .WithMessage("Danh sách kiện hàng không được để null.")
+                        .Must(items => items is { Count: > 0 })
+                        .WithMessage(
+                            "Hàng nặng phải có ít nhất một kiện hàng.");
+
+                    RuleForEach(x => x.Items)
+                        .SetValidator(
+                            new CalculateGhnFeeItemRequestValidator());
+                }
+            );
+        }
+
+    private void ValidateLightGoodsDimension(System.Linq.Expressions.Expression<Func<CalculateGhnFeeRequest, int?>> selector,
+        string fieldName)
+        {
+            RuleFor(selector)
+                .Cascade(CascadeMode.Stop)
+                .NotNull()
+                .WithMessage($"{fieldName} là bắt buộc đối với hàng nhẹ.")
+                .Must(value => value is >= 1 and <= MaxDimensionCm)
+                .WithMessage(
+                    $"{fieldName} phải từ 1 đến {MaxDimensionCm} cm.");
         }
     }
 }
+

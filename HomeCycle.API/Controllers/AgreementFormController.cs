@@ -1,4 +1,6 @@
 ﻿using HomeCycle.Application.DTOs.Requests.Agreements;
+using HomeCycle.Application.DTOs.Responses.GHN;
+using HomeCycle.Application.DTOs.Requests.GHN;
 using HomeCycle.Application.Interfaces.Services.Agreements;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
@@ -97,6 +99,46 @@ namespace HomeCycle.API.Controllers
                 return BadRequest(result.Error);
 
             return Ok(result.Data);
+        }
+
+        [HttpPost("negotiations/{negotiationId:guid}/shipping-fee-preview")]
+        public async Task<IActionResult> PreviewShippingFee([FromRoute] Guid negotiationId, [FromBody] CalculateGhnFeeRequest request, CancellationToken cancellationToken)
+        {
+            var currentUserId = GetCurrentUserId();
+
+            var result = await _agreementService.PreviewShippingFeeAsync(
+                negotiationId,
+                currentUserId,
+                request,
+                cancellationToken);
+
+            if (result.IsSuccess)
+                return Ok(result.Data);
+
+            var error = result.Error!;
+
+            return error.Code switch
+            {
+                "ShippingFee.InvalidRequest"
+                    or "Ghn.InvalidFeeRequest"
+                    or "Ghn.AddressRequired"
+                    or "Ghn.InvalidServiceType"
+                    or "Ghn.ParcelInformationRequired"
+                    or "Ghn.ParcelInformationInvalid"
+                    or "Ghn.HeavyItemsRequired"
+                    or "Ghn.TotalWeightInvalid"
+                        => BadRequest(error),
+
+                "Auth.Forbidden" => StatusCode(StatusCodes.Status403Forbidden, error),
+                "Negotiation.NotFound"
+                    or "Product.NotFound"
+                        => NotFound(error),
+
+                "Negotiation.Cancelled" => Conflict(error),
+                "Ghn.CalculateFeeFailed" => StatusCode(StatusCodes.Status502BadGateway, error),
+
+                _ => BadRequest(error)
+            };
         }
 
 

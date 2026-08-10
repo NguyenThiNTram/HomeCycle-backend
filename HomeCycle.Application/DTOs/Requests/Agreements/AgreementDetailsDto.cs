@@ -24,8 +24,12 @@ namespace HomeCycle.Application.DTOs.Requests.Agreements
 
         public DeliveryMethod? DeliveryMethod { get; set; }
 
-        //// ===== DeliveryMethod == GhnDelivery =====
-        //public GhnShippingInfo? GhnInfo { get; set; }
+        // ===== DeliveryMethod == GhnDelivery =====
+        // Thông tin vận chuyển GHN (sender/receiver, service type, items...) dùng để tính phí
+        public GhnShippingInfo? GhnInfo { get; set; }
+
+        // Tiền thu hộ cho người gửi (COD)
+        public int? CodValue { get; set; }
 
         // Phí ship do gọi API GHN (hoặc tự thỏa thuận) trả về lúc cấu hình form
         public decimal? EstimatedShippingFee { get; set; }
