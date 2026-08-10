@@ -1,6 +1,8 @@
-﻿using HomeCycle.Application.Commons.Results;
+﻿using HomeCycle.Application.Commons.Paginations;
+using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Requests.Agreements;
 using HomeCycle.Application.DTOs.Responses.Agreements;
+using HomeCycle.Domain.Entities;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -17,5 +19,7 @@ namespace HomeCycle.Application.Interfaces.Services.Agreements
         Task<Result<AgreementActionResponse>> UpdateAgreementAsync(Guid agreementId, UpdateAgreementFormRequest request, Guid currentUserId, CancellationToken cancellationToken = default);
         Task<Result<AgreementActionResponse>> AcceptAgreementAsync(Guid agreementId, Guid currentUserId, CancellationToken cancellationToken = default);
         Task<Result<AgreementActionResponse>> RequestEditAsync(Guid agreementId, Guid currentUserId, CancellationToken cancellationToken = default);
+        Task<Result<PagedResult<agreement_form>>> GetPendingPaymentAsync(
+           Guid buyerId, PendingAgreementSearchRequest request, CancellationToken cancellationToken = default);
     }
 }

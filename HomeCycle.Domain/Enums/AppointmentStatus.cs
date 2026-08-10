@@ -6,14 +6,12 @@ using System.Threading.Tasks;
 
 namespace HomeCycle.Domain.Enums
 {
-    public enum PaymentStatus
+    public enum AppointmentStatus
     {
         Pending = 0,
-        Completed = 1,   
-        Failed = 2,       
-        Refunded = 3, 
-        PartiallyRefunded = 4,
-        Expired = 5,
-        Cancelled = 6
+        Confirmed = 1,
+        Completed = 2,
+        Cancelled = 3,
+        Misssed = 4
     }
 }

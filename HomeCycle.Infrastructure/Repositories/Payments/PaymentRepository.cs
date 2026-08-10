@@ -1,5 +1,6 @@
 ﻿using HomeCycle.Application.Interfaces.Repositories.Payments;
 using HomeCycle.Domain.Entities;
+using HomeCycle.Domain.Enums;
 using HomeCycle.Infrastructure.DbContexts;
 using HomeCycle.Infrastructure.Persistences.Mappers;
 using Microsoft.EntityFrameworkCore;
@@ -31,6 +32,16 @@ namespace HomeCycle.Infrastructure.Repositories.Payments
         {
             _db.Payments.Update(payment.ToInfrastructure());
             return Task.CompletedTask;
+        }
+
+        public async Task<payment?> GetLatestPendingByAgreementAsync(Guid agreementId, CancellationToken ct = default)
+        {
+            var entity = await _db.Payments
+                .AsNoTracking()
+                .Where(x => x.AgreementId == agreementId && x.PaymentStatus == (int)PaymentStatus.Pending)
+                .OrderByDescending(x => x.CreatedAt)
+                .FirstOrDefaultAsync(ct);
+            return entity?.ToDomain();
         }
     }
 }

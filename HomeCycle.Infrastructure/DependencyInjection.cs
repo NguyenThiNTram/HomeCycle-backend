@@ -61,6 +61,10 @@ using Microsoft.Extensions.DependencyInjection;
 using HomeCycle.Application.Validations.Agreements;
 using HomeCycle.Application.DTOs.Requests.Agreements;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using HomeCycle.Application.Interfaces.Services.Appointments;
+using HomeCycle.Application.Interfaces.Services.Orders;
+using HomeCycle.Application.Services.Appointments;
+using HomeCycle.Application.Services.Orders;
 
 namespace HomeCycle.Infrastructure
 {
@@ -157,6 +161,8 @@ namespace HomeCycle.Infrastructure
             services.AddScoped<IModeratorService, ModeratorService>();
             services.AddScoped<IAgreementFormService, AgreementFormService>();
             services.AddScoped<IPaymentService, PaymentService>();
+            services.AddScoped<IAppointmentService, AppointmentService>();
+            services.AddScoped<IOrderService, OrderService>();
 
 
 
