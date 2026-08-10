@@ -36,6 +36,10 @@ public class product
     public ICollection<product_attribute_value> Product_Attribute_Values { get; set; } = new List<product_attribute_value>();
     public virtual post? Post { get; set; }
 
+    public virtual category? Category { get; set; }
+    public virtual product_type? ProductType { get; set; }
+    public virtual brand? Brand { get; set; }
+
     public product()
     {
     }

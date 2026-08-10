@@ -216,6 +216,7 @@ namespace HomeCycle.Infrastructure.Repositories.Posts
         {
             var query = _db.Posts
                 .AsNoTracking()
+                .Include(x => x.User)
                 .Include(x => x.Product)
                     .ThenInclude(x => x!.Category)
                 .Include(x => x.Product)

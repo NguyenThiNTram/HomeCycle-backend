@@ -301,13 +301,17 @@ namespace HomeCycle.Application.Services.Posts
                     return Result<PostResponse>.Fail(productResult.Error!);
                 }
 
-                var mediaResult = await _mediaService.ReplaceMediaAsync(
-                    postId, PostMediaTargetType, PostMediaFolder, request.Medias, cancellationToken);
-
-                if (!mediaResult.IsSuccess)
+                // Kiểm tra xem request có chứa danh sách ảnh mới không
+                if (request.Medias != null && request.Medias.Any())
                 {
-                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
-                    return Result<PostResponse>.Fail(mediaResult.Error!);
+                    var mediaResult = await _mediaService.ReplaceMediaAsync(
+                        postId, PostMediaTargetType, PostMediaFolder, request.Medias, cancellationToken);
+
+                    if (!mediaResult.IsSuccess)
+                    {
+                        await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                        return Result<PostResponse>.Fail(mediaResult.Error!);
+                    }
                 }
 
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
