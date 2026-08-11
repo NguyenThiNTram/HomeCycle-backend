@@ -1,4 +1,5 @@
 ﻿using HomeCycle.Domain.Entities;
+using HomeCycle.Domain.Enums;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -37,7 +38,11 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 GHNCodFee = entity.GHNCodFee,
                 GHNTotalFee = entity.GHNTotalFee,
                 CreatedAt = entity.CreatedAt,
-                LastSyncedAt = entity.LastSyncedAt
+                LastSyncedAt = entity.LastSyncedAt,
+                ExpectedDeliveryAt = entity.ExpectedDeliveryAt,
+                CreationStatus = (GHNCreationStatus)entity.CreationStatus,
+                LastCreateAttemptAt = entity.LastCreateAttemptAt,
+                LastErrorCode = entity.LastErrorCode
             };
         }
         public static GHN_Shipment ToInfrastructure(this HomeCycle.Domain.Entities.ghn_shipment entity)
@@ -68,7 +73,11 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 GHNCodFee = entity.GHNCodFee,
                 GHNTotalFee = entity.GHNTotalFee,
                 CreatedAt = entity.CreatedAt,
-                LastSyncedAt = entity.LastSyncedAt
+                LastSyncedAt = entity.LastSyncedAt,
+                ExpectedDeliveryAt = entity.ExpectedDeliveryAt,
+                CreationStatus = (int)entity.CreationStatus,
+                LastCreateAttemptAt = entity.LastCreateAttemptAt,
+                LastErrorCode = entity.LastErrorCode
             };
         }
     }

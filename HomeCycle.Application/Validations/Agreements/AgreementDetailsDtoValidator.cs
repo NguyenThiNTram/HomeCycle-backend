@@ -41,6 +41,20 @@ namespace HomeCycle.Application.Validations.Agreements
                 {
                     RuleFor(x => x.GhnInfo!.Sender).NotNull().WithMessage("GHN sender info is required.");
                     RuleFor(x => x.GhnInfo!.Receiver).NotNull().WithMessage("GHN receiver info is required.");
+
+                    RuleFor(x => x.GhnInfo!.PaymentTypeId)
+                        .Must(v => v is null)
+                        .WithMessage("PaymentTypeId do hệ thống tự khóa theo chính sách, không nhận từ Client.");
+
+                    // Quote & QuoteStatus: là KẾT QUẢ Backend tự gọi GHN CalculateFee rồi gán vào
+                    // không phải input — Từ chối thẳng nếu Client cố gửi giá trị khác null
+                    RuleFor(x => x.GhnInfo!.Quote)
+                        .Must(q => q is null)
+                        .WithMessage("Quote do hệ thống tự tính sau khi gọi GHN, không nhận từ Client.");
+
+                    RuleFor(x => x.GhnInfo!.QuoteStatus)
+                        .Must(s => s is null)
+                        .WithMessage("QuoteStatus do hệ thống tự cập nhật, không nhận từ Client.");
                 });
             });
 

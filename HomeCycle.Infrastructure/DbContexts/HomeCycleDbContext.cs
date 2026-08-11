@@ -366,6 +366,9 @@ public partial class HomeCycleDbContext : DbContext
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()");
             entity.Property(e => e.InsuranceValue).HasDefaultValue(0);
 
+            entity.HasIndex(e => e.ClientOrderCode).IsUnique().HasDatabaseName("uq_ghn_shipment_client_order_code");
+            entity.Property(e => e.ClientOrderCode).IsRequired().HasMaxLength(50);
+
             entity.HasOne(d => d.Shipment).WithOne(p => p.GHN_Shipment)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("fk_ghn_shipment_shipmentid");

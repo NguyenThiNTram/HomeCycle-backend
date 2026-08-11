@@ -352,6 +352,34 @@ namespace HomeCycle.Infrastructure.Externals.GHN
             };
         }
 
+        public async Task<GhnCreateOrderResponse> CreateOrderAsync(GhnCreateOrderRequest request, CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(request);
+
+            var apiRequest = MapCreateOrderRequest(request);
+
+            var data = await SendSingleAsync<GhnCreateOrderData>(
+                HttpMethod.Post,
+                "v2/shipping-order/create",
+                apiRequest,
+                cancellationToken);
+
+            if (string.IsNullOrWhiteSpace(data.OrderCode))
+            {
+                throw new GhnApiException(
+                    HttpStatusCode.BadGateway,
+                    "GHN báo tạo đơn thành công nhưng không trả mã vận đơn.",
+                    "EMPTY_ORDER_CODE");
+            }
+
+            return new GhnCreateOrderResponse(
+                OrderCode: data.OrderCode,
+                TotalFee: data.TotalFee,
+                ServiceFee: data.Fee?.MainService ?? 0m,
+                CodFee: data.Fee?.CodFee ?? 0m,
+                ExpectedDeliveryAt: data.ExpectedDeliveryTime);
+        }
+
         private static GhnCalculateFeeItemApiRequest MapItem(CalculateGhnFeeItemRequest item)
         {
             // quy ước: cạnh lớn nhất là dài, nhỏ nhất là cao.
@@ -378,5 +406,127 @@ namespace HomeCycle.Infrastructure.Externals.GHN
                 HeightCm = sides[2]
             };
         }
+
+        private static GhnCreateOrderApiRequest MapCreateOrderRequest(GhnCreateOrderRequest request)
+        {
+            // 1. Giữ nguyên các Guard Clauses kiểm tra điều kiện đầu vào của bạn
+            if (string.IsNullOrWhiteSpace(request.ClientOrderCode) || request.ClientOrderCode.Length > 50)
+                throw new ArgumentException("ClientOrderCode bắt buộc và không được vượt quá 50 ký tự.", nameof(request));
+
+            if (request.ServiceTypeId is not (2 or 5))
+                throw new ArgumentException("ServiceTypeId chỉ nhận 2 hoặc 5.", nameof(request));
+
+            if (request.PaymentTypeId != 1 || request.CodAmount != 0)
+                throw new ArgumentException("Đơn HomeCycle phải có PaymentTypeId = 1 và CodAmount = 0.", nameof(request));
+
+            if (request.ToDistrictId <= 0 || string.IsNullOrWhiteSpace(request.ToWardCode))
+                throw new ArgumentException("Địa chỉ người nhận không hợp lệ: thiếu ToDistrictId hoặc ToWardCode.", nameof(request));
+
+            string[] allowedRequiredNotes = ["CHOTHUHANG", "CHOXEMHANGKHONGTHU", "KHONGCHOXEMHANG"];
+            if (!allowedRequiredNotes.Contains(request.RequiredNote, StringComparer.Ordinal))
+                throw new ArgumentException("RequiredNote không hợp lệ.", nameof(request));
+
+            bool isLight = request.ServiceTypeId == 2;
+
+            if (isLight && (request.WeightGram is null or <= 0 || request.LengthCm is null or <= 0 || request.WidthCm is null or <= 0 || request.HeightCm is null or <= 0))
+                throw new ArgumentException("Hàng nhẹ phải có đủ khối lượng và kích thước.", nameof(request));
+
+            if (isLight && (request.WeightGram > 50_000 || request.LengthCm > 200 || request.WidthCm > 200 || request.HeightCm > 200))
+                throw new ArgumentException("Kích thước hoặc khối lượng hàng nhẹ vượt giới hạn GHN.", nameof(request));
+
+            if (!isLight && request.Items.Count == 0)
+                throw new ArgumentException("Hàng nặng phải có ít nhất một kiện hàng.", nameof(request));
+
+            // 2. CHUẨN HÓA MẢNG ITEMS (GHN bắt buộc phải có cho mọi ServiceType)
+            List<GhnCreateOrderApiItem> apiItems;
+
+            if (isLight)
+            {
+                // Hàng nhẹ (ServiceType 2): Tự sinh một item đại diện bằng thông tin kích thước tổng
+                int[] totalSides = [request.LengthCm!.Value, request.WidthCm!.Value, request.HeightCm!.Value];
+                Array.Sort(totalSides);
+                Array.Reverse(totalSides); // Cạnh lớn nhất làm chiều dài
+
+                apiItems = new List<GhnCreateOrderApiItem>
+        {
+            new() {
+                Name = !string.IsNullOrWhiteSpace(request.Content) ? request.Content.Trim() : "Sản phẩm HomeCycle",
+                Quantity = 1,
+                WeightGram = request.WeightGram!.Value,
+                LengthCm = totalSides[0],
+                WidthCm = totalSides[1],
+                HeightCm = totalSides[2]
+            }
+        };
+            }
+            else
+            {
+                // Hàng nặng (ServiceType 5): Duyệt mảng item đầu vào của bạn
+                apiItems = request.Items.Select(item =>
+                {
+                    if (string.IsNullOrWhiteSpace(item.Name) || item.Quantity <= 0 || item.WeightGram <= 0 || item.LengthCm <= 0 || item.WidthCm <= 0 || item.HeightCm <= 0)
+                        throw new ArgumentException("Thông tin kiện hàng GHN không hợp lệ.", nameof(request));
+
+                    int[] itemSides = [item.LengthCm, item.WidthCm, item.HeightCm];
+                    Array.Sort(itemSides);
+                    Array.Reverse(itemSides);
+
+                    return new GhnCreateOrderApiItem
+                    {
+                        Name = item.Name.Trim(),
+                        Code = item.Code?.Trim(),
+                        Quantity = item.Quantity,
+                        WeightGram = item.WeightGram,
+                        LengthCm = itemSides[0],
+                        WidthCm = itemSides[1],
+                        HeightCm = itemSides[2]
+                    };
+                }).ToList();
+            }
+
+            // 3. TÍNH TOÁN CÂN NẶNG VÀ KÍCH THƯỚC TỔNG CẤP ĐƠN HÀNG (Bắt buộc không được để trống/null)
+            int finalWeight = isLight
+                ? request.WeightGram!.Value
+                : request.Items.Sum(x => x.WeightGram * x.Quantity);
+
+            // Đối với hàng nặng, nếu bạn không truyền kích thước tổng, hãy lấy kích thước của item lớn nhất để GHN không bắt lỗi trống trường
+            int finalLength = isLight ? request.LengthCm!.Value : request.Items.Max(x => x.LengthCm);
+            int finalWidth = isLight ? request.WidthCm!.Value : request.Items.Max(x => x.WidthCm);
+            int finalHeight = isLight ? request.HeightCm!.Value : request.Items.Max(x => x.HeightCm);
+
+            return new GhnCreateOrderApiRequest
+            {
+                ClientOrderCode = request.ClientOrderCode,
+                FromName = request.FromName.Trim(),
+                FromPhone = request.FromPhone.Trim(),
+                FromAddress = request.FromAddress.Trim(),
+                FromWardName = request.FromWardName.Trim(),
+                FromDistrictName = request.FromDistrictName.Trim(),
+                FromProvinceName = request.FromProvinceName.Trim(),
+
+                ToName = request.ToName.Trim(),
+                ToPhone = request.ToPhone.Trim(),
+                ToAddress = request.ToAddress.Trim(),
+                ToDistrictId = request.ToDistrictId,
+                ToWardCode = request.ToWardCode.Trim(),
+
+                ServiceTypeId = request.ServiceTypeId,
+                PaymentTypeId = 1, // Luôn là shop trả phí
+                CodAmount = 0,     // Luôn không thu hộ qua GHN
+                InsuranceValue = request.InsuranceValue,
+                RequiredNote = request.RequiredNote,
+                Note = request.Note?.Trim(),
+                Content = request.Content?.Trim(),
+
+                // Cập nhật giá trị số bắt buộc cho cấp đơn hàng, không để null
+                WeightGram = finalWeight,
+                LengthCm = finalLength,
+                WidthCm = finalWidth,
+                HeightCm = finalHeight,
+
+                Items = apiItems
+            };
+        }
+
     }
 }

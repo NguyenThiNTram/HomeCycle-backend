@@ -1,8 +1,9 @@
-﻿using System;
+﻿using HomeCycle.Domain.Enums;
+using Microsoft.EntityFrameworkCore;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
-using Microsoft.EntityFrameworkCore;
 
 namespace HomeCycle.Domain.Entities;
 
@@ -30,13 +31,21 @@ public class ghn_shipment
     public int? CODAmount { get; set; }
     public int PaymentTypeId { get; set; }
     public int InsuranceValue { get; set; }
-    public int? RequiredNote { get; set; }
+    public string? RequiredNote { get; set; }
     public decimal? GHNServiceFee { get; set; }
     public decimal? GHNCodFee { get; set; }
     public decimal? GHNTotalFee { get; set; }
 
     public DateTime CreatedAt { get; set; }
     public DateTime? LastSyncedAt { get; set; }
+
+    public DateTime? ExpectedDeliveryAt { get; set; }
+
+    public GHNCreationStatus CreationStatus { get; set; }
+
+    public DateTime? LastCreateAttemptAt { get; set; }
+
+    public string? LastErrorCode { get; set; }
 
     public ghn_shipment()
     {

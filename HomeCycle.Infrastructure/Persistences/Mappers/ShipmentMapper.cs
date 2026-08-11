@@ -1,4 +1,5 @@
 ﻿using HomeCycle.Domain.Entities;
+using HomeCycle.Domain.Enums;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -17,8 +18,8 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 ShipmentId = entity.ShipmentId,
                 OrderId = entity.OrderId,
                 CollectionAppointmentId = entity.CollectionAppointmentId,
-                DeliveryMethod = entity.DeliveryMethod,
-                ShipmentStatus = entity.ShipmentStatus,
+                DeliveryMethod = (DeliveryMethod)entity.DeliveryMethod,
+                ShipmentStatus = (ShipmentStatus?)entity.ShipmentStatus,
                 FromName = entity.FromName,
                 FromPhone = entity.FromPhone,
                 PickupAddress = entity.PickupAddress,
@@ -28,7 +29,8 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 DeliveryAddress = entity.DeliveryAddress,
                 DeliveredAt = entity.DeliveredAt,
                 CreatedAt = entity.CreatedAt,
-                UpdatedAt = entity.UpdatedAt
+                UpdatedAt = entity.UpdatedAt,
+                SellerReadyAt = entity.SellerReadyAt
             };
         }
         public static Shipment ToInfrastructure(this shipment entity)
@@ -39,8 +41,8 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 ShipmentId = entity.ShipmentId,
                 OrderId = entity.OrderId,
                 CollectionAppointmentId = entity.CollectionAppointmentId,
-                DeliveryMethod = entity.DeliveryMethod,
-                ShipmentStatus = entity.ShipmentStatus,
+                DeliveryMethod = (int)entity.DeliveryMethod,
+                ShipmentStatus = (int?)entity.ShipmentStatus,
                 FromName = entity.FromName,
                 FromPhone = entity.FromPhone,
                 PickupAddress = entity.PickupAddress,
@@ -50,7 +52,8 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 DeliveryAddress = entity.DeliveryAddress,
                 DeliveredAt = entity.DeliveredAt,
                 CreatedAt = entity.CreatedAt,
-                UpdatedAt = entity.UpdatedAt
+                UpdatedAt = entity.UpdatedAt,
+                SellerReadyAt = entity.SellerReadyAt
             };
         }
     }
