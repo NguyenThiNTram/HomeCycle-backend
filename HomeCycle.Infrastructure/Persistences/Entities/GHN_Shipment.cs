@@ -55,7 +55,7 @@ public partial class GHN_Shipment
 
     public int InsuranceValue { get; set; }
 
-    public int? RequiredNote { get; set; }
+    public string? RequiredNote { get; set; }
 
     [Precision(18, 2)]
     public decimal? GHNServiceFee { get; set; }
@@ -69,6 +69,15 @@ public partial class GHN_Shipment
     public DateTime CreatedAt { get; set; }
 
     public DateTime? LastSyncedAt { get; set; }
+
+    public DateTime? ExpectedDeliveryAt { get; set; }
+
+    public int CreationStatus { get; set; }
+
+    public DateTime? LastCreateAttemptAt { get; set; }
+
+    public string? LastErrorCode { get; set; }
+
 
     [ForeignKey("ShipmentId")]
     [InverseProperty("GHN_Shipment")]

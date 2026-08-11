@@ -17,7 +17,7 @@ public partial class Shipment
 
     public Guid? CollectionAppointmentId { get; set; }
 
-    public int? DeliveryMethod { get; set; }
+    public int DeliveryMethod { get; set; }
 
     public int? ShipmentStatus { get; set; }
 
@@ -44,6 +44,8 @@ public partial class Shipment
     public DateTime CreatedAt { get; set; }
 
     public DateTime UpdatedAt { get; set; }
+
+    public DateTime? SellerReadyAt { get; set; }
 
     [ForeignKey("CollectionAppointmentId")]
     [InverseProperty("Shipments")]

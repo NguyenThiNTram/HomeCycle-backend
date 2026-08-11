@@ -9,7 +9,11 @@ namespace HomeCycle.Infrastructure.Externals.GHN
 {
     internal sealed class GhnPreviewOrderApiRequest
     {
-        // HomeCycle bắt buộc gửi để không fallback về ShopId.
+        [JsonPropertyName("client_order_code")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? ClientOrderCode { get; init; } // Mã đơn hàng nội bộ của HomeCycle
+
+        // HomeCycle bắt buộc gửi để không fallback về ShopId
         [JsonPropertyName("from_name")]
         public required string FromName { get; init; }
 
@@ -64,6 +68,14 @@ namespace HomeCycle.Infrastructure.Externals.GHN
         [JsonPropertyName("height")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public int? HeightCm { get; init; }
+
+        [JsonPropertyName("pickup_time")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public long? PickupTime { get; init; } //Thời điểm mong muốn GHN đến lấy hàng — Unix timestamp
+
+        [JsonPropertyName("pick_shift")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public IReadOnlyList<int>? PickShift { get; init; } // 1 = Sáng, 2 = Chiều, 3 = Tối
 
         [JsonPropertyName("items")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

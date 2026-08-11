@@ -5,9 +5,11 @@ using HomeCycle.Application.Interfaces.Externals;
 using HomeCycle.Application.Interfaces.Generics;
 using HomeCycle.Application.Interfaces.Repositories.Agreements;
 using HomeCycle.Application.Interfaces.Repositories.Appointments;
+using HomeCycle.Application.Interfaces.Repositories.GHN;
 using HomeCycle.Application.Interfaces.Repositories.Orders;
 using HomeCycle.Application.Interfaces.Repositories.Payments;
 using HomeCycle.Application.Interfaces.Repositories.Posts;
+using HomeCycle.Application.Interfaces.Repositories.Shipments;
 using HomeCycle.Application.Interfaces.Repositories.Wallets;
 using HomeCycle.Application.Interfaces.Services.Payments;
 using HomeCycle.Domain.Entities;
@@ -27,6 +29,21 @@ namespace HomeCycle.Application.Services.Payments
         private const decimal DEPOSIT_RATE = 0.20m;
         private static readonly TimeSpan PAYMENT_TTL = TimeSpan.FromMinutes(15);
 
+        // GHN create-order limits (đơn vị: gram / cm)
+        private const int GhnMaxWeightGram = 1_600_000;
+        private const int GhnMinDimensionCm = 1;
+        private const int GhnMaxDimensionCm = 200;
+
+        // Sai số cho phép khi so khớp số tiền (tránh fail do PayOS làm tròn)
+        private const decimal AmountEpsilon = 0.01m;
+
+        private static readonly HashSet<string> ValidGhnRequiredNotes = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "CHOTHUHANG",
+            "CHOXEMHANGKHONGTHU",
+            "KHONGCHOXEMHANG"
+        };
+
         private readonly IUnitOfWork _unitOfWork;
         private readonly IPaymentGatewayService _gatewayService;
         private readonly IPaymentRepository _paymentRepo;
@@ -42,6 +59,9 @@ namespace HomeCycle.Application.Services.Payments
         private readonly IPostRepository _postRepo;
         private readonly ILogger<PaymentService> _logger;
 
+        private readonly IShipmentRepository _shipmentRepo;
+        private readonly IGhnShipmentRepository _ghnShipmentRepo;
+
         public PaymentService(
             IUnitOfWork unitOfWork,
             IPaymentGatewayService gatewayService,
@@ -56,12 +76,16 @@ namespace HomeCycle.Application.Services.Payments
             ICollectionAppointmentRepository collectionRepo,
             IInspectionAppointmentRepository inspectionRepo,
             IPostRepository postRepo,
-            ILogger<PaymentService> logger)
+            ILogger<PaymentService> logger,
+            IShipmentRepository shipmentRepository,
+            IGhnShipmentRepository ghnShipmentRepository)
         {
             _unitOfWork = unitOfWork;
             _gatewayService = gatewayService;
             _paymentRepo = paymentRepo;
             _paymentTxRepo = paymentTxRepo;
+            _shipmentRepo = shipmentRepository;
+            _ghnShipmentRepo = ghnShipmentRepository;
             _orderRepo = orderRepo;
             _agreementRepo = agreementRepo;
             _walletRepo = walletRepo;
@@ -651,12 +675,27 @@ namespace HomeCycle.Application.Services.Payments
             }
         }
 
+        private static void ValidateGhnParcel(int weightGram, int lengthCm, int widthCm, int heightCm, string label)
+        {
+            if (weightGram < 1 || weightGram > GhnMaxWeightGram)
+                throw new InvalidOperationException($"Khối lượng {label} phải từ 1 đến {GhnMaxWeightGram} gram.");
+
+            if (lengthCm < GhnMinDimensionCm || lengthCm > GhnMaxDimensionCm ||
+                widthCm < GhnMinDimensionCm || widthCm > GhnMaxDimensionCm ||
+                heightCm < GhnMinDimensionCm || heightCm > GhnMaxDimensionCm)
+                throw new InvalidOperationException($"Kích thước {label} phải từ 1 đến {GhnMaxDimensionCm} cm.");
+        }
+
         private sealed class FulfillmentResult
         {
             public order Order { get; init; } = null!;
             public appointment Appointment { get; init; } = null!;
             public inspection_appointment? InspectionAppointment { get; init; }
             public collection_appointment? CollectionAppointment { get; init; }
+
+            public shipment? Shipment { get; init; } //mới thêm
+            public ghn_shipment? GhnShipment { get; init; } //mới thêm
+
             public post? Post { get; init; }
         }
 
@@ -670,6 +709,12 @@ namespace HomeCycle.Application.Services.Payments
         {
             var orderId = orderIdOverride ?? Guid.NewGuid();
 
+            // Chống fulfill trùng: 1 Agreement chỉ được phát sinh đúng 1 Order.
+            // (Lưu ý: để chặn tuyệt đối khi webhook gọi song song, cần thêm unique index trên Order.AgreementId.)
+            var existingOrder = await _orderRepo.GetByAgreementIdAsync(agreement.AgreementId, ct);
+            if (existingOrder != null)
+                throw new InvalidOperationException("Thỏa thuận đã phát sinh đơn hàng, không thể tạo lại.");
+
             // Tổng đơn phải bao gồm đúng khoản phí vận chuyển đã được thu.
             // Inspection chưa thu phí giao hàng; BuyerPickUp không có phí giao hàng.
             decimal shippingFee = agreement.AgreementType != (int)AgreementType.Inspection
@@ -677,6 +722,19 @@ namespace HomeCycle.Application.Services.Payments
                     ? details?.EstimatedShippingFee ?? 0
                     : 0;
             decimal finalTotalAmount = basePrice + shippingFee;
+
+            // Không dựa vào invariant ngầm "Deposit chỉ tồn tại với Inspection":
+            // xác định trạng thái thanh toán trực tiếp từ số tiền thực tế.
+            decimal amountRemaining = finalTotalAmount - paidAmount;
+
+            if (paidAmount <= 0 || amountRemaining < -AmountEpsilon)
+                throw new InvalidOperationException("Số tiền thanh toán không hợp lệ.");
+
+            bool isFullyPaid = amountRemaining <= AmountEpsilon;
+
+            var paymentStatus = isFullyPaid
+                ? PaymentStatus.Completed
+                : PaymentStatus.Pending;
 
             var order = new order
             {
@@ -687,9 +745,8 @@ namespace HomeCycle.Application.Services.Payments
                 OriginalTotalAmount = basePrice,
                 FinalTotalAmount = finalTotalAmount,
                 AmountPaid = paidAmount,
-                //AmountRemaining = basePrice - paidAmount > 0 ? basePrice - paidAmount : 0,
-                AmountRemaining = finalTotalAmount - paidAmount > 0 ? finalTotalAmount - paidAmount : 0,
-                PaymentStatus = agreement.PaymentType == (int)PaymentType.Deposit ? (int)PaymentStatus.Pending : (int)PaymentStatus.Completed,
+                AmountRemaining = Math.Max(amountRemaining, 0),
+                PaymentStatus = (int)paymentStatus,
                 OrderStatus = (int)OrderStatus.Processing,
                 CreatedAt = DateTime.UtcNow
             };
@@ -712,6 +769,9 @@ namespace HomeCycle.Application.Services.Payments
 
             inspection_appointment? inspectionAppt = null;
             collection_appointment? collectionAppt = null;
+
+            shipment? localShipment = null;
+            ghn_shipment? localGhnShipment = null;
 
             if (appointmentType == AppointmentType.Inspection)
             {
@@ -738,18 +798,229 @@ namespace HomeCycle.Application.Services.Payments
                 await _collectionRepo.AddAsync(collectionAppt, ct);
             }
 
+            var now = DateTime.UtcNow;
+
+            // Chỉ tạo vận đơn GHN khi đã thanh toán đủ (không phải cọc).
+            bool shouldCreateGhnShipment =
+                isFullyPaid
+                && agreement.AgreementType != (int)AgreementType.Inspection
+                && details?.DeliveryMethod == DeliveryMethod.GhnDelivery;
+
+            var ghnInfo = shouldCreateGhnShipment
+                ? details?.GhnInfo
+                : null;
+
+            if (shouldCreateGhnShipment)
+            {
+                if (ghnInfo == null)
+                    throw new InvalidOperationException("Agreement chọn GHN nhưng thiếu GhnInfo.");
+
+                if (ghnInfo.Sender == null)
+                    throw new InvalidOperationException("Agreement thiếu snapshot người gửi GHN.");
+
+                if (ghnInfo.Receiver == null)
+                    throw new InvalidOperationException("Agreement thiếu snapshot người nhận GHN.");
+
+                if (ghnInfo.ServiceTypeId is not (2 or 5))
+                    throw new InvalidOperationException("ServiceTypeId GHN chỉ nhận 2 hoặc 5.");
+
+                if (ghnInfo.Sender.Address is null ||
+                    ghnInfo.Sender.Address.DistrictId <= 0 ||
+                    string.IsNullOrWhiteSpace(ghnInfo.Sender.Address.WardCode))
+                    throw new InvalidOperationException("Agreement thiếu địa chỉ người gửi GHN (DistrictId/WardCode).");
+
+                if (ghnInfo.Receiver.Address is null ||
+                    ghnInfo.Receiver.Address.DistrictId <= 0 ||
+                    string.IsNullOrWhiteSpace(ghnInfo.Receiver.Address.WardCode))
+                    throw new InvalidOperationException("Agreement thiếu địa chỉ người nhận GHN (DistrictId/WardCode).");
+
+                // Thông tin liên hệ bắt buộc cho Create Order.
+                if (string.IsNullOrWhiteSpace(ghnInfo.Sender.FullName))
+                    throw new InvalidOperationException("Agreement thiếu tên người gửi GHN.");
+
+                if (string.IsNullOrWhiteSpace(ghnInfo.Sender.Phone))
+                    throw new InvalidOperationException("Agreement thiếu số điện thoại người gửi GHN.");
+
+                if (string.IsNullOrWhiteSpace(ghnInfo.Sender.Address.AddressDetail))
+                    throw new InvalidOperationException("Agreement thiếu địa chỉ chi tiết người gửi GHN.");
+
+                if (string.IsNullOrWhiteSpace(ghnInfo.Receiver.FullName))
+                    throw new InvalidOperationException("Agreement thiếu tên người nhận GHN.");
+
+                if (string.IsNullOrWhiteSpace(ghnInfo.Receiver.Phone))
+                    throw new InvalidOperationException("Agreement thiếu số điện thoại người nhận GHN.");
+
+                if (string.IsNullOrWhiteSpace(ghnInfo.Receiver.Address.AddressDetail))
+                    throw new InvalidOperationException("Agreement thiếu địa chỉ chi tiết người nhận GHN.");
+
+                if (string.IsNullOrWhiteSpace(ghnInfo.RequiredNote) ||
+                    !ValidGhnRequiredNotes.Contains(ghnInfo.RequiredNote.Trim()))
+                    throw new InvalidOperationException("RequiredNote GHN không hợp lệ.");
+
+                // Hàng nhẹ (2) dùng LightParcel; hàng nặng (5) bắt buộc có Items.
+                if (ghnInfo.ServiceTypeId == 2)
+                {
+                    var parcel = ghnInfo.LightParcel;
+                    if (parcel is null)
+                        throw new InvalidOperationException("Agreement thiếu thông tin kiện hàng nhẹ GHN (LightParcel).");
+
+                    ValidateGhnParcel(
+                        parcel.WeightGram, parcel.LengthCm, parcel.WidthCm, parcel.HeightCm,
+                        "kiện hàng nhẹ");
+                }
+
+                if (ghnInfo.ServiceTypeId == 5)
+                {
+                    if (ghnInfo.Items == null || ghnInfo.Items.Count == 0)
+                        throw new InvalidOperationException("Agreement chưa có thông tin kiện hàng GHN.");
+
+                    long totalWeight = 0;
+                    foreach (var item in ghnInfo.Items)
+                    {
+                        if (string.IsNullOrWhiteSpace(item.Name))
+                            throw new InvalidOperationException("Kiện hàng GHN thiếu tên sản phẩm.");
+
+                        if (item.Quantity <= 0)
+                            throw new InvalidOperationException($"Kiện hàng '{item.Name}' phải có số lượng > 0.");
+
+                        ValidateGhnParcel(
+                            item.WeightGram, item.LengthCm, item.WidthCm, item.HeightCm,
+                            $"kiện hàng '{item.Name}'");
+
+                        totalWeight += (long)item.WeightGram * item.Quantity;
+                    }
+
+                    if (totalWeight is < 1 or > GhnMaxWeightGram)
+                        throw new InvalidOperationException("Tổng khối lượng hàng nặng GHN không hợp lệ.");
+                }
+
+                if (details?.EstimatedShippingFee is null or < 0)
+                    throw new InvalidOperationException("Agreement chưa có phí GHN hợp lệ.");
+            }
+
+            // KHỞI TẠO LUỒNG VẬN ĐƠN (SHIPMENT) — chỉ khi thanh toán đủ:
+            // - GhnDelivery                : Shipment + GHN_Shipment (CreationStatus = Pending, chưa gửi GHN)
+            // - SellerDelivers/BuyerPickUp : chỉ Shipment
+            // - Inspection (chỉ đóng cọc)  : chưa tạo shipment
+            bool shouldCreateShipment =
+                isFullyPaid
+                && agreement.AgreementType != (int)AgreementType.Inspection
+                && details?.DeliveryMethod is
+                    DeliveryMethod.GhnDelivery or DeliveryMethod.SellerDelivers or DeliveryMethod.BuyerPickUp;
+
+            if (shouldCreateShipment)
+            {
+                var deliveryMethod = details!.DeliveryMethod!.Value;
+                var shipmentId = Guid.NewGuid();
+
+                var sender = ghnInfo?.Sender;
+                var receiver = ghnInfo?.Receiver;
+
+                localShipment = new shipment
+                {
+                    ShipmentId = shipmentId,
+                    OrderId = orderId,
+                    CollectionAppointmentId = collectionAppt?.CollectionAppointmentId,
+                    DeliveryMethod = deliveryMethod,
+                    ShipmentStatus = ShipmentStatus.ReadyToPick,
+                    FromName = sender?.FullName,
+                    FromPhone = sender?.Phone,
+                    PickupAddress = sender?.Address?.AddressDetail ?? details?.PickupAddress,
+                    ToName = receiver?.FullName,
+                    ToPhone = receiver?.Phone,
+                    DeliveryAddress = receiver?.Address?.AddressDetail ?? details?.DeliveryAddress,
+                    SellerReadyAt = null,
+                    CreatedAt = now,
+                    UpdatedAt = now
+                };
+
+                await _shipmentRepo.AddAsync(localShipment, ct);
+
+                if (deliveryMethod == DeliveryMethod.GhnDelivery)
+                {
+                    var senderSnapshot = sender!;
+                    var receiverSnapshot = receiver!;
+
+                    int? weight = null;
+                    int? length = null;
+                    int? width = null;
+                    int? height = null;
+
+                    if (ghnInfo!.ServiceTypeId == 2 && ghnInfo.LightParcel is not null)
+                    {
+                        weight = ghnInfo.LightParcel.WeightGram;
+                        length = ghnInfo.LightParcel.LengthCm;
+                        width = ghnInfo.LightParcel.WidthCm;
+                        height = ghnInfo.LightParcel.HeightCm;
+                    }
+                    else if (ghnInfo.ServiceTypeId == 5 && ghnInfo.Items.Count > 0)
+                    {
+                        // ghn_shipment chỉ có 1 dòng kích thước -> lưu tổng khối lượng các kiện.
+                        weight = ghnInfo.Items.Sum(x => x.WeightGram * x.Quantity);
+                    }
+
+                    localGhnShipment = new ghn_shipment
+                    {
+                        GHNShipmentId = Guid.NewGuid(),
+                        ShipmentId = shipmentId,
+
+                        // Mã được tạo một lần và giữ nguyên trong mọi lần retry.
+                        ClientOrderCode = $"HC-{shipmentId:N}",
+                        GHNOrderCode = null,
+
+                        ServiceTypeId = ghnInfo.ServiceTypeId!.Value,
+                        FromDistrictId = senderSnapshot.Address.DistrictId,
+                        FromWardCode = senderSnapshot.Address.WardCode,
+                        ToDistrictId = receiverSnapshot.Address.DistrictId,
+                        ToWardCode = receiverSnapshot.Address.WardCode,
+
+                        Weight = weight,
+                        Length = length,
+                        Width = width,
+                        Height = height,
+
+                        // Buyer đã trả phí ship cho HomeCycle (qua PayOS/ví nội bộ),
+                        // GHN thu phí từ ShopId -> payment_type_id = 1, không thu COD.
+                        CODAmount = 0,
+                        PaymentTypeId = 1,
+                        InsuranceValue = 0,
+                        RequiredNote = ghnInfo.RequiredNote,
+
+                        // Phí thực tế chỉ có khi Create Order thành công.
+                        GHNServiceFee = null,
+                        GHNCodFee = null,
+                        GHNTotalFee = null,
+
+                        ExpectedDeliveryAt = null,
+                        CreationStatus = GHNCreationStatus.Pending,
+                        LastCreateAttemptAt = null,
+                        LastSyncedAt = null,
+                        LastErrorCode = null,
+                        CreatedAt = now
+                    };
+
+                    await _ghnShipmentRepo.AddAsync(localGhnShipment, ct);
+                }
+            }
+
             await _appointmentRepo.AddAsync(appointment, ct);
             await _orderRepo.AddAsync(order, ct);
 
-            // Trừ số lượng còn lại của Post.
-            post? post = await _postRepo.GetByIdAsync(agreement.PostId, ct);
-            if (post != null)
-            {
-                post.RemainingQuantity = Math.Max(post.RemainingQuantity - agreement.Quantity, 0);
-                if (post.RemainingQuantity <= 0)
-                    post.Status = PostStatus.Closed;
-                await _postRepo.UpdateAsync(post, ct);
-            }
+            // Trừ số lượng còn lại của Post — dùng FOR UPDATE để serialize giữa các giao dịch
+            // đồng thời (chống oversell: còn 5 mà 2 giao dịch cùng trừ 4 đều thành công).
+            post? post = await _postRepo.GetByIdForUpdateAsync(agreement.PostId, ct);
+            if (post == null)
+                throw new InvalidOperationException("Không tìm thấy bài đăng của thỏa thuận.");
+
+            if (post.RemainingQuantity < agreement.Quantity)
+                throw new InvalidOperationException(
+                    $"Bài đăng chỉ còn {post.RemainingQuantity} sản phẩm, không đủ cho {agreement.Quantity}.");
+
+            post.RemainingQuantity -= agreement.Quantity;
+            if (post.RemainingQuantity <= 0)
+                post.Status = PostStatus.Closed;
+
+            await _postRepo.UpdateAsync(post, ct);
 
             agreement.AgreementStatus = (int)AgreementStatus.Confirmed;
             await _agreementRepo.UpdateAsync(agreement, ct);
@@ -760,6 +1031,10 @@ namespace HomeCycle.Application.Services.Payments
                 Appointment = appointment,
                 InspectionAppointment = inspectionAppt,
                 CollectionAppointment = collectionAppt,
+
+                Shipment = localShipment,
+                GhnShipment = localGhnShipment,
+
                 Post = post
             };
         }

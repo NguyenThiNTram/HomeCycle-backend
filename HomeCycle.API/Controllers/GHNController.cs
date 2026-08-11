@@ -98,6 +98,25 @@ namespace HomeCycle.API.Controllers
             }
         }
 
+        [HttpPost("create-order")]
+        [SwaggerOperation(
+        Summary = "Tạo đơn hàng GHN")]
+        [ProducesResponseType(typeof(GhnCreateOrderResponse), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status502BadGateway)]
+        public async Task<ActionResult<GhnCreateOrderResponse>> CreateOrder([FromBody] GhnCreateOrderRequest request, CancellationToken cancellationToken)
+        {
+            try
+            {
+                var result = await _ghnService.CreateOrderAsync(request, cancellationToken);
+                return Ok(result);
+            }
+            catch (GhnApiException ex)
+            {
+                return HandleGhnException(ex);
+            }
+        }
+
         private ActionResult HandleGhnException(GhnApiException ex)
         {
             // Kiểm tra nếu nội dung thông báo từ GHN báo lỗi không tồn tại hoặc tham số sai, ép về HTTP 400

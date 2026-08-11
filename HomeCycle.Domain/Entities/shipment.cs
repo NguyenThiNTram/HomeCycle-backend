@@ -1,8 +1,9 @@
-﻿using System;
+﻿using HomeCycle.Domain.Enums;
+using Microsoft.EntityFrameworkCore;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
-using Microsoft.EntityFrameworkCore;
 
 namespace HomeCycle.Domain.Entities;
 
@@ -12,9 +13,9 @@ public class shipment
     public Guid OrderId { get; set; }
     public Guid? CollectionAppointmentId { get; set; }
 
-    public int? DeliveryMethod { get; set; }
+    public DeliveryMethod DeliveryMethod { get; set; }
 
-    public int? ShipmentStatus { get; set; }
+    public ShipmentStatus? ShipmentStatus { get; set; }
 
     public string? FromName { get; set; }
     public string? FromPhone { get; set; }
@@ -27,6 +28,8 @@ public class shipment
     public DateTime? DeliveredAt { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
+
+    public DateTime? SellerReadyAt { get; set; }
 
     public shipment()
     {

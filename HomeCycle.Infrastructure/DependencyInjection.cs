@@ -76,6 +76,8 @@ using HomeCycle.Application.Interfaces.Services.Appointments;
 using HomeCycle.Application.Interfaces.Services.Orders;
 using HomeCycle.Application.Services.Appointments;
 using HomeCycle.Application.Services.Orders;
+using HomeCycle.Application.Interfaces.Repositories.GHN;
+using HomeCycle.Infrastructure.Repositories.GHN;
 
 namespace HomeCycle.Infrastructure
 {
@@ -156,12 +158,12 @@ namespace HomeCycle.Infrastructure
             services.AddScoped<IAppointmentRepository, AppointmentRepository>();
             services.AddScoped<ICollectionAppointmentRepository, CollectionAppointmentRepository>();
             services.AddScoped<IInspectionAppointmentRepository, InspectionAppointmentRepository>();
-            services.AddScoped<IShipmentRepository, ShipmentRepository>();
             services.AddScoped<IOfferRepository, OfferRepository>();
             services.AddScoped<IMessageRepository, MessageRepository>();
             services.AddScoped<INegotiationRepository, NegotiationRepository>();
             services.AddScoped<IMessageRepository, MessageRepository>();
-
+            services.AddScoped<IGhnShipmentRepository, GhnShipmentRepository>();
+            services.AddScoped<IShipmentRepository, ShipmentRepository>();
 
             // register Services
             services.AddScoped<IAuthService, AuthService>();
@@ -228,6 +230,9 @@ namespace HomeCycle.Infrastructure
                     client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
 
                     client.DefaultRequestHeaders.TryAddWithoutValidation("Token", settings.Token);
+
+                    // GHN Create Order yêu cầu cả Token và ShopId trong header
+                    client.DefaultRequestHeaders.TryAddWithoutValidation("ShopId", settings.ShopId.ToString());
 
                     // Thiết lập timeout mặc định nếu chưa được cấu hình
                     client.Timeout = TimeSpan.FromSeconds(15);
