@@ -8,6 +8,15 @@ using System.Threading.Tasks;
 
 namespace HomeCycle.Application.Interfaces.Externals
 {
+    /// <summary>
+    /// Đánh dấu lỗi do GHN trả về (đã có phản hồi chính thức => call definitively failed).
+    /// Giúp tầng Application phân loại lỗi mà không cần phụ thuộc vào Infrastructure.
+    /// </summary>
+    public interface IGhnApiError
+    {
+        string? CodeMessage { get; }
+    }
+
     public interface IGhnService
     {
         Task<IReadOnlyList<GhnProvinceResponse>> GetProvincesAsync(CancellationToken cancellationToken = default);

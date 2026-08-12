@@ -79,6 +79,8 @@ using HomeCycle.Application.Services.Orders;
 using HomeCycle.Infrastructure.Externals.PayOS;
 using HomeCycle.Application.Interfaces.Repositories.GHN;
 using HomeCycle.Infrastructure.Repositories.GHN;
+using HomeCycle.Application.Interfaces.Services.GHN;
+using HomeCycle.Application.Services.GHN;
 
 namespace HomeCycle.Infrastructure
 {
@@ -165,6 +167,7 @@ namespace HomeCycle.Infrastructure
             services.AddScoped<IMessageRepository, MessageRepository>();
             services.AddScoped<IGhnShipmentRepository, GhnShipmentRepository>();
             services.AddScoped<IShipmentRepository, ShipmentRepository>();
+            services.AddScoped<IGhnShipmentCreationService, GhnShipmentCreationService>();
 
             // register Services
             services.AddScoped<IAuthService, AuthService>();
