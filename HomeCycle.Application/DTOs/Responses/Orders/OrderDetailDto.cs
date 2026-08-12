@@ -25,6 +25,7 @@ namespace HomeCycle.Application.DTOs.Responses.Orders
 
     public class ReviewSummaryDto
     {
+        public Guid? ReviewId { get; set; }
         public bool HasReviewed { get; set; }
         public bool CanReview { get; set; }
         public int? Rating { get; set; }

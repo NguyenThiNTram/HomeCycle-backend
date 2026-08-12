@@ -130,6 +130,7 @@ namespace HomeCycle.Infrastructure.Repositories.Orders
             // TODO: đổi "2" thành đúng giá trị enum OrderStatus.Completed thật của bạn.
             var reviewSummary = new ReviewSummaryDto
             {
+                ReviewId = entity.Review?.ReviewId,
                 HasReviewed = entity.Review != null,
                 CanReview = isBuyer && entity.OrderStatus == 2 && entity.Review == null,
                 Rating = entity.Review?.Rating
