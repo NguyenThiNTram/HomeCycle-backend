@@ -11,7 +11,7 @@ namespace HomeCycle.Application.DTOs.Responses.Orders
     {
         public order Order { get; set; } = null!;
         public string? PostDescription { get; set; }
-        public review? Review { get; set; }
+        public IReadOnlyList<review> Reviews { get; set; } = new List<review>();
         public IReadOnlyList<shipment> Shipments { get; set; } = new List<shipment>();
         public IReadOnlyList<dispute> Disputes { get; set; } = new List<dispute>();
     }

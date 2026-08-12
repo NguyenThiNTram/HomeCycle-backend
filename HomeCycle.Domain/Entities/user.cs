@@ -26,6 +26,8 @@ public class user
 
     public UserStatus Status { get; set; }
 
+    public int ReputationScore { get; set; } = 50;
+
     public DateTime CreatedAt { get; set; }
 
     public user()

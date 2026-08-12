@@ -754,7 +754,7 @@ public partial class HomeCycleDbContext : DbContext
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()");
             entity.Property(e => e.UpdatedAt).HasDefaultValueSql("now()");
 
-            entity.HasOne(d => d.Order).WithOne(p => p.Review)
+            entity.HasOne(d => d.Order).WithMany(p => p.Reviews)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("fk_review_orderid");
 
@@ -799,6 +799,7 @@ public partial class HomeCycleDbContext : DbContext
             entity.Property(e => e.UserId).ValueGeneratedNever();
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()");
             entity.Property(e => e.IsEmailVerified).HasDefaultValue(false);
+            entity.Property(e => e.ReputationScore).HasDefaultValue(50);
         });
 
         modelBuilder.Entity<User_Subscription>(entity =>

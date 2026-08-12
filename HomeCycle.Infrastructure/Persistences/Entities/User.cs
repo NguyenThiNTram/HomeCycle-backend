@@ -33,6 +33,8 @@ public partial class User
 
     public int Status { get; set; }
 
+    public int ReputationScore { get; set; }
+
     public DateTime CreatedAt { get; set; }
 
     [InverseProperty("Buyer")]

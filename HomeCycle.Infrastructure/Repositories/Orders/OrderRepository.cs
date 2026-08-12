@@ -97,7 +97,7 @@ namespace HomeCycle.Infrastructure.Repositories.Orders
             var entity = await _db.Orders
                 .AsNoTracking()
                 .Include(o => o.Post)
-                .Include(o => o.Review)
+                .Include(o => o.Reviews)
                 .Include(o => o.Shipments)
                 .Include(o => o.Disputes)
                 .FirstOrDefaultAsync(x => x.OrderId == orderId, ct);
@@ -109,7 +109,7 @@ namespace HomeCycle.Infrastructure.Repositories.Orders
             {
                 Order = entity.ToDomain(),
                 PostDescription = entity.Post?.Description,
-                Review = entity.Review?.ToDomain(),
+                Reviews = entity.Reviews.Select(r => r.ToDomain()).ToList(),
                 Shipments = entity.Shipments.Select(s => s.ToDomain()).ToList(),
                 Disputes = entity.Disputes.Select(d => d.ToDomain()).ToList()
             };
