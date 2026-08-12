@@ -44,6 +44,7 @@ namespace HomeCycle.Application.Services.Agreements
         private readonly IValidator<CreateAgreementFormRequest> _createValidator;
         private readonly IValidator<UpdateAgreementFormRequest> _updateValidator;
         private readonly IValidator<CalculateGhnFeeRequest> _shippingFeeValidator;
+        private readonly IValidator<GhnShippingPreviewRequest> _shippingPreviewValidator;
 
         public AgreementFormService(
             IUnitOfWork unitOfWork,
@@ -60,7 +61,8 @@ namespace HomeCycle.Application.Services.Agreements
             IProductRepository productRepo,
             IValidator<CreateAgreementFormRequest> createValidator,
             IValidator<UpdateAgreementFormRequest> updateValidator,
-            IValidator<CalculateGhnFeeRequest> shippingFeeValidator)
+            IValidator<CalculateGhnFeeRequest> shippingFeeValidator,
+            IValidator<GhnShippingPreviewRequest> shippingPreviewValidator)
         {
             _unitOfWork = unitOfWork;
             _agreementRepo = agreementRepo;
@@ -77,6 +79,7 @@ namespace HomeCycle.Application.Services.Agreements
             _createValidator = createValidator;
             _updateValidator = updateValidator;
             _shippingFeeValidator = shippingFeeValidator;
+            _shippingPreviewValidator = shippingPreviewValidator;
         }
 
         public async Task<Result<AgreementPreviewResponse>> GetPreviewAsync(Guid negotiationId, Guid currentUserId, CancellationToken cancellationToken = default)
@@ -532,6 +535,308 @@ namespace HomeCycle.Application.Services.Agreements
             };
 
             return Result<ShippingFeePreviewResponse>.Success(response);
+        }
+
+        public async Task<Result<GhnParcelInfoResponse>> GetGhnParcelInfoAsync(Guid negotiationId, Guid currentUserId, CancellationToken cancellationToken = default)
+        {
+            var negotiationResult = await GetAuthorizedNegotiationAsync(negotiationId, currentUserId, cancellationToken);
+            if (!negotiationResult.IsSuccess)
+                return Result<GhnParcelInfoResponse>.Fail(negotiationResult.Error!);
+
+            var product = await _productRepo.GetDetailByPostIdAsync(negotiationResult.Data!.PostId, cancellationToken);
+            if (product is null)
+                return Result<GhnParcelInfoResponse>.Fail(new Error("Product.NotFound", "Không tìm thấy sản phẩm của bài đăng."));
+
+            var hasDimensions = TryNormalizeProductMeasurements(
+                product,
+                out var weightGram,
+                out var lengthCm,
+                out var widthCm,
+                out var heightCm);
+
+            var quantity = await GetOfferQuantityAsync(negotiationResult.Data!, cancellationToken);
+
+            var response = new GhnParcelInfoResponse
+            {
+                NegotiationId = negotiationId,
+                ServiceTypeId = 2,
+                HasProductDimensions = hasDimensions,
+                LightParcel = hasDimensions
+                    ? new GhnLightParcelSnapshotDto
+                    {
+                        WeightGram = weightGram,
+                        LengthCm = lengthCm,
+                        WidthCm = widthCm,
+                        HeightCm = heightCm
+                    }
+                    : null,
+                Items = hasDimensions
+                    ? new[]
+                    {
+                        BuildHeavyItemFromProduct(product, weightGram, lengthCm, widthCm, heightCm, quantity)
+                    }
+                    : Array.Empty<GhnItemSnapshotDto>()
+            };
+
+            return Result<GhnParcelInfoResponse>.Success(response);
+        }
+
+        public async Task<Result<GhnShippingPreviewResponse>> PreviewGhnShippingAsync(Guid negotiationId, Guid currentUserId, GhnShippingPreviewRequest request, CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(request);
+
+            var negotiationResult = await GetAuthorizedNegotiationAsync(negotiationId, currentUserId, cancellationToken);
+            if (!negotiationResult.IsSuccess)
+                return Result<GhnShippingPreviewResponse>.Fail(negotiationResult.Error!);
+
+            var validationResult = await _shippingPreviewValidator.ValidateAsync(request, cancellationToken);
+            if (!validationResult.IsValid)
+            {
+                var errorMessage = string.Join(", ", validationResult.Errors.Select(e => e.ErrorMessage).Distinct());
+                return Result<GhnShippingPreviewResponse>.Fail(new Error("ShippingFee.InvalidRequest", errorMessage));
+            }
+
+            var product = await _productRepo.GetDetailByPostIdAsync(negotiationResult.Data!.PostId, cancellationToken);
+
+            var resolvedResult = await ResolveParcelAsync(request, product, negotiationResult.Data!, cancellationToken);
+            if (!resolvedResult.IsSuccess)
+                return Result<GhnShippingPreviewResponse>.Fail(resolvedResult.Error!);
+
+            var resolved = resolvedResult.Data!;
+
+            GhnPreviewQuote quote;
+            try
+            {
+                quote = await _ghnService.PreviewOrderAsync(resolved, cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                _logger.LogError(exception, "Xem trước thông tin vận chuyển GHN thất bại cho NegotiationId {NegotiationId}.", negotiationId);
+                return Result<GhnShippingPreviewResponse>.Fail(new Error(
+                    "Ghn.PreviewFailed",
+                    "Không thể xem trước thông tin vận chuyển GHN ở thời điểm hiện tại."));
+            }
+
+            var response = new GhnShippingPreviewResponse
+            {
+                NegotiationId = negotiationId,
+                ServiceTypeId = request.ServiceTypeId,
+                TotalFee = quote.TotalFee,
+                ExpectedDeliveryAt = quote.ExpectedDeliveryAt,
+                LightParcel = resolved.ServiceTypeId == 2
+                    ? new GhnLightParcelSnapshotDto
+                    {
+                        WeightGram = resolved.WeightGram!.Value,
+                        LengthCm = resolved.LengthCm!.Value,
+                        WidthCm = resolved.WidthCm!.Value,
+                        HeightCm = resolved.HeightCm!.Value
+                    }
+                    : null,
+                Items = resolved.ServiceTypeId == 5
+                    ? resolved.Items.Select(item => new GhnItemSnapshotDto
+                    {
+                        Name = item.Name,
+                        Code = item.Code,
+                        Quantity = item.Quantity,
+                        WeightGram = item.WeightGram,
+                        LengthCm = item.LengthCm,
+                        WidthCm = item.WidthCm,
+                        HeightCm = item.HeightCm
+                    }).ToList()
+                    : Array.Empty<GhnItemSnapshotDto>()
+            };
+
+            return Result<GhnShippingPreviewResponse>.Success(response);
+        }
+
+        private async Task<Result<negotiation>> GetAuthorizedNegotiationAsync(Guid negotiationId, Guid currentUserId, CancellationToken cancellationToken)
+        {
+            var negotiation = await _negotiationRepo.GetByIdAsync(negotiationId, cancellationToken);
+            if (negotiation is null)
+                return Result<negotiation>.Fail(new Error("Negotiation.NotFound", "Không tìm thấy cuộc thương lượng."));
+
+            bool isSeller = negotiation.SellerId == currentUserId;
+            bool isBuyer = negotiation.BuyerId == currentUserId;
+
+            if (!isSeller && !isBuyer)
+                return Result<negotiation>.Fail(new Error("Auth.Forbidden", "Bạn không có quyền truy cập."));
+
+            if (negotiation.NegotiationStatus == NegotiationStatus.Cancelled)
+                return Result<negotiation>.Fail(new Error("Negotiation.Cancelled", "Không thể xem trước cho cuộc thương lượng đã bị hủy."));
+
+            return Result<negotiation>.Success(negotiation);
+        }
+
+        private async Task<int> GetOfferQuantityAsync(negotiation negotiation, CancellationToken cancellationToken)
+        {
+            if (negotiation.FinalQuantity is > 0)
+                return negotiation.FinalQuantity.Value;
+
+            var offer = await _offerRepo.GetByIdAsync(negotiation.OfferId, cancellationToken);
+            return offer?.OfferQuantity ?? 1;
+        }
+
+        private async Task<Result<GhnShippingPreviewRequest>> ResolveParcelAsync(
+            GhnShippingPreviewRequest request,
+            product? product,
+            negotiation negotiation,
+            CancellationToken cancellationToken)
+        {
+            if (request.ServiceTypeId == 2)
+            {
+                int weightGram;
+                int lengthCm;
+                int widthCm;
+                int heightCm;
+
+                bool hasAllOverrides =
+                    request.WeightGram is not null &&
+                    request.LengthCm is not null &&
+                    request.WidthCm is not null &&
+                    request.HeightCm is not null;
+
+                if (hasAllOverrides)
+                {
+                    weightGram = request.WeightGram!.Value;
+                    lengthCm = request.LengthCm!.Value;
+                    widthCm = request.WidthCm!.Value;
+                    heightCm = request.HeightCm!.Value;
+                }
+                else
+                {
+                    if (product is null)
+                        return Result<GhnShippingPreviewRequest>.Fail(new Error("Product.NotFound", "Không tìm thấy sản phẩm của bài đăng."));
+
+                    if (!TryNormalizeProductMeasurements(product, out weightGram, out lengthCm, out widthCm, out heightCm))
+                    {
+                        return Result<GhnShippingPreviewRequest>.Fail(new Error(
+                            "Ghn.ParcelInformationRequired",
+                            "Sản phẩm chưa có đầy đủ khối lượng và kích thước để tính phí GHN. Vui lòng nhập tay hoặc cập nhật thông tin sản phẩm."));
+                    }
+                }
+
+                return Result<GhnShippingPreviewRequest>.Success(new GhnShippingPreviewRequest
+                {
+                    Sender = request.Sender,
+                    Receiver = request.Receiver,
+                    ServiceTypeId = request.ServiceTypeId,
+                    RequiredNote = request.RequiredNote,
+                    WeightGram = weightGram,
+                    LengthCm = lengthCm,
+                    WidthCm = widthCm,
+                    HeightCm = heightCm,
+                    Items = Array.Empty<CalculateGhnFeeItemRequest>()
+                });
+            }
+
+            IReadOnlyList<CalculateGhnFeeItemRequest> items;
+
+            if (request.Items.Count > 0)
+            {
+                items = request.Items;
+            }
+            else
+            {
+                if (product is null)
+                    return Result<GhnShippingPreviewRequest>.Fail(new Error("Product.NotFound", "Không tìm thấy sản phẩm của bài đăng."));
+
+                if (!TryNormalizeProductMeasurements(product, out var w, out var l, out var wi, out var h))
+                {
+                    return Result<GhnShippingPreviewRequest>.Fail(new Error(
+                        "Ghn.ParcelInformationRequired",
+                        "Sản phẩm chưa có đầy đủ khối lượng và kích thước để dựng kiện hàng."));
+                }
+
+                var quantity = await GetOfferQuantityAsync(negotiation, cancellationToken);
+
+                items = new[]
+                {
+                    new CalculateGhnFeeItemRequest
+                    {
+                        Name = string.IsNullOrWhiteSpace(product.ProductName)
+                            ? "Sản phẩm HomeCycle"
+                            : product.ProductName.Trim(),
+                        Quantity = quantity,
+                        WeightGram = w,
+                        LengthCm = l,
+                        WidthCm = wi,
+                        HeightCm = h
+                    }
+                };
+            }
+
+            return Result<GhnShippingPreviewRequest>.Success(new GhnShippingPreviewRequest
+            {
+                Sender = request.Sender,
+                Receiver = request.Receiver,
+                ServiceTypeId = request.ServiceTypeId,
+                RequiredNote = request.RequiredNote,
+                WeightGram = null,
+                LengthCm = null,
+                WidthCm = null,
+                HeightCm = null,
+                Items = items
+            });
+        }
+
+        private static bool TryNormalizeProductMeasurements(product product, out int weightGram, out int lengthCm, out int widthCm, out int heightCm)
+        {
+            weightGram = 0;
+            lengthCm = 0;
+            widthCm = 0;
+            heightCm = 0;
+
+            if (product.Weight is null or <= 0 ||
+                product.Length is null or <= 0 ||
+                product.Width is null or <= 0 ||
+                product.Height is null or <= 0)
+            {
+                return false;
+            }
+
+            try
+            {
+                // Làm tròn lên để không khai thiếu khối lượng/kích thước.
+                weightGram = checked((int)Math.Ceiling(product.Weight.Value * 1000));
+
+                var sides = new[]
+                {
+                    checked((int)Math.Ceiling(product.Length.Value)),
+                    checked((int)Math.Ceiling(product.Width.Value)),
+                    checked((int)Math.Ceiling(product.Height.Value))
+                }
+                .OrderByDescending(x => x)
+                .ToArray();
+
+                lengthCm = sides[0];
+                widthCm = sides[1];
+                heightCm = sides[2];
+
+                return true;
+            }
+            catch (OverflowException)
+            {
+                return false;
+            }
+        }
+
+        private static GhnItemSnapshotDto BuildHeavyItemFromProduct(product product, int weightGram, int lengthCm, int widthCm, int heightCm, int quantity)
+        {
+            return new GhnItemSnapshotDto
+            {
+                Name = string.IsNullOrWhiteSpace(product.ProductName)
+                    ? "Sản phẩm HomeCycle"
+                    : product.ProductName.Trim(),
+                Quantity = quantity,
+                WeightGram = weightGram,
+                LengthCm = lengthCm,
+                WidthCm = widthCm,
+                HeightCm = heightCm
+            };
         }
 
         private async Task<Result<bool>> ComputeShippingFeeAsync(AgreementDetailsDto details, Guid postId, CancellationToken cancellationToken)

@@ -24,5 +24,9 @@ namespace HomeCycle.Application.Interfaces.Services.Agreements
         Task<Result<PagedResult<PendingAgreementListItemDto>>> GetPendingPaymentAsync(
            Guid buyerId, PendingAgreementSearchRequest request, CancellationToken cancellationToken = default);
         Task<Result<ShippingFeePreviewResponse>> PreviewShippingFeeAsync(Guid negotiationId, Guid currentUserId, CalculateGhnFeeRequest request, CancellationToken cancellationToken = default);
+
+        Task<Result<GhnParcelInfoResponse>> GetGhnParcelInfoAsync(Guid negotiationId, Guid currentUserId, CancellationToken cancellationToken = default);
+
+        Task<Result<GhnShippingPreviewResponse>> PreviewGhnShippingAsync(Guid negotiationId, Guid currentUserId, GhnShippingPreviewRequest request, CancellationToken cancellationToken = default);
     }
 }

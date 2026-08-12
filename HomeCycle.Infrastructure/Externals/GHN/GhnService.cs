@@ -6,6 +6,7 @@ using Microsoft.Extensions.Options;
 using Org.BouncyCastle.Asn1.Ocsp;
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Net;
 using System.Net.Http.Json;
@@ -350,6 +351,190 @@ namespace HomeCycle.Infrastructure.Externals.GHN
                     ? request.Items.Select(MapItem).ToList()
                     : null
             };
+        }
+
+        public async Task<GhnPreviewQuote> PreviewOrderAsync(GhnShippingPreviewRequest request, CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(request);
+
+            var apiRequest = MapPreviewRequest(request);
+
+            // endpoint preview của GHN: "v2/shipping-order/preview"
+            var data = await SendSingleAsync<GhnPreviewOrderData>(
+                HttpMethod.Post,
+                "v2/shipping-order/preview",
+                apiRequest,
+                cancellationToken);
+
+            return new GhnPreviewQuote(
+                TotalFee: data.TotalFee,
+                ExpectedDeliveryAt: ParseExpectedDelivery(data.ExpectedDeliveryTime));
+        }
+
+        private static GhnPreviewOrderApiRequest MapPreviewRequest(GhnShippingPreviewRequest request)
+        {
+            var sender = request.Sender;
+            var receiver = request.Receiver;
+
+            if (sender is null || sender.Address is null)
+                throw new ArgumentException("Thiếu thông tin người gửi (Sender).", nameof(request));
+
+            if (receiver is null || receiver.Address is null)
+                throw new ArgumentException("Thiếu thông tin người nhận (Receiver).", nameof(request));
+
+            if (sender.Address.DistrictId <= 0 || string.IsNullOrWhiteSpace(sender.Address.WardCode))
+                throw new ArgumentException("Địa chỉ người gửi không hợp lệ (DistrictId/WardCode).", nameof(request));
+
+            if (receiver.Address.DistrictId <= 0 || string.IsNullOrWhiteSpace(receiver.Address.WardCode))
+                throw new ArgumentException("Địa chỉ người nhận không hợp lệ (DistrictId/WardCode).", nameof(request));
+
+            var isLight = request.ServiceTypeId == 2;
+            var isHeavy = request.ServiceTypeId == 5;
+
+            if (!isLight && !isHeavy)
+                throw new ArgumentException("ServiceTypeId chỉ nhận 2 hoặc 5.", nameof(request));
+
+            string[] allowedRequiredNotes = ["CHOTHUHANG", "CHOXEMHANGKHONGTHU", "KHONGCHOXEMHANG"];
+            if (string.IsNullOrWhiteSpace(request.RequiredNote) ||
+                !allowedRequiredNotes.Contains(request.RequiredNote.Trim(), StringComparer.OrdinalIgnoreCase))
+                throw new ArgumentException("RequiredNote không hợp lệ.", nameof(request));
+
+            if (isLight)
+            {
+                if (request.WeightGram is null or <= 0 ||
+                    request.LengthCm is null or <= 0 ||
+                    request.WidthCm is null or <= 0 ||
+                    request.HeightCm is null or <= 0)
+                {
+                    throw new ArgumentException("Hàng nhẹ phải có đầy đủ khối lượng và kích thước.", nameof(request));
+                }
+
+                return new GhnPreviewOrderApiRequest
+                {
+                    FromName = sender.FullName.Trim(),
+                    FromPhone = sender.Phone.Trim(),
+                    FromAddress = BuildAddressText(sender.Address),
+                    FromWardName = sender.Address.WardName?.Trim() ?? string.Empty,
+                    FromDistrictName = sender.Address.DistrictName?.Trim() ?? string.Empty,
+                    FromProvinceName = string.IsNullOrWhiteSpace(sender.Address.ProvinceName)
+                        ? null
+                        : sender.Address.ProvinceName.Trim(),
+
+                    ToName = receiver.FullName.Trim(),
+                    ToPhone = receiver.Phone.Trim(),
+                    ToAddress = BuildAddressText(receiver.Address),
+                    ToWardCode = receiver.Address.WardCode.Trim(),
+                    ToDistrictId = receiver.Address.DistrictId,
+
+                    ServiceTypeId = request.ServiceTypeId,
+                    PaymentTypeId = 1,
+                    RequiredNote = request.RequiredNote.Trim().ToUpperInvariant(),
+
+                    WeightGram = request.WeightGram,
+                    LengthCm = request.LengthCm,
+                    WidthCm = request.WidthCm,
+                    HeightCm = request.HeightCm,
+
+                    Items = null
+                };
+            }
+
+            if (request.Items.Count == 0)
+                throw new ArgumentException("Hàng nặng phải có ít nhất một kiện hàng.", nameof(request));
+
+            return new GhnPreviewOrderApiRequest
+            {
+                FromName = sender.FullName.Trim(),
+                FromPhone = sender.Phone.Trim(),
+                FromAddress = BuildAddressText(sender.Address),
+                FromWardName = sender.Address.WardName?.Trim() ?? string.Empty,
+                FromDistrictName = sender.Address.DistrictName?.Trim() ?? string.Empty,
+                FromProvinceName = string.IsNullOrWhiteSpace(sender.Address.ProvinceName)
+                    ? null
+                    : sender.Address.ProvinceName.Trim(),
+
+                ToName = receiver.FullName.Trim(),
+                ToPhone = receiver.Phone.Trim(),
+                ToAddress = BuildAddressText(receiver.Address),
+                ToWardCode = receiver.Address.WardCode.Trim(),
+                ToDistrictId = receiver.Address.DistrictId,
+
+                ServiceTypeId = request.ServiceTypeId,
+                PaymentTypeId = 1,
+                RequiredNote = request.RequiredNote.Trim().ToUpperInvariant(),
+
+                WeightGram = null,
+                LengthCm = null,
+                WidthCm = null,
+                HeightCm = null,
+
+                Items = request.Items.Select(MapPreviewItem).ToList()
+            };
+        }
+
+        private static GhnApiItemRequest MapPreviewItem(CalculateGhnFeeItemRequest item)
+        {
+            // quy ước: cạnh lớn nhất là dài, nhỏ nhất là cao.
+            var sides = new[]
+            {
+                item.LengthCm,
+                item.WidthCm,
+                item.HeightCm
+            }
+            .OrderByDescending(x => x)
+            .ToArray();
+
+            return new GhnApiItemRequest
+            {
+                Name = item.Name.Trim(),
+                Quantity = item.Quantity,
+                WeightGram = item.WeightGram,
+                LengthCm = sides[0],
+                WidthCm = sides[1],
+                HeightCm = sides[2]
+            };
+        }
+
+        private static string BuildAddressText(GhnAddressSnapshotDto address)
+        {
+            var parts = new[]
+            {
+                address.AddressDetail,
+                address.WardName,
+                address.DistrictName,
+                address.ProvinceName
+            }
+            .Where(part => !string.IsNullOrWhiteSpace(part))
+            .Select(part => part!.Trim());
+
+            return string.Join(", ", parts);
+        }
+
+        private static DateTimeOffset? ParseExpectedDelivery(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                return null;
+
+            if (DateTimeOffset.TryParseExact(
+                    value,
+                    "yyyy-MM-dd HH:mm:ss",
+                    CultureInfo.InvariantCulture,
+                    DateTimeStyles.AssumeUniversal,
+                    out var exact))
+            {
+                return exact;
+            }
+
+            if (DateTimeOffset.TryParse(
+                    value,
+                    CultureInfo.InvariantCulture,
+                    DateTimeStyles.AssumeUniversal,
+                    out var parsed))
+            {
+                return parsed;
+            }
+
+            return null;
         }
 
         public async Task<GhnCreateOrderResponse> CreateOrderAsync(GhnCreateOrderRequest request, CancellationToken cancellationToken = default)

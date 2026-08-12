@@ -9,11 +9,6 @@ namespace HomeCycle.Infrastructure.Externals.GHN
 {
     internal sealed class GhnPreviewOrderApiRequest
     {
-        [JsonPropertyName("client_order_code")]
-        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        public string? ClientOrderCode { get; init; } // Mã đơn hàng nội bộ của HomeCycle
-
-        // HomeCycle bắt buộc gửi để không fallback về ShopId
         [JsonPropertyName("from_name")]
         public required string FromName { get; init; }
 
@@ -29,6 +24,10 @@ namespace HomeCycle.Infrastructure.Externals.GHN
         [JsonPropertyName("from_district_name")]
         public required string FromDistrictName { get; init; }
 
+        [JsonPropertyName("from_province_name")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? FromProvinceName { get; init; }
+
         [JsonPropertyName("to_name")]
         public required string ToName { get; init; }
 
@@ -38,11 +37,11 @@ namespace HomeCycle.Infrastructure.Externals.GHN
         [JsonPropertyName("to_address")]
         public required string ToAddress { get; init; }
 
-        [JsonPropertyName("to_ward_name")]
-        public required string ToWardName { get; init; }
+        [JsonPropertyName("to_ward_code")]
+        public required string ToWardCode { get; init; }
 
-        [JsonPropertyName("to_district_name")]
-        public required string ToDistrictName { get; init; }
+        [JsonPropertyName("to_district_id")]
+        public int ToDistrictId { get; init; }
 
         [JsonPropertyName("service_type_id")]
         public int ServiceTypeId { get; init; }
@@ -90,6 +89,6 @@ namespace HomeCycle.Infrastructure.Externals.GHN
         public decimal TotalFee { get; init; }
 
         [JsonPropertyName("expected_delivery_time")]
-        public DateTimeOffset ExpectedDeliveryTime { get; init; }
+        public string? ExpectedDeliveryTime { get; init; }
     }
 }
