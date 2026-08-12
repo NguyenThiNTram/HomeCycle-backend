@@ -17,8 +17,6 @@ namespace HomeCycle.Application.DTOs.Responses.Appointments
         public bool SellerCheckedIn { get; set; }
         public DateTime CreatedAt { get; set; }
 
-        public string? ProductName { get; set; }
-        public string? ThumbnailUrl { get; set; }
         public string? CounterpartyName { get; set; }
     }
 }

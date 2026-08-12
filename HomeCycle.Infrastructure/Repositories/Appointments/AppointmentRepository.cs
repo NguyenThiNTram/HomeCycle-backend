@@ -50,11 +50,10 @@ namespace HomeCycle.Infrastructure.Repositories.Appointments
             var query = BuildBaseAppointmentQuery(AppointmentType.Inspection, userId, isSeller, request.Status);
 
             if (!string.IsNullOrWhiteSpace(request.Keyword))
-                query = query.Where(a =>
-                    (a.Inspection_Appointment != null && a.Inspection_Appointment.InspectionAddress != null
-                        && a.Inspection_Appointment.InspectionAddress.Contains(request.Keyword))
-                    || (a.Agreement.Order != null && a.Agreement.Order.ProductName != null
-                        && a.Agreement.Order.ProductName.Contains(request.Keyword)));
+                query = query.Where(a => a.Inspection_Appointment != null
+                    && a.Inspection_Appointment.InspectionAddress != null
+                    && a.Inspection_Appointment.InspectionAddress.Contains(request.Keyword));
+
 
             query = query.OrderByDescending(a => a.CreatedAt);
 
@@ -72,12 +71,6 @@ namespace HomeCycle.Infrastructure.Repositories.Appointments
                     BuyerCheckedIn = a.BuyerCheckAt.HasValue,
                     SellerCheckedIn = a.SellerCheckAt.HasValue,
                     CreatedAt = a.CreatedAt,
-                    ProductName = a.Agreement.Order != null ? a.Agreement.Order.ProductName : a.Agreement.Post.Description,
-                    ThumbnailUrl = _db.Media
-                        .Where(m => m.TargetId == a.Agreement.PostId && m.TargetType == "Post")
-                        .OrderBy(m => m.DisplayOrder)
-                        .Select(m => m.Url)
-                        .FirstOrDefault(),
                     CounterpartyName = isSeller ? a.Agreement.Buyer.Username : a.Agreement.Seller.Username
                 })
                 .ToListAsync(ct);
@@ -98,11 +91,10 @@ namespace HomeCycle.Infrastructure.Repositories.Appointments
             var query = BuildBaseAppointmentQuery(AppointmentType.Collection, userId, isSeller, request.Status);
 
             if (!string.IsNullOrWhiteSpace(request.Keyword))
-                query = query.Where(a =>
-                    (a.Collection_Appointment != null && a.Collection_Appointment.PickupAddress != null
-                        && a.Collection_Appointment.PickupAddress.Contains(request.Keyword))
-                    || (a.Agreement.Order != null && a.Agreement.Order.ProductName != null
-                        && a.Agreement.Order.ProductName.Contains(request.Keyword)));
+                query = query.Where(a => a.Collection_Appointment != null
+                    && a.Collection_Appointment.PickupAddress != null
+                    && a.Collection_Appointment.PickupAddress.Contains(request.Keyword));
+
 
             query = query.OrderByDescending(a => a.CreatedAt);
 
@@ -122,12 +114,6 @@ namespace HomeCycle.Infrastructure.Repositories.Appointments
                     BuyerCheckedIn = a.BuyerCheckAt.HasValue,
                     SellerCheckedIn = a.SellerCheckAt.HasValue,
                     CreatedAt = a.CreatedAt,
-                    ProductName = a.Agreement.Order != null ? a.Agreement.Order.ProductName : a.Agreement.Post.Description,
-                    ThumbnailUrl = _db.Media
-                        .Where(m => m.TargetId == a.Agreement.PostId && m.TargetType == "Post")
-                        .OrderBy(m => m.DisplayOrder)
-                        .Select(m => m.Url)
-                        .FirstOrDefault(),
                     CounterpartyName = isSeller ? a.Agreement.Buyer.Username : a.Agreement.Seller.Username
                 })
                 .ToListAsync(ct);

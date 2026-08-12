@@ -76,6 +76,7 @@ using HomeCycle.Application.Interfaces.Services.Appointments;
 using HomeCycle.Application.Interfaces.Services.Orders;
 using HomeCycle.Application.Services.Appointments;
 using HomeCycle.Application.Services.Orders;
+using HomeCycle.Infrastructure.Externals.PayOS;
 
 namespace HomeCycle.Infrastructure
 {
