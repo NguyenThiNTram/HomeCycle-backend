@@ -16,9 +16,6 @@ namespace HomeCycle.API.Controllers
             _context = context;
         }
 
-        /// <summary>
-        /// Kiểm tra API hoạt động
-        /// </summary>
         [HttpGet]
         public IActionResult Get()
         {
@@ -30,9 +27,6 @@ namespace HomeCycle.API.Controllers
             });
         }
 
-        /// <summary>
-        /// Kiểm tra kết nối Database
-        /// </summary>
         [HttpGet("database")]
         public async Task<IActionResult> TestDatabase()
         {

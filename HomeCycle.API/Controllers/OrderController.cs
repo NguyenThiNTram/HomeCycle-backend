@@ -1,22 +1,28 @@
-﻿using HomeCycle.Application.DTOs.Requests.Orders;
+﻿using HomeCycle.Application.Commons.Results;
+using HomeCycle.Application.DTOs.Requests.Orders;
+using HomeCycle.Application.DTOs.Responses.GHN;
+using HomeCycle.Application.Interfaces.Services.GHN;
 using HomeCycle.Application.Interfaces.Services.Orders;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Swashbuckle.AspNetCore.Annotations;
 using System.Security.Claims;
 
 namespace HomeCycle.API.Controllers
 {
     [ApiController]
-    [Authorize]
     [Route("api/orders")]
+    [Authorize]
     public class OrderController : ControllerBase
     {
         private readonly IOrderService _orderService;
+        private readonly IGhnTrackingSyncService _ghnTrackingSyncService;
 
-        public OrderController(IOrderService orderService)
+        public OrderController(IOrderService orderService, IGhnTrackingSyncService ghnTrackingSyncService)
         {
             _orderService = orderService;
+            _ghnTrackingSyncService = ghnTrackingSyncService;
         }
 
         [HttpGet("buyer")]
@@ -67,6 +73,56 @@ namespace HomeCycle.API.Controllers
                 return BadRequest(result.Error);
 
             return Ok(result.Data);
+        }
+
+        [HttpGet("{orderId:guid}/shipment-tracking")]
+        [SwaggerOperation(
+            Summary = "Lấy trạng thái vận chuyển GHN của đơn hàng",
+            Description =
+                "Chỉ Buyer hoặc Seller thuộc đơn hàng được phép xem. " +
+                "Backend tự lấy GHNOrderCode và đồng bộ với GHN."
+        )]
+        public async Task<IActionResult> GetShipmentTracking(Guid orderId, CancellationToken cancellationToken)
+        {
+            var currentUserId = GetCurrentUserId();
+
+            var result = await _ghnTrackingSyncService.SyncByOrderIdAsync(
+                orderId,
+                currentUserId,
+                cancellationToken);
+
+            if (!result.IsSuccess)
+                return MapTrackingError(result.Error);
+
+            return Ok(result.Data);
+        }
+
+        private IActionResult MapTrackingError(Error? error)
+        {
+            if (error is null)
+                return BadRequest();
+
+            return error.Code switch
+            {
+                "Order.NotFound"
+                    or "Agreement.NotFound"
+                    or "Shipment.NotFound"
+                    => NotFound(error),
+
+                "Auth.Forbidden"
+                    => StatusCode(
+                        StatusCodes.Status403Forbidden,
+                        error),
+
+                "Shipment.GhnRecordNotFound"
+                    or "Shipment.GhnOrderCodeMissing"
+                    => Conflict(error),
+
+                "Shipment.NotGhnDelivery"
+                    => BadRequest(error),
+
+                _ => BadRequest(error)
+            };
         }
 
         private Guid GetCurrentUserId()

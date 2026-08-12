@@ -1,5 +1,6 @@
 ﻿using HomeCycle.Application.DTOs.Requests.Brands;
 using HomeCycle.Application.Interfaces.Services.Products;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Swashbuckle.AspNetCore.Annotations;
@@ -8,6 +9,7 @@ namespace HomeCycle.API.Controllers
 {
     [Route("api/brands")]
     [ApiController]
+    [Authorize]
     public class BrandController : ControllerBase
     {
         private readonly IBrandService _brandService;
@@ -58,7 +60,7 @@ namespace HomeCycle.API.Controllers
             Summary = "Tạo thương hiệu mới",
             Description = "Tạo mới một thương hiệu sản phẩm trong hệ thống."
         )]
-        //[Authorize(Roles = "Admin")]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> CreateBrand([FromBody] CreateBrandRequest request, CancellationToken cancellationToken)
         {
             var result = await _brandService.CreateBrandAsync(request, cancellationToken);
@@ -73,7 +75,7 @@ namespace HomeCycle.API.Controllers
             Summary = "Cập nhật thương hiệu",
             Description = "Cập nhật thông tin tên, mô tả hoặc trạng thái của thương hiệu theo ID."
         )]
-        //[Authorize(Roles = "Admin")]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> UpdateBrand(Guid id, [FromBody] UpdateBrandRequest request, CancellationToken cancellationToken)
         {
             var result = await _brandService.UpdateBrandAsync(id, request, cancellationToken);
@@ -88,7 +90,7 @@ namespace HomeCycle.API.Controllers
             Summary = "Xóa thương hiệu",
             Description = "Xóa (hoặc vô hiệu hóa) một thương hiệu khỏi hệ thống theo ID."
         )]
-        //[Authorize(Roles = "Admin")]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> DeleteBrand(Guid id, CancellationToken cancellationToken)
         {
             var result = await _brandService.DeleteBrandAsync(id, cancellationToken);

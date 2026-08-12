@@ -1,7 +1,10 @@
-﻿using HomeCycle.Application.DTOs.Requests.GHN;
+﻿using HomeCycle.Application.Commons.Results;
+using HomeCycle.Application.DTOs.Requests.GHN;
 using HomeCycle.Application.DTOs.Responses.GHN;
 using HomeCycle.Application.Interfaces.Externals;
+using HomeCycle.Application.Interfaces.Services.GHN;
 using HomeCycle.Infrastructure.Externals.GHN;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Swashbuckle.AspNetCore.Annotations;
@@ -13,11 +16,13 @@ namespace HomeCycle.API.Controllers
     public class GHNController : ControllerBase
     {
         private readonly IGhnService _ghnService;
+        private readonly IGhnWebhookService _webhookService;
         private readonly ILogger<GHNController> _logger;
 
-        public GHNController(IGhnService ghnService, ILogger<GHNController> logger)
+        public GHNController(IGhnService ghnService, IGhnWebhookService webhookService, ILogger<GHNController> logger)
         {
             _ghnService = ghnService;
+            _webhookService = webhookService;
             _logger = logger;
         }
 
@@ -114,6 +119,66 @@ namespace HomeCycle.API.Controllers
             catch (GhnApiException ex)
             {
                 return HandleGhnException(ex);
+            }
+        }
+
+        [HttpPost]
+        [AllowAnonymous]
+        [Consumes("application/json")]
+        [Route("webhook")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status409Conflict)]
+        [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
+        public async Task<IActionResult> HandleAsync([FromBody] GhnWebhookRequest request, CancellationToken cancellationToken)
+        {
+            try
+            {
+                var result = await _webhookService.ProcessAsync(
+                    request,
+                    cancellationToken);
+
+                if (result.IsSuccess)
+                {
+                    // GHN yêu cầu HTTP 200 sau khi xử lý thành công.
+                    return Ok(new
+                    {
+                        success = true
+                    });
+                }
+
+                var error = result.Error ??
+                    new Error( "GhnWebhook.UnknownError", "Không thể xử lý webhook GHN.");
+
+                return error.Code switch
+                {
+                    "GhnWebhook.InvalidPayload" => BadRequest(error),
+                    "GhnWebhook.InvalidShop" => Unauthorized(error),
+                    "GhnWebhook.ShipmentNotFound" => NotFound(error),
+                    "GhnWebhook.OrderCodeConflict" => Conflict(error),
+                    "GhnWebhook.GhnUnavailable" or "GhnWebhook.EmptyStatus" =>
+                        StatusCode(
+                            StatusCodes.Status503ServiceUnavailable,
+                            error),
+
+                    _ => BadRequest(error)
+                };
+            }
+            catch (OperationCanceledException)
+                when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                _logger.LogError( exception, "Lỗi không mong muốn khi xử lý webhook GHN.");
+
+                // Non-200 để GHN thực hiện retry.
+                return StatusCode(
+                    StatusCodes.Status503ServiceUnavailable,
+                    new Error( "GhnWebhook.ProcessingFailed", "Hệ thống tạm thời chưa thể xử lý webhook GHN."));
             }
         }
 

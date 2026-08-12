@@ -21,17 +21,6 @@ namespace HomeCycle.Application.DTOs.Responses.GHN
         public int HeightCm { get; init; }
     }
 
-    //request chỉnh sửa phải nằm trong Requests.Agreements
-    //public sealed class UpdateGhnItemRequest
-    //{
-    //    public int Quantity { get; init; }
-
-    //    public int WeightGram { get; init; }
-    //    public int LengthCm { get; init; }
-    //    public int WidthCm { get; init; }
-    //    public int HeightCm { get; init; }
-    //}
-
     // Snapshot kiện hàng nhẹ đã gửi GHN
     public sealed class GhnLightParcelSnapshotDto
     {
