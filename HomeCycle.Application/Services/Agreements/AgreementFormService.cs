@@ -307,6 +307,35 @@ namespace HomeCycle.Application.Services.Agreements
                     return Result<AgreementActionResponse>.Fail(feeResult.Error!);
             }
 
+            //  Đọc Revision cũ từ JSONb và tự tăng
+            var currentRevision = 1;
+            if (!string.IsNullOrWhiteSpace(agreement.AgreementDetailsJsonb))
+            {
+                var currentDetails = JsonSerializer.Deserialize<AgreementDetailsDto>(agreement.AgreementDetailsJsonb);
+                if (currentDetails != null)
+                {
+                    currentRevision = currentDetails.Revision;
+                }
+            }
+
+            if (request.AgreementDetails != null)
+            {
+                request.AgreementDetails = new AgreementDetailsDto
+                {
+                    Revision = currentRevision + 1,
+                    Notes = request.AgreementDetails.Notes,
+                    InspectionDate = request.AgreementDetails.InspectionDate,
+                    InspectionAddress = request.AgreementDetails.InspectionAddress,
+                    CollectionDate = request.AgreementDetails.CollectionDate,
+                    PickupAddress = request.AgreementDetails.PickupAddress,
+                    DeliveryAddress = request.AgreementDetails.DeliveryAddress,
+                    DeliveryMethod = request.AgreementDetails.DeliveryMethod,
+                    GhnInfo = request.AgreementDetails.GhnInfo,
+                    CodValue = request.AgreementDetails.CodValue,
+                    EstimatedShippingFee = request.AgreementDetails.EstimatedShippingFee
+                };
+            }
+
             agreement.AgreementType = (int)request.AgreementType;
             agreement.PaymentType = (int)request.PaymentType;
             agreement.AgreementDetailsJsonb = JsonSerializer.Serialize(request.AgreementDetails);
@@ -537,6 +566,10 @@ namespace HomeCycle.Application.Services.Agreements
             return Result<ShippingFeePreviewResponse>.Success(response);
         }
 
+        private const int GhnLightServiceTypeId = 2;
+        private const int GhnHeavyServiceTypeId = 5;
+        private const long HeavyParcelThresholdGram = 20_000L;
+
         public async Task<Result<GhnParcelInfoResponse>> GetGhnParcelInfoAsync(Guid negotiationId, Guid currentUserId, CancellationToken cancellationToken = default)
         {
             var negotiationResult = await GetAuthorizedNegotiationAsync(negotiationId, currentUserId, cancellationToken);
@@ -556,27 +589,40 @@ namespace HomeCycle.Application.Services.Agreements
 
             var quantity = await GetOfferQuantityAsync(negotiationResult.Data!, cancellationToken);
 
+            var totalWeightGram = checked((long)weightGram * quantity);
+
+            var isHeavyParcel =
+                totalWeightGram >= HeavyParcelThresholdGram;
+
+            var serviceTypeId = isHeavyParcel
+                ? GhnHeavyServiceTypeId
+                : GhnLightServiceTypeId;
+
             var response = new GhnParcelInfoResponse
             {
                 NegotiationId = negotiationId,
-                ServiceTypeId = 2,
+                ServiceTypeId = serviceTypeId,
                 HasProductDimensions = hasDimensions,
-                LightParcel = hasDimensions
-                    ? new GhnLightParcelSnapshotDto
+                LightParcel = !isHeavyParcel ? new GhnLightParcelSnapshotDto
                     {
-                        WeightGram = weightGram,
+                        WeightGram = checked((int)totalWeightGram),
                         LengthCm = lengthCm,
                         WidthCm = widthCm,
                         HeightCm = heightCm
                     }
                     : null,
-                Items = hasDimensions
-                    ? new[]
+                Items = isHeavyParcel ? new[]
                     {
-                        BuildHeavyItemFromProduct(product, weightGram, lengthCm, widthCm, heightCm, quantity)
+                        BuildHeavyItemFromProduct(
+                            product,
+                            weightGram,
+                            lengthCm,
+                            widthCm,
+                            heightCm,
+                            quantity)
                     }
                     : Array.Empty<GhnItemSnapshotDto>()
-            };
+                    };
 
             return Result<GhnParcelInfoResponse>.Success(response);
         }

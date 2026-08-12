@@ -14,8 +14,9 @@ namespace HomeCycle.Application.DTOs.Responses.GHN
     {
         public Guid NegotiationId { get; init; }
 
-        // 2 = Hàng nhẹ, 5 = Hàng nặng (mặc định Hàng nhẹ)
-        public int ServiceTypeId { get; init; } = 2;
+        // 2 = Hàng nhẹ, 5 = Hàng nặng 
+        //public int ServiceTypeId { get; init; } = 2; //mặc định Hàng nhẹ
+        public int ServiceTypeId { get; init; } 
 
         public GhnLightParcelSnapshotDto? LightParcel { get; init; }
 
