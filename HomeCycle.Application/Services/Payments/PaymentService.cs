@@ -956,8 +956,15 @@ namespace HomeCycle.Application.Services.Payments
                     }
                     else if (ghnInfo.ServiceTypeId == 5 && ghnInfo.Items.Count > 0)
                     {
-                        // ghn_shipment chỉ có 1 dòng kích thước -> lưu tổng khối lượng các kiện.
+                        
                         weight = ghnInfo.Items.Sum(x => x.WeightGram * x.Quantity);
+
+                        var largestItem = ghnInfo.Items
+                            .OrderByDescending(x => (long)x.WeightGram * x.Quantity)
+                            .First();
+                        length = largestItem.LengthCm;
+                        width = largestItem.WidthCm;
+                        height = largestItem.HeightCm;
                     }
 
                     localGhnShipment = new ghn_shipment

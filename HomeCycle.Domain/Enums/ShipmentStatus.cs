@@ -14,6 +14,8 @@ namespace HomeCycle.Domain.Enums
         Cancelled = 4, //Đơn hàng đã bị hủy (do người mua hủy hoặc shop hủy trước khi lấy)
         Returning = 5, //Giao hàng thất bại (gọi khách không được), đang trên đường chuyển hoàn trả lại cho người bán
         Returned = 6, //Shipper đã mang hàng hoàn trả về tận tay người bán thành công
-        Damage_Lost = 7 //Hàng hóa bị hư hỏng hoặc thất lạc trong quá trình vận chuyển (để xử lý đền bù)
+        Damage_Lost = 7, //Hàng hóa bị hư hỏng hoặc thất lạc trong quá trình vận chuyển (để xử lý đền bù)
+        
+        Exception = 8 // Ngoại lệ vận hành, chưa khẳng định hàng đã hư hỏng hoặc thất lạc
     }
 }

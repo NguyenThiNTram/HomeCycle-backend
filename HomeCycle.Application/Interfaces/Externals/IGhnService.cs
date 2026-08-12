@@ -1,4 +1,5 @@
-﻿using HomeCycle.Application.DTOs.Requests.GHN;
+﻿using HomeCycle.Application.Commons.Results;
+using HomeCycle.Application.DTOs.Requests.GHN;
 using HomeCycle.Application.DTOs.Responses.GHN;
 using System;
 using System.Collections.Generic;
@@ -8,10 +9,6 @@ using System.Threading.Tasks;
 
 namespace HomeCycle.Application.Interfaces.Externals
 {
-    /// <summary>
-    /// Đánh dấu lỗi do GHN trả về (đã có phản hồi chính thức => call definitively failed).
-    /// Giúp tầng Application phân loại lỗi mà không cần phụ thuộc vào Infrastructure.
-    /// </summary>
     public interface IGhnApiError
     {
         string? CodeMessage { get; }
@@ -30,5 +27,6 @@ namespace HomeCycle.Application.Interfaces.Externals
         Task<GhnPreviewQuote> PreviewOrderAsync(GhnShippingPreviewRequest request, CancellationToken cancellationToken = default);
 
         Task<GhnCreateOrderResponse> CreateOrderAsync(GhnCreateOrderRequest request, CancellationToken cancellationToken = default);
+        Task<GhnOrderDetailResponse> GetOrderDetailAsync(string ghnOrderCode, CancellationToken cancellationToken = default);
     }
 }

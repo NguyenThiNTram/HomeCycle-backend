@@ -168,6 +168,8 @@ namespace HomeCycle.Infrastructure
             services.AddScoped<IGhnShipmentRepository, GhnShipmentRepository>();
             services.AddScoped<IShipmentRepository, ShipmentRepository>();
             services.AddScoped<IGhnShipmentCreationService, GhnShipmentCreationService>();
+            services.AddScoped<IGhnTrackingSyncService, GhnTrackingSyncService>();
+            services.AddScoped<IGhnWebhookService, GhnWebhookService>();
 
             // register Services
             services.AddScoped<IAuthService, AuthService>();

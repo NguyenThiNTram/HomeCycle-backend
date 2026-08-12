@@ -16,5 +16,6 @@ namespace HomeCycle.Application.Interfaces.Repositories.GHN
         Task AddAsync(ghn_shipment ghnShipment, CancellationToken cancellationToken); // CreationStatus = Pending
         Task UpdateAsync(ghn_shipment ghnShipment, CancellationToken cancellationToken); //Chuyển đổi trạng thái đồng bộ, cập nhật mã lỗi, hoặc lưu OrderCode của GHN
         Task<bool> TryClaimCreationAsync(Guid shipmentId, string newClientOrderCode, DateTime now, TimeSpan reclaimProcessingAfter, CancellationToken cancellationToken = default);
+        Task<ghn_shipment?> GetByGhnOrderCodeAsync(string ghnOrderCode, CancellationToken cancellationToken);
     }
 }

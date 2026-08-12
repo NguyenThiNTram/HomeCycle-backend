@@ -91,4 +91,6 @@ namespace HomeCycle.Infrastructure.Externals.GHN
         [JsonPropertyName("expected_delivery_time")]
         public string? ExpectedDeliveryTime { get; init; }
     }
+
+
 }

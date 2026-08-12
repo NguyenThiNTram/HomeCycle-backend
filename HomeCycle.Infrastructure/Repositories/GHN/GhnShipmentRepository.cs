@@ -164,5 +164,20 @@ namespace HomeCycle.Infrastructure.Repositories.GHN
 
             return affectedRows == 1;
         }
+
+        public async Task<ghn_shipment?> GetByGhnOrderCodeAsync(string ghnOrderCode, CancellationToken cancellationToken)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(ghnOrderCode);
+
+            var normalizedOrderCode = ghnOrderCode.Trim();
+
+            var entity = await _db.GHN_Shipments
+                .AsNoTracking()
+                .FirstOrDefaultAsync(
+                    x => x.GHNOrderCode == normalizedOrderCode,
+                    cancellationToken);
+
+            return entity?.ToDomain();
+        }
     }
 }
