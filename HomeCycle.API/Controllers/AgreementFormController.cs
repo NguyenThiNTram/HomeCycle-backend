@@ -1,10 +1,11 @@
 ﻿using HomeCycle.Application.DTOs.Requests.Agreements;
-using HomeCycle.Application.DTOs.Responses.GHN;
 using HomeCycle.Application.DTOs.Requests.GHN;
+using HomeCycle.Application.DTOs.Responses.GHN;
 using HomeCycle.Application.Interfaces.Services.Agreements;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Swashbuckle.AspNetCore.Annotations;
 using System.Security.Claims;
 
 namespace HomeCycle.API.Controllers
@@ -102,6 +103,10 @@ namespace HomeCycle.API.Controllers
         }
 
         [HttpPost("negotiations/{negotiationId:guid}/shipping-fee-preview")]
+        [SwaggerOperation(
+            Summary = "Xem trước phí vận chuyển",
+            Description = "Trả về thông tin chi tiết về phí vận chuyển cho một cuộc đàm phán cụ thể dựa trên yêu cầu của người dùng"
+        )]
         public async Task<IActionResult> PreviewShippingFee([FromRoute] Guid negotiationId, [FromBody] CalculateGhnFeeRequest request, CancellationToken cancellationToken)
         {
             var currentUserId = GetCurrentUserId();
@@ -141,6 +146,64 @@ namespace HomeCycle.API.Controllers
             };
         }
 
+
+        [HttpGet("negotiations/{negotiationId:guid}/ghn-parcel-info")]
+        [SwaggerOperation(
+            Summary = "Lấy thông tin gói hàng GHN",
+            Description = "Trả về thông tin chi tiết về gói hàng GHN cho một cuộc đàm phán cụ thể"
+        )]
+        public async Task<IActionResult> GetGhnParcelInfo([FromRoute] Guid negotiationId, CancellationToken cancellationToken)
+        {
+            var currentUserId = GetCurrentUserId();
+
+            var result = await _agreementService.GetGhnParcelInfoAsync(negotiationId, currentUserId, cancellationToken);
+
+            if (result.IsSuccess)
+                return Ok(result.Data);
+
+            var error = result.Error!;
+
+            return error.Code switch
+            {
+                "Auth.Forbidden" => StatusCode(StatusCodes.Status403Forbidden, error),
+                "Negotiation.NotFound"
+                    or "Product.NotFound"
+                        => NotFound(error),
+                "Negotiation.Cancelled" => Conflict(error),
+                _ => BadRequest(error)
+            };
+        }
+
+        [HttpPost("negotiations/{negotiationId:guid}/ghn-preview")]
+        [SwaggerOperation(
+            Summary = "Xem trước thông tin vận chuyển GHN",
+            Description = "Trả về thông tin chi tiết về phí vận chuyển GHN cho một cuộc đàm phán cụ thể dựa trên yêu cầu của người dùng"
+        )]
+        public async Task<IActionResult> PreviewGhnShipping([FromRoute] Guid negotiationId, [FromBody] GhnShippingPreviewRequest request, CancellationToken cancellationToken)
+        {
+            var currentUserId = GetCurrentUserId();
+
+            var result = await _agreementService.PreviewGhnShippingAsync(negotiationId, currentUserId, request, cancellationToken);
+
+            if (result.IsSuccess)
+                return Ok(result.Data);
+
+            var error = result.Error!;
+
+            return error.Code switch
+            {
+                "ShippingFee.InvalidRequest"
+                    or "Ghn.ParcelInformationRequired"
+                        => BadRequest(error),
+                "Auth.Forbidden" => StatusCode(StatusCodes.Status403Forbidden, error),
+                "Negotiation.NotFound"
+                    or "Product.NotFound"
+                        => NotFound(error),
+                "Negotiation.Cancelled" => Conflict(error),
+                "Ghn.PreviewFailed" => StatusCode(StatusCodes.Status502BadGateway, error),
+                _ => BadRequest(error)
+            };
+        }
 
         private Guid GetCurrentUserId()
         {
