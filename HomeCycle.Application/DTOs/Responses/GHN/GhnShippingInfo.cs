@@ -16,8 +16,8 @@ namespace HomeCycle.Application.DTOs.Responses.GHN
         // 2 = Hàng nhẹ, 5 = Hàng nặng
         public int? ServiceTypeId { get; init; }
 
-        // buyer/consignee trả phí
-        public int? PaymentTypeId { get; init; } = 1;
+        // buyer/consignee trả phí - backend tự khóa theo chính sách, không nhận từ Client
+        public int? PaymentTypeId { get; init; }
 
         public string? RequiredNote { get; init; } //CHOTHUHANG, CHOXEMHANGKHONGTHU, KHONGCHOXEMHANG 
 
