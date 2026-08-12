@@ -20,6 +20,9 @@ public partial class Order
     public Guid AgreementId { get; set; }
 
     public Guid PostId { get; set; }
+    [Required]
+    [StringLength(20)]
+    public string OrderCode { get; set; } = string.Empty;
 
     [StringLength(255)]
     public string? ProductName { get; set; }
@@ -45,6 +48,7 @@ public partial class Order
     public DateTime CreatedAt { get; set; }
 
     public DateTime UpdatedAt { get; set; }
+    public DateTime? CompletedAt { get; set; }
 
     [ForeignKey("AgreementId")]
     [InverseProperty("Order")]

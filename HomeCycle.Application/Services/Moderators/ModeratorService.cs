@@ -159,18 +159,11 @@ namespace HomeCycle.Application.Services.Moderators
                     ValidationErrors.InvalidRequest("Không tìm thấy hồ sơ đăng ký doanh nghiệp yêu cầu."));
             }
 
-            // 2. Query song song: Documents, Service Areas và Bank Account
-            // (Lưu ý: Bổ sung repository lấy thông tin tài khoản ngân hàng theo UserId hoặc BusinessProfileId)
-            var documentsTask = _businessDocumentRepository.GetByProfileIdAsync(profile.BusinessProfileId, cancellationToken);
-            var serviceAreasTask = _businessServiceAreaRepository.GetByProfileIdAsync(profile.BusinessProfileId, cancellationToken);
-            var bankAccountTask = _bankAccountRepository.GetByUserIdAsync(profile.UserId, cancellationToken);
-            // ^ Tham chiếu đúng method/repository lấy Bank Account trong dự án của em
+            // 2. Query TUẦN TỰ: Documents, Service Areas và Bank Account
+            var documents = await _businessDocumentRepository.GetByProfileIdAsync(profile.BusinessProfileId, cancellationToken);
+            var serviceAreas = await _businessServiceAreaRepository.GetByProfileIdAsync(profile.BusinessProfileId, cancellationToken);
+            var bankAccount = await _bankAccountRepository.GetByUserIdAsync(profile.UserId, cancellationToken);
 
-            await Task.WhenAll(documentsTask, serviceAreasTask, bankAccountTask);
-
-            var documents = await documentsTask;
-            var serviceAreas = await serviceAreasTask;
-            var bankAccount = await bankAccountTask;
 
             // 3. Mapping chính xác sang BusinessRegistrationDetailDto
             var detailDto = new BusinessRegistrationDetailDto

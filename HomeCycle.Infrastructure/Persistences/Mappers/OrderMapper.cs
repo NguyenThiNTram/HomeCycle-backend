@@ -26,7 +26,9 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 PaymentStatus = entity.PaymentStatus,
                 OrderStatus = entity.OrderStatus,
                 CreatedAt = entity.CreatedAt,
-                UpdatedAt = entity.UpdatedAt
+                UpdatedAt = entity.UpdatedAt,
+                OrderCode = entity.OrderCode,
+                CompletedAt = entity.CompletedAt
             };
         }
         public static Order ToInfrastructure(this order entity)
@@ -46,7 +48,9 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 PaymentStatus = entity.PaymentStatus,
                 OrderStatus = entity.OrderStatus,
                 CreatedAt = entity.CreatedAt,
-                UpdatedAt = entity.UpdatedAt
+                UpdatedAt = entity.UpdatedAt,
+                OrderCode = entity.OrderCode,
+                CompletedAt = entity.CompletedAt
             };
         }
     }

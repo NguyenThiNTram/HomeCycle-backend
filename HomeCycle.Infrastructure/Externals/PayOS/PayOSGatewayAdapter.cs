@@ -14,7 +14,7 @@ using System.Text.Json;
 using System.Threading.Tasks;
 
 
-namespace HomeCycle.Infrastructure.Externals
+namespace HomeCycle.Infrastructure.Externals.PayOS
 {
     public class PayOSGatewayAdapter : IPaymentGatewayService
     {
@@ -94,7 +94,7 @@ namespace HomeCycle.Infrastructure.Externals
             }
             catch (Exception ex)
             {
-            
+
                 return Result<GatewayWebhookResult>.Fail(new Error("PayOS.WebhookInvalid", $"Dữ liệu Webhook không hợp lệ hoặc sai chữ ký: {ex.Message}"));
             }
         }
@@ -109,7 +109,10 @@ namespace HomeCycle.Infrastructure.Externals
 
                 return Result<GatewayPaymentStatusResponse>.Success(new GatewayPaymentStatusResponse
                 {
-                    Status = paymentLink.Status.ToString(),          // "PAID" | "PENDING" | "PROCESSING" | "CANCELLED"
+                    // Chuẩn hóa về UPPERCASE bất kể SDK trả string hay enum (enum.ToString() thường
+                    // là PascalCase "Paid"/"Pending", trong khi API gốc + switch-case ở PaymentService
+                    // dùng UPPERCASE "PAID"/"PENDING" — lệch case khiến switch luôn rơi vào default.
+                    Status = paymentLink.Status.ToString().ToUpperInvariant(),
                     TransactionId = paymentLink.Transactions?.LastOrDefault()?.Reference
                 });
             }

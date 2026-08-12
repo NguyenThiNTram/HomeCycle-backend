@@ -146,6 +146,18 @@ namespace HomeCycle.API.Controllers
             };
         }
 
+        [HttpGet("pending-payment")]
+        public async Task<IActionResult> GetPendingPayment([FromQuery] PendingAgreementSearchRequest request, CancellationToken cancellationToken)
+        {
+            var currentUserId = GetCurrentUserId();
+
+            var result = await _agreementService.GetPendingPaymentAsync(currentUserId, request, cancellationToken);
+
+            if (!result.IsSuccess)
+                return BadRequest(result.Error);
+
+            return Ok(result.Data);
+        }
 
         [HttpGet("negotiations/{negotiationId:guid}/ghn-parcel-info")]
         [SwaggerOperation(

@@ -28,5 +28,10 @@ namespace HomeCycle.Infrastructure.Repositories.Wallets
             _db.Wallets.Update(wallet.ToInfrastructure());
             return Task.CompletedTask;
         }
+
+        public async Task AddAsync(wallet wallet, CancellationToken ct = default)
+        {
+            await _db.Wallets.AddAsync(wallet.ToInfrastructure(), ct);
+        }
     }
 }

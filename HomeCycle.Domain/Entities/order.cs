@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using MathNet.Numerics.RootFinding;
 using Microsoft.EntityFrameworkCore;
 
 namespace HomeCycle.Domain.Entities;
@@ -11,6 +12,7 @@ public class order
     public Guid OrderId { get; set; }
     public Guid AgreementId { get; set; }
     public Guid PostId { get; set; }
+    public string OrderCode { get; set; } = string.Empty;
 
     public string? ProductName { get; set; }
     public int Quantity { get; set; }
@@ -25,8 +27,9 @@ public class order
 
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
+    public DateTime? CompletedAt { get; set; }
 
-    public order()
+public order()
     {
     }
 

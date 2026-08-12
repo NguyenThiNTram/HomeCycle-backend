@@ -3,6 +3,7 @@ using HomeCycle.Application.DTOs.Requests.Orders;
 using HomeCycle.Application.DTOs.Responses.Orders;
 using HomeCycle.Application.Interfaces.Repositories.Orders;
 using HomeCycle.Domain.Entities;
+using HomeCycle.Domain.Enums;
 using HomeCycle.Infrastructure.DbContexts;
 using HomeCycle.Infrastructure.Persistences.Mappers;
 using Microsoft.EntityFrameworkCore;
@@ -67,6 +68,7 @@ namespace HomeCycle.Infrastructure.Repositories.Orders
                 .Select(o => new OrderListItemDto
                 {
                     OrderId = o.OrderId,
+                    OrderCode = o.OrderCode,
                     ProductName = o.ProductName,
                     // Lấy 1 ảnh đại diện của Post (DisplayOrder nhỏ nhất) làm thumbnail.
                     ThumbnailUrl = _db.Media
@@ -80,7 +82,6 @@ namespace HomeCycle.Infrastructure.Repositories.Orders
                     AmountRemaining = o.AmountRemaining,
                     OrderStatus = o.OrderStatus,
                     PaymentStatus = o.PaymentStatus,
-                    CreatedAt = o.CreatedAt
                 })
                 .ToListAsync(ct);
 
@@ -92,7 +93,7 @@ namespace HomeCycle.Infrastructure.Repositories.Orders
                 TotalCount = totalCount
             };
         }
-        public async Task<OrderDetailDto?> GetDetailWithRelationsAsync(Guid orderId, CancellationToken ct = default)
+        public async Task<OrderDetailDto?> GetDetailWithRelationsAsync(Guid orderId, Guid currentUserId, CancellationToken ct = default)
         {
             var entity = await _db.Orders
                 .AsNoTracking()
@@ -100,18 +101,80 @@ namespace HomeCycle.Infrastructure.Repositories.Orders
                 .Include(o => o.Reviews)
                 .Include(o => o.Shipments)
                 .Include(o => o.Disputes)
+                .Include(o => o.Payments)
+                .Include(o => o.Agreement).ThenInclude(a => a.Buyer)
+                .Include(o => o.Agreement).ThenInclude(a => a.Seller)
                 .FirstOrDefaultAsync(x => x.OrderId == orderId, ct);
 
             if (entity == null)
                 return null;
 
+            bool isBuyer = entity.Agreement.BuyerId == currentUserId;
+
+
+            var thumbnailUrl = await _db.Media
+                .Where(m => m.TargetId == entity.PostId && m.TargetType == "Post")
+                .OrderBy(m => m.DisplayOrder)
+                .Select(m => m.Url)
+                .FirstOrDefaultAsync(ct);
+
+            // 1 Order có thể có nhiều Payment (cọc, thanh toán phần còn lại...).
+            // Lấy Payment MỚI NHẤT đã thanh toán thành công để hiển thị PaymentMethod/PaidAt cho detail.
+            // PaymentStatus.Completed/Success thật của bạn.
+            var latestPaidPayment = entity.Payments
+                .Where(p => p.PaymentStatus == 1 && p.PaidAt.HasValue)
+                .OrderByDescending(p => p.PaidAt)
+                .FirstOrDefault();
+
+            // Review: giả định chỉ Buyer được đánh giá Seller sau khi đơn Completed và chưa từng review.
+            // TODO: đổi "2" thành đúng giá trị enum OrderStatus.Completed thật của bạn.
+            var reviewSummary = new ReviewSummaryDto
+            {
+                ReviewId = entity.Review?.ReviewId,
+                HasReviewed = entity.Review != null,
+                CanReview = isBuyer && entity.OrderStatus == 2 && entity.Review == null,
+                Rating = entity.Review?.Rating
+            };
+
+            // Giả định 1 Order chỉ theo dõi 1 Shipment chính (lấy bản ghi mới nhất nếu có nhiều).
+            var latestShipment = entity.Shipments
+                .OrderByDescending(s => s.CreatedAt)
+                .FirstOrDefault();
+            var shipmentSummary = latestShipment == null ? null : new ShipmentSummaryDto
+            {
+                ShipmentId = latestShipment.ShipmentId,
+                ShipmentStatus = latestShipment.ShipmentStatus,
+                DeliveredAt = latestShipment.DeliveredAt
+            };
+
+
+            // Dispute được coi là "active" khi còn Pending hoặc đang UnderReview —
+            // Resolved/Rejected/Closed không còn ảnh hưởng tới đơn hàng nữa.
+            var latestDispute = entity.Disputes
+                .OrderByDescending(d => d.CreatedAt)
+                .FirstOrDefault();
+            var disputeSummary = new DisputeSummaryDto
+            {
+                HasActiveDispute = latestDispute != null
+                    && (latestDispute.DisputeStatus == (int)DisputeStatus.Pending),
+                LatestDisputeId = latestDispute?.DisputeId
+            };
+
             return new OrderDetailDto
             {
                 Order = entity.ToDomain(),
+                ThumbnailUrl = thumbnailUrl,
                 PostDescription = entity.Post?.Description,
+                CounterpartyName = isBuyer ? entity.Agreement.Seller.Username : entity.Agreement.Buyer.Username,
+                NegotiationId = entity.Agreement.NegotiationId,
+                PaymentMethod = latestPaidPayment?.PaymentMethod,
+                PaidAt = latestPaidPayment?.PaidAt,
+                //Review = reviewSummary,
+                Shipment = shipmentSummary,
+                Dispute = disputeSummary
                 Reviews = entity.Reviews.Select(r => r.ToDomain()).ToList(),
-                Shipments = entity.Shipments.Select(s => s.ToDomain()).ToList(),
-                Disputes = entity.Disputes.Select(d => d.ToDomain()).ToList()
+                //Shipments = entity.Shipments.Select(s => s.ToDomain()).ToList(),
+                //Disputes = entity.Disputes.Select(d => d.ToDomain()).ToList()
             };
         }
 
