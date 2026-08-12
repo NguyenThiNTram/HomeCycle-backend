@@ -12,6 +12,7 @@ using HomeCycle.Application.Interfaces.Repositories;
 using HomeCycle.Application.Interfaces.Repositories.Banks;
 using HomeCycle.Application.Interfaces.Repositories.Profiles;
 using HomeCycle.Application.Interfaces.Repositories.Users;
+using HomeCycle.Application.Interfaces.Repositories.Wallets;
 using HomeCycle.Application.Interfaces.Security;
 using HomeCycle.Application.Interfaces.Services.Auths;
 using HomeCycle.Application.Interfaces.Services.Externals;
@@ -50,6 +51,7 @@ namespace HomeCycle.Application.Services.Auths
         private readonly ILogger<AuthService> _logger;
         private readonly IValidator<RegisterBusinessAccountRequest> _registerBusinessValidator;
         private readonly IFileStorageService _fileStorageService;
+        private readonly IWalletRepository _walletRepository;
 
         public AuthService(
             IUserRepository userRepository, 
@@ -64,7 +66,8 @@ namespace HomeCycle.Application.Services.Auths
             IBankAccountRepository bankAccountRepository, 
             ILogger<AuthService> logger,
             IValidator<RegisterBusinessAccountRequest> registerBusinessValidator,
-            IFileStorageService fileStorageService
+            IFileStorageService fileStorageService,
+            IWalletRepository walletRepository
             )
         //public AuthService(IUserRepository userRepository, IUnitOfWork unitOfWork, IPasswordHasher passwordHasher, IJwtService jwtService, IMapper mapper, IConfiguration configuration, IValidator<RegisterPersonalRequest> validator, IValidator<LoginPersonalRequest> _loginPersonalValidator, IValidator<LoginRequest> loginValidator, IPersonalProfileRepository personalProfileRepository, IOtpRepository otpRepository, IEmailService emailService, IBankAccountRepository bankAccountRepository, ILogger<AuthService> logger, IFileStorageService fileStorageService)
         {
@@ -84,6 +87,7 @@ namespace HomeCycle.Application.Services.Auths
             _logger = logger;
             _registerBusinessValidator = registerBusinessValidator;
             _fileStorageService = fileStorageService;
+            _walletRepository = walletRepository;
         }
 
         //public async Task<Result<LoginResponseDto>> LoginPersonalAsync(LoginPersonalRequest request, CancellationToken cancellationToken = default)
@@ -288,6 +292,18 @@ namespace HomeCycle.Application.Services.Auths
                 };
 
                 await _personalProfileRepository.AddAsync(personalProfile, cancellationToken);
+
+                var personalWallet = new wallet
+                {
+                    WalletId = Guid.NewGuid(),
+                    UserId = newUser.UserId,
+                    WalletType = (int)WalletTypeEnum.Personal,
+                    AvailableBalance = 0,
+                    HoldBalance = 0,
+                    CreatedAt = now,
+                    UpdatedAt = now
+                };
+                await _walletRepository.AddAsync(personalWallet, cancellationToken);
 
                 if (!string.IsNullOrWhiteSpace(request.AccountNumber))
                 {
@@ -547,6 +563,18 @@ namespace HomeCycle.Application.Services.Auths
             {
                 await _userRepository.AddAsync(newUser, cancellationToken);
                 await _otpRepository.UpdateUserIdAsync(normalizedEmail, newUser.UserId, cancellationToken);
+
+                var businessWallet = new wallet
+                {
+                    WalletId = Guid.NewGuid(),
+                    UserId = newUser.UserId,
+                    WalletType = (int)WalletTypeEnum.Business,
+                    AvailableBalance = 0,
+                    HoldBalance = 0,
+                    CreatedAt = now,
+                    UpdatedAt = now
+                };
+                await _walletRepository.AddAsync(businessWallet, cancellationToken);
 
                 var accessToken = _jwtService.GenerateAccessToken(newUser);
                 var refreshToken = _jwtService.GenerateRefreshToken();
