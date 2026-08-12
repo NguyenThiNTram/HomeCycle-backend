@@ -126,16 +126,6 @@ namespace HomeCycle.Infrastructure.Repositories.Orders
                 .OrderByDescending(p => p.PaidAt)
                 .FirstOrDefault();
 
-            // Review: giả định chỉ Buyer được đánh giá Seller sau khi đơn Completed và chưa từng review.
-            // TODO: đổi "2" thành đúng giá trị enum OrderStatus.Completed thật của bạn.
-            var reviewSummary = new ReviewSummaryDto
-            {
-                ReviewId = entity.Review?.ReviewId,
-                HasReviewed = entity.Review != null,
-                CanReview = isBuyer && entity.OrderStatus == 2 && entity.Review == null,
-                Rating = entity.Review?.Rating
-            };
-
             // Giả định 1 Order chỉ theo dõi 1 Shipment chính (lấy bản ghi mới nhất nếu có nhiều).
             var latestShipment = entity.Shipments
                 .OrderByDescending(s => s.CreatedAt)
@@ -171,7 +161,7 @@ namespace HomeCycle.Infrastructure.Repositories.Orders
                 PaidAt = latestPaidPayment?.PaidAt,
                 //Review = reviewSummary,
                 Shipment = shipmentSummary,
-                Dispute = disputeSummary
+                Dispute = disputeSummary,
                 Reviews = entity.Reviews.Select(r => r.ToDomain()).ToList(),
                 //Shipments = entity.Shipments.Select(s => s.ToDomain()).ToList(),
                 //Disputes = entity.Disputes.Select(d => d.ToDomain()).ToList()
