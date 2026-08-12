@@ -69,6 +69,37 @@ namespace HomeCycle.Infrastructure.Repositories.GHN
             return entity?.ToDomain();
         }
 
+        public async Task<IReadOnlyList<ghn_shipment>> GetCreationCandidatesAsync(
+            int limit,
+            TimeSpan reclaimProcessingAfter,
+            CancellationToken cancellationToken = default)
+        {
+            ArgumentOutOfRangeException.ThrowIfNegativeOrZero(limit);
+
+            // Đơn Processing kẹt (worker chết giữa chừng) chỉ được claim lại sau khoảng thời gian chờ.
+            if (reclaimProcessingAfter <= TimeSpan.Zero)
+                reclaimProcessingAfter = TimeSpan.FromMinutes(5);
+
+            var staleCutoff = DateTime.UtcNow - reclaimProcessingAfter;
+
+            var entities = await _db.GHN_Shipments
+                .AsNoTracking()
+                .Where(x =>
+                    x.GHNOrderCode == null && // đơn chưa từng được GHN tạo thành công
+                    (
+                        x.CreationStatus == (int)GHNCreationStatus.Pending ||
+                        x.CreationStatus == (int)GHNCreationStatus.Failed ||
+                        // Claim lại đơn Processing đã mắc kẹt quá lâu (LastCreateAttemptAt cũ)
+                        (x.CreationStatus == (int)GHNCreationStatus.Processing &&
+                         (x.LastCreateAttemptAt == null || x.LastCreateAttemptAt < staleCutoff))
+                    ))
+                .OrderBy(x => x.CreatedAt)
+                .Take(limit)
+                .ToListAsync(cancellationToken);
+
+            return entities.Select(x => x.ToDomain()).ToList();
+        }
+
         public Task UpdateAsync(ghn_shipment ghnShipment, CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(ghnShipment);
@@ -94,8 +125,14 @@ namespace HomeCycle.Infrastructure.Repositories.GHN
         public async Task<bool> TryClaimCreationAsync(Guid shipmentId,
         string newClientOrderCode,
         DateTime now,
+        TimeSpan reclaimProcessingAfter,
         CancellationToken cancellationToken = default)
         {
+            if (reclaimProcessingAfter <= TimeSpan.Zero)
+                reclaimProcessingAfter = TimeSpan.FromMinutes(5);
+
+            var staleCutoff = now - reclaimProcessingAfter;
+
             // Atomic Update trực tiếp trên bảng GHN_Shipment
             var affectedRows = await _db.GHN_Shipments
                 .Where(x =>
@@ -103,7 +140,10 @@ namespace HomeCycle.Infrastructure.Repositories.GHN
                     x.GHNOrderCode == null &&     // Đơn chưa được tạo thành công trên GHN
                     (
                         x.CreationStatus == (int)GHNCreationStatus.Pending ||
-                        x.CreationStatus == (int)GHNCreationStatus.Failed
+                        x.CreationStatus == (int)GHNCreationStatus.Failed ||
+                        // Claim lại đơn Processing mắc kẹt (LastCreateAttemptAt quá cũ)
+                        (x.CreationStatus == (int)GHNCreationStatus.Processing &&
+                         (x.LastCreateAttemptAt == null || x.LastCreateAttemptAt < staleCutoff))
                     ))
                 .ExecuteUpdateAsync(setters => setters
                     .SetProperty(x => x.CreationStatus, (int)GHNCreationStatus.Processing)
