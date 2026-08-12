@@ -1,5 +1,6 @@
 ﻿using HomeCycle.Application.Commons.Paginations;
 using HomeCycle.Application.DTOs.Requests.Agreements;
+using HomeCycle.Application.DTOs.Responses.Agreements;
 using HomeCycle.Domain.Entities;
 using System;
 using System.Collections.Generic;
@@ -15,7 +16,7 @@ namespace HomeCycle.Application.Interfaces.Repositories.Agreements
         Task<agreement_form?> GetByIdAsync(Guid agreementId, CancellationToken cancellationToken = default);
         Task AddAsync(agreement_form agreement, CancellationToken cancellationToken = default);
         Task UpdateAsync(agreement_form agreement, CancellationToken cancellationToken = default);
-        Task<PagedResult<agreement_form>> GetPendingPaymentByBuyerAsync(
+        Task<PagedResult<PendingAgreementListItemDto>> GetPendingPaymentByBuyerAsync(
             Guid buyerId,
             PendingAgreementSearchRequest request,
             CancellationToken cancellationToken = default);

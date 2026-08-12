@@ -19,6 +19,6 @@ namespace HomeCycle.Application.Interfaces.Repositories.Orders
         Task<PagedResult<OrderListItemDto>> GetPagedByUserAsync(
            Guid userId, bool isSeller, OrderSearchRequest request, CancellationToken ct = default);
 
-        Task<OrderDetailDto?> GetDetailWithRelationsAsync(Guid orderId, CancellationToken ct = default);
+        Task<OrderDetailDto?> GetDetailWithRelationsAsync(Guid orderId, Guid currentUserId, CancellationToken ct = default);
     }
 }

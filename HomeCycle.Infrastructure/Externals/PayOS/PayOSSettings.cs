@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace HomeCycle.Infrastructure.Externals
+namespace HomeCycle.Infrastructure.Externals.PayOS
 {
     public class PayOSSettings
     {
