@@ -8,6 +8,7 @@ using HomeCycle.Application.DTOs.Responses.Reviews;
 using HomeCycle.Application.Interfaces.Generics;
 using HomeCycle.Application.Interfaces.Repositories.Agreements;
 using HomeCycle.Application.Interfaces.Repositories.Orders;
+using HomeCycle.Application.Interfaces.Repositories.Profiles;
 using HomeCycle.Application.Interfaces.Repositories.Reviews;
 using HomeCycle.Application.Interfaces.Repositories.Users;
 using HomeCycle.Application.Interfaces.Services.Posts;
@@ -33,6 +34,8 @@ namespace HomeCycle.Application.Services.Reviews
         private readonly IOrderRepository _orderRepo;
         private readonly IAgreementFormRepository _agreementRepo;
         private readonly IUserRepository _userRepo;
+        private readonly IPersonalProfileRepository _personalProfileRepo;
+        private readonly IBusinessProfileRepository _businessProfileRepo;
         private readonly IMediaService _mediaService;
         private readonly IUnitOfWork _unitOfWork;
         private readonly IValidator<CreateReviewRequest> _createValidator;
@@ -43,6 +46,8 @@ namespace HomeCycle.Application.Services.Reviews
             IOrderRepository orderRepo,
             IAgreementFormRepository agreementRepo,
             IUserRepository userRepo,
+            IPersonalProfileRepository personalProfileRepo,
+            IBusinessProfileRepository businessProfileRepo,
             IMediaService mediaService,
             IUnitOfWork unitOfWork,
             IValidator<CreateReviewRequest> createValidator,
@@ -52,6 +57,8 @@ namespace HomeCycle.Application.Services.Reviews
             _orderRepo = orderRepo;
             _agreementRepo = agreementRepo;
             _userRepo = userRepo;
+            _personalProfileRepo = personalProfileRepo;
+            _businessProfileRepo = businessProfileRepo;
             _mediaService = mediaService;
             _unitOfWork = unitOfWork;
             _createValidator = createValidator;
@@ -240,8 +247,25 @@ namespace HomeCycle.Application.Services.Reviews
             if (user == null)
                 return;
 
-            user.ReputationScore = newScore;
-            await _userRepo.UpdateAsync(user, ct);
+            if (user.Role == UserRole.Business)
+            {
+                var business = await _businessProfileRepo.GetByUserIdAsync(userId, ct);
+                if (business == null)
+                    return;
+
+                business.ReputationScore = newScore;
+                _businessProfileRepo.Update(business);
+            }
+            else
+            {
+                var personal = await _personalProfileRepo.GetByUserIdAsync(userId, ct);
+                if (personal == null)
+                    return;
+
+                personal.ReputationScore = newScore;
+                await _personalProfileRepo.UpdateAsync(personal, ct);
+            }
+
             await _unitOfWork.SaveChangesAsync(ct);
         }
 

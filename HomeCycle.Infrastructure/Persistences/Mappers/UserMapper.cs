@@ -24,7 +24,6 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 AvatarUrl = entity.AvatarUrl,
                 Role = (UserRole)entity.Role, //ép kiểu lấy giá trị enum từ int
                 Status = (UserStatus)entity.Status, //ép kiểu lấy giá trị enum từ int
-                ReputationScore = entity.ReputationScore,
                 CreatedAt = entity.CreatedAt
             };
         }
@@ -42,7 +41,6 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 AvatarUrl = entity.AvatarUrl,
                 Role = (int)entity.Role, //ép kiểu lấy giá trị int từ enum
                 Status = (int)entity.Status, //ép kiểu lấy giá trị int từ enum
-                ReputationScore = entity.ReputationScore,
                 CreatedAt = entity.CreatedAt
             };
         }
