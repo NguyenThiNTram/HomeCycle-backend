@@ -1,4 +1,5 @@
 ﻿using HomeCycle.Application.Commons.Paginations;
+using HomeCycle.Application.DTOs.Requests.Agreements;
 using HomeCycle.Application.DTOs.Requests.Orders;
 using HomeCycle.Application.DTOs.Responses.Orders;
 using HomeCycle.Application.Interfaces.Repositories.Orders;
@@ -11,6 +12,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Text.Json;
 using System.Threading.Tasks;
 
 namespace HomeCycle.Infrastructure.Repositories.Orders
@@ -160,14 +162,32 @@ namespace HomeCycle.Infrastructure.Repositories.Orders
                 LatestDisputeId = latestDispute?.DisputeId
             };
 
+            AgreementDetailsDto? agreementDetails = null;
+            if (!string.IsNullOrEmpty(entity.Agreement.AgreementDetailsJsonb))
+            {
+                try
+                {
+                    agreementDetails = JsonSerializer.Deserialize<AgreementDetailsDto>(
+                        entity.Agreement.AgreementDetailsJsonb,
+                        new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                }
+                catch (JsonException)
+                {
+                    // Dữ liệu JSONB lỗi thì bỏ qua, không chặn việc trả về order detail
+                    agreementDetails = null;
+                }
+            }
+
             return new OrderDetailDto
             {
                 Order = entity.ToDomain(),
                 ThumbnailUrl = thumbnailUrl,
                 PostDescription = entity.Post?.Description,
                 CounterpartyName = isBuyer ? entity.Agreement.Seller.Username : entity.Agreement.Buyer.Username,
+                CounterpartyPhone = isBuyer ? entity.Agreement.Seller.PhoneNumber : entity.Agreement.Buyer.PhoneNumber,
                 NegotiationId = entity.Agreement.NegotiationId,
                 PaymentMethod = latestPaidPayment?.PaymentMethod,
+                ShippingFee = agreementDetails?.EstimatedShippingFee,
                 PaidAt = latestPaidPayment?.PaidAt,
                 //Review = reviewSummary,
                 Shipment = shipmentSummary,
