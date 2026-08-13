@@ -453,6 +453,7 @@ namespace HomeCycle.Application.Services.Payments
                     PaymentType = agreement.PaymentType,
                     PaymentMethod = (int)PaymentMethod.Internal_Wallet, 
                     Amount = amountToPay,
+                    OrderId = orderId,
                     Description = "Thanh toan qua Vi noi bo",
                     PaymentStatus = (int)PaymentStatus.Completed, // Trạng thái Completed ngay lập tức
                     CreatedAt = now,
@@ -848,12 +849,18 @@ namespace HomeCycle.Application.Services.Payments
                 ? PaymentStatus.Completed
                 : PaymentStatus.Pending;
 
+            var postSnapshot = await _postRepo.GetByIdAsync(agreement.PostId, ct);
+            if (postSnapshot == null)
+                throw new InvalidOperationException("Không tìm thấy bài đăng của thỏa thuận.");
+
+
             var order = new order
             {
                 OrderId = orderId,
                 OrderCode = GenerateOrderCode(),
                 AgreementId = agreement.AgreementId,
                 PostId = agreement.PostId,
+                ProductName = postSnapshot.Product.ProductName,
                 Quantity = agreement.Quantity,
                 OriginalTotalAmount = basePrice,
                 FinalTotalAmount = finalTotalAmount,
@@ -1121,19 +1128,18 @@ namespace HomeCycle.Application.Services.Payments
 
             // Trừ số lượng còn lại của Post — dùng FOR UPDATE để serialize giữa các giao dịch
             // đồng thời (chống oversell: còn 5 mà 2 giao dịch cùng trừ 4 đều thành công).
-            post? post = await _postRepo.GetByIdForUpdateAsync(agreement.PostId, ct);
-            if (post == null)
+            var postForUpdate = await _postRepo.GetByIdForUpdateAsync(agreement.PostId, ct);
+            if (postForUpdate == null)
                 throw new InvalidOperationException("Không tìm thấy bài đăng của thỏa thuận.");
 
-            if (post.RemainingQuantity < agreement.Quantity)
-                throw new InvalidOperationException(
-                    $"Bài đăng chỉ còn {post.RemainingQuantity} sản phẩm, không đủ cho {agreement.Quantity}.");
+            if (postForUpdate.RemainingQuantity < agreement.Quantity)
+                throw new InvalidOperationException($"Bài đăng chỉ còn {postForUpdate.RemainingQuantity} sản phẩm, không đủ cho {agreement.Quantity}.");
 
-            post.RemainingQuantity -= agreement.Quantity;
-            if (post.RemainingQuantity <= 0)
-                post.Status = PostStatus.Closed;
+            postForUpdate.RemainingQuantity -= agreement.Quantity;
+            if (postForUpdate.RemainingQuantity <= 0)
+                postForUpdate.Status = PostStatus.Closed;
 
-            await _postRepo.UpdateAsync(post, ct);
+            await _postRepo.UpdateAsync(postForUpdate, ct);
 
             agreement.AgreementStatus = (int)AgreementStatus.Confirmed;
             await _agreementRepo.UpdateAsync(agreement, ct);
@@ -1148,7 +1154,7 @@ namespace HomeCycle.Application.Services.Payments
                 Shipment = localShipment,
                 GhnShipment = localGhnShipment,
 
-                Post = post
+                Post = postForUpdate
             };
         }
 
