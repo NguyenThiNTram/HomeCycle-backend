@@ -23,6 +23,14 @@ public partial class Withdrawal
     public int? WithdrawalStatus { get; set; }
 
     public DateTime? RequestedAt { get; set; }
+    public DateTime? ProcessedAt { get; set; }
+    public Guid? ProcessedBy { get; set; }
+
+    [StringLength(500)]
+    public string? RejectReason { get; set; }
+
+    [ForeignKey("ProcessedBy")]
+    public virtual User? ProcessedByUser { get; set; }
 
     [ForeignKey("UserBankId")]
     [InverseProperty("Withdrawals")]

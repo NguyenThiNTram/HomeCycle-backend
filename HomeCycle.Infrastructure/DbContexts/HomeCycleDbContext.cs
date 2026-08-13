@@ -873,6 +873,10 @@ public partial class HomeCycleDbContext : DbContext
             entity.HasOne(d => d.Wallet).WithMany(p => p.Withdrawals)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("fk_withdrawal_walletid");
+            entity.HasOne(d => d.ProcessedByUser).WithMany()
+                .HasForeignKey(d => d.ProcessedBy)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("fk_withdrawal_processedby");
         });
 
         OnModelCreatingPartial(modelBuilder);

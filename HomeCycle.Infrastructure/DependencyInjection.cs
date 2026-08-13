@@ -198,6 +198,8 @@ namespace HomeCycle.Infrastructure
 
             services.Configure<PayOSSettings>(configuration.GetSection("PayOS"));
             services.AddScoped<IPaymentGatewayService, PayOSGatewayAdapter>();
+            services.Configure<PayOSPayoutSettings>(configuration.GetSection("PayOSPayout"));
+            services.AddScoped<IPayoutGatewayService, PayOSPayoutAdapter>();
 
             services.AddOptions<GhnSettings>().Bind(configuration.GetSection(GhnSettings.SectionName))
                 .Validate(

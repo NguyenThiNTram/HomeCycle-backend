@@ -304,6 +304,11 @@ namespace HomeCycle.Application.Services.Payments
             var calc = CalculatePaymentAmount(agreement, details);
             decimal basePrice = calc.BasePrice;
             decimal amountToPay = calc.AmountToPay;
+            decimal shippingFee = calc.ShippingFee;
+            // ✅ THÊM
+            decimal holdAmount = details?.DeliveryMethod == DeliveryMethod.GhnDelivery
+                ? basePrice
+                : amountToPay;
 
             if (basePrice <= 0 || amountToPay <= 0)
                 return Result<bool>.Fail(new Error("Payment.InvalidAmount", "Số tiền thanh toán không hợp lệ."));
@@ -319,6 +324,15 @@ namespace HomeCycle.Application.Services.Payments
             if (sellerWallet == null)
                 return Result<bool>.Fail(new Error("Wallet.SellerNotFound", "Không tìm thấy ví của người bán."));
 
+            //wallet? systemWallet = null;
+            //bool needsSystemLedger = details?.DeliveryMethod == DeliveryMethod.GhnDelivery && shippingFee > 0;
+            //if (needsSystemLedger)
+            //{
+            //    systemWallet = await _walletRepo.GetSystemWalletAsync(ct);
+            //    if (systemWallet == null)
+            //        return Result<bool>.Fail(new Error("Wallet.SystemWalletNotFound", "Không tìm thấy ví hệ thống."));
+            //}
+
             // TRANSACTION CORE LÕI
             await _unitOfWork.BeginTransactionAsync();
             try
@@ -331,7 +345,8 @@ namespace HomeCycle.Application.Services.Payments
                 var buyerWalletTx = new wallet_transaction
                 {
                     WalletTransactionId = Guid.NewGuid(),
-                    ToWalletId = buyerWallet.WalletId,
+                    FromWalletId = buyerWallet.WalletId,   
+                    ToWalletId = null,
                     PaymentId = paymentId,
                     ReferenceId = orderId,
                     ReferenceType = (int)ReferenceType.Order,
@@ -363,12 +378,13 @@ namespace HomeCycle.Application.Services.Payments
                 var sellerWalletTx = new wallet_transaction
                 {
                     WalletTransactionId = Guid.NewGuid(),
+                    FromWalletId = buyerWallet.WalletId,   
                     ToWalletId = sellerWallet.WalletId,
                     PaymentId = paymentId,
                     ReferenceId = orderId,
                     ReferenceType = (int)ReferenceType.Order,
                     TransactionType = (int)TransactionType.Escrow_Deposit,
-                    Amount = amountToPay,
+                    Amount = holdAmount,
                     WalletTransactionStatus = (int)WalletTransactionStatus.Completed,
                     CreatedAt = DateTime.UtcNow
                 };
@@ -380,16 +396,53 @@ namespace HomeCycle.Application.Services.Payments
                     WalletId = sellerWallet.WalletId,
                     Direction = (int)LedgerDirection.In,
                     BalanceType = (int)BalanceType.Hold,
-                    Amount = amountToPay,
+                    Amount = holdAmount,
                     BalanceBefore = sellerWallet.HoldBalance,
-                    BalanceAfter = sellerWallet.HoldBalance + amountToPay,
+                    BalanceAfter = sellerWallet.HoldBalance + holdAmount,
                     ReferenceType = (int)ReferenceType.Order,
                     ReferenceId = orderId,
                     Description = $"Tam giu tien cho don hang {orderId}",
                     CreatedAt = DateTime.UtcNow
                 };
-                sellerWallet.HoldBalance += amountToPay;
+                sellerWallet.HoldBalance += holdAmount;
                 sellerWallet.UpdatedAt = DateTime.UtcNow;
+
+                //wallet_transaction? systemWalletTx = null;
+                //wallet_ledger? systemLedger = null;
+                //if (needsSystemLedger && systemWallet != null)
+                //{
+                //    systemWalletTx = new wallet_transaction
+                //    {
+                //        WalletTransactionId = Guid.NewGuid(),
+                //        FromWalletId = buyerWallet.WalletId,
+                //        ToWalletId = systemWallet.WalletId,
+                //        PaymentId = paymentId,
+                //        ReferenceId = orderId,
+                //        ReferenceType = (int)ReferenceType.Order,
+                //        TransactionType = (int)TransactionType.Shipping_Fee_Collected, 
+                //        Amount = shippingFee,
+                //        WalletTransactionStatus = (int)WalletTransactionStatus.Completed,
+                //        CreatedAt = now
+                //    };
+
+                //    systemLedger = new wallet_ledger
+                //    {
+                //        LedgerId = Guid.NewGuid(),
+                //        WalletTransactionId = systemWalletTx.WalletTransactionId,
+                //        WalletId = systemWallet.WalletId,
+                //        Direction = (int)LedgerDirection.In,
+                //        BalanceType = (int)BalanceType.Available, // tiền pass-through, không phải hold
+                //        Amount = shippingFee,
+                //        BalanceBefore = systemWallet.AvailableBalance,
+                //        BalanceAfter = systemWallet.AvailableBalance + shippingFee,
+                //        ReferenceType = (int)ReferenceType.Order,
+                //        ReferenceId = orderId,
+                //        Description = $"Phi van chuyen GHN thu ho cho don hang {orderId}",
+                //        CreatedAt = now
+                //    };
+                //    systemWallet.AvailableBalance += shippingFee;
+                //    systemWallet.UpdatedAt = now;
+                //}
 
                 // Khởi tạo thực thể Payment (Wallet-specific: Completed ngay lập tức, không qua gateway ngoài)
                 var payment = new payment
@@ -398,7 +451,7 @@ namespace HomeCycle.Application.Services.Payments
                     AgreementId = agreement.AgreementId,
                     PayerId = payerId,
                     PaymentType = agreement.PaymentType,
-                    PaymentMethod = (int)PaymentMethod.Internal_Wallet, // Khác PayOS
+                    PaymentMethod = (int)PaymentMethod.Internal_Wallet, 
                     Amount = amountToPay,
                     Description = "Thanh toan qua Vi noi bo",
                     PaymentStatus = (int)PaymentStatus.Completed, // Trạng thái Completed ngay lập tức
@@ -538,6 +591,24 @@ namespace HomeCycle.Application.Services.Payments
             decimal basePrice = unitPrice * Math.Max(agreement.Quantity, 1);
             decimal paidAmount = payment.Amount ?? 0;
 
+            decimal holdAmount = details?.DeliveryMethod == DeliveryMethod.GhnDelivery
+                ? basePrice
+                : paidAmount;
+
+            decimal shippingFee = details?.DeliveryMethod == DeliveryMethod.GhnDelivery
+                ? (details?.EstimatedShippingFee ?? Math.Max(paidAmount - basePrice, 0))
+                : 0;
+
+            //bool needsSystemLedger = details?.DeliveryMethod == DeliveryMethod.GhnDelivery && shippingFee > 0;
+            //wallet? systemWallet = null;
+            //if (needsSystemLedger)
+            //{
+            //    systemWallet = await _walletRepo.GetSystemWalletAsync(ct);
+            //    if (systemWallet == null)
+            //        _logger.LogWarning("Không tìm thấy ví System khi xử lý phí ship GHN cho OrderCode {OrderCode}", payOsOrderCode);
+            //}
+
+
             await _unitOfWork.BeginTransactionAsync();
             try
             {
@@ -551,16 +622,19 @@ namespace HomeCycle.Application.Services.Payments
                 // Hiện thực hóa Agreement -> Order/Appointment/trừ Quantity/Confirmed (dùng chung với Wallet)
                 var fulfillment = await FulfillAgreementAsync(agreement, basePrice, paidAmount, details, ct);
 
+                payment.OrderId = fulfillment.Order.OrderId;
+
                 // Hạch toán ví (Escrow Logic) — chỉ ghi nhận CHIỀU VÀO cho seller, vì tiền buyer đã rời hệ thống qua PayOS, không qua ví nội bộ.
                 var newWalletTx = new wallet_transaction
                 {
                     WalletTransactionId = Guid.NewGuid(),
+                    FromWalletId = null,
                     ToWalletId = sellerWallet.WalletId,
                     PaymentId = payment.PaymentId,
                     ReferenceId = fulfillment.Order.OrderId,
                     ReferenceType = (int)ReferenceType.Order,
                     TransactionType = (int)TransactionType.Escrow_Deposit,
-                    Amount = paidAmount,
+                    Amount = holdAmount,
                     WalletTransactionStatus = (int)WalletTransactionStatus.Completed,
                     CreatedAt = DateTime.UtcNow
                 };
@@ -571,18 +645,56 @@ namespace HomeCycle.Application.Services.Payments
                     WalletTransactionId = newWalletTx.WalletTransactionId,
                     WalletId = sellerWallet.WalletId,
                     Direction = (int)LedgerDirection.In,
-                    BalanceType = (int)BalanceType.Hold,
-                    Amount = paidAmount,
+                    BalanceType = (int)BalanceType.Hold,    
+                    Amount = holdAmount,
                     BalanceBefore = sellerWallet.HoldBalance,
-                    BalanceAfter = sellerWallet.HoldBalance + paidAmount,
+                    BalanceAfter = sellerWallet.HoldBalance + holdAmount,
                     ReferenceType = (int)ReferenceType.Order,
                     ReferenceId = fulfillment.Order.OrderId,
                     Description = $"Tam giu tien cho don hang {fulfillment.Order.OrderId}",
                     CreatedAt = DateTime.UtcNow
                 };
 
-                sellerWallet.HoldBalance += paidAmount;
+                sellerWallet.HoldBalance += holdAmount;
                 sellerWallet.UpdatedAt = DateTime.UtcNow;
+
+                //wallet_transaction? systemWalletTx = null;
+                //wallet_ledger? systemLedger = null;
+                //if (needsSystemLedger && systemWallet != null)
+                //{
+                //    systemWalletTx = new wallet_transaction
+                //    {
+                //        WalletTransactionId = Guid.NewGuid(),
+                //        FromWalletId = null,
+                //        ToWalletId = systemWallet.WalletId,
+                //        PaymentId = payment.PaymentId,
+                //        ReferenceId = fulfillment.Order.OrderId,
+                //        ReferenceType = (int)ReferenceType.Order,
+                //        //TransactionType = (int)TransactionType.Shipping_Fee_Collected,
+                //        Amount = shippingFee,
+                //        WalletTransactionStatus = (int)WalletTransactionStatus.Completed,
+                //        CreatedAt = DateTime.UtcNow
+                //    };
+
+                //    systemLedger = new wallet_ledger
+                //    {
+                //        LedgerId = Guid.NewGuid(),
+                //        WalletTransactionId = systemWalletTx.WalletTransactionId,
+                //        WalletId = systemWallet.WalletId,
+                //        Direction = (int)LedgerDirection.In,
+                //        BalanceType = (int)BalanceType.Available,
+                //        Amount = shippingFee,
+                //        BalanceBefore = systemWallet.AvailableBalance,
+                //        BalanceAfter = systemWallet.AvailableBalance + shippingFee,
+                //        ReferenceType = (int)ReferenceType.Order,
+                //        ReferenceId = fulfillment.Order.OrderId,
+                //        Description = $"Phi van chuyen GHN thu qua PayOS cho don hang {fulfillment.Order.OrderId}",
+                //        CreatedAt = DateTime.UtcNow
+                //    };
+
+                //    systemWallet.AvailableBalance += shippingFee;
+                //    systemWallet.UpdatedAt = DateTime.UtcNow;
+                //}
 
                 await _paymentTxRepo.UpdateAsync(paymentTx, ct);
                 await _paymentRepo.UpdateAsync(payment, ct);

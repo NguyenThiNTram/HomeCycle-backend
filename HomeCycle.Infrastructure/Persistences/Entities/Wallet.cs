@@ -14,7 +14,8 @@ public partial class Wallet
     [Key]
     public Guid WalletId { get; set; }
 
-    public Guid UserId { get; set; }
+    public Guid? UserId { get; set; }
+    public int? Purpose { get; set; }
 
     public int WalletType { get; set; }
 

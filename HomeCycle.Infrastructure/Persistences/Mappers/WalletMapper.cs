@@ -20,7 +20,8 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 AvailableBalance = entity.AvailableBalance,
                 HoldBalance = entity.HoldBalance,
                 CreatedAt = entity.CreatedAt,
-                UpdatedAt = entity.UpdatedAt
+                UpdatedAt = entity.UpdatedAt,
+                Purpose = entity.Purpose
             };
         }
         public static Wallet ToInfrastructure(this wallet entity)
@@ -34,7 +35,8 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 AvailableBalance = entity.AvailableBalance,
                 HoldBalance = entity.HoldBalance,
                 CreatedAt = entity.CreatedAt,
-                UpdatedAt = entity.UpdatedAt
+                UpdatedAt = entity.UpdatedAt,
+                Purpose = entity.Purpose
             };
         }
     }

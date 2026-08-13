@@ -23,6 +23,8 @@ namespace HomeCycle.Domain.Enums
 
         // 4. Nhóm Doanh thu hệ thống (System Revenue)
         Commission_Fee = 8,     // Sàn thu phí hoa hồng đơn hàng (Chảy vào System Wallet)
-        Subscription_Fee = 9    // Sàn thu phí gói dịch vụ (Chảy vào System Wallet)
+        Subscription_Fee = 9,    // Sàn thu phí gói dịch vụ (Chảy vào System Wallet)
+
+        Shipping_Fee_Collected = 10
     }
 }
