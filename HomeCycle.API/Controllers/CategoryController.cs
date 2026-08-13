@@ -25,6 +25,7 @@ namespace HomeCycle.API.Controllers
             Summary = "Lấy danh sách danh mục",
             Description = "Trả về danh sách tất cả danh mục trong hệ thống có hỗ trợ phân trang (Pagination)."
         )]
+        [AllowAnonymous]
         public async Task<IActionResult> GetAll([FromQuery] PaginationRequest request, CancellationToken cancellationToken)
         {
             var result = await _categoryService.GetAllAsync(request, cancellationToken);
@@ -84,6 +85,7 @@ namespace HomeCycle.API.Controllers
             Summary = "Lấy thông tin danh mục theo ID",
             Description = "Trả về chi tiết thông tin của một danh mục theo ID."
         )]
+        [AllowAnonymous]
         public async Task<IActionResult> GetById(Guid id, CancellationToken cancellationToken)
         {
             var result = await _categoryService.GetByIdAsync(id, cancellationToken);
@@ -98,6 +100,7 @@ namespace HomeCycle.API.Controllers
             Summary = "Lấy danh sách danh mục đang hoạt động",
             Description = "Trả về danh sách danh mục đang hoạt động (IsActive = true) có hỗ trợ tìm kiếm."
         )]
+        [AllowAnonymous]
         public async Task<IActionResult> GetActive([FromQuery] GetActiveCategoryRequest request, CancellationToken cancellationToken)
         {
             var result = await _categoryService.GetActiveAsync(request, cancellationToken);
@@ -112,6 +115,7 @@ namespace HomeCycle.API.Controllers
             Summary = "Tìm kiếm danh mục",
             Description = "Tìm kiếm danh mục theo từ khóa tên với phân trang."
         )]
+        [AllowAnonymous]
         public async Task<IActionResult> Search([FromQuery] CategorySearchRequest request, CancellationToken cancellationToken)
         {
             var result = await _categoryService.SearchAsync(request, cancellationToken);

@@ -17,12 +17,6 @@ namespace HomeCycle.Application.Interfaces.Repositories.Appointments
         Task<appointment?> GetByAgreementIdAsync(Guid agreementId, CancellationToken ct = default);
         Task AddAsync(appointment appointment, CancellationToken ct = default);
         Task UpdateAsync(appointment appointment, CancellationToken ct = default);
-        Task<PagedResult<appointment>> GetPagedByTypeAsync(
-            AppointmentType type,
-            Guid userId,
-            bool isSeller,
-            AppointmentSearchRequest request,
-            CancellationToken ct = default);
         Task<PagedResult<InspectionAppointmentListItemDto>> GetPagedInspectionListAsync(
             Guid userId, bool isSeller, AppointmentSearchRequest request, CancellationToken ct = default);
 

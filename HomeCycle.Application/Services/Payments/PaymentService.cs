@@ -474,7 +474,7 @@ namespace HomeCycle.Application.Services.Payments
                 return Result<string>.Fail(statusResult.Error);
             }
 
-            switch (statusResult.Data.Status)
+            switch (statusResult.Data.Status?.ToUpperInvariant())
             {
                 case "PAID":
                     // Webhook có thể bị delay/miss — chủ động fulfill luôn nếu phát hiện đã PAID thật.
@@ -739,6 +739,7 @@ namespace HomeCycle.Application.Services.Payments
             var order = new order
             {
                 OrderId = orderId,
+                OrderCode = GenerateOrderCode(),
                 AgreementId = agreement.AgreementId,
                 PostId = agreement.PostId,
                 Quantity = agreement.Quantity,
@@ -1044,6 +1045,13 @@ namespace HomeCycle.Application.Services.Payments
 
                 Post = post
             };
+        }
+
+        private static string GenerateOrderCode()
+        {
+            var datePart = DateTime.UtcNow.ToString("yyMMdd");
+            var randomPart = Guid.NewGuid().ToString("N").Substring(0, 4).ToUpperInvariant();
+            return $"HC-{datePart}-{randomPart}";
         }
     }
 }

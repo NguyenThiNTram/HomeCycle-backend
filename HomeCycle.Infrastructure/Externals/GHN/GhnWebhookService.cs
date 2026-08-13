@@ -162,19 +162,31 @@ namespace HomeCycle.Infrastructure.Externals.GHN
                 // Vẫn lưu GHNStatusCode raw nhưng giữ nguyên ShipmentStatus local.
                 _logger.LogWarning(
                     "Webhook GHN có status chưa hỗ trợ: {Status}, OrderCode: {OrderCode}",
-                    carrierStatus,
-                    orderCode);
+                    SanitizeForLog(carrierStatus),
+                    SanitizeForLog(orderCode));
             }
 
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
             _logger.LogInformation(
                 "Đã xử lý webhook GHN. Type={Type}, OrderCode={OrderCode}, Status={Status}",
-                request.Type,
-                orderCode,
-                carrierStatus);
+                SanitizeForLog(request.Type),
+                SanitizeForLog(orderCode),
+                SanitizeForLog(carrierStatus));
 
             return Result.Success();
+        }
+
+        private static string SanitizeForLog(string? input)
+        {
+            if (string.IsNullOrEmpty(input))
+            {
+                return string.Empty;
+            }
+
+            return input
+                .Replace("\r", " ")
+                .Replace("\n", " ");
         }
 
         private async Task MarkFailureAsync(

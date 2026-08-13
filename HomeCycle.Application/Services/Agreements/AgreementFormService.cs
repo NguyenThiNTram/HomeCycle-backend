@@ -462,11 +462,11 @@ namespace HomeCycle.Application.Services.Agreements
             });
         }
 
-        public async Task<Result<PagedResult<agreement_form>>> GetPendingPaymentAsync(
+        public async Task<Result<PagedResult<PendingAgreementListItemDto>>> GetPendingPaymentAsync(
             Guid buyerId, PendingAgreementSearchRequest request, CancellationToken cancellationToken = default)
         {
             var result = await _agreementRepo.GetPendingPaymentByBuyerAsync(buyerId, request, cancellationToken);
-            return Result<PagedResult<agreement_form>>.Success(result);
+            return Result<PagedResult<PendingAgreementListItemDto>>.Success(result);
         }
 
         private async Task PublishMessageCreatedSafelyAsync(Guid negotiationId, MessageResponse response)

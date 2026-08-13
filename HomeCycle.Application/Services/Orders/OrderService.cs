@@ -42,7 +42,7 @@ namespace HomeCycle.Application.Services.Orders
             if (!authResult.IsSuccess)
                 return Result<OrderDetailDto>.Fail(authResult.Error);
 
-            var detail = await _orderRepo.GetDetailWithRelationsAsync(orderId, ct);
+            var detail = await _orderRepo.GetDetailWithRelationsAsync(orderId, userId, ct);
             if (detail == null)
                 return Result<OrderDetailDto>.Fail(new Error("Order.NotFound", "Không tìm thấy đơn hàng."));
 

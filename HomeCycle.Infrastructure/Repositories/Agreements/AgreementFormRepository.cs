@@ -1,5 +1,6 @@
 ﻿using HomeCycle.Application.Commons.Paginations;
 using HomeCycle.Application.DTOs.Requests.Agreements;
+using HomeCycle.Application.DTOs.Responses.Agreements;
 using HomeCycle.Application.Interfaces.Repositories.Agreements;
 using HomeCycle.Domain.Entities;
 using HomeCycle.Domain.Enums;
@@ -54,7 +55,7 @@ namespace HomeCycle.Infrastructure.Repositories.Agreements
             return Task.CompletedTask;
         }
 
-        public async Task<PagedResult<agreement_form>> GetPendingPaymentByBuyerAsync(
+        public async Task<PagedResult<PendingAgreementListItemDto>> GetPendingPaymentByBuyerAsync(
             Guid buyerId,
             PendingAgreementSearchRequest request,
             CancellationToken cancellationToken = default)
@@ -63,8 +64,12 @@ namespace HomeCycle.Infrastructure.Repositories.Agreements
                 .AsNoTracking()
                 .Where(x => x.BuyerId == buyerId && x.AgreementStatus == (int)AgreementStatus.Awaiting_Payment);
 
+            // Ưu tiên search theo tên sản phẩm (Product.ProductName), fallback về Post.Description
+            // vì Product là quan hệ 0..1 với Post (có thể null với 1 số loại bài đăng).
             if (!string.IsNullOrWhiteSpace(request.Keyword))
-                query = query.Where(x => x.Post.Description != null && x.Post.Description.Contains(request.Keyword));
+                query = query.Where(x =>
+                    (x.Post.Product != null && x.Post.Product.ProductName != null && x.Post.Product.ProductName.Contains(request.Keyword))
+                    || (x.Post.Description != null && x.Post.Description.Contains(request.Keyword)));
 
             query = query.OrderByDescending(x => x.CreatedAt);
 
@@ -72,11 +77,26 @@ namespace HomeCycle.Infrastructure.Repositories.Agreements
             var items = await query
                 .Skip((request.PageNumber - 1) * request.PageSize)
                 .Take(request.PageSize)
+                .Select(x => new PendingAgreementListItemDto
+                {
+                    AgreementId = x.AgreementId,
+                    ProductName = x.Post.Product != null ? x.Post.Product.ProductName : x.Post.Description,
+                    ThumbnailUrl = _db.Media
+                        .Where(m => m.TargetId == x.PostId && m.TargetType == "Post")
+                        .OrderBy(m => m.DisplayOrder)
+                        .Select(m => m.Url)
+                        .FirstOrDefault(),
+                    Quantity = x.Quantity,
+                    FinalPrice = x.FinalPrice,
+                    InitialPrice = x.InitialPrice,
+                    SellerName = x.Seller.Username,
+                    CreatedAt = x.CreatedAt
+                })
                 .ToListAsync(cancellationToken);
 
-            return new PagedResult<agreement_form>
+            return new PagedResult<PendingAgreementListItemDto>
             {
-                Items = items.Select(x => x.ToDomain()).ToList(),
+                Items = items,
                 PageNumber = request.PageNumber,
                 PageSize = request.PageSize,
                 TotalCount = totalCount
