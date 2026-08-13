@@ -14,6 +14,7 @@ using HomeCycle.Application.Interfaces.Repositories.Payments;
 using HomeCycle.Application.Interfaces.Repositories.Posts;
 using HomeCycle.Application.Interfaces.Repositories.Products;
 using HomeCycle.Application.Interfaces.Repositories.Profiles;
+using HomeCycle.Application.Interfaces.Repositories.Reviews;
 using HomeCycle.Application.Interfaces.Repositories.Shipments;
 using HomeCycle.Application.Interfaces.Repositories.Users;
 using HomeCycle.Application.Interfaces.Repositories.Wallets;
@@ -29,6 +30,7 @@ using HomeCycle.Application.Interfaces.Services.Payments;
 using HomeCycle.Application.Interfaces.Services.Posts;
 using HomeCycle.Application.Interfaces.Services.Products;
 using HomeCycle.Application.Interfaces.Services.Profiles;
+using HomeCycle.Application.Interfaces.Services.Reviews;
 using HomeCycle.Application.Interfaces.Services.Users;
 using HomeCycle.Application.Mappings;
 using HomeCycle.Application.Services.Agreements;
@@ -42,6 +44,7 @@ using HomeCycle.Application.Services.Personals;
 using HomeCycle.Application.Services.Posts;
 using HomeCycle.Application.Services.Products;
 using HomeCycle.Application.Services.Profiles;
+using HomeCycle.Application.Services.Reviews;
 using HomeCycle.Application.Validations.Agreements;
 using HomeCycle.Application.Validations.Auths;
 using HomeCycle.Application.Validations.Users;
@@ -58,6 +61,7 @@ using HomeCycle.Infrastructure.Repositories.Payments;
 using HomeCycle.Infrastructure.Repositories.Posts;
 using HomeCycle.Infrastructure.Repositories.Products;
 using HomeCycle.Infrastructure.Repositories.Profiles;
+using HomeCycle.Infrastructure.Repositories.Reviews;
 using HomeCycle.Infrastructure.Repositories.Shipments;
 using HomeCycle.Infrastructure.Repositories.Users;
 using HomeCycle.Infrastructure.Repositories.Wallets;
@@ -79,6 +83,8 @@ using HomeCycle.Application.Services.Orders;
 using HomeCycle.Infrastructure.Externals.PayOS;
 using HomeCycle.Application.Interfaces.Repositories.GHN;
 using HomeCycle.Infrastructure.Repositories.GHN;
+using HomeCycle.Application.Interfaces.Services.GHN;
+using HomeCycle.Application.Services.GHN;
 
 namespace HomeCycle.Infrastructure
 {
@@ -165,6 +171,10 @@ namespace HomeCycle.Infrastructure
             services.AddScoped<IMessageRepository, MessageRepository>();
             services.AddScoped<IGhnShipmentRepository, GhnShipmentRepository>();
             services.AddScoped<IShipmentRepository, ShipmentRepository>();
+            services.AddScoped<IReviewRepository, ReviewRepository>();
+            services.AddScoped<IGhnShipmentCreationService, GhnShipmentCreationService>();
+            services.AddScoped<IGhnTrackingSyncService, GhnTrackingSyncService>();
+            services.AddScoped<IGhnWebhookService, GhnWebhookService>();
 
             // register Services
             services.AddScoped<IAuthService, AuthService>();
@@ -193,6 +203,7 @@ namespace HomeCycle.Infrastructure
             services.AddScoped<IPaymentService, PaymentService>();
             services.AddScoped<IAppointmentService, AppointmentService>();
             services.AddScoped<IOrderService, OrderService>();
+            services.AddScoped<IReviewService, ReviewService>();
 
 
 

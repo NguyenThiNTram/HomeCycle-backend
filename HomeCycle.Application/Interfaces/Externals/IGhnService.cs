@@ -1,4 +1,5 @@
-﻿using HomeCycle.Application.DTOs.Requests.GHN;
+﻿using HomeCycle.Application.Commons.Results;
+using HomeCycle.Application.DTOs.Requests.GHN;
 using HomeCycle.Application.DTOs.Responses.GHN;
 using System;
 using System.Collections.Generic;
@@ -8,6 +9,11 @@ using System.Threading.Tasks;
 
 namespace HomeCycle.Application.Interfaces.Externals
 {
+    public interface IGhnApiError
+    {
+        string? CodeMessage { get; }
+    }
+
     public interface IGhnService
     {
         Task<IReadOnlyList<GhnProvinceResponse>> GetProvincesAsync(CancellationToken cancellationToken = default);
@@ -21,5 +27,6 @@ namespace HomeCycle.Application.Interfaces.Externals
         Task<GhnPreviewQuote> PreviewOrderAsync(GhnShippingPreviewRequest request, CancellationToken cancellationToken = default);
 
         Task<GhnCreateOrderResponse> CreateOrderAsync(GhnCreateOrderRequest request, CancellationToken cancellationToken = default);
+        Task<GhnOrderDetailResponse> GetOrderDetailAsync(string ghnOrderCode, CancellationToken cancellationToken = default);
     }
 }

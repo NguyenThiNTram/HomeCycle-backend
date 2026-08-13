@@ -1,4 +1,5 @@
-﻿using System;
+﻿using HomeCycle.Application.Interfaces.Externals;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
@@ -7,7 +8,7 @@ using System.Threading.Tasks;
 
 namespace HomeCycle.Infrastructure.Externals.GHN
 {
-    public class GhnApiException : Exception
+    public class GhnApiException : Exception, IGhnApiError
     {
         //public int GhnCode { get; }
         //public string? GhnCodeMessage { get; }

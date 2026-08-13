@@ -125,6 +125,9 @@ namespace HomeCycle.API
             //Khai báo DI
             builder.Services.AddInfrastructure(builder.Configuration);
 
+            // Worker nền tự tạo vận đơn GHN cho các ghn_shipment Pending/Failed
+            builder.Services.AddHostedService<HomeCycle.API.Workers.GhnShipmentCreationWorker>();
+
             // Add DbContext with PostgreSQL configuration
             builder.Services.AddDbContext<HomeCycleDbContext>(options =>
                 options.UseNpgsql(
@@ -150,7 +153,8 @@ namespace HomeCycle.API
                     ValidateIssuerSigningKey = true,
                     ValidIssuer = jwtSettings["Issuer"],
                     ValidAudience = jwtSettings["Audience"],
-                    IssuerSigningKey = new SymmetricSecurityKey(key)
+                    IssuerSigningKey = new SymmetricSecurityKey(key),
+                    ClockSkew = TimeSpan.Zero
                 };
 
                 //Config SignalR

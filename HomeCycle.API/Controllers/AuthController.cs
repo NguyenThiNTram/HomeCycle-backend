@@ -171,7 +171,7 @@ namespace HomeCycle.API.Controllers
 
         // Lấy danh sách người dùng (lọc theo role, status, keyword) — chỉ dành cho Admin
         [HttpGet("admin/users")]
-        //[Authorize(Roles = "Admin")]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> GetAllUsers(
             [FromQuery] GetAllUsersRequest request,
             CancellationToken cancellationToken)
@@ -197,7 +197,7 @@ namespace HomeCycle.API.Controllers
 
         // Khoá tài khoản (chuyển Status -> Suspended) — chỉ dành cho Admin
         [HttpPost("admin/users/{userId:guid}/lock")]
-        //[Authorize(Roles = "Admin")]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> LockUser(
             [FromRoute] Guid userId,
             CancellationToken cancellationToken)
@@ -228,7 +228,7 @@ namespace HomeCycle.API.Controllers
 
         // Mở khoá tài khoản (chuyển Status -> Active) — chỉ dành cho Admin
         [HttpPost("admin/users/{userId:guid}/unlock")]
-        //[Authorize(Roles = "Admin")]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> UnlockUser(
             [FromRoute] Guid userId,
             CancellationToken cancellationToken)

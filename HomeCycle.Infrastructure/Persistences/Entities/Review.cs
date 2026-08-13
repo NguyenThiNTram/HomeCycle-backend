@@ -7,7 +7,7 @@ using Microsoft.EntityFrameworkCore;
 namespace HomeCycle.Infrastructure;
 
 [Table("Review")]
-[Index("OrderId", Name = "Review_OrderId_key", IsUnique = true)]
+[Index("OrderId", "ReviewerId", Name = "uq_review_order_reviewer", IsUnique = true)]
 [Index("RevieweeId", Name = "idx_review_reviewee")]
 [Index("ReviewerId", Name = "idx_review_reviewer")]
 public partial class Review
@@ -35,7 +35,7 @@ public partial class Review
     public virtual ICollection<Dispute> Disputes { get; set; } = new List<Dispute>();
 
     [ForeignKey("OrderId")]
-    [InverseProperty("Review")]
+    [InverseProperty("Reviews")]
     public virtual Order Order { get; set; } = null!;
 
     [ForeignKey("RevieweeId")]

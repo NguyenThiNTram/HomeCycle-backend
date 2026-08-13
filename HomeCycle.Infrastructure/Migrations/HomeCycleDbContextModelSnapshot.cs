@@ -629,13 +629,20 @@ namespace HomeCycle.Infrastructure.Migrations
                         .HasColumnType("integer");
 
                     b.Property<string>("ClientOrderCode")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
 
                     b.Property<DateTime>("CreatedAt")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("timestamp with time zone")
                         .HasDefaultValueSql("now()");
+
+                    b.Property<int>("CreationStatus")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("ExpectedDeliveryAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<int?>("FromDistrictId")
                         .HasColumnType("integer");
@@ -672,6 +679,12 @@ namespace HomeCycle.Infrastructure.Migrations
                         .HasColumnType("integer")
                         .HasDefaultValue(0);
 
+                    b.Property<DateTime?>("LastCreateAttemptAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("LastErrorCode")
+                        .HasColumnType("text");
+
                     b.Property<DateTime?>("LastSyncedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -681,8 +694,8 @@ namespace HomeCycle.Infrastructure.Migrations
                     b.Property<int>("PaymentTypeId")
                         .HasColumnType("integer");
 
-                    b.Property<int?>("RequiredNote")
-                        .HasColumnType("integer");
+                    b.Property<string>("RequiredNote")
+                        .HasColumnType("text");
 
                     b.Property<int?>("ServiceId")
                         .HasColumnType("integer");
@@ -708,6 +721,10 @@ namespace HomeCycle.Infrastructure.Migrations
 
                     b.HasKey("GHNShipmentId")
                         .HasName("GHN_Shipment_pkey");
+
+                    b.HasIndex("ClientOrderCode")
+                        .IsUnique()
+                        .HasDatabaseName("uq_ghn_shipment_client_order_code");
 
                     b.HasIndex(new[] { "ShipmentId" }, "GHN_Shipment_ShipmentId_key")
                         .IsUnique();
@@ -1839,12 +1856,12 @@ namespace HomeCycle.Infrastructure.Migrations
                     b.HasKey("ReviewId")
                         .HasName("Review_pkey");
 
-                    b.HasIndex(new[] { "OrderId" }, "Review_OrderId_key")
-                        .IsUnique();
-
                     b.HasIndex(new[] { "RevieweeId" }, "idx_review_reviewee");
 
                     b.HasIndex(new[] { "ReviewerId" }, "idx_review_reviewer");
+
+                    b.HasIndex(new[] { "OrderId", "ReviewerId" }, "uq_review_order_reviewer")
+                        .IsUnique();
 
                     b.ToTable("Review", "public");
                 });
@@ -1868,7 +1885,7 @@ namespace HomeCycle.Infrastructure.Migrations
                     b.Property<string>("DeliveryAddress")
                         .HasColumnType("text");
 
-                    b.Property<int?>("DeliveryMethod")
+                    b.Property<int>("DeliveryMethod")
                         .HasColumnType("integer");
 
                     b.Property<string>("FromName")
@@ -1887,6 +1904,9 @@ namespace HomeCycle.Infrastructure.Migrations
 
                     b.Property<string>("PickupAddress")
                         .HasColumnType("text");
+
+                    b.Property<DateTime?>("SellerReadyAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<int?>("ShipmentStatus")
                         .HasColumnType("integer");
@@ -2780,8 +2800,8 @@ namespace HomeCycle.Infrastructure.Migrations
             modelBuilder.Entity("HomeCycle.Infrastructure.Review", b =>
                 {
                     b.HasOne("HomeCycle.Infrastructure.Order", "Order")
-                        .WithOne("Review")
-                        .HasForeignKey("HomeCycle.Infrastructure.Review", "OrderId")
+                        .WithMany("Reviews")
+                        .HasForeignKey("OrderId")
                         .IsRequired()
                         .HasConstraintName("fk_review_orderid");
 
@@ -2979,7 +2999,7 @@ namespace HomeCycle.Infrastructure.Migrations
 
                     b.Navigation("Payments");
 
-                    b.Navigation("Review");
+                    b.Navigation("Reviews");
 
                     b.Navigation("Shipments");
                 });

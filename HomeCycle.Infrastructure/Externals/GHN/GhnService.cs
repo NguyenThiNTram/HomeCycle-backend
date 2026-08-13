@@ -371,6 +371,110 @@ namespace HomeCycle.Infrastructure.Externals.GHN
                 ExpectedDeliveryAt: ParseExpectedDelivery(data.ExpectedDeliveryTime));
         }
 
+        public async Task<GhnOrderDetailResponse> GetOrderDetailAsync(string ghnOrderCode, CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(ghnOrderCode))
+            {
+                throw new ArgumentException(
+                    "Mã vận đơn GHN không được để trống.",
+                    nameof(ghnOrderCode));
+            }
+
+            var normalizedOrderCode = ghnOrderCode.Trim();
+
+            if (normalizedOrderCode.Length > 50)
+            {
+                throw new ArgumentException(
+                    "Mã vận đơn GHN không được vượt quá 50 ký tự.",
+                    nameof(ghnOrderCode));
+            }
+
+            var data = await SendSingleAsync<GhnOrderDetailData>(
+                 HttpMethod.Post,
+                 "v2/shipping-order/detail",
+                 new { order_code = ghnOrderCode },
+                 cancellationToken);
+
+            //var data = await SendSingleAsync<GhnOrderDetailData>(
+            //    HttpMethod.Post,
+            //    "v2/shipping-order/detail",
+            //    new GhnOrderDetailApiRequest(normalizedOrderCode),
+            //    cancellationToken);
+
+            if (data is null)
+            {
+                throw new GhnApiException(
+                    HttpStatusCode.BadGateway,
+                    "GHN báo thành công nhưng không trả chi tiết vận đơn.",
+                    "EMPTY_ORDER_DETAIL");
+            }
+
+            if (string.IsNullOrWhiteSpace(data.OrderCode))
+            {
+                throw new GhnApiException(
+                    HttpStatusCode.BadGateway,
+                    "GHN trả chi tiết vận đơn nhưng thiếu mã vận đơn.",
+                    "EMPTY_ORDER_CODE");
+            }
+
+            if (!string.Equals(
+                    data.OrderCode.Trim(),
+                    normalizedOrderCode,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                throw new GhnApiException(
+                    HttpStatusCode.BadGateway,
+                    "Mã vận đơn GHN trả về không khớp với mã được yêu cầu.",
+                    "ORDER_CODE_MISMATCH");
+            }
+
+            var timeline = (data.Log ?? new List<GhnOrderDetailLogData>())
+                .Where(x => !string.IsNullOrWhiteSpace(x.Status))
+                .Select(x => new GhnTrackingLogResponse
+                {
+                    Status = x.Status!.Trim().ToLowerInvariant(),
+                    OccurredAt = ParseGhnDetailDate(x.UpdatedDate.ToString())
+                })
+                .GroupBy(x => new
+                {
+                    Status = x.Status.ToLowerInvariant(),
+                    x.OccurredAt
+                })
+                .Select(group => group.First())
+                .OrderBy(x => x.OccurredAt ?? DateTimeOffset.MaxValue)
+                .ToArray();
+
+            var carrierStatus = string.IsNullOrWhiteSpace(data.Status)
+                ? "unknown"
+                : data.Status.Trim().ToLowerInvariant();
+
+            return new GhnOrderDetailResponse
+            {
+                OrderCode = data.OrderCode.Trim(),
+                ClientOrderCode = NormalizeOptionalText(data.ClientOrderCode),
+
+                CarrierStatus = carrierStatus,
+                ServiceTypeId = data.ServiceTypeId,
+
+                WeightGram = data.WeightGram,
+                ConvertedWeightGram = data.ConvertedWeightGram,
+                LengthCm = data.LengthCm,
+                WidthCm = data.WidthCm,
+                HeightCm = data.HeightCm,
+
+                RequiredNote = NormalizeOptionalText(data.RequiredNote),
+                Content = NormalizeOptionalText(data.Content),
+                Note = NormalizeOptionalText(data.Note),
+
+                ExpectedDeliveryAt = ParseGhnDetailDate(data.Leadtime?.ToString()),
+                OrderCreatedAt = ParseGhnDetailDate(data.OrderDate),
+                FinishedAt = ParseGhnDetailDate(data.FinishDate.ToString()),
+                CarrierUpdatedAt = ParseGhnDetailDate(data.UpdatedDate),
+
+                Timeline = timeline
+            };
+        }
+
         private static GhnPreviewOrderApiRequest MapPreviewRequest(GhnShippingPreviewRequest request)
         {
             var sender = request.Sender;
@@ -711,6 +815,31 @@ namespace HomeCycle.Infrastructure.Externals.GHN
 
                 Items = apiItems
             };
+        }
+
+        private static DateTimeOffset? ParseGhnDetailDate(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value) ||
+                string.Equals(value.Trim(), "null", StringComparison.OrdinalIgnoreCase))
+            {
+                return null;
+            }
+
+            return DateTimeOffset.TryParse(
+                value.Trim(),
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.AssumeUniversal |
+                DateTimeStyles.AdjustToUniversal,
+                out var parsed)
+                    ? parsed
+                    : null;
+        }
+
+        private static string? NormalizeOptionalText(string? value)
+        {
+            return string.IsNullOrWhiteSpace(value)
+                ? null
+                : value.Trim();
         }
 
     }

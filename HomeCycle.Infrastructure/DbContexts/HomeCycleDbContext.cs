@@ -754,7 +754,7 @@ public partial class HomeCycleDbContext : DbContext
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()");
             entity.Property(e => e.UpdatedAt).HasDefaultValueSql("now()");
 
-            entity.HasOne(d => d.Order).WithOne(p => p.Review)
+            entity.HasOne(d => d.Order).WithMany(p => p.Reviews)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("fk_review_orderid");
 
