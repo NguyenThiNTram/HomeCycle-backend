@@ -86,6 +86,7 @@ namespace HomeCycle.API.Controllers
             Summary = "Lấy danh sách tất cả loại sản phẩm",
             Description = "Trả về danh sách loại sản phẩm trong hệ thống có hỗ trợ phân trang (Pagination)."
         )]
+        [AllowAnonymous]
         public async Task<IActionResult> GetAll([FromQuery] PaginationRequest request,
             CancellationToken cancellationToken)
         {
@@ -98,6 +99,7 @@ namespace HomeCycle.API.Controllers
             Summary = "Lấy danh sách loại sản phẩm theo danh mục",
             Description = "Lấy toàn bộ danh sách loại sản phẩm (ProductTypes) trực thuộc một danh mục cụ thể (CategoryId)."
         )]
+        [AllowAnonymous]
         public async Task<IActionResult> GetByCategoryId(
             [FromRoute] Guid categoryId,
             CancellationToken cancellationToken)
@@ -111,6 +113,7 @@ namespace HomeCycle.API.Controllers
             Summary = "Tìm kiếm loại sản phẩm",
             Description = "Tìm kiếm loại sản phẩm theo từ khóa tên hoặc các bộ lọc tùy chọn có phân trang."
         )]
+        [AllowAnonymous]
         public async Task<IActionResult> Search(
             [FromQuery] ProductTypeSearchRequest request,
             CancellationToken cancellationToken)
@@ -146,6 +149,7 @@ namespace HomeCycle.API.Controllers
             Summary = "Lấy danh sách thuộc tính hỗ trợ lọc",
             Description = "Lấy danh sách các thuộc tính sản phẩm được cấu hình làm bộ lọc động (IsFilterable = true) phục vụ chức năng Tìm kiếm & Lọc bài đăng."
         )]
+        [AllowAnonymous]
         public async Task<IActionResult> GetFilterableAttributes(
             Guid productTypeId, CancellationToken cancellationToken)
         {
@@ -158,6 +162,7 @@ namespace HomeCycle.API.Controllers
             Summary = "Lấy danh sách thuộc tính theo loại sản phẩm",
             Description = "Lấy tất cả các thuộc tính động (Attributes) được định nghĩa cho một ProductTypeId cụ thể."
         )]
+        [AllowAnonymous]
         public async Task<IActionResult> GetAttributesByProductType(Guid productTypeId, CancellationToken cancellationToken)
         {
             var result = await _productAttributeService.GetByProductTypeAsync(productTypeId, cancellationToken);
@@ -169,6 +174,7 @@ namespace HomeCycle.API.Controllers
             Summary = "Lấy chi tiết thuộc tính theo ID",
             Description = "Trả về chi tiết cấu hình của một thuộc tính sản phẩm theo AttributeId."
         )]
+        [AllowAnonymous]
         public async Task<IActionResult> GetAttributeById(Guid attributeId, CancellationToken cancellationToken)
         {
             var result = await _productAttributeService.GetByIdAsync(attributeId, cancellationToken);
@@ -222,6 +228,7 @@ namespace HomeCycle.API.Controllers
             Summary = "Lấy danh sách tùy chọn của thuộc tính",
             Description = "Lấy danh sách tất cả giá trị lựa chọn (Options) thuộc về một AttributeId có kiểu dữ liệu danh mục/lựa chọn."
         )]
+        [AllowAnonymous]
         public async Task<IActionResult> GetOptionsByAttribute(Guid attributeId, CancellationToken cancellationToken)
         {
             var result = await _productAttributeOptionService.GetByAttributeAsync(attributeId, cancellationToken);

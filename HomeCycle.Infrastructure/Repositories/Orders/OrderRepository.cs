@@ -98,7 +98,7 @@ namespace HomeCycle.Infrastructure.Repositories.Orders
             var entity = await _db.Orders
                 .AsNoTracking()
                 .Include(o => o.Post)
-                .Include(o => o.Review)
+                .Include(o => o.Reviews)
                 .Include(o => o.Shipments)
                 .Include(o => o.Disputes)
                 .Include(o => o.Payments)
@@ -128,13 +128,13 @@ namespace HomeCycle.Infrastructure.Repositories.Orders
 
             // Review: giả định chỉ Buyer được đánh giá Seller sau khi đơn Completed và chưa từng review.
             // TODO: đổi "2" thành đúng giá trị enum OrderStatus.Completed thật của bạn.
-            var reviewSummary = new ReviewSummaryDto
-            {
-                ReviewId = entity.Review?.ReviewId,
-                HasReviewed = entity.Review != null,
-                CanReview = isBuyer && entity.OrderStatus == 2 && entity.Review == null,
-                Rating = entity.Review?.Rating
-            };
+            //var reviewSummary = new ReviewSummaryDto
+            //{
+            //    ReviewId = entity.Review?.ReviewId,
+            //    HasReviewed = entity.Review != null,
+            //    CanReview = isBuyer && entity.OrderStatus == 2 && entity.Review == null,
+            //    Rating = entity.Review?.Rating
+            //};
 
             // Giả định 1 Order chỉ theo dõi 1 Shipment chính (lấy bản ghi mới nhất nếu có nhiều).
             var latestShipment = entity.Shipments
@@ -169,9 +169,12 @@ namespace HomeCycle.Infrastructure.Repositories.Orders
                 NegotiationId = entity.Agreement.NegotiationId,
                 PaymentMethod = latestPaidPayment?.PaymentMethod,
                 PaidAt = latestPaidPayment?.PaidAt,
-                Review = reviewSummary,
+                //Review = reviewSummary,
                 Shipment = shipmentSummary,
-                Dispute = disputeSummary
+                Dispute = disputeSummary,
+                Reviews = entity.Reviews.Select(r => r.ToDomain()).ToList(),
+                //Shipments = entity.Shipments.Select(s => s.ToDomain()).ToList(),
+                //Disputes = entity.Disputes.Select(d => d.ToDomain()).ToList()
             };
         }
 

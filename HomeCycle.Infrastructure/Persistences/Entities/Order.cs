@@ -65,7 +65,7 @@ public partial class Order
     public virtual Post Post { get; set; } = null!;
 
     [InverseProperty("Order")]
-    public virtual Review? Review { get; set; }
+    public virtual ICollection<Review> Reviews { get; set; } = new List<Review>();
 
     [InverseProperty("Order")]
     public virtual ICollection<Shipment> Shipments { get; set; } = new List<Shipment>();

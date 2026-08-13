@@ -24,6 +24,7 @@ namespace HomeCycle.API.Controllers
             Summary = "Lấy danh sách thương hiệu",
             Description = "Trả về danh sách tất cả thương hiệu có hỗ trợ tìm kiếm và phân trang."
         )]
+        [AllowAnonymous]
         public async Task<IActionResult> GetBrands([FromQuery] BrandSearchRequest request, CancellationToken cancellationToken)
         {
             var result = await _brandService.SearchAsync(request, cancellationToken);
@@ -35,6 +36,7 @@ namespace HomeCycle.API.Controllers
             Summary = "Lấy danh sách thương hiệu đang hoạt động",
             Description = "Trả về danh sách thương hiệu đang hoạt động (IsActive = true)."
         )]
+        [AllowAnonymous]
         public async Task<IActionResult> GetActiveBrands([FromQuery] GetActiveBrandRequest request, CancellationToken cancellationToken)
         {
             var result = await _brandService.GetActiveAsync(request, cancellationToken);
@@ -46,6 +48,7 @@ namespace HomeCycle.API.Controllers
             Summary = "Lấy thông tin thương hiệu theo ID",
             Description = "Trả về chi tiết thông tin của một thương hiệu theo ID."
         )]
+        [AllowAnonymous]
         public async Task<IActionResult> GetBrand(Guid id, CancellationToken cancellationToken)
         {
             var result = await _brandService.GetByIdAsync(id, cancellationToken);
@@ -105,6 +108,7 @@ namespace HomeCycle.API.Controllers
             Summary = "Tìm kiếm thương hiệu",
             Description = "Tìm kiếm thương hiệu theo từ khóa và hỗ trợ phân trang."
         )]
+        [AllowAnonymous]
         public async Task<IActionResult> SearchBrands([FromQuery] BrandSearchRequest request, CancellationToken cancellationToken)
         {
             var result = await _brandService.SearchAsync(request, cancellationToken);
