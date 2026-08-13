@@ -1,4 +1,5 @@
-﻿using HomeCycle.Application.Commons.Results;
+﻿using FluentValidation;
+using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Requests.Agreements;
 using HomeCycle.Application.DTOs.Requests.Payments;
 using HomeCycle.Application.Interfaces.Externals;
@@ -61,7 +62,7 @@ namespace HomeCycle.Application.Services.Payments
 
         private readonly IShipmentRepository _shipmentRepo;
         private readonly IGhnShipmentRepository _ghnShipmentRepo;
-
+        private readonly IValidator<PayOSCheckoutRequest> _payOSCheckoutValidator;
         public PaymentService(
             IUnitOfWork unitOfWork,
             IPaymentGatewayService gatewayService,
@@ -78,7 +79,8 @@ namespace HomeCycle.Application.Services.Payments
             IPostRepository postRepo,
             ILogger<PaymentService> logger,
             IShipmentRepository shipmentRepository,
-            IGhnShipmentRepository ghnShipmentRepository)
+            IGhnShipmentRepository ghnShipmentRepository,
+            IValidator<PayOSCheckoutRequest> payOSCheckoutValidator)
         {
             _unitOfWork = unitOfWork;
             _gatewayService = gatewayService;
@@ -96,10 +98,19 @@ namespace HomeCycle.Application.Services.Payments
             _inspectionRepo = inspectionRepo;
             _postRepo = postRepo;
             _logger = logger;
+            _payOSCheckoutValidator = payOSCheckoutValidator;
         }
 
-        public async Task<Result<string>> GeneratePayOSCheckoutUrlAsync(Guid agreementId, Guid payerId, CancellationToken ct = default)
+        public async Task<Result<string>> GeneratePayOSCheckoutUrlAsync(Guid agreementId, Guid payerId, string returnUrl, string cancelUrl, CancellationToken ct = default)
         {
+            var urlValidation = await _payOSCheckoutValidator.ValidateAsync(
+                new PayOSCheckoutRequest { ReturnUrl = returnUrl, CancelUrl = cancelUrl }, ct);
+            if (!urlValidation.IsValid)
+            {
+                var msg = string.Join(" ", urlValidation.Errors.Select(e => e.ErrorMessage));
+                return Result<string>.Fail(new Error("Payment.InvalidRedirectUrl", msg));
+            }
+
             var agreement = await _agreementRepo.GetByIdAsync(agreementId, ct);
             if (agreement == null)
                 return Result<string>.Fail(new Error("Agreement.NotFound", "Không tìm thấy thỏa thuận."));
@@ -179,7 +190,9 @@ namespace HomeCycle.Application.Services.Payments
                 Amount = (int)calc.AmountToPay,
                 Description = $"TT AGREE {agreementId.ToString().Substring(0, 6)}",
                 BuyerName = "Buyer",
-                BuyerEmail = "buyer@homecycle.vn"
+                BuyerEmail = "buyer@homecycle.vn",
+                ReturnUrl = returnUrl,
+                CancelUrl = cancelUrl
             };
 
             var gatewayResult = await _gatewayService.CreatePaymentLinkAsync(gatewayRequest, ct);
