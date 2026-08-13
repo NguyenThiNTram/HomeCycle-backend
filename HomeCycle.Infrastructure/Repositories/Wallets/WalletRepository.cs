@@ -33,5 +33,32 @@ namespace HomeCycle.Infrastructure.Repositories.Wallets
         {
             await _db.Wallets.AddAsync(wallet.ToInfrastructure(), ct);
         }
+
+        public async Task<wallet?> GetUserWalletForUpdateAsync(Guid userId, CancellationToken ct = default)
+        {
+            var entity = await _db.Wallets
+                .FromSqlInterpolated($"SELECT * FROM public.\"Wallet\" WHERE \"UserId\" = {userId} FOR UPDATE")
+                .FirstOrDefaultAsync(ct);
+
+            return entity?.ToDomain();
+        }
+
+        public async Task<wallet?> GetSystemWalletForUpdateAsync(SystemWalletPurpose purpose, CancellationToken ct = default)
+        {
+            int systemWalletType = (int)WalletTypeEnum.System;
+            int purposeValue = (int)purpose;
+
+            var entity = await _db.Wallets
+                .FromSqlInterpolated($"SELECT * FROM public.\"Wallet\" WHERE \"WalletType\" = {systemWalletType} AND \"Purpose\" = {purposeValue} FOR UPDATE")
+                .FirstOrDefaultAsync(ct);
+
+            return entity?.ToDomain();
+        }
+
+        public async Task<wallet?> GetByIdAsync(Guid walletId, CancellationToken ct = default)
+        {
+            var entity = await _db.Wallets.AsNoTracking().FirstOrDefaultAsync(x => x.WalletId == walletId, ct);
+            return entity?.ToDomain();
+        }
     }
 }

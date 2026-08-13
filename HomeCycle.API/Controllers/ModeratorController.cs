@@ -1,6 +1,8 @@
 ﻿using HomeCycle.Application.DTOs.Requests.Moderators;
+using HomeCycle.Application.DTOs.Requests.Wallets;
 using HomeCycle.Application.Interfaces.Services.Moderators;
 using HomeCycle.Application.Interfaces.Services.Posts;
+using HomeCycle.Application.Interfaces.Services.Wallets;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -15,11 +17,13 @@ namespace HomeCycle.API.Controllers
     {
         private readonly IModeratorService _moderatorService;
         private readonly IPostService _postService;
+        private readonly IWithdrawalService _withdrawalService;
 
-        public ModeratorController(IModeratorService moderatorService, IPostService postService)
+        public ModeratorController(IModeratorService moderatorService, IPostService postService, IWithdrawalService withdrawalService)
         {
             _moderatorService = moderatorService;
             _postService = postService;
+            _withdrawalService = withdrawalService;
         }
 
         [HttpPost("business-profiles/review")]
@@ -203,6 +207,55 @@ namespace HomeCycle.API.Controllers
                 success = true,
                 message = "Bài đăng đã bị đình chỉ (Suspended). Bài đăng sẽ không còn hiển thị trên trang chủ người dùng."
             });
+        }
+
+        [HttpPost("withdrawals/{withdrawalId:guid}/approve")]
+        public async Task<IActionResult> ApproveWithdrawal(
+            [FromRoute] Guid withdrawalId, CancellationToken cancellationToken)
+        {
+            var moderatorId = GetCurrentUserId();
+            if (moderatorId == Guid.Empty)
+                return Unauthorized(new { success = false, message = "Phiên làm việc không hợp lệ." });
+
+            var result = await _withdrawalService.ApproveWithdrawalAsync(moderatorId, withdrawalId, cancellationToken);
+
+            if (!result.IsSuccess)
+            {
+                return BadRequest(new
+                {
+                    success = false,
+                    code = result.Error.Code,
+                    message = result.Error.Message
+                });
+            }
+
+            return Ok(new { success = true, message = "Đã duyệt yêu cầu rút tiền, đang chuyển tiền." });
+        }
+
+        [HttpPost("withdrawals/{withdrawalId:guid}/reject")]
+        public async Task<IActionResult> RejectWithdrawal(
+            [FromRoute] Guid withdrawalId,
+            [FromBody] RejectWithdrawalRequest request,
+            CancellationToken cancellationToken)
+        {
+            var moderatorId = GetCurrentUserId();
+            if (moderatorId == Guid.Empty)
+                return Unauthorized(new { success = false, message = "Phiên làm việc không hợp lệ." });
+
+            var result = await _withdrawalService.RejectWithdrawalAsync(
+                moderatorId, withdrawalId, request, cancellationToken);
+
+            if (!result.IsSuccess)
+            {
+                return BadRequest(new
+                {
+                    success = false,
+                    code = result.Error.Code,
+                    message = result.Error.Message
+                });
+            }
+
+            return Ok(new { success = true, message = "Đã từ chối yêu cầu rút tiền." });
         }
 
         private Guid GetCurrentUserId()

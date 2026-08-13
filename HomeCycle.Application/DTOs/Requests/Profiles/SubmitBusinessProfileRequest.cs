@@ -32,7 +32,7 @@ namespace HomeCycle.Application.DTOs.Requests.Profiles
 
      
         public List<BusinessDocumentDto> Documents { get; set; } = new();
-        public BusinessServiceAreaDto ServiceArea { get; set; }
+        public BusinessServiceAreaDto? ServiceArea { get; set; }
     }
 
     public class BusinessDocumentDto

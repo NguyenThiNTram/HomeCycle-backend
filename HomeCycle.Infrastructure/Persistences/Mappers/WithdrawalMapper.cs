@@ -19,7 +19,10 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 UserBankId = entity.UserBankId,
                 Amount = entity.Amount,
                 WithdrawalStatus = entity.WithdrawalStatus,
-                RequestedAt = entity.RequestedAt
+                RequestedAt = entity.RequestedAt,
+                ProcessedAt = entity.ProcessedAt,
+                ProcessedBy = entity.ProcessedBy,
+                RejectReason = entity.RejectReason
             };
         }
         public static Withdrawal ToInfrastructure(this withdrawal entity)
@@ -32,7 +35,10 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 UserBankId = entity.UserBankId,
                 Amount = entity.Amount,
                 WithdrawalStatus = entity.WithdrawalStatus,
-                RequestedAt = entity.RequestedAt
+                RequestedAt = entity.RequestedAt,
+                ProcessedAt = entity.ProcessedAt,
+                ProcessedBy = entity.ProcessedBy,
+                RejectReason = entity.RejectReason
             };
         }
     }

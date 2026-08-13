@@ -18,6 +18,9 @@ public class withdrawal
     public int? WithdrawalStatus { get; set; }
 
     public DateTime? RequestedAt { get; set; }
+    public DateTime? ProcessedAt { get; set; }
+    public Guid? ProcessedBy { get; set; }
+    public string? RejectReason { get; set; }
 
     public withdrawal()
     {

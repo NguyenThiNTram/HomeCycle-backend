@@ -15,7 +15,9 @@ namespace HomeCycle.Application.DTOs.Responses.Orders
         public IReadOnlyList<review> Reviews { get; set; } = new List<review>();
         //public IReadOnlyList<shipment> Shipments { get; set; } = new List<shipment>();
         //public IReadOnlyList<dispute> Disputes { get; set; } = new List<dispute>();
+        public string? CounterpartyPhone { get; set; }
         public string? CounterpartyName { get; set; }
+        public decimal? ShippingFee { get; set; }
         public Guid NegotiationId { get; set; }
 
         public int? PaymentMethod { get; set; }
