@@ -75,6 +75,7 @@ namespace HomeCycle.Infrastructure.Repositories.Profiles
         public async Task<business_document> GetActiveByProfileIdAndTypeAsync(Guid businessProfileId, int documentType, CancellationToken cancellationToken = default)
         {
             var entity = await _db.Business_Documents
+                .AsNoTracking()
                 .FirstOrDefaultAsync(x => x.BusinessProfileId == businessProfileId
                                         && x.DocumentType == documentType
                                         && x.ReplacedAt == null, cancellationToken);

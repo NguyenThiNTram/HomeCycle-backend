@@ -13,5 +13,7 @@ namespace HomeCycle.Application.DTOs.Requests.Payments
         public string Description { get; set; } = string.Empty;
         public string BuyerName { get; set; } = string.Empty;
         public string BuyerEmail { get; set; } = string.Empty;
+        public string ReturnUrl { get; set; } = string.Empty;
+        public string CancelUrl { get; set; } = string.Empty;
     }
 }

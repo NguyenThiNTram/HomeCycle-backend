@@ -1,4 +1,7 @@
-﻿using HomeCycle.Domain.Entities;
+﻿using HomeCycle.Application.Commons.Paginations;
+using HomeCycle.Application.DTOs.Requests.Wallets;
+using HomeCycle.Application.DTOs.Responses.Wallets;
+using HomeCycle.Domain.Entities;
 using HomeCycle.Domain.Enums;
 using System;
 using System.Collections.Generic;
@@ -16,5 +19,6 @@ namespace HomeCycle.Application.Interfaces.Repositories.Wallets
         Task<wallet?> GetUserWalletForUpdateAsync(Guid userId, CancellationToken ct = default);
         Task<wallet?> GetSystemWalletForUpdateAsync(SystemWalletPurpose purpose, CancellationToken ct = default);
         Task<wallet?> GetByIdAsync(Guid walletId, CancellationToken ct = default);
+        Task<List<wallet>> GetAllSystemWalletsAsync(CancellationToken ct = default);
     }
 }

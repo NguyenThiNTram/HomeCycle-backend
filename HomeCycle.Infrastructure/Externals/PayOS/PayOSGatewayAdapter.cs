@@ -37,8 +37,8 @@ namespace HomeCycle.Infrastructure.Externals.PayOS
                     OrderCode = request.OrderCode,
                     Amount = request.Amount,
                     Description = request.Description,
-                    ReturnUrl = _settings.ReturnUrl,
-                    CancelUrl = _settings.CancelUrl,
+                    ReturnUrl = request.ReturnUrl,
+                    CancelUrl = request.CancelUrl,
                     BuyerName = request.BuyerName,
                     BuyerEmail = request.BuyerEmail
                 };

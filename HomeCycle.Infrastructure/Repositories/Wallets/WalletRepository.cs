@@ -1,4 +1,7 @@
-﻿using HomeCycle.Application.Interfaces.Repositories.Wallets;
+﻿using HomeCycle.Application.Commons.Paginations;
+using HomeCycle.Application.DTOs.Requests.Wallets;
+using HomeCycle.Application.DTOs.Responses.Wallets;
+using HomeCycle.Application.Interfaces.Repositories.Wallets;
 using HomeCycle.Domain.Entities;
 using HomeCycle.Domain.Enums;
 using HomeCycle.Infrastructure.DbContexts;
@@ -60,5 +63,18 @@ namespace HomeCycle.Infrastructure.Repositories.Wallets
             var entity = await _db.Wallets.AsNoTracking().FirstOrDefaultAsync(x => x.WalletId == walletId, ct);
             return entity?.ToDomain();
         }
+
+        public async Task<List<wallet>> GetAllSystemWalletsAsync(CancellationToken ct = default)
+        {
+            int systemWalletType = (int)WalletTypeEnum.System;
+
+            var entities = await _db.Wallets
+                .AsNoTracking()
+                .Where(x => x.WalletType == systemWalletType)
+                .ToListAsync(ct);
+
+            return entities.Select(x => x.ToDomain()).ToList();
+        }
+
     }
 }

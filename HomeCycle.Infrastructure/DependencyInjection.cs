@@ -85,6 +85,8 @@ using HomeCycle.Application.Interfaces.Repositories.GHN;
 using HomeCycle.Infrastructure.Repositories.GHN;
 using HomeCycle.Application.Interfaces.Services.GHN;
 using HomeCycle.Application.Services.GHN;
+using HomeCycle.Application.Interfaces.Services.Wallets;
+using HomeCycle.Application.Services.Wallets;
 
 namespace HomeCycle.Infrastructure
 {
@@ -175,6 +177,7 @@ namespace HomeCycle.Infrastructure
             services.AddScoped<IGhnShipmentCreationService, GhnShipmentCreationService>();
             services.AddScoped<IGhnTrackingSyncService, GhnTrackingSyncService>();
             services.AddScoped<IGhnWebhookService, GhnWebhookService>();
+            services.AddScoped<IWithdrawalRepository, WithdrawalRepository>();
 
             // register Services
             services.AddScoped<IAuthService, AuthService>();
@@ -204,6 +207,8 @@ namespace HomeCycle.Infrastructure
             services.AddScoped<IAppointmentService, AppointmentService>();
             services.AddScoped<IOrderService, OrderService>();
             services.AddScoped<IReviewService, ReviewService>();
+            services.AddScoped<IWithdrawalService, WithdrawalService>();
+            services.AddScoped<IWalletService, WalletService>();
 
 
 

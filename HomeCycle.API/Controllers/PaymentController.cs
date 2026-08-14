@@ -1,4 +1,5 @@
-﻿using HomeCycle.Application.Interfaces.Services.Payments;
+﻿using HomeCycle.Application.DTOs.Requests.Payments;
+using HomeCycle.Application.Interfaces.Services.Payments;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -19,11 +20,11 @@ namespace HomeCycle.API.Controllers
 
         [HttpPost("payos/checkout/{agreementId}")]
         [Authorize]
-        public async Task<IActionResult> CreatePayOSCheckout([FromRoute] Guid agreementId, CancellationToken ct)
+        public async Task<IActionResult> CreatePayOSCheckout([FromRoute] Guid agreementId, [FromBody] PayOSCheckoutRequest request, CancellationToken ct)
         {
             var userId = GetUserIdFromToken();
 
-            var result = await _paymentService.GeneratePayOSCheckoutUrlAsync(agreementId, userId, ct);
+            var result = await _paymentService.GeneratePayOSCheckoutUrlAsync(agreementId, userId, request.ReturnUrl, request.CancelUrl, ct);
 
             if (!result.IsSuccess)
             {
@@ -90,6 +91,20 @@ namespace HomeCycle.API.Controllers
 
             return Ok(result.Data);
         }
+
+        [HttpGet("history")]
+        [Authorize]
+        public async Task<IActionResult> GetMyPaymentHistory([FromQuery] PaymentHistorySearchRequest request, CancellationToken ct)
+        {
+            var userId = GetUserIdFromToken();
+            var result = await _paymentService.GetMyPaymentHistoryAsync(userId, request, ct);
+            if (!result.IsSuccess)
+                return BadRequest(result.Error);
+
+            return Ok(result.Data);
+        }
+
+
         private Guid GetUserIdFromToken()
         {
 
