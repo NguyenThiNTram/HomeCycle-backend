@@ -6,10 +6,5 @@ using System.Threading.Tasks;
 
 namespace HomeCycle.Domain.Enums
 {
-    public enum PaymentMethod
-    {
-        PayOS = 1,  
-        Internal_Wallet = 2,
-        Unknown = 3
-    }
+    public enum DisputeTargetType { Appointment = 1, Order = 2, Review = 3 }
 }

@@ -1,7 +1,9 @@
 ﻿using FluentValidation;
+using HomeCycle.Application.Commons.Paginations;
 using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Requests.Agreements;
 using HomeCycle.Application.DTOs.Requests.Payments;
+using HomeCycle.Application.DTOs.Responses.Payments;
 using HomeCycle.Application.Interfaces.Externals;
 using HomeCycle.Application.Interfaces.Generics;
 using HomeCycle.Application.Interfaces.Repositories.Agreements;
@@ -327,81 +329,88 @@ namespace HomeCycle.Application.Services.Payments
                 return Result<bool>.Fail(new Error("Payment.InvalidAmount", "Số tiền thanh toán không hợp lệ."));
 
             agreement.PaymentType = calc.PaymentType;
-
-            // 3. KIỂM TRA VÍ NGƯỜI MUA
-            var buyerWallet = await _walletRepo.GetByUserIdAndTypeAsync(payerId, WalletTypeEnum.Personal, ct);
-            if (buyerWallet == null || buyerWallet.AvailableBalance < amountToPay)
-                return Result<bool>.Fail(new Error("Wallet.InsufficientBalance", "Số dư ví không đủ để thực hiện giao dịch."));
-
-            var sellerWallet = await _walletRepo.GetByUserIdAndTypeAsync(agreement.SellerId, WalletTypeEnum.Personal, ct);
-            if (sellerWallet == null)
-                return Result<bool>.Fail(new Error("Wallet.SellerNotFound", "Không tìm thấy ví của người bán."));
-
-            //wallet? systemWallet = null;
-            //bool needsSystemLedger = details?.DeliveryMethod == DeliveryMethod.GhnDelivery && shippingFee > 0;
-            //if (needsSystemLedger)
-            //{
-            //    systemWallet = await _walletRepo.GetSystemWalletAsync(ct);
-            //    if (systemWallet == null)
-            //        return Result<bool>.Fail(new Error("Wallet.SystemWalletNotFound", "Không tìm thấy ví hệ thống."));
-            //}
+            bool needsSystemLedger = details?.DeliveryMethod == DeliveryMethod.GhnDelivery && shippingFee > 0;
 
             // TRANSACTION CORE LÕI
             await _unitOfWork.BeginTransactionAsync();
             try
             {
+                wallet buyerWallet = null!;
+                wallet sellerWallet = null!;
+                wallet_transaction? systemWalletTx = null;
+                wallet_ledger? buyerLedgerForSystem = null;
+                wallet_ledger? systemLedger = null;
+
+                // Kỹ thuật Deterministic Locking: Khóa theo thứ tự GUID để chống Deadlock
+                if (string.Compare(payerId.ToString(), agreement.SellerId.ToString(), StringComparison.Ordinal) < 0)
+                {
+                    buyerWallet = await _walletRepo.GetUserWalletForUpdateAsync(payerId, ct);
+                    sellerWallet = await _walletRepo.GetUserWalletForUpdateAsync(agreement.SellerId, ct);
+                }
+                else
+                {
+                    sellerWallet = await _walletRepo.GetUserWalletForUpdateAsync(agreement.SellerId, ct);
+                    buyerWallet = await _walletRepo.GetUserWalletForUpdateAsync(payerId, ct);
+                }
+
+                // Validate Ví bên trong Transaction
+                if (buyerWallet == null)
+                    return Result<bool>.Fail(new Error("Wallet.BuyerNotFound", "Không tìm thấy ví của người mua."));
+
+                if (sellerWallet == null)
+                    return Result<bool>.Fail(new Error("Wallet.SellerNotFound", "Không tìm thấy ví của người bán."));
+
+                if (buyerWallet.AvailableBalance < amountToPay)
+                    return Result<bool>.Fail(new Error("Wallet.InsufficientBalance", "Số dư ví không đủ để thực hiện giao dịch."));
+
+                wallet? systemWallet = null;
+                if (needsSystemLedger)
+                {
+                    // Khóa ví System cuối cùng
+                    systemWallet = await _walletRepo.GetSystemWalletForUpdateAsync(SystemWalletPurpose.Shipping_Escrow, ct);
+                    if (systemWallet == null)
+                        return Result<bool>.Fail(new Error("Wallet.SystemWalletNotFound", "Không tìm thấy ví hệ thống để nhận phí vận chuyển."));
+                }
+
                 var paymentId = Guid.NewGuid();
                 var orderId = Guid.NewGuid();
                 var now = DateTime.UtcNow;
 
-                // Trừ tiền ví người mua (tiền ra)
-                var buyerWalletTx = new wallet_transaction
-                {
-                    WalletTransactionId = Guid.NewGuid(),
-                    FromWalletId = buyerWallet.WalletId,   
-                    ToWalletId = null,
-                    PaymentId = paymentId,
-                    ReferenceId = orderId,
-                    ReferenceType = (int)ReferenceType.Order,
-                    TransactionType = (int)TransactionType.Wallet_Payment, // Thanh toán hàng hóa
-                    Amount = -amountToPay, // Lưu ý: Số âm vì trừ tiền
-                    WalletTransactionStatus = (int)WalletTransactionStatus.Completed,
-                    CreatedAt = DateTime.UtcNow
-                };
 
-                var buyerLedger = new wallet_ledger
-                {
-                    LedgerId = Guid.NewGuid(),
-                    WalletTransactionId = buyerWalletTx.WalletTransactionId,
-                    WalletId = buyerWallet.WalletId,
-                    Direction = (int)LedgerDirection.Out,
-                    BalanceType = (int)BalanceType.Available,
-                    Amount = amountToPay, // Ledger lưu số tuyệt đối
-                    BalanceBefore = buyerWallet.AvailableBalance,
-                    BalanceAfter = buyerWallet.AvailableBalance - amountToPay,
-                    ReferenceType = (int)ReferenceType.Order,
-                    ReferenceId = orderId,
-                    Description = $"Thanh toan don hang {orderId} tu vi",
-                    CreatedAt = DateTime.UtcNow
-                };
-                buyerWallet.AvailableBalance -= amountToPay;
-                buyerWallet.UpdatedAt = DateTime.UtcNow;
-
-                // Cộng tiền ví -> tạm giữ Escrow người bán (tiền vào)
+                // HẠCH TOÁN 1: TIỀN VỀ NGƯỜI BÁN (Goods / Goods + Shipping)
                 var sellerWalletTx = new wallet_transaction
                 {
                     WalletTransactionId = Guid.NewGuid(),
-                    FromWalletId = buyerWallet.WalletId,   
+                    FromWalletId = buyerWallet.WalletId,
                     ToWalletId = sellerWallet.WalletId,
                     PaymentId = paymentId,
                     ReferenceId = orderId,
                     ReferenceType = (int)ReferenceType.Order,
-                    TransactionType = (int)TransactionType.Escrow_Deposit,
-                    Amount = holdAmount,
+                    TransactionType = (int)TransactionType.Wallet_Payment, // Thanh toán từ ví
+                    Amount = holdAmount, 
                     WalletTransactionStatus = (int)WalletTransactionStatus.Completed,
-                    CreatedAt = DateTime.UtcNow
+                    CreatedAt = now
                 };
 
+                // Ledger 1.1: Trừ tiền Buyer (Out)
+                var buyerLedgerForSeller = new wallet_ledger
+                {
+                    LedgerId = Guid.NewGuid(),
+                    WalletTransactionId = sellerWalletTx.WalletTransactionId,
+                    WalletId = buyerWallet.WalletId,
+                    Direction = (int)LedgerDirection.Out,
+                    BalanceType = (int)BalanceType.Available,
+                    Amount = holdAmount,
+                    BalanceBefore = buyerWallet.AvailableBalance,
+                    BalanceAfter = buyerWallet.AvailableBalance - holdAmount,
+                    ReferenceType = (int)ReferenceType.Order,
+                    ReferenceId = orderId,
+                    Description = $"Thanh toan tien hang cho don {orderId}",
+                    CreatedAt = now
+                };
+                buyerWallet.AvailableBalance -= holdAmount;
+
+                // Ledger 1.2: Cộng tiền Seller (In) -> Vào Hold
                 var sellerLedger = new wallet_ledger
                 {
                     LedgerId = Guid.NewGuid(),
@@ -418,44 +427,62 @@ namespace HomeCycle.Application.Services.Payments
                     CreatedAt = DateTime.UtcNow
                 };
                 sellerWallet.HoldBalance += holdAmount;
-                sellerWallet.UpdatedAt = DateTime.UtcNow;
 
-                //wallet_transaction? systemWalletTx = null;
-                //wallet_ledger? systemLedger = null;
-                //if (needsSystemLedger && systemWallet != null)
-                //{
-                //    systemWalletTx = new wallet_transaction
-                //    {
-                //        WalletTransactionId = Guid.NewGuid(),
-                //        FromWalletId = buyerWallet.WalletId,
-                //        ToWalletId = systemWallet.WalletId,
-                //        PaymentId = paymentId,
-                //        ReferenceId = orderId,
-                //        ReferenceType = (int)ReferenceType.Order,
-                //        TransactionType = (int)TransactionType.Shipping_Fee_Collected, 
-                //        Amount = shippingFee,
-                //        WalletTransactionStatus = (int)WalletTransactionStatus.Completed,
-                //        CreatedAt = now
-                //    };
 
-                //    systemLedger = new wallet_ledger
-                //    {
-                //        LedgerId = Guid.NewGuid(),
-                //        WalletTransactionId = systemWalletTx.WalletTransactionId,
-                //        WalletId = systemWallet.WalletId,
-                //        Direction = (int)LedgerDirection.In,
-                //        BalanceType = (int)BalanceType.Available, // tiền pass-through, không phải hold
-                //        Amount = shippingFee,
-                //        BalanceBefore = systemWallet.AvailableBalance,
-                //        BalanceAfter = systemWallet.AvailableBalance + shippingFee,
-                //        ReferenceType = (int)ReferenceType.Order,
-                //        ReferenceId = orderId,
-                //        Description = $"Phi van chuyen GHN thu ho cho don hang {orderId}",
-                //        CreatedAt = now
-                //    };
-                //    systemWallet.AvailableBalance += shippingFee;
-                //    systemWallet.UpdatedAt = now;
-                //}
+                // HẠCH TOÁN 2: TIỀN VỀ HỆ THỐNG (Phí ship GHN nếu có)
+                if (needsSystemLedger && systemWallet != null)
+                {
+                    systemWalletTx = new wallet_transaction
+                    {
+                        WalletTransactionId = Guid.NewGuid(),
+                        FromWalletId = buyerWallet.WalletId,
+                        ToWalletId = systemWallet.WalletId,
+                        PaymentId = paymentId,
+                        ReferenceId = orderId,
+                        ReferenceType = (int)ReferenceType.Order,
+                        TransactionType = (int)TransactionType.Shipping_Fee_Collected,
+                        Amount = shippingFee,
+                        WalletTransactionStatus = (int)WalletTransactionStatus.Completed,
+                        CreatedAt = now
+                    };
+
+                    // Ledger 2.1: Trừ tiền Buyer phần phí ship (Out)
+                    buyerLedgerForSystem = new wallet_ledger
+                    {
+                        LedgerId = Guid.NewGuid(),
+                        WalletTransactionId = systemWalletTx.WalletTransactionId,
+                        WalletId = buyerWallet.WalletId,
+                        Direction = (int)LedgerDirection.Out,
+                        BalanceType = (int)BalanceType.Available,
+                        Amount = shippingFee,
+                        BalanceBefore = buyerWallet.AvailableBalance,
+                        BalanceAfter = buyerWallet.AvailableBalance - shippingFee,
+                        ReferenceType = (int)ReferenceType.Order,
+                        ReferenceId = orderId,
+                        Description = $"Thanh toan phi ship GHN cho don {orderId}",
+                        CreatedAt = now
+                    };
+                    buyerWallet.AvailableBalance -= shippingFee;
+
+                    // Ledger 2.2: Cộng tiền System (In)
+                    systemLedger = new wallet_ledger
+                    {
+                        LedgerId = Guid.NewGuid(),
+                        WalletTransactionId = systemWalletTx.WalletTransactionId,
+                        WalletId = systemWallet.WalletId,
+                        Direction = (int)LedgerDirection.In,
+                        BalanceType = (int)BalanceType.Available, // tiền pass-through, không phải hold
+                        Amount = shippingFee,
+                        BalanceBefore = systemWallet.AvailableBalance,
+                        BalanceAfter = systemWallet.AvailableBalance + shippingFee,
+                        ReferenceType = (int)ReferenceType.Order,
+                        ReferenceId = orderId,
+                        Description = $"Phi van chuyen GHN thu ho cho don hang {orderId}",
+                        CreatedAt = now
+                    };
+                    systemWallet.AvailableBalance += shippingFee;
+                    systemWallet.UpdatedAt = now;
+                }
 
                 // Khởi tạo thực thể Payment (Wallet-specific: Completed ngay lập tức, không qua gateway ngoài)
                 var payment = new payment
@@ -477,13 +504,18 @@ namespace HomeCycle.Application.Services.Payments
                 await FulfillAgreementAsync(agreement, basePrice, amountToPay, details, ct, orderIdOverride: orderId);
 
                 // Lưu Data
+                buyerWallet.UpdatedAt = now;
+                sellerWallet.UpdatedAt = now;
+                if (systemWalletTx != null) await _walletTxRepo.AddAsync(systemWalletTx, ct);
+                if (buyerLedgerForSystem != null) await _ledgerRepo.AddAsync(buyerLedgerForSystem, ct);
+                if (systemLedger != null) await _ledgerRepo.AddAsync(systemLedger, ct);
+                if (needsSystemLedger && systemWallet != null) await _walletRepo.UpdateAsync(systemWallet, ct);
                 await _walletRepo.UpdateAsync(buyerWallet, ct);
                 await _walletRepo.UpdateAsync(sellerWallet, ct);
-                await _walletTxRepo.AddAsync(buyerWalletTx, ct);
-                await _ledgerRepo.AddAsync(buyerLedger, ct);
-                await _walletTxRepo.AddAsync(sellerWalletTx, ct);
-                await _ledgerRepo.AddAsync(sellerLedger, ct);
                 await _paymentRepo.AddAsync(payment, ct);
+                await _walletTxRepo.AddAsync(sellerWalletTx, ct);
+                await _ledgerRepo.AddAsync(buyerLedgerForSeller, ct);
+                await _ledgerRepo.AddAsync(sellerLedger, ct);
 
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync();
@@ -579,6 +611,13 @@ namespace HomeCycle.Application.Services.Payments
             }
         }
 
+        public async Task<Result<PagedResult<PaymentHistoryResponseDto>>> GetMyPaymentHistoryAsync(Guid userId, PaymentHistorySearchRequest request, CancellationToken ct = default)
+        {
+            var result = await _paymentRepo.GetPagedPaymentHistoryAsync(userId, request, ct);
+            return Result<PagedResult<PaymentHistoryResponseDto>>.Success(result);
+        }
+
+
         //=========================== HELPER =================================
         private async Task ExecuteSuccessfulPaymentCoreAsync(string payOsOrderCode, string payOsTransactionId, CancellationToken ct)
         {
@@ -588,7 +627,6 @@ namespace HomeCycle.Application.Services.Payments
 
             var payment = await _paymentRepo.GetByIdAsync(paymentTx.PaymentId, ct);
             var agreement = await _agreementRepo.GetByIdAsync(payment.AgreementId.Value, ct);
-            var sellerWallet = await _walletRepo.GetByUserIdAndTypeAsync(agreement.SellerId, WalletTypeEnum.Personal, ct);
 
             AgreementDetailsDto? details;
             try
@@ -612,20 +650,28 @@ namespace HomeCycle.Application.Services.Payments
             decimal shippingFee = details?.DeliveryMethod == DeliveryMethod.GhnDelivery
                 ? (details?.EstimatedShippingFee ?? Math.Max(paidAmount - basePrice, 0))
                 : 0;
-
-            //bool needsSystemLedger = details?.DeliveryMethod == DeliveryMethod.GhnDelivery && shippingFee > 0;
-            //wallet? systemWallet = null;
-            //if (needsSystemLedger)
-            //{
-            //    systemWallet = await _walletRepo.GetSystemWalletAsync(ct);
-            //    if (systemWallet == null)
-            //        _logger.LogWarning("Không tìm thấy ví System khi xử lý phí ship GHN cho OrderCode {OrderCode}", payOsOrderCode);
-            //}
+            bool needsSystemLedger = details?.DeliveryMethod == DeliveryMethod.GhnDelivery && shippingFee > 0;
+            
 
 
             await _unitOfWork.BeginTransactionAsync();
             try
             {
+                wallet_transaction? systemWalletTx = null;
+                wallet_ledger? systemLedger = null;
+
+                var sellerWallet = await _walletRepo.GetUserWalletForUpdateAsync(agreement.SellerId, ct);
+                if (sellerWallet == null)
+                    throw new InvalidOperationException("Không tìm thấy ví người bán."); // Sẽ bị catch bên dưới và rollback
+
+                wallet? systemWallet = null;
+                if (needsSystemLedger)
+                {
+                    systemWallet = await _walletRepo.GetSystemWalletForUpdateAsync(SystemWalletPurpose.Shipping_Escrow, ct);
+                    if (systemWallet == null)
+                        throw new InvalidOperationException("Không tìm thấy ví hệ thống để nhận phí vận chuyển.");
+                }
+
                 paymentTx.PaymentTransactionStatus = (int)PaymentTransactionStatus.Success;
                 paymentTx.PayOSTransactionId = payOsTransactionId;
                 paymentTx.UpdatedAt = DateTime.UtcNow;
@@ -672,49 +718,57 @@ namespace HomeCycle.Application.Services.Payments
                 sellerWallet.HoldBalance += holdAmount;
                 sellerWallet.UpdatedAt = DateTime.UtcNow;
 
-                //wallet_transaction? systemWalletTx = null;
-                //wallet_ledger? systemLedger = null;
-                //if (needsSystemLedger && systemWallet != null)
-                //{
-                //    systemWalletTx = new wallet_transaction
-                //    {
-                //        WalletTransactionId = Guid.NewGuid(),
-                //        FromWalletId = null,
-                //        ToWalletId = systemWallet.WalletId,
-                //        PaymentId = payment.PaymentId,
-                //        ReferenceId = fulfillment.Order.OrderId,
-                //        ReferenceType = (int)ReferenceType.Order,
-                //        //TransactionType = (int)TransactionType.Shipping_Fee_Collected,
-                //        Amount = shippingFee,
-                //        WalletTransactionStatus = (int)WalletTransactionStatus.Completed,
-                //        CreatedAt = DateTime.UtcNow
-                //    };
+                // HẠCH TOÁN 2: TIỀN VỀ HỆ THỐNG (Phí ship từ PayOS nếu có)
+                if (needsSystemLedger && systemWallet != null)
+                {
+                    systemWalletTx = new wallet_transaction
+                    {
+                        WalletTransactionId = Guid.NewGuid(),
+                        FromWalletId = null,
+                        ToWalletId = systemWallet.WalletId,
+                        PaymentId = payment.PaymentId,
+                        ReferenceId = fulfillment.Order.OrderId,
+                        ReferenceType = (int)ReferenceType.Order,
+                        TransactionType = (int)TransactionType.Shipping_Fee_Collected,
+                        Amount = shippingFee,
+                        WalletTransactionStatus = (int)WalletTransactionStatus.Completed,
+                        CreatedAt = DateTime.UtcNow
+                    };
 
-                //    systemLedger = new wallet_ledger
-                //    {
-                //        LedgerId = Guid.NewGuid(),
-                //        WalletTransactionId = systemWalletTx.WalletTransactionId,
-                //        WalletId = systemWallet.WalletId,
-                //        Direction = (int)LedgerDirection.In,
-                //        BalanceType = (int)BalanceType.Available,
-                //        Amount = shippingFee,
-                //        BalanceBefore = systemWallet.AvailableBalance,
-                //        BalanceAfter = systemWallet.AvailableBalance + shippingFee,
-                //        ReferenceType = (int)ReferenceType.Order,
-                //        ReferenceId = fulfillment.Order.OrderId,
-                //        Description = $"Phi van chuyen GHN thu qua PayOS cho don hang {fulfillment.Order.OrderId}",
-                //        CreatedAt = DateTime.UtcNow
-                //    };
+                    systemLedger = new wallet_ledger
+                    {
+                        LedgerId = Guid.NewGuid(),
+                        WalletTransactionId = systemWalletTx.WalletTransactionId,
+                        WalletId = systemWallet.WalletId,
+                        Direction = (int)LedgerDirection.In,
+                        BalanceType = (int)BalanceType.Available,
+                        Amount = shippingFee,
+                        BalanceBefore = systemWallet.AvailableBalance,
+                        BalanceAfter = systemWallet.AvailableBalance + shippingFee,
+                        ReferenceType = (int)ReferenceType.Order,
+                        ReferenceId = fulfillment.Order.OrderId,
+                        Description = $"Phi van chuyen GHN thu qua PayOS cho don hang {fulfillment.Order.OrderId}",
+                        CreatedAt = DateTime.UtcNow
+                    };
 
-                //    systemWallet.AvailableBalance += shippingFee;
-                //    systemWallet.UpdatedAt = DateTime.UtcNow;
-                //}
+                    systemWallet.AvailableBalance += shippingFee;
+                    systemWallet.UpdatedAt = DateTime.UtcNow;
+                }
 
                 await _paymentTxRepo.UpdateAsync(paymentTx, ct);
                 await _paymentRepo.UpdateAsync(payment, ct);
                 await _walletTxRepo.AddAsync(newWalletTx, ct);
                 await _ledgerRepo.AddAsync(newLedger, ct);
                 await _walletRepo.UpdateAsync(sellerWallet, ct);
+
+                if (systemWalletTx != null)
+                    await _walletTxRepo.AddAsync(systemWalletTx, ct);
+
+                if (systemLedger != null)
+                    await _ledgerRepo.AddAsync(systemLedger, ct);
+
+                if (needsSystemLedger && systemWallet != null)
+                    await _walletRepo.UpdateAsync(systemWallet, ct);
 
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync();

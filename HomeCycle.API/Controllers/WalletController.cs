@@ -1,5 +1,6 @@
 ﻿using HomeCycle.Application.DTOs.Requests.Wallets;
 using HomeCycle.Application.Interfaces.Services.Wallets;
+using HomeCycle.Domain.Enums;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -13,10 +14,12 @@ namespace HomeCycle.API.Controllers
     public class WalletController : ControllerBase
     {
         private readonly IWithdrawalService _withdrawalService;
+        private readonly IWalletService _walletService;
 
-        public WalletController(IWithdrawalService withdrawalService)
+        public WalletController(IWithdrawalService withdrawalService, IWalletService walletService)
         {
             _withdrawalService = withdrawalService;
+            _walletService = walletService;
         }
 
         // User tạo yêu cầu rút tiền cho chính ví của mình.
@@ -46,6 +49,55 @@ namespace HomeCycle.API.Controllers
 
             return Ok(result.Data);
         }
+
+        [HttpGet("me")]
+        public async Task<IActionResult> GetMyWallet(CancellationToken ct)
+        {
+            var userId = GetCurrentUserId();
+            var walletType = ResolveWalletType();
+
+            var result = await _walletService.GetMyWalletAsync(userId, walletType, ct);
+            if (!result.IsSuccess)
+                return NotFound(result.Error);
+
+            return Ok(result.Data);
+        }
+
+        [HttpGet("me/ledger")]
+        public async Task<IActionResult> GetMyWalletStatement([FromQuery] WalletLedgerSearchRequest request, CancellationToken ct)
+        {
+            var userId = GetCurrentUserId();
+            var walletType = ResolveWalletType();
+
+            var result = await _walletService.GetWalletStatementAsync(userId, walletType, request, ct);
+            if (!result.IsSuccess)
+                return NotFound(result.Error);
+
+            return Ok(result.Data);
+        }
+
+        // Chỉ Moderator/Admin xem được tổng tiền hệ thống đang giữ hộ
+        [HttpGet("system")]
+        [Authorize(Roles = nameof(UserRole.Moderator) + "," + nameof(UserRole.Admin))]
+        public async Task<IActionResult> GetSystemWalletSummary(CancellationToken ct)
+        {
+            var result = await _walletService.GetSystemWalletSummaryAsync(ct);
+            if (!result.IsSuccess)
+                return BadRequest(result.Error);
+
+            return Ok(result.Data);
+        }
+
+
+        private WalletTypeEnum ResolveWalletType()
+        {
+            var roleClaim = User.FindFirst(ClaimTypes.Role)?.Value;
+            if (Enum.TryParse<UserRole>(roleClaim, out var role) && role == UserRole.Business)
+                return WalletTypeEnum.Business;
+
+            return WalletTypeEnum.Personal;
+        }
+
 
         private Guid GetCurrentUserId()
         {

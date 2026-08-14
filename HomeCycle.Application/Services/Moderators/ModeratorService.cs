@@ -210,19 +210,28 @@ namespace HomeCycle.Application.Services.Moderators
         }
 
         public async Task<Result<List<PendingBusinessProfileSummaryDto>>> GetPendingBusinessProfilesAsync(
-            string? keyword,
-            CancellationToken cancellationToken = default)
+    string? keyword,
+    CancellationToken cancellationToken = default)
         {
-            var profiles = await _businessProfileRepository.GetPendingProfilesAsync(keyword, cancellationToken);
+            Console.WriteLine("STEP 1: Before repository");
+
+            var profiles = await _businessProfileRepository
+                .GetPendingProfilesAsync(keyword, cancellationToken);
+
+            Console.WriteLine($"STEP 2: Repository success. Count = {profiles.Count}");
 
             var response = profiles.Select(p => new PendingBusinessProfileSummaryDto
             {
                 BusinessProfileId = p.BusinessProfileId,
                 BusinessName = !string.IsNullOrWhiteSpace(p.BusinessName)
                     ? p.BusinessName
-                    : (!string.IsNullOrWhiteSpace(p.FullName) ? p.FullName : "Chưa cập nhật tên"),
+                    : (!string.IsNullOrWhiteSpace(p.FullName)
+                        ? p.FullName
+                        : "Chưa cập nhật tên"),
                 CreatedAt = p.CreatedAt
             }).ToList();
+
+            Console.WriteLine($"STEP 3: Mapping success. Count = {response.Count}");
 
             return Result<List<PendingBusinessProfileSummaryDto>>.Success(response);
         }

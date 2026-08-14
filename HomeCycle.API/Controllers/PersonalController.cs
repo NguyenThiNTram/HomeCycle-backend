@@ -43,7 +43,7 @@ namespace HomeCycle.API.Controllers
         }
 
         // update thông tin
-        [HttpPut("me/profile")]
+        [HttpPatch("me/profile")]
         [SwaggerOperation(
             Summary = "Cập nhật thông tin cá nhân",
             Description = "Cập nhật thông tin hồ sơ cá nhân của người dùng hiện tại."
@@ -82,7 +82,7 @@ namespace HomeCycle.API.Controllers
         }
 
         // update giấy tờ
-        [HttpPut("me/identity")]
+        [HttpPatch("me/identity")]
         [SwaggerOperation(
             Summary = "Cập nhật giấy tờ tùy thân",
             Description = "Cập nhật thông tin giấy tờ tùy thân (CMND/CCCD) của người dùng hiện tại."
@@ -102,7 +102,7 @@ namespace HomeCycle.API.Controllers
         }
 
         // update bank
-        [HttpPut("me/bank")]
+        [HttpPatch("me/bank")]
         [SwaggerOperation(
             Summary = "Cập nhật thông tin ngân hàng",
             Description = "Cập nhật thông tin tài khoản ngân hàng của người dùng hiện tại."

@@ -91,6 +91,20 @@ namespace HomeCycle.API.Controllers
 
             return Ok(result.Data);
         }
+
+        [HttpGet("history")]
+        [Authorize]
+        public async Task<IActionResult> GetMyPaymentHistory([FromQuery] PaymentHistorySearchRequest request, CancellationToken ct)
+        {
+            var userId = GetUserIdFromToken();
+            var result = await _paymentService.GetMyPaymentHistoryAsync(userId, request, ct);
+            if (!result.IsSuccess)
+                return BadRequest(result.Error);
+
+            return Ok(result.Data);
+        }
+
+
         private Guid GetUserIdFromToken()
         {
 

@@ -14,7 +14,7 @@ namespace HomeCycle.Domain.Enums
 
         // 2. Nhóm biến động sau giao dịch (Post-Order)
         Payout_Release = 3,     // Giải ngân: Từ Hold của Seller sang Available của Seller
-        Order_Refund = 4,       // Hoàn tiền: Từ Hold của Seller về Available của Buyer
+        Order_Refund = 4,      // Hoàn tiền: System Escrow -> Buyer Available (Đồng thời trừ Hold của Seller)
 
         // 3. Nhóm Rút tiền (Withdrawal)
         Withdrawal_Lock = 5,    // Khóa tiền rút: Từ Available sang Hold của chính user
