@@ -45,6 +45,8 @@ namespace HomeCycle.Application.Services.Agreements
         private readonly IValidator<UpdateAgreementFormRequest> _updateValidator;
         private readonly IValidator<CalculateGhnFeeRequest> _shippingFeeValidator;
         private readonly IValidator<GhnShippingPreviewRequest> _shippingPreviewValidator;
+        private readonly IValidator<AcceptAgreementRequest> _acceptValidator;
+
 
         public AgreementFormService(
             IUnitOfWork unitOfWork,
@@ -62,7 +64,8 @@ namespace HomeCycle.Application.Services.Agreements
             IValidator<CreateAgreementFormRequest> createValidator,
             IValidator<UpdateAgreementFormRequest> updateValidator,
             IValidator<CalculateGhnFeeRequest> shippingFeeValidator,
-            IValidator<GhnShippingPreviewRequest> shippingPreviewValidator)
+            IValidator<GhnShippingPreviewRequest> shippingPreviewValidator,
+            IValidator<AcceptAgreementRequest> acceptValidator)
         {
             _unitOfWork = unitOfWork;
             _agreementRepo = agreementRepo;
@@ -80,6 +83,7 @@ namespace HomeCycle.Application.Services.Agreements
             _updateValidator = updateValidator;
             _shippingFeeValidator = shippingFeeValidator;
             _shippingPreviewValidator = shippingPreviewValidator;
+            _acceptValidator = acceptValidator;
         }
 
         public async Task<Result<AgreementPreviewResponse>> GetPreviewAsync(Guid negotiationId, Guid currentUserId, CancellationToken cancellationToken = default)
@@ -369,8 +373,15 @@ namespace HomeCycle.Application.Services.Agreements
         }
 
 
-        public async Task<Result<AgreementActionResponse>> AcceptAgreementAsync(Guid agreementId, Guid currentUserId, CancellationToken cancellationToken = default)
+        public async Task<Result<AgreementActionResponse>> AcceptAgreementAsync(Guid agreementId, Guid currentUserId, int expectedRevision, CancellationToken cancellationToken = default)
         {
+            var validationResult = await _acceptValidator.ValidateAsync(
+                new AcceptAgreementRequest { ExpectedRevision = expectedRevision }, cancellationToken);
+            if (!validationResult.IsValid)
+            {
+                var errorMessage = string.Join(" | ", validationResult.Errors.Select(e => e.ErrorMessage));
+                return Result<AgreementActionResponse>.Fail(new Error("Validation.InvalidRequest", errorMessage));
+            }
             // 1. Lấy dữ liệu
             var agreement = await _agreementRepo.GetByIdAsync(agreementId, cancellationToken);
             if (agreement == null)
@@ -391,6 +402,18 @@ namespace HomeCycle.Application.Services.Agreements
                 return Result<AgreementActionResponse>.Fail(new Error("Agreement.AlreadyConfirmed", "Bạn đã xác nhận thỏa thuận này rồi."));
             if (isBuyer && agreement.BuyerConfirmedAt != null)
                 return Result<AgreementActionResponse>.Fail(new Error("Agreement.AlreadyConfirmed", "Bạn đã xác nhận thỏa thuận này rồi."));
+
+            // 4.5. Chặn accept lệch phiên bản: bên kia có thể vừa sửa nội dung (UpdateAgreementAsync tăng Revision)
+            // ngay trước khi request Accept này tới server -> không cho accept "mù" vào nội dung họ chưa từng thấy.
+            var currentDetails = string.IsNullOrWhiteSpace(agreement.AgreementDetailsJsonb)
+                ? null
+                : JsonSerializer.Deserialize<AgreementDetailsDto>(agreement.AgreementDetailsJsonb);
+            var actualRevision = currentDetails?.Revision ?? 1;
+
+            if (actualRevision != expectedRevision)
+                return Result<AgreementActionResponse>.Fail(new Error(
+                    "Agreement.RevisionMismatch",
+                    "Nội dung thỏa thuận vừa được cập nhật. Vui lòng tải lại và xem nội dung mới nhất trước khi xác nhận."));
 
             // 5. Set confirm cho đúng phần của người gọi (không đụng vào phần bên kia)
             var now = DateTime.UtcNow;
