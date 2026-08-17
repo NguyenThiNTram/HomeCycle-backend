@@ -198,5 +198,16 @@ namespace HomeCycle.Infrastructure.Repositories.Orders
             };
         }
 
+        public async Task<order?> GetByIdForUpdateAsync(
+            Guid orderId,
+            CancellationToken ct = default)
+        {
+            var entity = await _db.Orders
+                .FromSqlInterpolated($"SELECT * FROM public.\"Order\" WHERE \"OrderId\" = {orderId} FOR UPDATE")
+                .AsNoTracking()
+                .FirstOrDefaultAsync(ct);
+
+            return entity?.ToDomain();
+        }
     }
 }

@@ -10,6 +10,6 @@ namespace HomeCycle.Domain.Enums
     {
         NoShow = 1, ItemMismatch = 2, SellerNotShipped = 3,
         DamagedOrLost = 4, ItemNotReceived = 5, FraudOrScam = 6,
-        AbusiveReview = 7, Other = 99
+        AbusiveReview = 7, PaymentNotCompleted = 8, CommitmentViolation = 9, Other = 99
     }
 }

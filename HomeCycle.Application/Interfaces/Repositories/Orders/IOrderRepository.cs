@@ -18,7 +18,9 @@ namespace HomeCycle.Application.Interfaces.Repositories.Orders
         Task<order?> GetByAgreementIdAsync(Guid agreementId, CancellationToken ct = default);
         Task<PagedResult<OrderListItemDto>> GetPagedByUserAsync(
            Guid userId, bool isSeller, OrderSearchRequest request, CancellationToken ct = default);
-
         Task<OrderDetailDto?> GetDetailWithRelationsAsync(Guid orderId, Guid currentUserId, CancellationToken ct = default);
+        Task<order?> GetByIdForUpdateAsync(
+            Guid orderId,
+            CancellationToken ct = default);
     }
 }

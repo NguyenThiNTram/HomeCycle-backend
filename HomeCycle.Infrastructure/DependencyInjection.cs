@@ -87,6 +87,10 @@ using HomeCycle.Application.Interfaces.Services.GHN;
 using HomeCycle.Application.Services.GHN;
 using HomeCycle.Application.Interfaces.Services.Wallets;
 using HomeCycle.Application.Services.Wallets;
+using HomeCycle.Application.Interfaces.Repositories.Disputes;
+using HomeCycle.Infrastructure.Repositories.Disputes;
+using HomeCycle.Application.Interfaces.Services.Disputes;
+using HomeCycle.Application.Services.Disputes;
 
 namespace HomeCycle.Infrastructure
 {
@@ -178,6 +182,7 @@ namespace HomeCycle.Infrastructure
             services.AddScoped<IGhnTrackingSyncService, GhnTrackingSyncService>();
             services.AddScoped<IGhnWebhookService, GhnWebhookService>();
             services.AddScoped<IWithdrawalRepository, WithdrawalRepository>();
+            services.AddScoped<IDisputeRepository, DisputeRepository>();
 
             // register Services
             services.AddScoped<IAuthService, AuthService>();
@@ -209,7 +214,9 @@ namespace HomeCycle.Infrastructure
             services.AddScoped<IReviewService, ReviewService>();
             services.AddScoped<IWithdrawalService, WithdrawalService>();
             services.AddScoped<IWalletService, WalletService>();
-
+            services.AddScoped<IDisputeService, DisputeService>();
+            services.AddScoped<IDisputeWindowPolicy, DisputeWindowPolicy>();
+            services.AddScoped<IDisputeTargetHandler, OrderDisputeTargetHandler>();
 
 
             services.Configure<PayOSSettings>(configuration.GetSection("PayOS"));
