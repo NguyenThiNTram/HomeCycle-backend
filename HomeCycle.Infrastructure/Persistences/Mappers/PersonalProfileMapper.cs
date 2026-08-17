@@ -31,6 +31,7 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 VerifiedBy = entity.VerifiedBy,
                 VerifiedAt = entity.VerifiedAt,
                 ReputationScore = entity.ReputationScore,
+                DisplayStarRating = entity.DisplayStarRating,
                 CreatedAt = entity.CreatedAt
             };
         }
@@ -53,6 +54,7 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 VerifiedBy = entity.VerifiedBy,
                 VerifiedAt = entity.VerifiedAt,
                 ReputationScore = entity.ReputationScore,
+                DisplayStarRating = entity.DisplayStarRating,
                 CreatedAt = entity.CreatedAt
             };
         }

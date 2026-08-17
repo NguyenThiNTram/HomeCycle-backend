@@ -34,6 +34,7 @@ namespace HomeCycle.Application.DTOs.Responses.Profiles
         public BusinessModel BusinessModel { get; set; }
         public BusinessProfileStatus Status { get; set; }
         public int ReputationScore { get; set; }
+        public double DisplayStarRating { get; set; }
 
         // 3. Thông tin Liên kết (Tài khoản ngân hàng, Giấy tờ, Khu vực hoạt động)
         public BankAccountDto? BankAccount { get; set; }
