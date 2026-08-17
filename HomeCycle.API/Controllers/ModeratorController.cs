@@ -1,5 +1,7 @@
-﻿using HomeCycle.Application.DTOs.Requests.Moderators;
+﻿using HomeCycle.Application.DTOs.Requests.Disputes;
+using HomeCycle.Application.DTOs.Requests.Moderators;
 using HomeCycle.Application.DTOs.Requests.Wallets;
+using HomeCycle.Application.Interfaces.Services.Disputes;
 using HomeCycle.Application.Interfaces.Services.Moderators;
 using HomeCycle.Application.Interfaces.Services.Posts;
 using HomeCycle.Application.Interfaces.Services.Wallets;
@@ -18,12 +20,13 @@ namespace HomeCycle.API.Controllers
         private readonly IModeratorService _moderatorService;
         private readonly IPostService _postService;
         private readonly IWithdrawalService _withdrawalService;
-
-        public ModeratorController(IModeratorService moderatorService, IPostService postService, IWithdrawalService withdrawalService)
+        private readonly IDisputeService _disputeService;
+        public ModeratorController(IModeratorService moderatorService, IPostService postService, IWithdrawalService withdrawalService, IDisputeService disputeService)
         {
             _moderatorService = moderatorService;
             _postService = postService;
             _withdrawalService = withdrawalService;
+            _disputeService = disputeService;
         }
 
         [HttpPost("business-profiles/review")]
@@ -256,6 +259,52 @@ namespace HomeCycle.API.Controllers
             }
 
             return Ok(new { success = true, message = "Đã từ chối yêu cầu rút tiền." });
+        }
+
+        [HttpGet("disputes")]
+        public async Task<IActionResult> GetDisputes(
+            [FromQuery] DisputeSearchRequest request,
+            CancellationToken cancellationToken)
+        {
+            var result = await _disputeService.GetAllForModeratorAsync(request, cancellationToken);
+
+            if (!result.IsSuccess)
+            {
+                return BadRequest(new
+                {
+                    success = false,
+                    code = result.Error!.Code,
+                    message = result.Error.Message
+                });
+            }
+
+            return Ok(new
+            {
+                success = true,
+                data = result.Data
+            });
+        }
+
+        [HttpGet("disputes/{disputeId:guid}")]
+        public async Task<IActionResult> GetDisputeDetail(Guid disputeId, CancellationToken cancellationToken)
+        {
+            var result = await _disputeService.GetDetailForModeratorAsync(disputeId, cancellationToken);
+
+            if (!result.IsSuccess)
+            {
+                return BadRequest(new
+                {
+                    success = false,
+                    code = result.Error!.Code,
+                    message = result.Error.Message
+                });
+            }
+
+            return Ok(new
+            {
+                success = true,
+                data = result.Data
+            });
         }
 
         private Guid GetCurrentUserId()

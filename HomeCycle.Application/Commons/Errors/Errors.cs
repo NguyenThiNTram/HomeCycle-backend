@@ -1,4 +1,5 @@
 ﻿using HomeCycle.Application.Commons.Results;
+using HomeCycle.Domain.Enums;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -201,5 +202,44 @@ namespace HomeCycle.Application.Commons.Errors
                    $"Quantity ({requested}) exceeds the remaining quantity ({remaining}).");
 
         public static readonly Error Forbidden = new("CART_FORBIDDEN", "You do not have permission to access this cart item.");
+    }
+
+    public static class DisputeErrors
+    {
+        public static readonly Error NotFound =
+            new("DISPUTE_NOT_FOUND", "Không tìm thấy tranh chấp.");
+
+        public static readonly Error OrderNotFound =
+            new("DISPUTE_ORDER_NOT_FOUND", "Không tìm thấy đơn hàng.");
+
+        public static readonly Error AgreementNotFound =
+            new("DISPUTE_AGREEMENT_NOT_FOUND", "Không tìm thấy thỏa thuận của đơn hàng.");
+
+        public static readonly Error Forbidden =
+            new("DISPUTE_FORBIDDEN", "Bạn không có quyền thực hiện thao tác này trên đơn hàng hoặc tranh chấp.");
+
+        public static readonly Error DuplicateActiveDispute =
+            new("DISPUTE_ALREADY_ACTIVE", "Đơn hàng đang có một tranh chấp chưa được xử lý.");
+
+        public static readonly Error InvalidOrderStatus =
+            new("DISPUTE_INVALID_ORDER_STATUS", "Trạng thái hiện tại của đơn hàng không cho phép tạo tranh chấp.");
+
+        public static readonly Error InvalidCompletionState =
+            new("DISPUTE_INVALID_COMPLETION_STATE", "Không xác định được thời điểm hoàn tất hoặc giao hàng của đơn hàng.");
+
+        public static readonly Error MissingTarget =
+            new("DISPUTE_TARGET_MISSING", "Tranh chấp không xác định được đối tượng liên quan.");
+
+        public static readonly Error SenderNotFound =
+            new("DISPUTE_SENDER_NOT_FOUND", "Không tìm thấy người gửi tranh chấp.");
+
+        public static Error WindowExpired(DateTime deadline) =>
+            new("DISPUTE_WINDOW_EXPIRED", $"Thời hạn tạo tranh chấp đã kết thúc lúc {deadline:O}.");
+
+        public static Error UnsupportedTarget(DisputeTargetType targetType) =>
+            new("DISPUTE_TARGET_NOT_SUPPORTED", $"Loại đối tượng tranh chấp '{targetType}' hiện chưa được hỗ trợ.");
+
+        public static Error InvalidCategory(DisputeCategory category) =>
+            new("DISPUTE_INVALID_CATEGORY", $"Loại tranh chấp '{category}' không phù hợp với tranh chấp đơn hàng.");
     }
 }
