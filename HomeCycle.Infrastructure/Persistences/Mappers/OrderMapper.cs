@@ -28,7 +28,10 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 CreatedAt = entity.CreatedAt,
                 UpdatedAt = entity.UpdatedAt,
                 OrderCode = entity.OrderCode,
-                CompletedAt = entity.CompletedAt
+                CompletedAt = entity.CompletedAt,
+                SellerHandoverConfirmedAt = entity.SellerHandoverConfirmedAt,
+                BuyerReceivedConfirmedAt = entity.BuyerReceivedConfirmedAt,
+                CompletionSource = entity.CompletionSource
             };
         }
         public static Order ToInfrastructure(this order entity)
@@ -50,7 +53,10 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 CreatedAt = entity.CreatedAt,
                 UpdatedAt = entity.UpdatedAt,
                 OrderCode = entity.OrderCode,
-                CompletedAt = entity.CompletedAt
+                CompletedAt = entity.CompletedAt,
+                SellerHandoverConfirmedAt = entity.SellerHandoverConfirmedAt,
+                BuyerReceivedConfirmedAt = entity.BuyerReceivedConfirmedAt,
+                CompletionSource = entity.CompletionSource
             };
         }
     }

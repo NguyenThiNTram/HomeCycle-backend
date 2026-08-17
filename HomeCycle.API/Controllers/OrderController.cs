@@ -97,6 +97,30 @@ namespace HomeCycle.API.Controllers
             return Ok(result.Data);
         }
 
+        [HttpPost("{orderId:guid}/confirm-handover")]
+        public async Task<IActionResult> ConfirmHandover(Guid orderId, CancellationToken cancellationToken)
+        {
+            var currentUserId = GetCurrentUserId();
+            var result = await _orderService.ConfirmHandoverAsync(orderId, currentUserId, cancellationToken);
+
+            if (!result.IsSuccess)
+                return BadRequest(result.Error);
+
+            return Ok(result.Data);
+        }
+
+        [HttpPost("{orderId:guid}/confirm-received")]
+        public async Task<IActionResult> ConfirmReceived(Guid orderId, CancellationToken cancellationToken)
+        {
+            var currentUserId = GetCurrentUserId();
+            var result = await _orderService.ConfirmReceivedAsync(orderId, currentUserId, cancellationToken);
+
+            if (!result.IsSuccess)
+                return BadRequest(result.Error);
+
+            return Ok(result.Data);
+        }
+
         private IActionResult MapTrackingError(Error? error)
         {
             if (error is null)

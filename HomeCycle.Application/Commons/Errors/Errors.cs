@@ -242,4 +242,37 @@ namespace HomeCycle.Application.Commons.Errors
         public static Error InvalidCategory(DisputeCategory category) =>
             new("DISPUTE_INVALID_CATEGORY", $"Loại tranh chấp '{category}' không phù hợp với tranh chấp đơn hàng.");
     }
+
+    public static class OrderErrors
+    {
+        public static readonly Error NotFound =
+            new("Order.NotFound", "Không tìm thấy đơn hàng.");
+
+        public static readonly Error AgreementNotFound =
+            new("Agreement.NotFound", "Không tìm thấy thỏa thuận của đơn hàng.");
+
+        public static readonly Error Forbidden =
+            new("Auth.Forbidden", "Bạn không có quyền thực hiện thao tác này trên đơn hàng.");
+
+        public static readonly Error InvalidStatus =
+            new("Order.InvalidStatus", "Trạng thái hiện tại của đơn hàng không cho phép thực hiện thao tác này.");
+
+        public static readonly Error DeliveryMethodMissing =
+            new("Order.DeliveryMethodMissing", "Không xác định được phương thức giao nhận của đơn hàng.");
+
+        public static readonly Error DirectHandoverOnly =
+            new("Order.DirectHandoverOnly", "Xác nhận bàn giao của Seller chỉ áp dụng cho giao nhận trực tiếp.");
+
+        public static readonly Error CollectionAppointmentNotFound =
+            new("Order.CollectionAppointmentNotFound", "Không tìm thấy lịch thu gom của đơn hàng.");
+
+        public static readonly Error BothCheckInRequired =
+            new("Order.BothCheckInRequired", "Buyer và Seller phải check-in lịch thu gom trước khi xác nhận giao nhận.");
+
+        public static readonly Error ShipmentNotFound =
+            new("Order.ShipmentNotFound", "Không tìm thấy thông tin vận chuyển của đơn hàng.");
+
+        public static readonly Error ShipmentNotDelivered =
+            new("Order.ShipmentNotDelivered", "Đơn vận chuyển chưa được xác nhận giao thành công.");
+    }
 }

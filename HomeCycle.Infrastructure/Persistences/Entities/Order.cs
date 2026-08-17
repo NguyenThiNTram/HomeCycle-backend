@@ -49,6 +49,11 @@ public partial class Order
 
     public DateTime UpdatedAt { get; set; }
     public DateTime? CompletedAt { get; set; }
+    public DateTime? SellerHandoverConfirmedAt { get; set; }
+
+    public DateTime? BuyerReceivedConfirmedAt { get; set; }
+
+    public int? CompletionSource { get; set; }
 
     [ForeignKey("AgreementId")]
     [InverseProperty("Order")]
