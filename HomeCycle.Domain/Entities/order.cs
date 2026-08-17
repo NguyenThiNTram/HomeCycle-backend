@@ -29,7 +29,10 @@ public class order
     public DateTime UpdatedAt { get; set; }
     public DateTime? CompletedAt { get; set; }
 
-public order()
+    public DateTime? SellerHandoverConfirmedAt { get; set; }
+    public DateTime? BuyerReceivedConfirmedAt { get; set; }
+    public int? CompletionSource { get; set; }
+    public order()
     {
     }
 
