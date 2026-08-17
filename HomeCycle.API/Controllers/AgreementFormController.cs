@@ -75,11 +75,11 @@ namespace HomeCycle.API.Controllers
         }
 
         [HttpPatch("{id}/accept")]
-        public async Task<IActionResult> AcceptAgreement(Guid id, CancellationToken cancellationToken)
+        public async Task<IActionResult> AcceptAgreement(Guid id, [FromBody] AcceptAgreementRequest request, CancellationToken cancellationToken)
         {
             var currentUserId = GetCurrentUserId();
 
-            var result = await _agreementService.AcceptAgreementAsync(id, currentUserId, cancellationToken);
+            var result = await _agreementService.AcceptAgreementAsync(id, currentUserId, request.ExpectedRevision, cancellationToken);
 
             if (!result.IsSuccess)
             {

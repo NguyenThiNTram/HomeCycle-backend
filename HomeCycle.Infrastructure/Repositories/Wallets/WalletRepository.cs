@@ -41,6 +41,7 @@ namespace HomeCycle.Infrastructure.Repositories.Wallets
         {
             var entity = await _db.Wallets
                 .FromSqlInterpolated($"SELECT * FROM public.\"Wallet\" WHERE \"UserId\" = {userId} FOR UPDATE")
+                .AsNoTracking()
                 .FirstOrDefaultAsync(ct);
 
             return entity?.ToDomain();
@@ -53,6 +54,7 @@ namespace HomeCycle.Infrastructure.Repositories.Wallets
 
             var entity = await _db.Wallets
                 .FromSqlInterpolated($"SELECT * FROM public.\"Wallet\" WHERE \"WalletType\" = {systemWalletType} AND \"Purpose\" = {purposeValue} FOR UPDATE")
+                .AsNoTracking()
                 .FirstOrDefaultAsync(ct);
 
             return entity?.ToDomain();

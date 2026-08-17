@@ -19,7 +19,7 @@ namespace HomeCycle.Application.Interfaces.Services.Agreements
         Task<Result<Guid>> CreateAgreementAsync(CreateAgreementFormRequest request, Guid currentUserId, CancellationToken cancellationToken = default);
         Task<Result<AgreementDetailResponse>> GetDetailAsync(Guid agreementId, Guid currentUserId, CancellationToken cancellationToken = default);
         Task<Result<AgreementActionResponse>> UpdateAgreementAsync(Guid agreementId, UpdateAgreementFormRequest request, Guid currentUserId, CancellationToken cancellationToken = default);
-        Task<Result<AgreementActionResponse>> AcceptAgreementAsync(Guid agreementId, Guid currentUserId, CancellationToken cancellationToken = default);
+        Task<Result<AgreementActionResponse>> AcceptAgreementAsync(Guid agreementId, Guid currentUserId, int expectedRevision, CancellationToken cancellationToken = default);
         Task<Result<AgreementActionResponse>> RequestEditAsync(Guid agreementId, Guid currentUserId, CancellationToken cancellationToken = default);
         Task<Result<PagedResult<PendingAgreementListItemDto>>> GetPendingPaymentAsync(
            Guid buyerId, PendingAgreementSearchRequest request, CancellationToken cancellationToken = default);
