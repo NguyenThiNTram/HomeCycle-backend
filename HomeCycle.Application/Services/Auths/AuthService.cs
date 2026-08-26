@@ -236,19 +236,30 @@ namespace HomeCycle.Application.Services.Auths
             try
             {
                 var now = DateTime.UtcNow;
-                var newUser = new user
-                {
-                    UserId = Guid.NewGuid(),
-                    Username = request.Username.Trim(),
-                    Email = normalizedEmail,
-                    IsEmailVerified = true,
-                    Password = _passwordHasher.HashPassword(request.Password),
-                    PhoneNumber = request.PhoneNumber?.Trim(),
-                    AvatarUrl = finalAvatarUrl?.Trim(),
-                    Role = UserRole.Personal,
-                    Status = UserStatus.Active,
-                    CreatedAt = now
-                };
+                //var newUser = new user
+                //{
+                //    UserId = Guid.NewGuid(),
+                //    Username = request.Username.Trim(),
+                //    Email = normalizedEmail,
+                //    IsEmailVerified = true,
+                //    Password = _passwordHasher.HashPassword(request.Password),
+                //    PhoneNumber = request.PhoneNumber?.Trim(),
+                //    AvatarUrl = finalAvatarUrl?.Trim(),
+                //    Role = UserRole.Personal,
+                //    Status = UserStatus.Active,
+                //    CreatedAt = now
+                //};
+
+                var newUser = _mapper.Map<user>(request);
+
+                newUser.UserId = Guid.NewGuid();
+                newUser.Email = normalizedEmail;
+                newUser.Password = _passwordHasher.HashPassword(request.Password);
+                newUser.AvatarUrl = finalAvatarUrl?.Trim();
+                newUser.Role = UserRole.Personal;
+                newUser.Status = UserStatus.Active;
+                newUser.IsEmailVerified = true;
+                newUser.CreatedAt = now;
 
                 await _userRepository.AddAsync(newUser, cancellationToken);
 
@@ -275,20 +286,29 @@ namespace HomeCycle.Application.Services.Auths
                         $"identities/{newUser.UserId}/back_id_card");
                 }
 
-                var personalProfile = new personal_profile
-                {
-                    PersonalProfileId = Guid.NewGuid(),
-                    UserId = newUser.UserId,
-                    FullName = request.FullName?.Trim(),
-                    RepresentativeCode = request.RepresentativeCode?.Trim(),
-                    RepresentativeName = request.RepresentativeName?.Trim(),
-                    RepresentativeDob = request.RepresentativeDob,
-                    RepresentativeAddress = request.RepresentativeAddress?.Trim(),
-                    FrontIDCardImage = frontIdCardUrl,
-                    BackIDCardImage = backIdCardUrl,
-                    VerificationStatus = VerifyStatus.Pending,
-                    CreatedAt = now
-                };
+                //var personalProfile = new personal_profile
+                //{
+                //    PersonalProfileId = Guid.NewGuid(),
+                //    UserId = newUser.UserId,
+                //    FullName = request.FullName?.Trim(),
+                //    RepresentativeCode = request.RepresentativeCode?.Trim(),
+                //    RepresentativeName = request.RepresentativeName?.Trim(),
+                //    RepresentativeDob = request.RepresentativeDob,
+                //    RepresentativeAddress = request.RepresentativeAddress?.Trim(),
+                //    FrontIDCardImage = frontIdCardUrl,
+                //    BackIDCardImage = backIdCardUrl,
+                //    VerificationStatus = VerifyStatus.Pending,
+                //    CreatedAt = now
+                //};
+
+                var personalProfile = _mapper.Map<personal_profile>(request);
+
+                personalProfile.PersonalProfileId = Guid.NewGuid();
+                personalProfile.UserId = newUser.UserId;
+                personalProfile.FrontIDCardImage = frontIdCardUrl;
+                personalProfile.BackIDCardImage = backIdCardUrl;
+                personalProfile.VerificationStatus = VerifyStatus.Pending;
+                personalProfile.CreatedAt = now;
 
                 await _personalProfileRepository.AddAsync(personalProfile, cancellationToken);
 
@@ -306,17 +326,24 @@ namespace HomeCycle.Application.Services.Auths
 
                 if (!string.IsNullOrWhiteSpace(request.AccountNumber))
                 {
-                    var bankAccount = new bank_account
-                    {
-                        UserBankId = Guid.NewGuid(),
-                        UserId = newUser.UserId,
-                        BankCode = request.BankCode?.Trim(),
-                        BankName = request.BankName?.Trim(),
-                        AccountNumber = request.AccountNumber.Trim(),
-                        AccountName = request.AccountName?.Trim(),
-                        VerifyStatus = VerifyStatus.Verified,
-                        CreatedAt = now
-                    };
+                    //var bankAccount = new bank_account
+                    //{
+                    //    UserBankId = Guid.NewGuid(),
+                    //    UserId = newUser.UserId,
+                    //    BankCode = request.BankCode?.Trim(),
+                    //    BankName = request.BankName?.Trim(),
+                    //    AccountNumber = request.AccountNumber.Trim(),
+                    //    AccountName = request.AccountName?.Trim(),
+                    //    VerifyStatus = VerifyStatus.Verified,
+                    //    CreatedAt = now
+                    //};
+
+                    var bankAccount = _mapper.Map<bank_account>(request);
+
+                    bankAccount.UserBankId = Guid.NewGuid();
+                    bankAccount.UserId = newUser.UserId;
+                    bankAccount.VerifyStatus = VerifyStatus.Verified;
+                    bankAccount.CreatedAt = now;
 
                     await _bankAccountRepository.AddAsync(bankAccount, cancellationToken);
                 }
@@ -328,17 +355,18 @@ namespace HomeCycle.Application.Services.Auths
 
                 return Result<AuthResponse>.Success(new AuthResponse
                 {
-                    User = new AuthUserDto
-                    {
-                        UserId = newUser.UserId,
-                        Username = newUser.Username,
-                        Email = newUser.Email,
-                        PhoneNumber = newUser.PhoneNumber,
-                        AvatarUrl = newUser.AvatarUrl,
-                        Role = newUser.Role,
-                        Status = newUser.Status,
-                        IsEmailVerified = newUser.IsEmailVerified
-                    }
+                    //User = new AuthUserDto
+                    //{
+                    //    UserId = newUser.UserId,
+                    //    Username = newUser.Username,
+                    //    Email = newUser.Email,
+                    //    PhoneNumber = newUser.PhoneNumber,
+                    //    AvatarUrl = newUser.AvatarUrl,
+                    //    Role = newUser.Role,
+                    //    Status = newUser.Status,
+                    //    IsEmailVerified = newUser.IsEmailVerified
+                    //}
+                    User = _mapper.Map<AuthUserDto>(newUser)
                 });
             }
             catch (Exception ex)
@@ -453,7 +481,6 @@ namespace HomeCycle.Application.Services.Auths
             }
             catch (InvalidJwtException ex)
             {
-                _logger.LogWarning(ex, "Token từ Google không hợp lệ hoặc đã hết hạn.");
                 return Result<GoogleAuthResponseDto>.Fail(ValidationErrors.InvalidRequest("Token from Google is invalid or expired!"));
             }
         }
@@ -527,8 +554,9 @@ namespace HomeCycle.Application.Services.Auths
             var email = _jwtService.ValidateRegistrationTokenAndGetEmail(registrationToken);
             if (string.IsNullOrEmpty(email))
             {
-                return Result<LoginResponseDto>.Fail(
-                    new Error("Auth.InvalidSession", "Phiên đăng ký không hợp lệ hoặc đã hết hạn."));
+                //return Result<LoginResponseDto>.Fail(
+                //    new Error("Auth.InvalidSession", "Phiên đăng ký không hợp lệ hoặc đã hết hạn."));
+                return Result<LoginResponseDto>.Fail(AuthErrors.InvalidCredential);
             }
 
             var normalizedEmail = email.Trim().ToLower();
@@ -733,6 +761,9 @@ namespace HomeCycle.Application.Services.Auths
             }
         }
 
+        //-----------------------------------------------------------------------------------------------------
+        // HELPER METHODS
+        //-----------------------------------------------------------------------------------------------------
         private static UserAdminResponse MapAdminUser(user u)
         {
             return new UserAdminResponse
@@ -749,9 +780,6 @@ namespace HomeCycle.Application.Services.Auths
             };
         }
 
-        //-----------------------------------------------------------------------------------------------------
-        // HELPER METHODS
-        //-----------------------------------------------------------------------------------------------------
         private async Task<string?> UploadFileHelperAsync(IFormFile? file, string folderName, CancellationToken cancellationToken = default)
         {
             if (file == null || file.Length == 0) return null;

@@ -1,4 +1,5 @@
 ﻿using FluentValidation;
+using HomeCycle.Application.Commons.Errors;
 using HomeCycle.Application.DTOs.Requests.Auths;
 using System;
 using System.Collections.Generic;
@@ -12,11 +13,13 @@ namespace HomeCycle.Application.Validations.Auths
     {
         public RegisterBusinessAccountRequestValidator()
         {
-
             RuleFor(x => x.Password)
-                .NotEmpty().WithMessage("Password is required.")
-                .MinimumLength(6).WithMessage("Password must be at least 6 characters.")
-                .MaximumLength(255);
+            .NotEmpty()
+                .WithMessage("Password is required.")
+            .MinimumLength(6)
+                .WithMessage("Password must be at least 6 characters.")
+            .MaximumLength(20)
+                .WithMessage("Password must not exceed 20 characters.");
         }
     }
 }
