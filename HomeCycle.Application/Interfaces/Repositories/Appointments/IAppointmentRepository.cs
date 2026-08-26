@@ -22,5 +22,6 @@ namespace HomeCycle.Application.Interfaces.Repositories.Appointments
 
         Task<PagedResult<CollectionAppointmentListItemDto>> GetPagedCollectionListAsync(
             Guid userId, bool isSeller, AppointmentSearchRequest request, CancellationToken ct = default);
+        Task<appointment?> GetByAgreementIdAndTypeAsync(Guid agreementId, AppointmentType appointmentType, CancellationToken ct = default);
     }
 }

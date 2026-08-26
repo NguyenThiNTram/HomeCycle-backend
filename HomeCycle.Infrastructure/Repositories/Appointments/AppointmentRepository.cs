@@ -127,6 +127,14 @@ namespace HomeCycle.Infrastructure.Repositories.Appointments
             };
         }
 
+        public async Task<appointment?> GetByAgreementIdAndTypeAsync(Guid agreementId, AppointmentType appointmentType, CancellationToken ct = default)
+        {
+            var entity = await _db.Appointments.AsNoTracking()
+                .FirstOrDefaultAsync(x => x.AgreementId == agreementId && x.AppointmentType == (int)appointmentType, ct);
+
+            return entity?.ToDomain();
+        }
+
         private IQueryable<Appointment> BuildBaseAppointmentQuery(
           AppointmentType type, Guid userId, bool isSeller, AppointmentStatus? status)
         {
