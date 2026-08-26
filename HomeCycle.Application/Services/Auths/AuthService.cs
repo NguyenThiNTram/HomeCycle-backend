@@ -190,6 +190,14 @@ namespace HomeCycle.Application.Services.Auths
 
         public async Task<Result<AuthResponse>> RegisterPersonalAsync(string registrationToken, RegisterPersonalRequest request, CancellationToken cancellationToken = default)
         {
+            var validationResult = await _validator.ValidateAsync(request, cancellationToken);
+
+            if (!validationResult.IsValid)
+            {
+                var errors = string.Join(", ", validationResult.Errors.Select(x => x.ErrorMessage));
+                return Result<AuthResponse>.Fail(ValidationErrors.InvalidRequest(errors));
+            }
+
             // Validate Token & lấy Data
             var email = _jwtService.ValidateRegistrationTokenAndGetEmail(registrationToken);
             if (string.IsNullOrEmpty(email))
@@ -197,6 +205,14 @@ namespace HomeCycle.Application.Services.Auths
                     "The registration session is invalid or has expired. Please re-verify your email"));
 
             var normalizedEmail = email.Trim().ToLower();
+            var emailExists = await _userRepository.ExistsByEmailAsync(normalizedEmail, cancellationToken);
+            if (emailExists)
+                return Result<AuthResponse>.Fail(AuthErrors.EmailExists);
+
+            var normalizedUsername = request.Username.Trim();
+            var usernameExists = await _userRepository.ExistsByUsernameAsync(request.Username, cancellationToken);
+            if (usernameExists)
+                return Result<AuthResponse>.Fail(AuthErrors.UsernameExists);
 
             var googleAvatar = _jwtService.GetAvatarFromRegistrationToken(registrationToken);
             string? finalAvatarUrl = googleAvatar;
@@ -213,24 +229,6 @@ namespace HomeCycle.Application.Services.Auths
             // xử lý CCCD/CMND (Lưu vào thư mục bảo mật "legal-documents")
             //var frontIdCardUrl = await UploadFileHelperAsync(request.FrontIDCardImage, "legal-documents", cancellationToken);
             //var backIdCardUrl = await UploadFileHelperAsync(request.BackIDCardImage, "legal-documents", cancellationToken);
-
-            var emailExists = await _userRepository.ExistsByEmailAsync(normalizedEmail, cancellationToken);
-            if (emailExists)
-                return Result<AuthResponse>.Fail(AuthErrors.EmailExists);
-
-            var validationResult = await _validator.ValidateAsync(request, cancellationToken);
-
-            if (!validationResult.IsValid)
-            {
-                var errors = string.Join(", ", validationResult.Errors.Select(x => x.ErrorMessage));
-                return Result<AuthResponse>.Fail(ValidationErrors.InvalidRequest(errors));
-            }
-
-            var normalizedUsername = request.Username.Trim();
-
-            var usernameExists = await _userRepository.ExistsByUsernameAsync(request.Username,cancellationToken);
-            if (usernameExists)
-                return Result<AuthResponse>.Fail(AuthErrors.UsernameExists);
 
             await _unitOfWork.BeginTransactionAsync();
             try
@@ -350,6 +348,22 @@ namespace HomeCycle.Application.Services.Auths
 
                 await _otpRepository.UpdateUserIdAsync(normalizedEmail, newUser.UserId, cancellationToken);
 
+                var accessToken = _jwtService.GenerateAccessToken(newUser);
+                var refreshToken = _jwtService.GenerateRefreshToken();
+
+                var refreshTokenEntity = new refresh_token
+                {
+                    RefreshTokenId = Guid.NewGuid(),
+                    UserId = newUser.UserId,
+                    Token = refreshToken,
+                    ExpiredAt = now.AddDays(7),
+                    CreatedAt = now
+                };
+
+                await _userRepository.AddRefreshTokenAsync(
+                    refreshTokenEntity,
+                    cancellationToken);
+
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync();
 
@@ -366,7 +380,10 @@ namespace HomeCycle.Application.Services.Auths
                     //    Status = newUser.Status,
                     //    IsEmailVerified = newUser.IsEmailVerified
                     //}
-                    User = _mapper.Map<AuthUserDto>(newUser)
+                    User = _mapper.Map<AuthUserDto>(newUser),
+                    AccessToken = accessToken,
+                    RefreshToken = refreshToken,
+                    Message = "Registration successful."
                 });
             }
             catch (Exception ex)
