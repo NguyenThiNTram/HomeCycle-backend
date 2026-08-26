@@ -18,8 +18,8 @@ namespace HomeCycle.Application.Validations.Auths
                 .WithMessage("Password is required.")
             .MinimumLength(6)
                 .WithMessage("Password must be at least 6 characters.")
-            .MaximumLength(20)
-                .WithMessage("Password must not exceed 20 characters.");
+            .MaximumLength(50)
+                .WithMessage("Password must not exceed 50 characters.");
         }
     }
 }

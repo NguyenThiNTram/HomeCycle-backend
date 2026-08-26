@@ -34,14 +34,14 @@ namespace HomeCycle.Application.Validations.Auths
                 .NotEmpty().WithMessage("Password is required.")
                 .MinimumLength(6)
                     .WithMessage("Password must be at least 6 characters.")
-                .MaximumLength(20)
-                    .WithMessage("Password must not exceed 20 characters.");
+                .MaximumLength(50)
+                    .WithMessage("Password must not exceed 50 characters.");
 
             RuleFor(x => x.PhoneNumber)
                 .NotEmpty()
                     .WithMessage("Phone number is required.")
                 .Must(IsValidPhoneNumber)
-                    .WithMessage("Phone number must contain 9 or 10 digits and start with 0.");
+                    .WithMessage("Phone number must contain 10 or 11 digits and start with 0.");
         }
         private static bool IsValidFullName(string? fullName)
         {
@@ -63,10 +63,17 @@ namespace HomeCycle.Application.Validations.Auths
 
         private static bool IsValidPhoneNumber(string? phoneNumber)
         {
-            if (string.IsNullOrWhiteSpace(phoneNumber))
-                return false;
+            if (string.IsNullOrWhiteSpace(phoneNumber)) return false;
 
-            return Regex.IsMatch(phoneNumber.Trim(), @"^0\d{8,9}$");
+            // 1. Chuẩn hóa: Xóa khoảng trắng, dấu chấm, dấu gạch ngang (nếu có)
+            string cleanNumber = phoneNumber.Replace(" ", "").Replace(".", "").Replace("-", "").Trim();
+
+            // 2. Regex kiểm tra:
+            // Nhóm 1 (Di động): Cho phép +84 / 84 / 0 đi kèm với đầu 3, 5, 07, 8, 9 và 8 số cuối
+            // Nhóm 2 (Số bàn):  Cho phép +84 / 84 / 0 đi kèm với đầu 2 và 9 số cuối
+            string pattern = @"^(?:\+84|84|0)(?:[35789]\d{8}|2\d{9})$";
+
+            return Regex.IsMatch(cleanNumber, pattern);
         }
     }
 }
