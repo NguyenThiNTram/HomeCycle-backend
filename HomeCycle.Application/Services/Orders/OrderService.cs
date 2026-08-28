@@ -96,7 +96,7 @@ namespace HomeCycle.Application.Services.Orders
                 if (agreement == null)
                 {
                     await _unitOfWork.RollbackTransactionAsync(ct);
-                    return Result<OrderConfirmationResponseDto>.Fail(OrderErrors.AgreementNotFound);
+                    return Result<OrderConfirmationResponseDto>.Fail(AgreementErrors.NotFound);
                 }
 
                 if (agreement.SellerId != sellerId)
@@ -219,7 +219,7 @@ namespace HomeCycle.Application.Services.Orders
                 if (agreement == null)
                 {
                     await _unitOfWork.RollbackTransactionAsync(ct);
-                    return Result<OrderConfirmationResponseDto>.Fail(OrderErrors.AgreementNotFound);
+                    return Result<OrderConfirmationResponseDto>.Fail(AgreementErrors.NotFound);
                 }
 
                 if (agreement.BuyerId != buyerId)

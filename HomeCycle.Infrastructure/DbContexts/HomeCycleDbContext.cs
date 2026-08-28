@@ -598,6 +598,13 @@ public partial class HomeCycleDbContext : DbContext
             entity.Property(e => e.PolicyId).ValueGeneratedNever();
             entity.Property(e => e.IsActive).HasDefaultValue(true);
             entity.Property(e => e.UpdatedAt).HasDefaultValueSql("now()");
+            entity.Property(e => e.Content).HasColumnType("jsonb");
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()");
+            entity.HasOne<User>()
+             .WithMany()
+             .HasForeignKey(e => e.CreatedBy)
+             .OnDelete(DeleteBehavior.SetNull)
+             .HasConstraintName("fk_platform_policy_createdby");
         });
 
         modelBuilder.Entity<Post>(entity =>

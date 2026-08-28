@@ -212,9 +212,6 @@ namespace HomeCycle.Application.Commons.Errors
         public static readonly Error OrderNotFound =
             new("DISPUTE_ORDER_NOT_FOUND", "Không tìm thấy đơn hàng.");
 
-        public static readonly Error AgreementNotFound =
-            new("DISPUTE_AGREEMENT_NOT_FOUND", "Không tìm thấy thỏa thuận của đơn hàng.");
-
         public static readonly Error Forbidden =
             new("DISPUTE_FORBIDDEN", "Bạn không có quyền thực hiện thao tác này trên đơn hàng hoặc tranh chấp.");
 
@@ -248,9 +245,6 @@ namespace HomeCycle.Application.Commons.Errors
         public static readonly Error NotFound =
             new("Order.NotFound", "Không tìm thấy đơn hàng.");
 
-        public static readonly Error AgreementNotFound =
-            new("Agreement.NotFound", "Không tìm thấy thỏa thuận của đơn hàng.");
-
         public static readonly Error Forbidden =
             new("Auth.Forbidden", "Bạn không có quyền thực hiện thao tác này trên đơn hàng.");
 
@@ -274,5 +268,44 @@ namespace HomeCycle.Application.Commons.Errors
 
         public static readonly Error ShipmentNotDelivered =
             new("Order.ShipmentNotDelivered", "Đơn vận chuyển chưa được xác nhận giao thành công.");
+    }
+
+    public static class PlatformPolicyErrors
+    {
+        public static Error ActiveNotFound(PlatformPolicyType policyType) =>
+            new("PlatformPolicy.ActiveNotFound", $"Không tìm thấy policy đang hoạt động cho '{policyType}'.");
+
+        public static Error InvalidContent(PlatformPolicyType policyType) =>
+            new("PlatformPolicy.InvalidContent", $"Nội dung cấu hình của policy '{policyType}' không hợp lệ.");
+
+        public static readonly Error InvalidDisputePolicy =
+            new("PlatformPolicy.InvalidDisputePolicy", "Thời gian dispute của tài khoản uy tín thấp không được ngắn hơn thời gian dispute thông thường.");
+
+        public static readonly Error InvalidAppointmentPolicy =
+            new("PlatformPolicy.InvalidAppointmentPolicy", "Thời hạn yêu cầu đổi lịch phải lớn hơn hoặc bằng thời hạn được phép hủy lịch.");
+    }
+
+    public static class AgreementErrors
+    {
+        public static readonly Error NotFound =
+            new("Agreement.NotFound", "Không tìm thấy thỏa thuận.");
+
+        public static readonly Error AlreadyExists =
+            new("Agreement.AlreadyExists", "Thỏa thuận đã tồn tại.");
+
+        public static readonly Error Forbidden =
+            new("Agreement.Forbidden", "Bạn không có quyền thực hiện thao tác này trên thỏa thuận.");
+
+        public static readonly Error InvalidStatus =
+            new("Agreement.InvalidStatus", "Trạng thái hiện tại của thỏa thuận không cho phép thực hiện thao tác này.");
+
+        public static readonly Error AlreadyConfirmed =
+            new("Agreement.AlreadyConfirmed", "Bạn đã xác nhận thỏa thuận này rồi.");
+
+        public static readonly Error RevisionMismatch =
+            new("Agreement.RevisionMismatch", "Nội dung thỏa thuận vừa được cập nhật. Vui lòng tải lại và xem nội dung mới nhất trước khi xác nhận.");
+
+        public static readonly Error OnlySellerCanCreate =
+            new("Agreement.OnlySellerCanCreate", "Chỉ người bán mới có quyền tạo thỏa thuận.");
     }
 }
