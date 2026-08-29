@@ -12,6 +12,7 @@ using HomeCycle.Application.DTOs.Requests.Posts;
 using HomeCycle.Application.DTOs.Requests.Products;
 using HomeCycle.Application.DTOs.Requests.Profiles;
 using HomeCycle.Application.DTOs.Requests.Users;
+using HomeCycle.Application.DTOs.Responses.Appointments;
 using HomeCycle.Application.DTOs.Responses.Auths;
 using HomeCycle.Application.DTOs.Responses.Banks;
 using HomeCycle.Application.DTOs.Responses.Brands;
@@ -19,6 +20,7 @@ using HomeCycle.Application.DTOs.Responses.Categories;
 using HomeCycle.Application.DTOs.Responses.Media;
 using HomeCycle.Application.DTOs.Responses.Negotiations;
 using HomeCycle.Application.DTOs.Responses.Offers;
+using HomeCycle.Application.DTOs.Responses.Orders;
 using HomeCycle.Application.DTOs.Responses.PlatformPolicies;
 using HomeCycle.Application.DTOs.Responses.Posts;
 using HomeCycle.Application.DTOs.Responses.Products;
@@ -604,6 +606,45 @@ namespace HomeCycle.Application.Mappings
             CreateMap<UpdateAppointmentPolicyRequest, AppointmentPolicyConfigDto>()
                 .ForAllMembers(opt => opt.Condition(
                     (src, dest, srcMember) => srcMember != null));
+
+
+            // ==================== ORDER / APPOINTMENT READ MODEL ====================
+
+            CreateMap<order, OrderReferenceDto>()
+                .ForMember(dest => dest.OrderStatus,
+                    opt => opt.MapFrom(src => src.OrderStatus.HasValue
+                        ? (OrderStatus?)src.OrderStatus.Value
+                        : null))
+                .ForMember(dest => dest.PaymentStatus,
+                    opt => opt.MapFrom(src => src.PaymentStatus.HasValue
+                        ? (PaymentStatus?)src.PaymentStatus.Value
+                        : null));
+
+            CreateMap<order, AppointmentOrderSummaryDto>()
+                .ForMember(dest => dest.OrderStatus,
+                    opt => opt.MapFrom(src => src.OrderStatus.HasValue
+                        ? (OrderStatus?)src.OrderStatus.Value
+                        : null));
+
+            CreateMap<appointment, AppointmentDetailDto>()
+                .ForMember(dest => dest.AppointmentType,
+                    opt => opt.MapFrom(src => src.AppointmentType.HasValue
+                        ? (AppointmentType?)src.AppointmentType.Value
+                        : null))
+                .ForMember(dest => dest.AppointmentStatus,
+                    opt => opt.MapFrom(src => src.AppointmentStatus.HasValue
+                        ? (AppointmentStatus?)src.AppointmentStatus.Value
+                        : null))
+                .ForMember(dest => dest.Inspection, opt => opt.Ignore())
+                .ForMember(dest => dest.Collection, opt => opt.Ignore())
+                .ForMember(dest => dest.Cancellation, opt => opt.Ignore())
+                .ForMember(dest => dest.Order, opt => opt.Ignore())
+                .ForMember(dest => dest.Actions, opt => opt.Ignore());
+
+            CreateMap<inspection_appointment, InspectionAppointmentDetailDto>();
+
+            CreateMap<collection_appointment, CollectionAppointmentDetailDto>()
+                .ForMember(dest => dest.DeliveryMethod, opt => opt.Ignore());
         }
     }
 }

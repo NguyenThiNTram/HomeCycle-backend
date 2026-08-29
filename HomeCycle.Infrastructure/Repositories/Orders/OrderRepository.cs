@@ -111,8 +111,8 @@ namespace HomeCycle.Infrastructure.Repositories.Orders
             if (entity == null)
                 return null;
 
-            bool isBuyer = entity.Agreement.BuyerId == currentUserId;
-
+            var isBuyer = entity.Agreement.BuyerId == currentUserId;
+            var counterparty = isBuyer ? entity.Agreement.Seller : entity.Agreement.Buyer;
 
             var thumbnailUrl = await _db.Media
                 .Where(m => m.TargetId == entity.PostId && m.TargetType == "Post")
@@ -120,50 +120,24 @@ namespace HomeCycle.Infrastructure.Repositories.Orders
                 .Select(m => m.Url)
                 .FirstOrDefaultAsync(ct);
 
-            // 1 Order có thể có nhiều Payment (cọc, thanh toán phần còn lại...).
-            // Lấy Payment MỚI NHẤT đã thanh toán thành công để hiển thị PaymentMethod/PaidAt cho detail.
-            // PaymentStatus.Completed/Success thật của bạn.
             var latestPaidPayment = entity.Payments
-                .Where(p => p.PaymentStatus == 1 && p.PaidAt.HasValue)
+                .Where(p =>
+                    p.PaymentStatus == (int)PaymentStatus.Completed &&
+                    p.PaidAt.HasValue)
                 .OrderByDescending(p => p.PaidAt)
                 .FirstOrDefault();
 
-            // Review: giả định chỉ Buyer được đánh giá Seller sau khi đơn Completed và chưa từng review.
-            // TODO: đổi "2" thành đúng giá trị enum OrderStatus.Completed thật của bạn.
-            //var reviewSummary = new ReviewSummaryDto
-            //{
-            //    ReviewId = entity.Review?.ReviewId,
-            //    HasReviewed = entity.Review != null,
-            //    CanReview = isBuyer && entity.OrderStatus == 2 && entity.Review == null,
-            //    Rating = entity.Review?.Rating
-            //};
-
-            // Giả định 1 Order chỉ theo dõi 1 Shipment chính (lấy bản ghi mới nhất nếu có nhiều).
             var latestShipment = entity.Shipments
                 .OrderByDescending(s => s.CreatedAt)
                 .FirstOrDefault();
-            var shipmentSummary = latestShipment == null ? null : new ShipmentSummaryDto
-            {
-                ShipmentId = latestShipment.ShipmentId,
-                ShipmentStatus = latestShipment.ShipmentStatus,
-                DeliveredAt = latestShipment.DeliveredAt
-            };
 
-
-            // Dispute được coi là "active" khi còn Pending hoặc đang UnderReview —
-            // Resolved/Rejected/Closed không còn ảnh hưởng tới đơn hàng nữa.
             var latestDispute = entity.Disputes
                 .OrderByDescending(d => d.CreatedAt)
                 .FirstOrDefault();
-            var disputeSummary = new DisputeSummaryDto
-            {
-                HasActiveDispute = latestDispute != null
-                    && (latestDispute.DisputeStatus == (int)DisputeStatus.Pending),
-                LatestDisputeId = latestDispute?.DisputeId
-            };
 
             AgreementDetailsDto? agreementDetails = null;
-            if (!string.IsNullOrEmpty(entity.Agreement.AgreementDetailsJsonb))
+
+            if (!string.IsNullOrWhiteSpace(entity.Agreement.AgreementDetailsJsonb))
             {
                 try
                 {
@@ -173,28 +147,100 @@ namespace HomeCycle.Infrastructure.Repositories.Orders
                 }
                 catch (JsonException)
                 {
-                    // Dữ liệu JSONB lỗi thì bỏ qua, không chặn việc trả về order detail
                     agreementDetails = null;
                 }
             }
 
+            var counterpartySummary = new CounterpartySummaryDto
+            {
+                UserId = counterparty.UserId,
+                Username = counterparty.Username,
+                PhoneNumber = counterparty.PhoneNumber,
+                AvatarUrl = counterparty.AvatarUrl
+            };
+
+            var paymentSummary = latestPaidPayment == null
+                ? null
+                : new PaymentSummaryDto
+                {
+                    PaymentId = latestPaidPayment.PaymentId,
+                    PaymentMethod = latestPaidPayment.PaymentMethod.HasValue
+                        ? (PaymentMethod?)latestPaidPayment.PaymentMethod.Value
+                        : null,
+                    Amount = latestPaidPayment.Amount,
+                    PaidAt = latestPaidPayment.PaidAt
+                };
+
+            var shipmentSummary = latestShipment == null
+                ? null
+                : new ShipmentSummaryDto
+                {
+                    ShipmentId = latestShipment.ShipmentId,
+                    ShipmentStatus = latestShipment.ShipmentStatus.HasValue
+                        ? (ShipmentStatus?)latestShipment.ShipmentStatus.Value
+                        : null,
+                    DeliveredAt = latestShipment.DeliveredAt
+                };
+
+            var disputeSummary = new DisputeSummaryDto
+            {
+                HasActiveDispute = latestDispute?.DisputeStatus == (int)DisputeStatus.Pending,
+                LatestDisputeId = latestDispute?.DisputeId,
+                LatestDisputeStatus = latestDispute?.DisputeStatus.HasValue == true
+                    ? (DisputeStatus?)latestDispute.DisputeStatus.Value
+                    : null
+            };
+
+            var reviews = entity.Reviews
+                .Select(r => r.ToDomain())
+                .ToList();
+
             return new OrderDetailDto
             {
-                Order = entity.ToDomain(),
+                OrderId = entity.OrderId,
+                AgreementId = entity.AgreementId,
+                PostId = entity.PostId,
+                NegotiationId = entity.Agreement.NegotiationId,
+
+                OrderCode = entity.OrderCode,
+                ProductName = entity.ProductName,
+                Quantity = entity.Quantity,
+
+                OriginalTotalAmount = entity.OriginalTotalAmount,
+                FinalTotalAmount = entity.FinalTotalAmount,
+                AmountPaid = entity.AmountPaid,
+                AmountRemaining = entity.AmountRemaining,
+                ShippingFee = agreementDetails?.EstimatedShippingFee,
+
+                PaymentStatus = entity.PaymentStatus.HasValue
+                    ? (PaymentStatus?)entity.PaymentStatus.Value
+                    : null,
+
+                OrderStatus = entity.OrderStatus.HasValue
+                    ? (OrderStatus?)entity.OrderStatus.Value
+                    : null,
+
+                DeliveryMethod = agreementDetails?.DeliveryMethod,
+
+                CreatedAt = entity.CreatedAt,
+                UpdatedAt = entity.UpdatedAt,
+                CompletedAt = entity.CompletedAt,
+
+                SellerHandoverConfirmedAt = entity.SellerHandoverConfirmedAt,
+                BuyerReceivedConfirmedAt = entity.BuyerReceivedConfirmedAt,
+
+                CompletionSource = entity.CompletionSource.HasValue
+                    ? (OrderCompletionSource?)entity.CompletionSource.Value
+                    : null,
+
                 ThumbnailUrl = thumbnailUrl,
                 PostDescription = entity.Post?.Description,
-                CounterpartyName = isBuyer ? entity.Agreement.Seller.Username : entity.Agreement.Buyer.Username,
-                CounterpartyPhone = isBuyer ? entity.Agreement.Seller.PhoneNumber : entity.Agreement.Buyer.PhoneNumber,
-                NegotiationId = entity.Agreement.NegotiationId,
-                PaymentMethod = latestPaidPayment?.PaymentMethod,
-                ShippingFee = agreementDetails?.EstimatedShippingFee,
-                PaidAt = latestPaidPayment?.PaidAt,
-                //Review = reviewSummary,
+
+                Counterparty = counterpartySummary,
+                Payment = paymentSummary,
                 Shipment = shipmentSummary,
-                Dispute = disputeSummary,
-                Reviews = entity.Reviews.Select(r => r.ToDomain()).ToList(),
-                //Shipments = entity.Shipments.Select(s => s.ToDomain()).ToList(),
-                //Disputes = entity.Disputes.Select(d => d.ToDomain()).ToList()
+                Reviews = reviews,
+                Dispute = disputeSummary
             };
         }
 

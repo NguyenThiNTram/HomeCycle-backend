@@ -1,4 +1,5 @@
-﻿using HomeCycle.Application.Commons.Errors;
+﻿using AutoMapper;
+using HomeCycle.Application.Commons.Errors;
 using HomeCycle.Application.Commons.Paginations;
 using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Requests.Agreements;
@@ -8,7 +9,9 @@ using HomeCycle.Application.Interfaces.Generics;
 using HomeCycle.Application.Interfaces.Repositories.Agreements;
 using HomeCycle.Application.Interfaces.Repositories.Appointments;
 using HomeCycle.Application.Interfaces.Repositories.Orders;
+using HomeCycle.Application.Interfaces.Repositories.Reviews;
 using HomeCycle.Application.Interfaces.Repositories.Shipments;
+using HomeCycle.Application.Interfaces.Services.Disputes;
 using HomeCycle.Application.Interfaces.Services.Orders;
 using HomeCycle.Domain.Entities;
 using HomeCycle.Domain.Enums;
@@ -28,15 +31,28 @@ namespace HomeCycle.Application.Services.Orders
         private readonly IAppointmentRepository _appointmentRepo;
         private readonly IShipmentRepository _shipmentRepo;
         private readonly IUnitOfWork _unitOfWork;
+        //private readonly IReviewRepository _reviewRepo;
+        private readonly IDisputeWindowPolicy _disputeWindowPolicy;
+        private readonly IMapper _mapper;
 
-        public OrderService(IOrderRepository orderRepo, IAgreementFormRepository agreementRepo, IAppointmentRepository appointmentRepo,
-            IShipmentRepository shipmentRepo, IUnitOfWork unitOfWork)
+        public OrderService(
+            IOrderRepository orderRepo,
+            IAgreementFormRepository agreementRepo,
+            IAppointmentRepository appointmentRepo,
+            IShipmentRepository shipmentRepo,
+            //IReviewRepository reviewRepo,
+            IDisputeWindowPolicy disputeWindowPolicy,
+            IUnitOfWork unitOfWork,
+            IMapper mapper)
         {
             _orderRepo = orderRepo;
             _agreementRepo = agreementRepo;
             _appointmentRepo = appointmentRepo;
             _shipmentRepo = shipmentRepo;
+            //_reviewRepo = reviewRepo;
+            _disputeWindowPolicy = disputeWindowPolicy;
             _unitOfWork = unitOfWork;
+            _mapper = mapper;
         }
 
         public async Task<Result<PagedResult<OrderListItemDto>>> GetMyOrdersAsync(
@@ -49,31 +65,65 @@ namespace HomeCycle.Application.Services.Orders
         public async Task<Result<OrderDetailDto>> GetDetailAsync(Guid orderId, Guid userId, CancellationToken ct = default)
         {
             var order = await _orderRepo.GetByIdAsync(orderId, ct);
-            if (order == null)
-                return Result<OrderDetailDto>.Fail(new Error("Order.NotFound", "Không tìm thấy đơn hàng."));
 
-            var authResult = await CheckOwnershipAsync(order.AgreementId, userId, ct);
-            if (!authResult.IsSuccess)
-                return Result<OrderDetailDto>.Fail(authResult.Error);
+            if (order == null)
+                return Result<OrderDetailDto>.Fail(OrderErrors.NotFound);
+
+            var agreement = await _agreementRepo.GetByIdAsync(order.AgreementId, ct);
+
+            if (agreement == null)
+                return Result<OrderDetailDto>.Fail(AgreementErrors.NotFound);
+
+            var isBuyer = agreement.BuyerId == userId;
+            var isSeller = agreement.SellerId == userId;
+
+            if (!isBuyer && !isSeller)
+                return Result<OrderDetailDto>.Fail(OrderErrors.Forbidden);
 
             var detail = await _orderRepo.GetDetailWithRelationsAsync(orderId, userId, ct);
+
             if (detail == null)
-                return Result<OrderDetailDto>.Fail(new Error("Order.NotFound", "Không tìm thấy đơn hàng."));
+                return Result<OrderDetailDto>.Fail(OrderErrors.NotFound);
+
+            detail.Appointments =
+                await _appointmentRepo.GetAppointmentSummariesByAgreementIdAsync(
+                    order.AgreementId,
+                    ct);
+
+            var myReview = detail.Reviews
+                .FirstOrDefault(r => r.ReviewerId == userId);
+
+            detail.Review = new ReviewSummaryDto
+            {
+                ReviewId = myReview?.ReviewId,
+                HasReviewed = myReview != null,
+                Rating = myReview?.Rating
+            };
+
+            detail.Actions = await BuildOrderActionsAsync(
+                detail,
+                agreement,
+                isBuyer,
+                isSeller,
+                ct);
 
             return Result<OrderDetailDto>.Success(detail);
         }
 
-        public async Task<Result<order>> GetByAgreementAsync(Guid agreementId, Guid userId, CancellationToken ct = default)
+        public async Task<Result<OrderReferenceDto>> GetByAgreementAsync(Guid agreementId, Guid userId, CancellationToken ct = default)
         {
             var authResult = await CheckOwnershipAsync(agreementId, userId, ct);
+
             if (!authResult.IsSuccess)
-                return Result<order>.Fail(authResult.Error);
+                return Result<OrderReferenceDto>.Fail(authResult.Error!);
 
             var order = await _orderRepo.GetByAgreementIdAsync(agreementId, ct);
-            if (order == null)
-                return Result<order>.Fail(new Error("Order.NotFound", "Thỏa thuận chưa phát sinh đơn hàng (chưa thanh toán thành công)."));
 
-            return Result<order>.Success(order);
+            if (order == null)
+                return Result<OrderReferenceDto>.Fail(OrderErrors.NotCreated);
+
+            return Result<OrderReferenceDto>.Success(
+                _mapper.Map<OrderReferenceDto>(order));
         }
 
         public async Task<Result<OrderConfirmationResponseDto>> ConfirmHandoverAsync(
@@ -344,6 +394,119 @@ namespace HomeCycle.Application.Services.Orders
             }
         }
 
+        //================ HELPER =======================
+
+        private async Task<OrderActionDto> BuildOrderActionsAsync(OrderDetailDto detail, agreement_form agreement, bool isBuyer, bool isSeller, CancellationToken ct)
+        {
+            var canConfirm = false;
+            OrderConfirmAction? confirmAction = null;
+
+            var latestCollection = detail.Appointments
+                .Where(a => a.AppointmentType == AppointmentType.Collection)
+                .OrderByDescending(a => a.CreatedAt)
+                .FirstOrDefault();
+
+            var bothCheckedIn =
+                latestCollection?.BuyerCheckAt.HasValue == true &&
+                latestCollection.SellerCheckAt.HasValue;
+
+            var isDirect =
+                detail.DeliveryMethod == DeliveryMethod.BuyerPickUp ||
+                detail.DeliveryMethod == DeliveryMethod.SellerDelivers;
+
+            var ghnDelivered =
+                detail.DeliveryMethod == DeliveryMethod.GhnDelivery &&
+                detail.Shipment?.ShipmentStatus == ShipmentStatus.Delivered &&
+                detail.Shipment.DeliveredAt.HasValue;
+
+            if (detail.OrderStatus == OrderStatus.Processing)
+            {
+                if (isSeller &&
+                    isDirect &&
+                    bothCheckedIn &&
+                    !detail.SellerHandoverConfirmedAt.HasValue)
+                {
+                    canConfirm = true;
+                    confirmAction = OrderConfirmAction.ConfirmHandover;
+                }
+                else if (isBuyer &&
+                         !detail.BuyerReceivedConfirmedAt.HasValue &&
+                         ((isDirect && bothCheckedIn) || ghnDelivered))
+                {
+                    canConfirm = true;
+                    confirmAction = OrderConfirmAction.ConfirmReceived;
+                }
+            }
+
+            var canReview =
+                detail.OrderStatus == OrderStatus.Completed &&
+                !detail.Review.HasReviewed;
+
+            var canDispute = false;
+
+            if (!detail.Dispute.HasActiveDispute)
+            {
+                if (detail.OrderStatus == OrderStatus.Processing)
+                {
+                    canDispute = true;
+                }
+                else if (detail.OrderStatus == OrderStatus.Completed)
+                {
+                    var disputeWindowStart =
+                        detail.Shipment?.DeliveredAt ??
+                        detail.CompletedAt;
+
+                    if (disputeWindowStart.HasValue)
+                    {
+                        var disputeWindow =
+                            await _disputeWindowPolicy.GetOrderDisputeWindowAsync(
+                                agreement.SellerId,
+                                ct);
+
+                        canDispute =
+                            DateTime.UtcNow <=
+                            disputeWindowStart.Value.Add(disputeWindow);
+                    }
+                }
+            }
+
+            return new OrderActionDto
+            {
+                CanConfirm = canConfirm,
+                ConfirmAction = confirmAction,
+                CanReview = canReview,
+                CanDispute = canDispute,
+
+                AllowedDisputeCategories = canDispute
+                    ? BuildAllowedDisputeCategories(detail)
+                    : Array.Empty<DisputeCategory>()
+            };
+        }
+
+        private static IReadOnlyList<DisputeCategory> BuildAllowedDisputeCategories(OrderDetailDto detail)
+        {
+            var categories = new List<DisputeCategory>();
+
+            if (detail.Appointments.Count > 0)
+                categories.Add(DisputeCategory.NoShow);
+
+            categories.Add(DisputeCategory.ItemMismatch);
+
+            if (detail.DeliveryMethod == DeliveryMethod.GhnDelivery)
+            {
+                categories.Add(DisputeCategory.SellerNotShipped);
+                categories.Add(DisputeCategory.DamagedOrLost);
+                categories.Add(DisputeCategory.ItemNotReceived);
+            }
+
+            categories.Add(DisputeCategory.FraudOrScam);
+            categories.Add(DisputeCategory.PaymentNotCompleted);
+            categories.Add(DisputeCategory.CommitmentViolation);
+            categories.Add(DisputeCategory.Other);
+
+            return categories;
+        }
+
         private static Result<DeliveryMethod> ResolveDeliveryMethod(agreement_form agreement)
         {
             if (string.IsNullOrWhiteSpace(agreement.AgreementDetailsJsonb))
@@ -370,12 +533,18 @@ namespace HomeCycle.Application.Services.Orders
         }
         private async Task<Result<bool>> CheckOwnershipAsync(Guid agreementId, Guid userId, CancellationToken ct)
         {
-            var agreement = await _agreementRepo.GetByIdAsync(agreementId, ct);
-            if (agreement == null)
-                return Result<bool>.Fail(new Error("Agreement.NotFound", "Không tìm thấy thỏa thuận."));
+            var agreement = await _agreementRepo.GetByIdAsync(
+                agreementId,
+                ct);
 
-            if (agreement.BuyerId != userId && agreement.SellerId != userId)
-                return Result<bool>.Fail(new Error("Auth.Forbidden", "Bạn không có quyền xem đơn hàng này."));
+            if (agreement == null)
+                return Result<bool>.Fail(AgreementErrors.NotFound);
+
+            if (agreement.BuyerId != userId &&
+                agreement.SellerId != userId)
+            {
+                return Result<bool>.Fail(OrderErrors.Forbidden);
+            }
 
             return Result<bool>.Success(true);
         }

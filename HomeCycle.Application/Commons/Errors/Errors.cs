@@ -268,6 +268,9 @@ namespace HomeCycle.Application.Commons.Errors
 
         public static readonly Error ShipmentNotDelivered =
             new("Order.ShipmentNotDelivered", "Đơn vận chuyển chưa được xác nhận giao thành công.");
+
+        public static readonly Error NotCreated =
+            new("Order.NotCreated", "Thỏa thuận chưa phát sinh đơn hàng do chưa thanh toán thành công.");
     }
 
     public static class PlatformPolicyErrors
@@ -315,5 +318,29 @@ namespace HomeCycle.Application.Commons.Errors
 
         public static readonly Error OnlySellerCanCreate =
             new("Agreement.OnlySellerCanCreate", "Chỉ người bán mới có quyền tạo thỏa thuận.");
+    }
+
+    public static class AppointmentErrors
+    {
+        public static readonly Error NotFound =
+            new("Appointment.NotFound", "Không tìm thấy lịch hẹn.");
+
+        public static readonly Error Forbidden =
+            new("Appointment.Forbidden", "Bạn không có quyền thực hiện thao tác này trên lịch hẹn.");
+
+        public static readonly Error InvalidType =
+            new("Appointment.InvalidType", "Loại lịch hẹn không hợp lệ.");
+
+        public static readonly Error InspectionDetailNotFound =
+            new("Appointment.InspectionDetailNotFound", "Không tìm thấy thông tin lịch kiểm định.");
+
+        public static readonly Error CollectionDetailNotFound =
+            new("Appointment.CollectionDetailNotFound", "Không tìm thấy thông tin lịch thu gom.");
+
+        public static readonly Error Cancelled =
+            new("Appointment.Cancelled", "Lịch hẹn đã bị hủy.");
+
+        public static readonly Error AlreadyCompleted =
+            new("Appointment.AlreadyCompleted", "Lịch hẹn đã hoàn tất.");
     }
 }

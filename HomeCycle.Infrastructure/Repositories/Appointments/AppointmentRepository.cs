@@ -135,6 +135,51 @@ namespace HomeCycle.Infrastructure.Repositories.Appointments
             return entity?.ToDomain();
         }
 
+        public async Task<IReadOnlyList<AppointmentSummaryDto>> GetAppointmentSummariesByAgreementIdAsync(Guid agreementId, CancellationToken ct = default)
+        {
+            return await _db.Appointments
+                .AsNoTracking()
+                .Where(a => a.AgreementId == agreementId)
+                .Where(a =>
+                    a.AppointmentStatus != (int)AppointmentStatus.Cancelled &&
+                    a.AppointmentStatus != (int)AppointmentStatus.Misssed)
+                .OrderBy(a => a.CreatedAt)
+                .Select(a => new AppointmentSummaryDto
+                {
+                    AppointmentId = a.AppointmentId,
+
+                    AppointmentType = a.AppointmentType.HasValue
+                        ? (AppointmentType?)a.AppointmentType.Value
+                        : null,
+
+                    AppointmentStatus = a.AppointmentStatus.HasValue
+                        ? (AppointmentStatus?)a.AppointmentStatus.Value
+                        : null,
+
+                    ScheduledAt = a.AppointmentType == (int)AppointmentType.Inspection
+                        ? a.Inspection_Appointment != null
+                            ? a.Inspection_Appointment.InspectionDate
+                            : null
+                        : a.Collection_Appointment != null
+                            ? a.Collection_Appointment.CollectionDate
+                            : null,
+
+                    Location = a.AppointmentType == (int)AppointmentType.Inspection
+                        ? a.Inspection_Appointment != null
+                            ? a.Inspection_Appointment.InspectionAddress
+                            : null
+                        : a.Collection_Appointment != null
+                            ? a.Collection_Appointment.PickupAddress
+                            : null,
+
+                    BuyerCheckAt = a.BuyerCheckAt,
+                    SellerCheckAt = a.SellerCheckAt,
+                    CreatedAt = a.CreatedAt,
+                    CompletedAt = a.CompletedAt
+                })
+                .ToListAsync(ct);
+        }
+
         private IQueryable<Appointment> BuildBaseAppointmentQuery(
           AppointmentType type, Guid userId, bool isSeller, AppointmentStatus? status)
         {

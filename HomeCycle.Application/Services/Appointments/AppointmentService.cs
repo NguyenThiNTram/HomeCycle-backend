@@ -1,17 +1,23 @@
-﻿using HomeCycle.Application.Commons.Paginations;
+﻿using AutoMapper;
+using HomeCycle.Application.Commons.Errors;
+using HomeCycle.Application.Commons.Paginations;
 using HomeCycle.Application.Commons.Results;
+using HomeCycle.Application.DTOs.Requests.Agreements;
 using HomeCycle.Application.DTOs.Requests.Appointments;
 using HomeCycle.Application.DTOs.Responses.Appointments;
 using HomeCycle.Application.Interfaces.Generics;
 using HomeCycle.Application.Interfaces.Repositories.Agreements;
 using HomeCycle.Application.Interfaces.Repositories.Appointments;
+using HomeCycle.Application.Interfaces.Repositories.Orders;
 using HomeCycle.Application.Interfaces.Services.Appointments;
+using HomeCycle.Application.Interfaces.Services.PlatformPolicies;
 using HomeCycle.Domain.Entities;
 using HomeCycle.Domain.Enums;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Text.Json;
 using System.Threading.Tasks;
 
 namespace HomeCycle.Application.Services.Appointments
@@ -23,19 +29,28 @@ namespace HomeCycle.Application.Services.Appointments
         private readonly ICollectionAppointmentRepository _collectionRepo;
         private readonly IAgreementFormRepository _agreementRepo;
         private readonly IUnitOfWork _unitOfWork;
+        private readonly IOrderRepository _orderRepo;
+        private readonly IPlatformPolicyProvider _platformPolicyProvider;
+        private readonly IMapper _mapper;
 
         public AppointmentService(
             IAppointmentRepository appointmentRepo,
             IInspectionAppointmentRepository inspectionRepo,
             ICollectionAppointmentRepository collectionRepo,
             IAgreementFormRepository agreementRepo,
-            IUnitOfWork unitOfWork)
+            IOrderRepository orderRepo,
+            IPlatformPolicyProvider platformPolicyProvider,
+            IUnitOfWork unitOfWork,
+            IMapper mapper)
         {
             _appointmentRepo = appointmentRepo;
             _inspectionRepo = inspectionRepo;
             _collectionRepo = collectionRepo;
             _agreementRepo = agreementRepo;
+            _orderRepo = orderRepo;
+            _platformPolicyProvider = platformPolicyProvider;
             _unitOfWork = unitOfWork;
+            _mapper = mapper;
         }
 
         public async Task<Result<PagedResult<InspectionAppointmentListItemDto>>> GetInspectionListAsync(
@@ -55,23 +70,180 @@ namespace HomeCycle.Application.Services.Appointments
         public async Task<Result<AppointmentDetailDto>> GetDetailAsync(Guid appointmentId, Guid userId, CancellationToken ct = default)
         {
             var appointment = await _appointmentRepo.GetByIdAsync(appointmentId, ct);
+
             if (appointment == null)
-                return Result<AppointmentDetailDto>.Fail(new Error("Appointment.NotFound", "Không tìm thấy lịch hẹn."));
+                return Result<AppointmentDetailDto>.Fail(AppointmentErrors.NotFound);
 
-            var agreement = await _agreementRepo.GetByIdAsync(appointment.AgreementId, ct);
+            var agreement = await _agreementRepo.GetByIdAsync(
+                appointment.AgreementId,
+                ct);
+
             if (agreement == null)
-                return Result<AppointmentDetailDto>.Fail(new Error("Agreement.NotFound", "Không tìm thấy thỏa thuận gắn với lịch hẹn."));
+                return Result<AppointmentDetailDto>.Fail(AgreementErrors.NotFound);
 
-            // Chỉ buyer hoặc seller của Agreement này mới được xem.
-            if (agreement.BuyerId != userId && agreement.SellerId != userId)
-                return Result<AppointmentDetailDto>.Fail(new Error("Auth.Forbidden", "Bạn không có quyền xem lịch hẹn này."));
+            var isBuyer = agreement.BuyerId == userId;
+            var isSeller = agreement.SellerId == userId;
 
-            var dto = new AppointmentDetailDto { Appointment = appointment };
+            if (!isBuyer && !isSeller)
+                return Result<AppointmentDetailDto>.Fail(AppointmentErrors.Forbidden);
+
+            var dto = _mapper.Map<AppointmentDetailDto>(appointment);
+
+            DateTime? scheduledAt = null;
 
             if (appointment.AppointmentType == (int)AppointmentType.Inspection)
-                dto.InspectionAppointment = await _inspectionRepo.GetByAppointmentIdAsync(appointmentId, ct);
+            {
+                var inspection = await _inspectionRepo.GetByAppointmentIdAsync(
+                    appointmentId,
+                    ct);
+
+                if (inspection == null)
+                    return Result<AppointmentDetailDto>.Fail(
+                        AppointmentErrors.InspectionDetailNotFound);
+
+                dto.Inspection =
+                    _mapper.Map<InspectionAppointmentDetailDto>(inspection);
+
+                scheduledAt = inspection.InspectionDate;
+            }
+            else if (appointment.AppointmentType == (int)AppointmentType.Collection)
+            {
+                var collection = await _collectionRepo.GetByAppointmentIdAsync(
+                    appointmentId,
+                    ct);
+
+                if (collection == null)
+                    return Result<AppointmentDetailDto>.Fail(
+                        AppointmentErrors.CollectionDetailNotFound);
+
+                dto.Collection =
+                    _mapper.Map<CollectionAppointmentDetailDto>(collection);
+
+                scheduledAt = collection.CollectionDate;
+
+                if (!string.IsNullOrWhiteSpace(agreement.AgreementDetailsJsonb))
+                {
+                    try
+                    {
+                        var details =
+                            JsonSerializer.Deserialize<AgreementDetailsDto>(
+                                agreement.AgreementDetailsJsonb,
+                                new JsonSerializerOptions
+                                {
+                                    PropertyNameCaseInsensitive = true
+                                });
+
+                        dto.Collection.DeliveryMethod =
+                            details?.DeliveryMethod;
+                    }
+                    catch (JsonException)
+                    {
+                        dto.Collection.DeliveryMethod = null;
+                    }
+                }
+            }
             else
-                dto.CollectionAppointment = await _collectionRepo.GetByAppointmentIdAsync(appointmentId, ct);
+            {
+                return Result<AppointmentDetailDto>.Fail(
+                    AppointmentErrors.InvalidType);
+            }
+
+            if (appointment.CancelledAt.HasValue)
+            {
+                dto.Cancellation = new AppointmentCancellationDto
+                {
+                    CancelledAt = appointment.CancelledAt.Value,
+                    Reason = appointment.CancellationReason
+                };
+            }
+
+            var order = await _orderRepo.GetByAgreementIdAsync(
+                appointment.AgreementId,
+                ct);
+
+            if (order == null)
+                return Result<AppointmentDetailDto>.Fail(OrderErrors.NotFound);
+
+            dto.Order =
+                _mapper.Map<AppointmentOrderSummaryDto>(order);
+
+            var policy =
+                await _platformPolicyProvider.GetAppointmentConfigAsync(ct);
+
+            var status = appointment.AppointmentStatus.HasValue
+                ? (AppointmentStatus?)appointment.AppointmentStatus.Value
+                : null;
+
+            var isTerminal =
+                appointment.CancelledAt.HasValue ||
+                appointment.CompletedAt.HasValue ||
+                status == AppointmentStatus.Cancelled ||
+                status == AppointmentStatus.Completed ||
+                status == AppointmentStatus.Misssed;
+
+            var eligibleStatus =
+                status == AppointmentStatus.Pending ||
+                status == AppointmentStatus.Confirmed;
+
+            var currentUserCheckedIn = isBuyer
+                ? appointment.BuyerCheckAt.HasValue
+                : appointment.SellerCheckAt.HasValue;
+
+            var hasAnyCheckIn =
+                appointment.BuyerCheckAt.HasValue ||
+                appointment.SellerCheckAt.HasValue;
+
+            var supportsUserAppointmentActions =
+                appointment.AppointmentType == (int)AppointmentType.Inspection ||
+                (
+                    appointment.AppointmentType == (int)AppointmentType.Collection &&
+                    (
+                        dto.Collection?.DeliveryMethod == DeliveryMethod.BuyerPickUp ||
+                        dto.Collection?.DeliveryMethod == DeliveryMethod.SellerDelivers
+                    )
+                );
+
+            var canCheckIn = false;
+            var canRequestReschedule = false;
+            var canCancel = false;
+
+            if (scheduledAt.HasValue &&
+                eligibleStatus &&
+                !isTerminal &&
+                supportsUserAppointmentActions)
+            {
+                var now = DateTime.UtcNow;
+
+                var checkInOpenAt =
+                    scheduledAt.Value.AddMinutes(
+                        -policy.CheckInOpenBeforeMinutes);
+
+                var checkInCloseAt =
+                    scheduledAt.Value.AddMinutes(
+                        policy.NoInteractionExpiryMinutes);
+
+                canCheckIn =
+                    !currentUserCheckedIn &&
+                    now >= checkInOpenAt &&
+                    now <= checkInCloseAt;
+
+                canRequestReschedule =
+                    !hasAnyCheckIn &&
+                    now <= scheduledAt.Value.AddHours(
+                        -policy.RescheduleCutoffHours);
+
+                canCancel =
+                    !hasAnyCheckIn &&
+                    now <= scheduledAt.Value.AddHours(
+                        -policy.CancellationCutoffHours);
+            }
+
+            dto.Actions = new AppointmentActionDto
+            {
+                CanCheckIn = canCheckIn,
+                CanRequestReschedule = canRequestReschedule,
+                CanCancel = canCancel
+            };
 
             return Result<AppointmentDetailDto>.Success(dto);
         }
@@ -81,24 +253,24 @@ namespace HomeCycle.Application.Services.Appointments
         {
             var appointment = await _appointmentRepo.GetByIdAsync(appointmentId, ct);
             if (appointment == null)
-                return Result<AppointmentCheckInResponseDto>.Fail(new Error("Appointment.NotFound", "Không tìm thấy lịch hẹn."));
+                return Result<AppointmentCheckInResponseDto>.Fail(AppointmentErrors.NotFound);
 
             var agreement = await _agreementRepo.GetByIdAsync(appointment.AgreementId, ct);
             if (agreement == null)
-                return Result<AppointmentCheckInResponseDto>.Fail(new Error("Agreement.NotFound", "Không tìm thấy thỏa thuận gắn với lịch hẹn."));
+                return Result<AppointmentCheckInResponseDto>.Fail(AgreementErrors.NotFound);
 
             bool isBuyer = agreement.BuyerId == userId;
             bool isSeller = agreement.SellerId == userId;
 
             if (!isBuyer && !isSeller)
-                return Result<AppointmentCheckInResponseDto>.Fail(new Error("Auth.Forbidden", "Bạn không có quyền check-in lịch hẹn này."));
+                return Result<AppointmentCheckInResponseDto>.Fail(AppointmentErrors.Forbidden);
 
             // Không cho check-in nếu lịch hẹn đã bị huỷ hoặc đã hoàn tất.
             if (appointment.CancelledAt.HasValue)
-                return Result<AppointmentCheckInResponseDto>.Fail(new Error("Appointment.Cancelled", "Lịch hẹn đã bị huỷ, không thể check-in."));
+                return Result<AppointmentCheckInResponseDto>.Fail(AppointmentErrors.Cancelled);
 
             if (appointment.AppointmentStatus == (int)AppointmentStatus.Completed)
-                return Result<AppointmentCheckInResponseDto>.Fail(new Error("Appointment.AlreadyCompleted", "Lịch hẹn đã hoàn tất."));
+                return Result<AppointmentCheckInResponseDto>.Fail(AppointmentErrors.AlreadyCompleted);
 
             var now = DateTime.UtcNow;
 
