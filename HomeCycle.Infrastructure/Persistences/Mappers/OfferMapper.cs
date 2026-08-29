@@ -24,6 +24,7 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 OfferPrice = entity.OfferPrice,
                 OfferQuantity = entity.OfferQuantity,
                 OfferStatus = (OfferStatus?)entity.OfferStatus,
+                Version = entity.Version,
                 CreatedAt = entity.CreatedAt,
 
                 Post = entity.Post?.ToDomain(),
@@ -43,6 +44,7 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 OfferPrice = entity.OfferPrice,
                 OfferQuantity = entity.OfferQuantity,
                 OfferStatus = (int?)entity.OfferStatus,
+                Version = entity.Version,
                 CreatedAt = entity.CreatedAt
             };
         }
