@@ -109,9 +109,10 @@ namespace HomeCycle.API.Controllers
         [ProducesResponseType(typeof(Result<AcceptOfferResponse>), StatusCodes.Status400BadRequest)]
         public async Task<IActionResult> AcceptOffer(
             [FromRoute] Guid offerId,
+            [FromBody] AcceptOfferRequest request,
             CancellationToken cancellationToken)
         {
-            var result = await _offerService.AcceptAsync(CurrentUserId, offerId, cancellationToken);
+            var result = await _offerService.AcceptAsync(CurrentUserId, offerId, request, cancellationToken);
             return HandleResult(result);
         }
 

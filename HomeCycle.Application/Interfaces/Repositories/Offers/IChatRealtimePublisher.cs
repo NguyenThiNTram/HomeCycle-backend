@@ -17,7 +17,9 @@ namespace HomeCycle.Application.Interfaces.Repositories.Offers
         Task PublishMessagesReadAsync(Guid negotiationId, MessagesReadResponse response, CancellationToken cancellationToken = default);
 
         Task PublishConversationUpdatedAsync(IReadOnlyList<Guid> userIds, ConversationUpdatedResponse response, CancellationToken cancellationToken = default);
-        
+
+        Task PublishOfferCreatedAsync(Guid receiverId, OfferResponse offer, CancellationToken cancellationToken = default);
+
         Task PublishOfferUpdatedAsync(IReadOnlyList<Guid> userIds, OfferResponse offer, CancellationToken cancellationToken = default);
     }
 }

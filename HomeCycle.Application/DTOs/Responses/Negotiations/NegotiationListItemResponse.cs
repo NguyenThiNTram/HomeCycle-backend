@@ -19,6 +19,7 @@ namespace HomeCycle.Application.DTOs.Responses.Negotiations
 
         public decimal? CurrentOfferPrice { get; set; }
         public int CurrentOfferQuantity { get; set; }
+        public int? CurrentOfferVersion { get; set; }
 
         public NegotiationStatus NegotiationStatus { get; set; }
 

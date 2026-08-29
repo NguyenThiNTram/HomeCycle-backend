@@ -22,6 +22,7 @@ namespace HomeCycle.Application.DTOs.Responses.Offers
         public int OfferQuantity { get; set; }
 
         public OfferStatus? OfferStatus { get; set; }
+        public int? Version { get; set; }
 
         public DateTime CreatedAt { get; set; }
     }
@@ -42,6 +43,8 @@ namespace HomeCycle.Application.DTOs.Responses.Offers
         public decimal? OfferPrice { get; set; }
         public int OfferQuantity { get; set; }
         public OfferStatus? OfferStatus { get; set; }
+
+        public int? Version { get; set; }
         public DateTime CreatedAt { get; set; }
     }
 
@@ -56,6 +59,8 @@ namespace HomeCycle.Application.DTOs.Responses.Offers
         public decimal? OfferPrice { get; set; }
         public int OfferQuantity { get; set; }
         public OfferStatus OfferStatus { get; set; }
+
+        public int? Version { get; set; }
 
         public Guid? NegotiationId { get; set; }
 

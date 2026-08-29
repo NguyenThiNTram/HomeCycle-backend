@@ -18,6 +18,7 @@ public class offer
     public decimal? OfferPrice { get; set; }
     public int OfferQuantity { get; set; }
     public OfferStatus? OfferStatus { get; set; }
+    public int? Version { get; set; } = 1;
 
     public DateTime CreatedAt { get; set; }
 
