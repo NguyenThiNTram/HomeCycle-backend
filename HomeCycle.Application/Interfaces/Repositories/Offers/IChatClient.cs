@@ -1,4 +1,5 @@
 ﻿using HomeCycle.Application.DTOs.Responses.Negotiations;
+using HomeCycle.Application.DTOs.Responses.Offers;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -16,5 +17,7 @@ namespace HomeCycle.Application.Interfaces.Repositories.Offers
         Task MessagesRead(MessagesReadResponse response);
 
         Task ConversationUpdated(ConversationUpdatedResponse response);
+
+        Task OfferUpdated(OfferResponse offer);
     }
 }

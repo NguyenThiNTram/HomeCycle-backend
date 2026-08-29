@@ -268,6 +268,7 @@ public partial class HomeCycleDbContext : DbContext
             entity.Property(e => e.BusinessProfileId).ValueGeneratedNever();
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()");
             entity.Property(e => e.ReputationScore).HasDefaultValue(100);
+            entity.Property(e => e.DisplayStarRating).HasDefaultValue(4.8);
             entity.Property(e => e.IdentityNumber).HasMaxLength(20).IsRequired();
             entity.Property(e => e.FullName)
                 .HasMaxLength(255)
@@ -582,6 +583,7 @@ public partial class HomeCycleDbContext : DbContext
             entity.Property(e => e.PersonalProfileId).ValueGeneratedNever();
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()");
             entity.Property(e => e.ReputationScore).HasDefaultValue(100);
+            entity.Property(e => e.DisplayStarRating).HasDefaultValue(4.8);
             entity.Property(e => e.VerifiedAt).HasDefaultValueSql("now()");
 
             entity.HasOne(d => d.User).WithOne(p => p.Personal_ProfileUser)

@@ -241,7 +241,8 @@ namespace HomeCycle.Application.Services.Reviews
         private async Task RecalculateReputationAsync(Guid userId, CancellationToken ct)
         {
             var validReviews = await _reviewRepo.GetValidReviewsByRevieweeAsync(userId, ct);
-            var newScore = ReputationScoreCalculator.Calculate(validReviews);
+            var newScore = ReputationScoreCalculator.CalculateReputationScore(ReputationScoreCalculator.DefaultBaseScore, 0);
+            var displayStar = ReputationScoreCalculator.CalculateDisplayStarRating(validReviews);
 
             var user = await _userRepo.GetByIdAsync(userId, ct);
             if (user == null)
@@ -253,7 +254,8 @@ namespace HomeCycle.Application.Services.Reviews
                 if (business == null)
                     return;
 
-                business.ReputationScore = newScore;
+                business.ReputationScore = (int)newScore;
+                business.DisplayStarRating = displayStar;
                 _businessProfileRepo.Update(business);
             }
             else
@@ -262,7 +264,8 @@ namespace HomeCycle.Application.Services.Reviews
                 if (personal == null)
                     return;
 
-                personal.ReputationScore = newScore;
+                personal.ReputationScore = (int)newScore;
+                personal.DisplayStarRating = displayStar;
                 await _personalProfileRepo.UpdateAsync(personal, ct);
             }
 

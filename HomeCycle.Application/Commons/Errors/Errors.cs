@@ -10,9 +10,27 @@ namespace HomeCycle.Application.Commons.Errors
 {
     public static class AuthErrors
     {
-        public static readonly Error EmailExists = new("AUTH_EMAIL_EXISTS", "Email already exists.");
+        public static readonly Error EmailRequired = new("AUTH_EMAIL_REQUIRED", "Email is required.");
 
-        public static readonly Error UsernameExists = new("AUTH_USERNAME_EXISTS", "Username already exists.");
+        public static readonly Error InvalidEmail = new("AUTH_EMAIL_INVALID", "Email format is invalid.");
+
+        public static readonly Error FullNameRequired = new("AUTH_FULLNAME_REQUIRED", "Full name is required.");
+
+        public static readonly Error InvalidFullName = new("AUTH_FULLNAME_INVALID", "Full name may contain letters and spaces only.");
+
+        public static readonly Error UsernameRequired = new("AUTH_USERNAME_REQUIRED", "Username is required.");
+
+        public static readonly Error InvalidUsername = new("AUTH_USERNAME_INVALID", "Username may contain letters, numbers, and underscores only.");
+
+        public static readonly Error PasswordRequired = new("AUTH_PASSWORD_REQUIRED", "Password is required.");
+
+        public static readonly Error InvalidPasswordLength = new("AUTH_PASSWORD_LENGTH_INVALID", "Password must be between 6 and 20 characters.");
+
+        public static readonly Error PhoneNumberRequired = new("AUTH_PHONE_REQUIRED", "Phone number is required.");
+
+        public static readonly Error InvalidPhoneNumber = new("AUTH_PHONE_INVALID", "Phone number must contain 9 or 10 digits and start with 0.");
+
+        // AUTHENTICATION
 
         public static readonly Error InvalidCredential = new("AUTH_INVALID_CREDENTIAL","Invalid username or password.");
 
@@ -28,6 +46,8 @@ namespace HomeCycle.Application.Commons.Errors
 
         public static readonly Error InvalidOtp = new("AUTH_INVALID_OTP", "Invalid OTP.");
 
+        // ACCOUNT STATUS
+
         public static readonly Error AccountSuspended = new("AUTH_ACCOUNT_SUSPENDED", "Account has been suspended.");
 
         public static readonly Error CannotLockSelf = new("AUTH_CANNOT_LOCK_SELF", "Admin cannot lock their own account.");
@@ -37,6 +57,16 @@ namespace HomeCycle.Application.Commons.Errors
         public static readonly Error AlreadyLocked = new("AUTH_ACCOUNT_ALREADY_LOCKED", "Account is already locked.");
 
         public static readonly Error NotLocked = new("AUTH_ACCOUNT_NOT_LOCKED", "Account is not locked.");
+
+        public static readonly Error AccountDeleted = new("AUTH_ACCOUNT_DELETED", "Account has been deleted.");
+
+        // REGISTRATION
+
+        public static readonly Error EmailExists = new("AUTH_EMAIL_EXISTS", "Email already exists.");
+
+        public static readonly Error UsernameExists = new("AUTH_USERNAME_EXISTS", "Username already exists.");
+
+        public static readonly Error InvalidRegistrationSession = new("AUTH_INVALID_REGISTRATION_SESSION", "The registration session is invalid or has expired.");
     }
 
     public static class ProfileErrors
@@ -151,6 +181,7 @@ namespace HomeCycle.Application.Commons.Errors
 
         public static readonly Error BusinessCannotOfferBuyPost = new("OFFER_B2B_NOT_ALLOWED", "Business accounts cannot offer on a business buy post.");
         public static readonly Error UserNotActive = new("OFFER_USER_NOT_ACTIVE", "Your account is not active. Please verify your email or contact support.");
+
         public static Error PriceOutOfRange(decimal minPrice, decimal maxPrice)
             => new("OFFER_PRICE_OUT_OF_RANGE",
                    $"Offer price must be between {minPrice:N0} and {maxPrice:N0}.");
@@ -158,6 +189,11 @@ namespace HomeCycle.Application.Commons.Errors
         public static Error QuantityExceedsRemaining(int requested, int remaining)
             => new("OFFER_QUANTITY_EXCEEDS_REMAINING",
                    $"Offer quantity ({requested}) exceeds the remaining quantity ({remaining}).");
+
+        public static Error OfferTermsChanged(decimal currentPrice, int currentQuantity)
+            => new("OFFER_TERMS_CHANGED",
+                   $"Đối phương vừa cập nhật đề nghị: giá {currentPrice:N0}đ, số lượng {currentQuantity}. " +
+                   "Vui lòng xem lại trước khi xác nhận.");
     }
 
     public static class NegotiationErrors

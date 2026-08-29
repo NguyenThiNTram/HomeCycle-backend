@@ -43,6 +43,7 @@ public partial class Personal_Profile
     public DateTime? VerifiedAt { get; set; }
 
     public int ReputationScore { get; set; }
+    public double DisplayStarRating { get; set; }
 
     public DateTime CreatedAt { get; set; }
 
