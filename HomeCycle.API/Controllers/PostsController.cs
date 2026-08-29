@@ -45,8 +45,11 @@ namespace HomeCycle.API.Controllers
             Summary = "Tạo bài đăng bán",
             Description = "Tạo mới bài đăng bán sản phẩm với thông tin chi tiết và hình ảnh."
         )]
-        //[Authorize(Roles = "Personal")]
+        [Authorize(Roles = "Personal")]
         [Consumes("multipart/form-data")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
         public async Task<IActionResult> CreateSellPost(
             [FromForm] CreateSellPostRequest request,
             CancellationToken cancellationToken)
@@ -68,8 +71,11 @@ namespace HomeCycle.API.Controllers
             Summary = "Tạo bài đăng mua",
             Description = "Tạo mới bài đăng thu mua sản phẩm với thông tin chi tiết và hình ảnh."
         )]
-        //[Authorize(Roles = "Business")]
+        [Authorize(Roles = "Business")]
         [Consumes("multipart/form-data")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
         public async Task<IActionResult> CreateBuyPost(
             [FromForm] CreateBuyPostRequest request,
             CancellationToken cancellationToken)
@@ -91,8 +97,11 @@ namespace HomeCycle.API.Controllers
             Summary = "Cập nhật bài đăng bán",
             Description = "Cập nhật thông tin bài đăng bán sản phẩm."
         )]
-        //[Authorize(Roles = "Personal,Business")]
+        [Authorize(Roles = "Personal,Business")]
         [Consumes("multipart/form-data")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
         public async Task<IActionResult> UpdateSellPost(
             Guid postId,
             [FromForm] UpdateSellPostRequest request,
@@ -131,6 +140,10 @@ namespace HomeCycle.API.Controllers
             Description = "Trả về chi tiết thông tin của một bài đăng theo ID."
         )]
         [AllowAnonymous]
+        [ProducesResponseType(typeof(PostDetailResponse), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(Error), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(Error), StatusCodes.Status404NotFound)]
+        [ProducesResponseType(typeof(Error), StatusCodes.Status500InternalServerError)]
         public async Task<IActionResult> GetById(Guid id, CancellationToken cancellationToken)
         {
             var result = await _postService.GetDetailAsync(id, cancellationToken);
@@ -149,6 +162,9 @@ namespace HomeCycle.API.Controllers
             Description = "Trả về danh sách TẤT CẢ bài đăng bất kể trạng thái (Active, Suspended, Closed, Deleted) có hỗ trợ phân trang. Chỉ dành cho Moderator/Admin."
         )]
         [AllowAnonymous]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
         public async Task<IActionResult> GetAll([FromQuery] PaginationRequest request, CancellationToken cancellationToken)
         {
             var result = await _postService.GetAllAsync(request, cancellationToken);
@@ -161,6 +177,9 @@ namespace HomeCycle.API.Controllers
             Description = "Trả về danh sách các bài đăng đang hoạt động (Active) cho trang chủ người dùng. Các bài bị đình chỉ (Suspended), đóng (Closed) hoặc xóa (Deleted) sẽ không xuất hiện."
         )]
         [AllowAnonymous]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
         public async Task<IActionResult> GetAllActive([FromQuery] PaginationRequest request, CancellationToken cancellationToken)
         {
             var result = await _postService.GetAllActiveAsync(request, cancellationToken);
@@ -173,6 +192,10 @@ namespace HomeCycle.API.Controllers
             Description = "Trả về danh sách bài đăng theo UserId có hỗ trợ phân trang."
         )]
         [AllowAnonymous]
+        [ProducesResponseType(typeof(PagedResult<PostResponse>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(Error), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(Error), StatusCodes.Status404NotFound)]
+        [ProducesResponseType(typeof(Error), StatusCodes.Status500InternalServerError)]
         public async Task<IActionResult> GetAllByUser(Guid userId, [FromQuery] PaginationRequest request, CancellationToken cancellationToken)
         {
             var result = await _postService.GetAllByOwnerAsync(userId, request, cancellationToken);
@@ -185,6 +208,10 @@ namespace HomeCycle.API.Controllers
             Description = "Trả về chi tiết bài đăng theo userId và postId."
         )]
         [AllowAnonymous]
+        [ProducesResponseType(typeof(PostDetailResponse), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(Error), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(Error), StatusCodes.Status404NotFound)]
+        [ProducesResponseType(typeof(Error), StatusCodes.Status500InternalServerError)]
         public async Task<IActionResult> GetDetailByUser(Guid userId, Guid postId, CancellationToken cancellationToken)
         {
             var result = await _postService.GetDetailByOwnerAsync(userId, postId, cancellationToken);
@@ -217,10 +244,10 @@ namespace HomeCycle.API.Controllers
             Summary = "Đóng bài đăng",
             Description = "Đóng bài đăng (kết thúc giao dịch) của người dùng hiện tại."
         )]
-        //[Authorize(Roles = "Personal,Business")]
-        //[ProducesResponseType(StatusCodes.Status200OK)]
-        //[ProducesResponseType(StatusCodes.Status403Forbidden)]
-        //[ProducesResponseType(StatusCodes.Status404NotFound)]
+        [Authorize(Roles = "Personal,Business")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
         public async Task<IActionResult> Close(Guid postId, CancellationToken cancellationToken)
         {
             var result = await _postService.CloseAsync(CurrentUserId, postId, cancellationToken);
@@ -237,6 +264,9 @@ namespace HomeCycle.API.Controllers
             Summary = "Kích hoạt lại bài đăng",
             Description = "Kích hoạt lại bài đăng đã bị đóng (Closed) của người dùng hiện tại."
         )]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
         public async Task<IActionResult> Reactivate(Guid postId, CancellationToken cancellationToken)
         {
             var result = await _postService.ReactivateAsync(CurrentUserId, postId, cancellationToken);
@@ -253,9 +283,9 @@ namespace HomeCycle.API.Controllers
             Description = "Admin xóa bài đăng của người dùng hiện tại khỏi hệ thống."
         )]
         [Authorize(Roles = "Admin")]
-        //[ProducesResponseType(StatusCodes.Status200OK)]
-        //[ProducesResponseType(StatusCodes.Status403Forbidden)]
-        //[ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
         public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
         {
             var result = await _postService.DeleteAsync(CurrentUserId, id, cancellationToken);
