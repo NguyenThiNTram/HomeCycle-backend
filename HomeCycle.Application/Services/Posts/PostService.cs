@@ -93,7 +93,6 @@ namespace HomeCycle.Application.Services.Posts
             post.PostId = Guid.NewGuid();
             post.OwnerId = ownerId;
             post.PostType = PostType.Sell;
-            //post.ProductName = request.Product?.ProductName;
             post.BasePrice = request.BasePrice;
             post.CreatedAt = now;
             post.UpdatedAt = now;
