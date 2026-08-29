@@ -12,6 +12,8 @@ namespace HomeCycle.Application.DTOs.Requests.Offers
 
         public int OfferQuantity { get; set; }
 
+        public int? Version { get; set; }
+
         //public string? MessageContent { get; set; }
     }
 }

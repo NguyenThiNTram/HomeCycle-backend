@@ -24,6 +24,7 @@ namespace HomeCycle.Application.Services.Negotiates
     {
         private readonly IMessageRepository _messageRepository;
         private readonly INegotiationRepository _negotiationRepository;
+        private readonly IOfferRepository _offerRepository;
         private readonly IValidator<SendMessageRequest> _sendValidator;
         private readonly IChatRealtimePublisher _realtimePublisher;
         private readonly IUnitOfWork _unitOfWork;
@@ -33,6 +34,7 @@ namespace HomeCycle.Application.Services.Negotiates
         public MessageService(
             IMessageRepository messageRepository,
             INegotiationRepository negotiationRepository,
+            IOfferRepository offerRepository,
             IValidator<SendMessageRequest> sendValidator,
             IChatRealtimePublisher realtimePublisher,
             IUnitOfWork unitOfWork,
@@ -41,6 +43,7 @@ namespace HomeCycle.Application.Services.Negotiates
         {
             _messageRepository = messageRepository;
             _negotiationRepository = negotiationRepository;
+            _offerRepository = offerRepository;
             _sendValidator = sendValidator;
             _realtimePublisher = realtimePublisher;
             _unitOfWork = unitOfWork;
@@ -68,20 +71,17 @@ namespace HomeCycle.Application.Services.Negotiates
             Guid negotiationSellerId = Guid.Empty;
             Guid negotiationBuyerId = Guid.Empty;
             NegotiationStatus negotiationStatus = NegotiationStatus.Open;
+
             decimal? negotiationOfferPrice = null;
             int negotiationOfferQuantity = 0;
+            int? negotiationOfferVersion = null;
 
             await _unitOfWork.BeginTransactionAsync(cancellationToken);
 
             try
             {
-                // Khóa negotiation để tuần tự hóa các thao tác gửi
-                // trên cùng một phiên thương lượng.
-                var negotiation =
-                    await _negotiationRepository.GetByIdForUpdateAsync(
-                        negotiationId,
-                        cancellationToken);
-
+                // tuần tự hóa các thao tác gửi trên cùng một phiên negotiation - tránh race condition
+                var negotiation = await _negotiationRepository.GetByIdForUpdateAsync( negotiationId, cancellationToken);
                 if (negotiation is null)
                 {
                     await _unitOfWork.RollbackTransactionAsync(cancellationToken);
@@ -94,18 +94,29 @@ namespace HomeCycle.Application.Services.Negotiates
                     return Result<MessageResponse>.Fail(NegotiationErrors.Forbidden);
                 }
 
+                var currentOffer = negotiation.Offer;
+                if (currentOffer is null)
+                {
+                    currentOffer = await _offerRepository.GetByIdAsync(negotiation.OfferId, cancellationToken);
+                }
+
+                if (currentOffer is null)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<MessageResponse>.Fail(OfferErrors.NotFound);
+                }
+
                 negotiationSellerId = negotiation.SellerId;
                 negotiationBuyerId = negotiation.BuyerId;
                 negotiationStatus = negotiation.NegotiationStatus ?? NegotiationStatus.Open;
-                negotiationOfferPrice = negotiation.Offer?.OfferPrice;
-                negotiationOfferQuantity = negotiation.Offer?.OfferQuantity ?? 0;
+                //negotiationOfferPrice = negotiation.Offer?.OfferPrice;
+                //negotiationOfferQuantity = negotiation.Offer?.OfferQuantity ?? 0;
+                //negotiationOfferVersion = negotiation.Offer?.Version;
 
-                /*
-                 * Kiểm tra chống gửi trùng.
-                 *
-                 * Nếu FE retry cùng ClientMessageId và cùng nội dung,
-                 * coi như request đã thành công trước đó.
-                 */
+                negotiationOfferPrice = currentOffer.OfferPrice;
+                negotiationOfferQuantity = currentOffer.OfferQuantity;
+                negotiationOfferVersion = currentOffer.Version;
+
                 var existingMessage =
                     await _messageRepository.GetByClientMessageIdAsync(
                         negotiationId,
@@ -115,8 +126,7 @@ namespace HomeCycle.Application.Services.Negotiates
 
                 if (existingMessage is not null)
                 {
-                    await _unitOfWork.RollbackTransactionAsync(
-                        cancellationToken);
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
 
                     var isSameRequest =
                         existingMessage.MessageType == MessageType.Text &&
@@ -127,15 +137,13 @@ namespace HomeCycle.Application.Services.Negotiates
 
                     if (!isSameRequest)
                     {
-                        return Result<MessageResponse>.Fail(
-                            MessageErrors.ClientMessageIdConflict);
+                        return Result<MessageResponse>.Fail(MessageErrors.ClientMessageIdConflict);
                     }
 
-                    return Result<MessageResponse>.Success(
-                        _mapper.Map<MessageResponse>(existingMessage));
+                    return Result<MessageResponse>.Success( _mapper.Map<MessageResponse>(existingMessage));
                 }
 
-                if (!CanSendTextMessage((NegotiationStatus)negotiation.NegotiationStatus))
+                if (!CanSendTextMessage(negotiationStatus))
                 {
                     await _unitOfWork.RollbackTransactionAsync(cancellationToken);
                     return Result<MessageResponse>.Fail(MessageErrors.NegotiationReadOnly);
@@ -182,12 +190,9 @@ namespace HomeCycle.Application.Services.Negotiates
                 throw;
             }
 
-            // SignalR được gọi sau khi transaction đã commit.
-            await PublishMessageCreatedSafelyAsync(
-                negotiationId,
-                createdResponse);
+            await PublishMessageCreatedSafelyAsync(negotiationId, createdResponse);
 
-            // Realtime: cập nhật thẻ chat ngoài list cho cả 2 bên.
+            // cập nhật thẻ chat ngoài list cho cả 2 bên
             await PublishConversationUpdatedSafelyAsync(
                 negotiationId,
                 negotiationSellerId,
@@ -195,7 +200,8 @@ namespace HomeCycle.Application.Services.Negotiates
                 createdResponse,
                 negotiationStatus,
                 negotiationOfferPrice,
-                negotiationOfferQuantity);
+                negotiationOfferQuantity,
+                negotiationOfferVersion);
 
             return Result<MessageResponse>.Success(createdResponse);
         }
@@ -282,11 +288,10 @@ namespace HomeCycle.Application.Services.Negotiates
 
             await PublishMessagesReadSafelyAsync(negotiationId, readResponse);
 
-            // Realtime: cập nhật badge unread trên thẻ chat ngoài list cho cả 2 bên.
-            var lastMessages = await _messageRepository.GetByNegotiationIdAsync(
-                negotiationId,
-                new PaginationRequest { PageNumber = 1, PageSize = 1 },
-                cancellationToken);
+            // cập nhật unread trên thẻ chat ngoài list cho cả 2 bên
+            var lastMessages = await _messageRepository.GetByNegotiationIdAsync(negotiationId, new PaginationRequest { PageNumber = 1, PageSize = 1 }, cancellationToken);
+
+            var currentOffer = negotiation.Offer ?? await _offerRepository.GetByIdAsync(negotiation.OfferId, cancellationToken);
 
             var lastMessage = lastMessages.Items.FirstOrDefault();
             if (lastMessage is not null)
@@ -297,8 +302,12 @@ namespace HomeCycle.Application.Services.Negotiates
                     negotiation.BuyerId,
                     _mapper.Map<MessageResponse>(lastMessage),
                     negotiation.NegotiationStatus ?? NegotiationStatus.Open,
-                    negotiation.Offer?.OfferPrice,
-                    negotiation.Offer?.OfferQuantity ?? 0);
+                    //negotiation.Offer?.OfferPrice,
+                    //negotiation.Offer?.OfferQuantity ?? 0,
+                    //negotiation.Offer?.Version
+                    currentOffer?.OfferPrice,
+                    currentOffer?.OfferQuantity ?? 0,
+                    currentOffer?.Version);
             }
 
             return Result.Success();
@@ -355,12 +364,11 @@ namespace HomeCycle.Application.Services.Negotiates
         private async Task PublishConversationUpdatedSafelyAsync(
             Guid negotiationId, Guid sellerId, Guid buyerId,
             MessageResponse lastMessage, NegotiationStatus status,
-            decimal? price, int quantity)
+            decimal? price, int quantity, int? version)
         {
             try
             {
                 using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-
                 var unread = await _messageRepository.GetUnreadCountsByNegotiationAsync(
                     negotiationId, buyerId, sellerId, timeout.Token);
 
@@ -375,6 +383,7 @@ namespace HomeCycle.Application.Services.Negotiates
                         LastMessageAt = lastMessage.CreatedAt,
                         CurrentOfferPrice = price,
                         CurrentOfferQuantity = quantity,
+                        CurrentOfferVersion = version,
                         NegotiationStatus = status,
                         UnreadCountByUser = unread
                     },
