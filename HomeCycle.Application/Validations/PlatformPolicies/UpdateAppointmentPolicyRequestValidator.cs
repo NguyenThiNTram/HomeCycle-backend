@@ -1,4 +1,5 @@
 ﻿using FluentValidation;
+using HomeCycle.Application.DTOs.Configs;
 using HomeCycle.Application.DTOs.Requests.PlatformPolicies;
 using System;
 using System.Collections.Generic;

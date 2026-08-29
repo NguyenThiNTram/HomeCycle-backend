@@ -19,5 +19,9 @@ namespace HomeCycle.Application.Interfaces.Repositories.PlatformPolicies
         Task AddAsync(platform_policy policy, CancellationToken cancellationToken = default);
 
         Task UpdateAsync(platform_policy policy, CancellationToken cancellationToken = default);
+        Task<IReadOnlyList<platform_policy>> GetAllActiveAsync(CancellationToken cancellationToken = default);
+        Task<IReadOnlyList<platform_policy>> GetVersionsAsync(PlatformPolicyType policyType, CancellationToken cancellationToken = default);
+        Task<platform_policy?> GetByVersionAsync(PlatformPolicyType policyType, int version, CancellationToken cancellationToken = default);
+
     }
 }

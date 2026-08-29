@@ -283,6 +283,14 @@ namespace HomeCycle.Application.Commons.Errors
 
         public static readonly Error InvalidAppointmentPolicy =
             new("PlatformPolicy.InvalidAppointmentPolicy", "Thời hạn yêu cầu đổi lịch phải lớn hơn hoặc bằng thời hạn được phép hủy lịch.");
+        public static Error VersionNotFound(PlatformPolicyType policyType, int version) =>
+            new("PlatformPolicy.VersionNotFound", $"Không tìm thấy version {version} của policy '{policyType}'.");
+
+        public static readonly Error VersionAlreadyActive =
+            new("PlatformPolicy.VersionAlreadyActive", "Version này hiện đang là version được áp dụng.");
+
+        public static Error UnsupportedType(string policyType) =>
+            new("PlatformPolicy.UnsupportedType", $"Policy type '{policyType}' không được hệ thống hỗ trợ.");
     }
 
     public static class AgreementErrors

@@ -66,5 +66,47 @@ namespace HomeCycle.Infrastructure.Repositories.PlatformPolicies
             _db.Platform_Policies.Update(policy.ToInfrastructure());
             return Task.CompletedTask;
         }
+
+        public async Task<IReadOnlyList<platform_policy>> GetAllActiveAsync(CancellationToken cancellationToken = default)
+        {
+            var entities = await _db.Platform_Policies
+                .AsNoTracking()
+                .Where(x => x.IsActive)
+                .OrderBy(x => x.PolicyType)
+                .ToListAsync(cancellationToken);
+
+            return entities.Select(x => x.ToDomain()).ToList();
+        }
+
+        public async Task<IReadOnlyList<platform_policy>> GetVersionsAsync(
+            PlatformPolicyType policyType,
+            CancellationToken cancellationToken = default)
+        {
+            var type = policyType.ToString();
+
+            var entities = await _db.Platform_Policies
+                .AsNoTracking()
+                .Where(x => x.PolicyType == type)
+                .OrderByDescending(x => x.Version)
+                .ToListAsync(cancellationToken);
+
+            return entities.Select(x => x.ToDomain()).ToList();
+        }
+
+        public async Task<platform_policy?> GetByVersionAsync(
+            PlatformPolicyType policyType,
+            int version,
+            CancellationToken cancellationToken = default)
+        {
+            var type = policyType.ToString();
+
+            var entity = await _db.Platform_Policies
+                .AsNoTracking()
+                .SingleOrDefaultAsync(
+                    x => x.PolicyType == type && x.Version == version,
+                    cancellationToken);
+
+            return entity?.ToDomain();
+        }
     }
 }

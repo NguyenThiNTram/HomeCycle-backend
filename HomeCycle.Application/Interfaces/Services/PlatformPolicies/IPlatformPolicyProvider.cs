@@ -1,4 +1,4 @@
-﻿using HomeCycle.Application.DTOs.Requests.PlatformPolicies;
+﻿using HomeCycle.Application.DTOs.Configs;
 using System;
 using System.Collections.Generic;
 using System.Linq;
