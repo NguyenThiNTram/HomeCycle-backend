@@ -45,15 +45,13 @@ namespace HomeCycle.Infrastructure.Repositories.Offers
 
         public async Task<negotiation?> GetByIdForUpdateAsync(Guid negotiationId, CancellationToken cancellationToken = default)
         {
-            //FOR UPDATE để khóa dòng dữ liệu trong Postgres.
-            //AsNoTracking: tránh xung đột ChangeTracker với UpdateAsync.
             var entity = await _db.Negotiations
                 .FromSqlInterpolated($@"
                     SELECT *
                     FROM ""Negotiation""
                     WHERE ""NegotiationId"" = {negotiationId}
                     FOR UPDATE")
-                        .Include(x => x.Offer) // Bổ sung Include Offer
+                        .Include(x => x.Offer)
                         .Include(x => x.Post)
                         .AsNoTracking()
                         .SingleOrDefaultAsync(cancellationToken);

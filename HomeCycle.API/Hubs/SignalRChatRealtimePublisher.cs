@@ -22,7 +22,8 @@ namespace HomeCycle.API.Hubs
 
             return _hubContext.Clients
                 .Group(ChatGroupName.ForNegotiation(negotiationId))
-                .MessageCreated(message);
+                .MessageCreated(message)
+                .WaitAsync(cancellationToken);
         }
 
         public Task PublishMessageUpdatedAsync(Guid negotiationId, MessageResponse message, CancellationToken cancellationToken = default)
@@ -31,7 +32,8 @@ namespace HomeCycle.API.Hubs
 
             return _hubContext.Clients
                 .Group(ChatGroupName.ForNegotiation(negotiationId))
-                .MessageUpdated(message);
+                .MessageUpdated(message)
+                .WaitAsync(cancellationToken);
         }
 
         public Task PublishMessagesReadAsync( Guid negotiationId, MessagesReadResponse response, CancellationToken cancellationToken = default)
@@ -40,7 +42,8 @@ namespace HomeCycle.API.Hubs
 
             return _hubContext.Clients
                 .Group(ChatGroupName.ForNegotiation(negotiationId))
-                .MessagesRead(response);
+                .MessagesRead(response)
+                .WaitAsync(cancellationToken);
         }
 
         public Task PublishConversationUpdatedAsync(IReadOnlyList<Guid> userIds, ConversationUpdatedResponse response, CancellationToken cancellationToken = default)
@@ -49,7 +52,16 @@ namespace HomeCycle.API.Hubs
 
             return _hubContext.Clients
                 .Users(userIds.Select(u => u.ToString()))
-                .ConversationUpdated(response);
+                .ConversationUpdated(response)
+                .WaitAsync(cancellationToken);
+        }
+
+        public Task PublishOfferCreatedAsync(Guid receiverId, OfferResponse offer, CancellationToken cancellationToken = default)
+        {
+            return _hubContext.Clients
+                .User(receiverId.ToString())
+                .OfferCreated(offer)
+                .WaitAsync(cancellationToken);
         }
 
         public Task PublishOfferUpdatedAsync(IReadOnlyList<Guid> userIds, OfferResponse offer, CancellationToken cancellationToken = default)
@@ -57,7 +69,8 @@ namespace HomeCycle.API.Hubs
             cancellationToken.ThrowIfCancellationRequested();
             return _hubContext.Clients
                 .Users(userIds.Select(u => u.ToString()))
-                .OfferUpdated(offer);
+                .OfferUpdated(offer)
+                .WaitAsync(cancellationToken);
         }
     }
 }

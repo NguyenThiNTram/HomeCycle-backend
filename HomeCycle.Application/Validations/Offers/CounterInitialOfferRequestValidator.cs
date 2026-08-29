@@ -19,6 +19,11 @@ namespace HomeCycle.Application.Validations.Offers
             this.AddOfferTermsRules(
                 x => x.OfferPrice,
                 x => x.OfferQuantity);
+
+            RuleFor(x => x.Version)
+                .NotNull()
+                .GreaterThan(0)
+                .WithMessage("Version is required and must be greater than 0");
         }
     }
 }

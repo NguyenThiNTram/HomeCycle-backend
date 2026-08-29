@@ -18,6 +18,7 @@ namespace HomeCycle.Application.Interfaces.Repositories.Offers
 
         Task ConversationUpdated(ConversationUpdatedResponse response);
 
+        Task OfferCreated(OfferResponse offer);
         Task OfferUpdated(OfferResponse offer);
     }
 }
