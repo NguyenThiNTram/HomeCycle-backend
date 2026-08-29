@@ -1,4 +1,5 @@
 ﻿using HomeCycle.Application.DTOs.Responses.Negotiations;
+using HomeCycle.Application.DTOs.Responses.Offers;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -16,5 +17,7 @@ namespace HomeCycle.Application.Interfaces.Repositories.Offers
         Task PublishMessagesReadAsync(Guid negotiationId, MessagesReadResponse response, CancellationToken cancellationToken = default);
 
         Task PublishConversationUpdatedAsync(IReadOnlyList<Guid> userIds, ConversationUpdatedResponse response, CancellationToken cancellationToken = default);
+        
+        Task PublishOfferUpdatedAsync(IReadOnlyList<Guid> userIds, OfferResponse offer, CancellationToken cancellationToken = default);
     }
 }

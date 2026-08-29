@@ -181,6 +181,7 @@ namespace HomeCycle.Application.Commons.Errors
 
         public static readonly Error BusinessCannotOfferBuyPost = new("OFFER_B2B_NOT_ALLOWED", "Business accounts cannot offer on a business buy post.");
         public static readonly Error UserNotActive = new("OFFER_USER_NOT_ACTIVE", "Your account is not active. Please verify your email or contact support.");
+
         public static Error PriceOutOfRange(decimal minPrice, decimal maxPrice)
             => new("OFFER_PRICE_OUT_OF_RANGE",
                    $"Offer price must be between {minPrice:N0} and {maxPrice:N0}.");
@@ -188,6 +189,11 @@ namespace HomeCycle.Application.Commons.Errors
         public static Error QuantityExceedsRemaining(int requested, int remaining)
             => new("OFFER_QUANTITY_EXCEEDS_REMAINING",
                    $"Offer quantity ({requested}) exceeds the remaining quantity ({remaining}).");
+
+        public static Error OfferTermsChanged(decimal currentPrice, int currentQuantity)
+            => new("OFFER_TERMS_CHANGED",
+                   $"Đối phương vừa cập nhật đề nghị: giá {currentPrice:N0}đ, số lượng {currentQuantity}. " +
+                   "Vui lòng xem lại trước khi xác nhận.");
     }
 
     public static class NegotiationErrors
