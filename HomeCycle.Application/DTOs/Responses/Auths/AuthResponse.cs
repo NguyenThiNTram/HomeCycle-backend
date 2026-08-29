@@ -12,8 +12,8 @@ namespace HomeCycle.Application.DTOs.Responses.Auths
         public string Message { get; set; } = string.Empty;
         public AuthUserDto? User { get; set; }
         public string Email { get; set; } = null!;
-        //public string? AccessToken { get; set; }
-        //public string? RefreshToken { get; set; }
+        public string? AccessToken { get; set; }
+        public string? RefreshToken { get; set; }
     }
 
     public class LoginResponseDto

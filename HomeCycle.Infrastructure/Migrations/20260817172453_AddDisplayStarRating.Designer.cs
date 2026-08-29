@@ -3,6 +3,7 @@ using System;
 using HomeCycle.Infrastructure.DbContexts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace HomeCycle.Infrastructure.Migrations
 {
     [DbContext(typeof(HomeCycleDbContext))]
-    partial class HomeCycleDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260817172453_AddDisplayStarRating")]
+    partial class AddDisplayStarRating
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

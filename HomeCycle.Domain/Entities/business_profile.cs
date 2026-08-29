@@ -26,6 +26,7 @@ public class business_profile
     public int BusinessModel { get; set; }
     public int Status { get; set; }
     public int ReputationScore { get; set; }
+    public double DisplayStarRating { get; set; }
     public Guid? VerifiedBy { get; set; }
     public DateTime? VerifiedAt { get; set; }
     public string? RejectReason { get; set; }

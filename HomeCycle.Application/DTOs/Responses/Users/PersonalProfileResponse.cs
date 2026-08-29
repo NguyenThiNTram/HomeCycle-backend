@@ -38,6 +38,7 @@ namespace HomeCycle.Application.DTOs.Responses.Users
         public string? RejectReason { get; set; }
         public DateTime? VerifiedAt { get; set; }
         public int ReputationScore { get; set; }
+        public double DisplayStarRating { get; set; }
         public BankAccountDto? BankAccount { get; set; }
     }
 
