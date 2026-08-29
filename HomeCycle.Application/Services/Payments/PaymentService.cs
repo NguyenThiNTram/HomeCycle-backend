@@ -15,6 +15,7 @@ using HomeCycle.Application.Interfaces.Repositories.Posts;
 using HomeCycle.Application.Interfaces.Repositories.Shipments;
 using HomeCycle.Application.Interfaces.Repositories.Wallets;
 using HomeCycle.Application.Interfaces.Services.Payments;
+using HomeCycle.Application.Interfaces.Services.PlatformPolicies;
 using HomeCycle.Domain.Entities;
 using HomeCycle.Domain.Enums;
 using Microsoft.Extensions.Logging;
@@ -65,6 +66,8 @@ namespace HomeCycle.Application.Services.Payments
         private readonly IShipmentRepository _shipmentRepo;
         private readonly IGhnShipmentRepository _ghnShipmentRepo;
         private readonly IValidator<PayOSCheckoutRequest> _payOSCheckoutValidator;
+        private readonly IPlatformPolicyProvider _platformPolicyProvider;
+
         public PaymentService(
             IUnitOfWork unitOfWork,
             IPaymentGatewayService gatewayService,
@@ -82,7 +85,8 @@ namespace HomeCycle.Application.Services.Payments
             ILogger<PaymentService> logger,
             IShipmentRepository shipmentRepository,
             IGhnShipmentRepository ghnShipmentRepository,
-            IValidator<PayOSCheckoutRequest> payOSCheckoutValidator)
+            IValidator<PayOSCheckoutRequest> payOSCheckoutValidator, 
+            IPlatformPolicyProvider platformPolicyProvider)
         {
             _unitOfWork = unitOfWork;
             _gatewayService = gatewayService;
@@ -101,6 +105,7 @@ namespace HomeCycle.Application.Services.Payments
             _postRepo = postRepo;
             _logger = logger;
             _payOSCheckoutValidator = payOSCheckoutValidator;
+            _platformPolicyProvider = platformPolicyProvider;
         }
 
         public async Task<Result<string>> GeneratePayOSCheckoutUrlAsync(Guid agreementId, Guid payerId, string returnUrl, string cancelUrl, CancellationToken ct = default)
@@ -943,13 +948,37 @@ namespace HomeCycle.Application.Services.Payments
                 ? AppointmentType.Inspection
                 : AppointmentType.Collection;
 
+            DateTime? scheduledAt = appointmentType == AppointmentType.Inspection
+                ? details?.InspectionDate
+                : details?.CollectionDate;
+
+            if (!scheduledAt.HasValue)
+            {
+                throw new InvalidOperationException(
+                    "Agreement không có thời gian lịch hẹn hợp lệ.");
+            }
+
+            var appointmentPolicy =
+                await _platformPolicyProvider
+                    .GetAppointmentConfigAsync(ct);
+
+            var supportsInteractionDeadline =
+                appointmentType == AppointmentType.Inspection ||
+                details?.DeliveryMethod == DeliveryMethod.BuyerPickUp ||
+                details?.DeliveryMethod == DeliveryMethod.SellerDelivers;
+
             var appointmentId = Guid.NewGuid();
             var appointment = new appointment
             {
                 AppointmentId = appointmentId,
                 AgreementId = agreement.AgreementId,
                 AppointmentType = (int)appointmentType,
-                AppointmentStatus = (int)AppointmentStatus.Pending,
+                AppointmentStatus = (int)AppointmentStatus.Scheduled,
+                InteractionDeadlineAt =
+                    supportsInteractionDeadline
+                        ? scheduledAt.Value.AddMinutes(
+                            appointmentPolicy.NoInteractionExpiryMinutes)
+                        : null,
                 CreatedAt = DateTime.UtcNow
                 // UpdatedAt: để null.
             };
@@ -967,7 +996,7 @@ namespace HomeCycle.Application.Services.Payments
                     InspectionAppointmentId = Guid.NewGuid(),
                     AppointmentId = appointmentId,
                     InspectionAddress = details?.InspectionAddress ?? string.Empty,
-                    InspectionDate = details?.InspectionDate ?? DateTime.UtcNow.AddDays(1)
+                    InspectionDate = scheduledAt.Value
                 };
                 await _inspectionRepo.AddAsync(inspectionAppt, ct);
             }
@@ -977,7 +1006,7 @@ namespace HomeCycle.Application.Services.Payments
                 {
                     CollectionAppointmentId = Guid.NewGuid(),
                     AppointmentId = appointmentId,
-                    CollectionDate = details?.CollectionDate,
+                    CollectionDate = scheduledAt.Value,
                     PickupAddress = details?.PickupAddress,
                     DeliveryAddress = details?.DeliveryAddress,
                     DeliveryMethod = details?.DeliveryMethod?.ToString()

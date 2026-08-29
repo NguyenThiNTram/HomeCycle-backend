@@ -7,14 +7,17 @@ using System.Threading.Tasks;
 
 namespace HomeCycle.Application.DTOs.Responses.Appointments
 {
-    public class AppointmentCheckInResponseDto
+    public class AppointmentActionResponseDto
     {
         public Guid AppointmentId { get; set; }
+
         public AppointmentStatus? AppointmentStatus { get; set; }
 
-        public DateTime? BuyerCheckAt { get; set; }
-        public DateTime? SellerCheckAt { get; set; }
         public DateTime? InteractionDeadlineAt { get; set; }
-        public bool IsFullyCheckedIn => BuyerCheckAt.HasValue && SellerCheckAt.HasValue;
+
+        public DateTime? CancelledAt { get; set; }
+        public string? CancellationReason { get; set; }
+
+        public DateTime UpdatedAt { get; set; }
     }
 }

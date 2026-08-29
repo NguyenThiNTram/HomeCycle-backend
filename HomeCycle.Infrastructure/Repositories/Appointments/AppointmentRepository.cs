@@ -28,7 +28,21 @@ namespace HomeCycle.Infrastructure.Repositories.Appointments
 
         public async Task<appointment?> GetByAgreementIdAsync(Guid agreementId, CancellationToken ct = default)
         {
-            var entity = await _db.Appointments.AsNoTracking().FirstOrDefaultAsync(x => x.AgreementId == agreementId, ct);
+            var entity = await _db.Appointments
+                .AsNoTracking()
+                .Where(x => x.AgreementId == agreementId)
+                .Where(x =>
+                    x.AppointmentStatus == (int)AppointmentStatus.Scheduled ||
+                    x.AppointmentStatus == (int)AppointmentStatus.InProgress ||
+                    x.AppointmentStatus == (int)AppointmentStatus.Completed)
+                .OrderBy(x =>
+                    x.AppointmentStatus == (int)AppointmentStatus.Scheduled ||
+                    x.AppointmentStatus == (int)AppointmentStatus.InProgress
+                        ? 0
+                        : 1)
+                .ThenByDescending(x => x.CreatedAt)
+                .FirstOrDefaultAsync(ct);
+
             return entity?.ToDomain();
         }
 
@@ -141,8 +155,9 @@ namespace HomeCycle.Infrastructure.Repositories.Appointments
                 .AsNoTracking()
                 .Where(a => a.AgreementId == agreementId)
                 .Where(a =>
-                    a.AppointmentStatus != (int)AppointmentStatus.Cancelled &&
-                    a.AppointmentStatus != (int)AppointmentStatus.Misssed)
+                    a.AppointmentStatus == (int)AppointmentStatus.Scheduled ||
+                    a.AppointmentStatus == (int)AppointmentStatus.InProgress ||
+                    a.AppointmentStatus == (int)AppointmentStatus.Completed)
                 .OrderBy(a => a.CreatedAt)
                 .Select(a => new AppointmentSummaryDto
                 {
@@ -174,9 +189,53 @@ namespace HomeCycle.Infrastructure.Repositories.Appointments
 
                     BuyerCheckAt = a.BuyerCheckAt,
                     SellerCheckAt = a.SellerCheckAt,
+                    InteractionDeadlineAt = a.InteractionDeadlineAt,
                     CreatedAt = a.CreatedAt,
                     CompletedAt = a.CompletedAt
                 })
+                .ToListAsync(ct);
+        }
+
+        public async Task<appointment?> GetByIdForUpdateAsync(Guid appointmentId, CancellationToken ct = default)
+        {
+            var entity = await _db.Appointments
+                .FromSqlInterpolated(
+                    $"SELECT * FROM public.\"Appointment\" WHERE \"AppointmentId\" = {appointmentId} FOR UPDATE")
+                .AsNoTracking()
+                .FirstOrDefaultAsync(ct);
+
+            return entity?.ToDomain();
+        }
+
+        public async Task<appointment?> GetPendingRescheduleProposalAsync(Guid sourceAppointmentId, CancellationToken ct = default)
+        {
+            var entity = await _db.Appointments
+                .AsNoTracking()
+                .Where(x =>
+                    x.RescheduledFromAppointmentId == sourceAppointmentId &&
+                    x.AppointmentStatus == (int)AppointmentStatus.Proposed)
+                .OrderByDescending(x => x.CreatedAt)
+                .FirstOrDefaultAsync(ct);
+
+            return entity?.ToDomain();
+        }
+
+        public async Task<IReadOnlyList<Guid>> GetOverdueCandidateIdsAsync(DateTime now, int batchSize, CancellationToken ct = default)
+        {
+            return await _db.Appointments
+                .AsNoTracking()
+                .Where(x =>
+                    x.InteractionDeadlineAt.HasValue &&
+                    x.InteractionDeadlineAt.Value <= now)
+                .Where(x =>
+                    x.AppointmentStatus == (int)AppointmentStatus.Scheduled ||
+                    x.AppointmentStatus == (int)AppointmentStatus.InProgress)
+                .Where(x =>
+                    !x.BuyerCheckAt.HasValue ||
+                    !x.SellerCheckAt.HasValue)
+                .OrderBy(x => x.InteractionDeadlineAt)
+                .Select(x => x.AppointmentId)
+                .Take(batchSize)
                 .ToListAsync(ct);
         }
 
@@ -186,7 +245,10 @@ namespace HomeCycle.Infrastructure.Repositories.Appointments
             var query = _db.Appointments
                 .AsNoTracking()
                 .Where(a => a.AppointmentType == (int)type)
-                .Where(a => isSeller ? a.Agreement.SellerId == userId : a.Agreement.BuyerId == userId);
+                .Where(a => isSeller ? a.Agreement.SellerId == userId : a.Agreement.BuyerId == userId)
+                .Where(a =>
+                    !(a.RescheduledFromAppointmentId != null &&
+                      a.AppointmentStatus == (int)AppointmentStatus.Proposed));
 
             if (status.HasValue)
                 query = query.Where(a => a.AppointmentStatus == (int)status.Value);

@@ -638,6 +638,7 @@ namespace HomeCycle.Application.Mappings
                 .ForMember(dest => dest.Inspection, opt => opt.Ignore())
                 .ForMember(dest => dest.Collection, opt => opt.Ignore())
                 .ForMember(dest => dest.Cancellation, opt => opt.Ignore())
+                .ForMember(dest => dest.Reschedule, opt => opt.Ignore())
                 .ForMember(dest => dest.Order, opt => opt.Ignore())
                 .ForMember(dest => dest.Actions, opt => opt.Ignore());
 

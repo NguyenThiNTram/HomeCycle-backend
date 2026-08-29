@@ -20,6 +20,8 @@ namespace HomeCycle.Application.DTOs.Responses.Appointments
         public DateTime? BuyerCheckAt { get; set; }
         public DateTime? SellerCheckAt { get; set; }
 
+        public DateTime? InteractionDeadlineAt { get; set; }
+
         public DateTime CreatedAt { get; set; }
         public DateTime? CompletedAt { get; set; }
     }

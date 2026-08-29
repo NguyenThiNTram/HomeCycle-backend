@@ -17,6 +17,12 @@ public class appointment
     public DateTime? BuyerCheckAt { get; set; }
     public DateTime? SellerCheckAt { get; set; }
 
+    public DateTime? InteractionDeadlineAt { get; set; }
+
+    public Guid? RescheduledFromAppointmentId { get; set; }
+    public Guid? RescheduleRequestedByUserId { get; set; }
+    public DateTime? RescheduleRequestedAt { get; set; }
+
     public DateTime CreatedAt { get; set; }
     public DateTime? CancelledAt { get; set; }
     public string? CancellationReason { get; set; }

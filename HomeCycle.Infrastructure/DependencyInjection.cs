@@ -225,6 +225,7 @@ namespace HomeCycle.Infrastructure
             services.AddScoped<PlatformPolicyService>();
             services.AddScoped<IPlatformPolicyService>(sp => sp.GetRequiredService<PlatformPolicyService>());
             services.AddScoped<IPlatformPolicyProvider>(sp => sp.GetRequiredService<PlatformPolicyService>());
+            services.AddScoped<IAppointmentLifecycleJobService, AppointmentLifecycleJobService>();
 
 
 

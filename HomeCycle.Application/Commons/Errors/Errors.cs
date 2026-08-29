@@ -342,5 +342,47 @@ namespace HomeCycle.Application.Commons.Errors
 
         public static readonly Error AlreadyCompleted =
             new("Appointment.AlreadyCompleted", "Lịch hẹn đã hoàn tất.");
+
+        public static readonly Error ScheduleMissing =
+            new("Appointment.ScheduleMissing", "Không xác định được thời gian của lịch hẹn.");
+
+        public static readonly Error UnsupportedAction =
+            new("Appointment.UnsupportedAction", "Lịch hẹn này không hỗ trợ thao tác trực tiếp của người dùng.");
+
+        public static readonly Error Expired =
+            new("Appointment.Expired", "Lịch hẹn đã quá thời hạn tương tác.");
+
+        public static readonly Error CheckInAlreadyStarted =
+            new("Appointment.CheckInAlreadyStarted", "Không thể thay đổi lịch sau khi một trong hai bên đã check-in.");
+
+        public static readonly Error PendingRescheduleExists =
+            new("Appointment.PendingRescheduleExists", "Lịch hẹn đang có một yêu cầu đổi lịch chưa được phản hồi.");
+
+        public static readonly Error InvalidRescheduleProposal =
+            new("Appointment.InvalidRescheduleProposal", "Yêu cầu đổi lịch không hợp lệ.");
+
+        public static readonly Error CannotRespondOwnReschedule =
+            new("Appointment.CannotRespondOwnReschedule", "Người gửi yêu cầu đổi lịch không thể tự chấp nhận hoặc từ chối yêu cầu của mình.");
+
+        public static readonly Error RescheduleProposalExpired =
+            new("Appointment.RescheduleProposalExpired", "Thời gian được đề xuất cho lịch mới đã qua.");
+
+        public static readonly Error SameSchedule =
+            new("Appointment.SameSchedule", "Thời gian đề xuất mới phải khác lịch hiện tại.");
+
+        public static Error CheckInNotOpen(DateTime openAt) =>
+            new("Appointment.CheckInNotOpen", $"Check-in chưa mở. Có thể check-in từ {openAt:O}.");
+
+        public static Error InteractionDeadlineExpired(DateTime deadline) =>
+            new("Appointment.InteractionDeadlineExpired", $"Thời hạn tương tác đã kết thúc lúc {deadline:O}.");
+
+        public static Error RescheduleCutoffPassed(DateTime cutoff) =>
+            new("Appointment.RescheduleCutoffPassed", $"Đã quá thời hạn yêu cầu đổi lịch. Hạn cuối: {cutoff:O}.");
+
+        public static Error CancellationCutoffPassed(DateTime cutoff) =>
+            new("Appointment.CancellationCutoffPassed", $"Đã quá thời hạn hủy lịch. Hạn cuối: {cutoff:O}.");
+
+        public static readonly Error InvalidStatus =
+            new("Appointment.InvalidStatus", "Trạng thái hiện tại của lịch hẹn không cho phép thực hiện thao tác này.");
     }
 }

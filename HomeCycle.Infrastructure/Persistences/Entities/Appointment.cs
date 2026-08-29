@@ -9,6 +9,8 @@ namespace HomeCycle.Infrastructure;
 [Table("Appointment")]
 [Index("AgreementId", Name = "idx_appointment_agreement")]
 [Index("AppointmentStatus", Name = "idx_appointment_status")]
+[Index(nameof(RescheduledFromAppointmentId), Name = "idx_appointment_rescheduled_from")]
+[Index(nameof(RescheduleRequestedByUserId), Name = "idx_appointment_reschedule_requested_by")]
 public partial class Appointment
 {
     [Key]
@@ -23,6 +25,12 @@ public partial class Appointment
     public DateTime? BuyerCheckAt { get; set; }
 
     public DateTime? SellerCheckAt { get; set; }
+
+    public DateTime? InteractionDeadlineAt { get; set; }
+
+    public Guid? RescheduledFromAppointmentId { get; set; }
+    public Guid? RescheduleRequestedByUserId { get; set; }
+    public DateTime? RescheduleRequestedAt { get; set; }
 
     public DateTime CreatedAt { get; set; }
 

@@ -23,7 +23,14 @@ namespace HomeCycle.Application.Interfaces.Services.Appointments
         Task<Result<AppointmentCheckInResponseDto>> CheckInAsync(
             Guid appointmentId, Guid userId, CancellationToken ct = default);
 
-
         Task<Result<AppointmentDetailDto>> GetDetailAsync(Guid appointmentId, Guid userId, CancellationToken ct = default);
+
+        Task<Result<AppointmentRescheduleResponseDto>> RequestRescheduleAsync(Guid appointmentId, Guid userId, RescheduleAppointmentRequest request, CancellationToken ct = default);
+
+        Task<Result<AppointmentRescheduleResponseDto>> AcceptRescheduleAsync(Guid proposalAppointmentId, Guid userId, CancellationToken ct = default);
+
+        Task<Result<AppointmentRescheduleResponseDto>> RejectRescheduleAsync(Guid proposalAppointmentId, Guid userId, RejectAppointmentRescheduleRequest request, CancellationToken ct = default);
+
+        Task<Result<AppointmentActionResponseDto>> CancelAsync(Guid appointmentId, Guid userId, CancelAppointmentRequest request, CancellationToken ct = default);
     }
 }

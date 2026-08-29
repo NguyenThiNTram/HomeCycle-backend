@@ -19,6 +19,8 @@ namespace HomeCycle.Application.DTOs.Responses.Appointments
         public DateTime? BuyerCheckAt { get; set; }
         public DateTime? SellerCheckAt { get; set; }
 
+        public DateTime? InteractionDeadlineAt { get; set; }
+
         public DateTime CreatedAt { get; set; }
         public DateTime? CompletedAt { get; set; }
         public DateTime UpdatedAt { get; set; }
@@ -27,7 +29,7 @@ namespace HomeCycle.Application.DTOs.Responses.Appointments
         public CollectionAppointmentDetailDto? Collection { get; set; }
 
         public AppointmentCancellationDto? Cancellation { get; set; }
-
+        public AppointmentRescheduleInfoDto? Reschedule { get; set; }
         public AppointmentOrderSummaryDto Order { get; set; } = null!;
         public AppointmentActionDto Actions { get; set; } = new();
     }
@@ -52,6 +54,19 @@ namespace HomeCycle.Application.DTOs.Responses.Appointments
         public string? Reason { get; set; }
     }
 
+    public class AppointmentRescheduleInfoDto
+    {
+        public Guid OriginalAppointmentId { get; set; }
+        public Guid ProposalAppointmentId { get; set; }
+
+        public Guid? RequestedByUserId { get; set; }
+        public DateTime? RequestedAt { get; set; }
+
+        public DateTime? ProposedAt { get; set; }
+
+        public bool IsCurrentUserRequester { get; set; }
+    }
+
     public class AppointmentOrderSummaryDto
     {
         public Guid OrderId { get; set; }
@@ -64,6 +79,8 @@ namespace HomeCycle.Application.DTOs.Responses.Appointments
     {
         public bool CanCheckIn { get; set; }
         public bool CanRequestReschedule { get; set; }
+        public bool CanAcceptReschedule { get; set; }
+        public bool CanRejectReschedule { get; set; }
         public bool CanCancel { get; set; }
     }
 

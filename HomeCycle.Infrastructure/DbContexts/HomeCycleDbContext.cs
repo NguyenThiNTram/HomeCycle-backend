@@ -162,6 +162,18 @@ public partial class HomeCycleDbContext : DbContext
             entity.HasOne(d => d.Agreement).WithMany(p => p.Appointments)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("fk_appt_agreement");
+
+            entity.HasOne<Appointment>()
+                .WithMany()
+                .HasForeignKey(e => e.RescheduledFromAppointmentId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("fk_appointment_rescheduled_from");
+
+            entity.HasOne<User>()
+                .WithMany()
+                .HasForeignKey(e => e.RescheduleRequestedByUserId)
+                .OnDelete(DeleteBehavior.SetNull)
+                .HasConstraintName("fk_appointment_reschedule_requested_by");
         });
 
         modelBuilder.Entity<Audit_Log>(entity =>
