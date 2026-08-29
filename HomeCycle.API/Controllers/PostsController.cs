@@ -131,6 +131,10 @@ namespace HomeCycle.API.Controllers
             Description = "Trả về chi tiết thông tin của một bài đăng theo ID."
         )]
         [AllowAnonymous]
+        [ProducesResponseType(typeof(PostDetailResponse), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(Error), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(Error), StatusCodes.Status404NotFound)]
+        [ProducesResponseType(typeof(Error), StatusCodes.Status500InternalServerError)]
         public async Task<IActionResult> GetById(Guid id, CancellationToken cancellationToken)
         {
             var result = await _postService.GetDetailAsync(id, cancellationToken);
@@ -173,6 +177,10 @@ namespace HomeCycle.API.Controllers
             Description = "Trả về danh sách bài đăng theo UserId có hỗ trợ phân trang."
         )]
         [AllowAnonymous]
+        [ProducesResponseType(typeof(PagedResult<PostResponse>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(Error), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(Error), StatusCodes.Status404NotFound)]
+        [ProducesResponseType(typeof(Error), StatusCodes.Status500InternalServerError)]
         public async Task<IActionResult> GetAllByUser(Guid userId, [FromQuery] PaginationRequest request, CancellationToken cancellationToken)
         {
             var result = await _postService.GetAllByOwnerAsync(userId, request, cancellationToken);
@@ -185,6 +193,10 @@ namespace HomeCycle.API.Controllers
             Description = "Trả về chi tiết bài đăng theo userId và postId."
         )]
         [AllowAnonymous]
+        [ProducesResponseType(typeof(PostDetailResponse), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(Error), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(Error), StatusCodes.Status404NotFound)]
+        [ProducesResponseType(typeof(Error), StatusCodes.Status500InternalServerError)]
         public async Task<IActionResult> GetDetailByUser(Guid userId, Guid postId, CancellationToken cancellationToken)
         {
             var result = await _postService.GetDetailByOwnerAsync(userId, postId, cancellationToken);

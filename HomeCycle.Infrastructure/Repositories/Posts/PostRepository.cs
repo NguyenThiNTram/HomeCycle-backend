@@ -81,6 +81,7 @@ namespace HomeCycle.Infrastructure.Repositories.Posts
         public async Task<post?> GetDetailByIdAsync(Guid postId, CancellationToken cancellationToken = default)
         {
             var entity = await _db.Posts.AsNoTracking()
+                .Include(x => x.User)
                 .Include(x => x.Product)
                     .ThenInclude(x => x.Category)
                 .Include(x => x.Product)
@@ -194,6 +195,7 @@ namespace HomeCycle.Infrastructure.Repositories.Posts
         public async Task<post?> GetDetailByOwnerAsync(Guid ownerId, Guid postId, CancellationToken cancellationToken = default)
         {
             var entity = await _db.Posts.AsNoTracking()
+                .Include(x => x.User)
                 .Include(x => x.Product)
                     .ThenInclude(x => x.Category)
                 .Include(x => x.Product)

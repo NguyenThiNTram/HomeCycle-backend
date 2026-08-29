@@ -414,16 +414,21 @@ namespace HomeCycle.Application.Mappings
                 .ForMember(dest => dest.ProductId, opt => opt.Ignore())
                 .ForMember(dest => dest.PostId, opt => opt.Ignore());
 
-            CreateMap<post, PostResponse>();
-            CreateMap<post, PostDetailResponse>();
+            //CreateMap<post, PostResponse>();
+            //CreateMap<post, PostDetailResponse>();
 
             CreateMap<post, PostResponse>()
                 .ForMember(d => d.ProductId, o => o.MapFrom(s => s.Product == null ? Guid.Empty : s.Product.ProductId))
-                .ForMember(d => d.AvataUrl, o => o.MapFrom(s => s.User == null ? string.Empty : s.User.AvatarUrl))
+                .ForMember(d => d.AvatarUrl, o => o.MapFrom(s => s.User == null ? string.Empty : s.User.AvatarUrl))
                 .ForMember(d => d.ProductName, o => o.MapFrom(s => s.Product == null ? null : s.Product.ProductName))
                 .ForMember(d => d.ProductTypeName, o => o.MapFrom(s => s.Product == null ? null : s.Product.ProductTypeName))
                 .ForMember(d => d.CategoryName, o => o.MapFrom(s => s.Product == null ? null : s.Product.CategoryName))
                 .ForMember(d => d.BrandName, o => o.MapFrom(s => s.Product == null ? null : s.Product.BrandName))
+                .ForMember(d => d.Medias, o => o.Ignore());
+
+            CreateMap<post, PostDetailResponse>()
+                .IncludeBase<post, PostResponse>()
+                .ForMember(d => d.Product, o => o.Ignore())
                 .ForMember(d => d.Medias, o => o.Ignore());
 
             CreateMap<PagedResult<post>, PagedResult<PostResponse>>()
