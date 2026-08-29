@@ -414,8 +414,6 @@ namespace HomeCycle.Application.Services.Negotiates
                     offer.OfferQuantity = proposal.OfferQuantity;
                     //offer.Version++;
                     offer.Version = (offer.Version ?? 1) + 1;
-
-                    await PublishOfferUpdatedSafelyAsync(offer);
                 }
 
                 var now = DateTime.UtcNow;
@@ -440,6 +438,8 @@ namespace HomeCycle.Application.Services.Negotiates
                 await _offerRepository.UpdateAsync(offer, cancellationToken);
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync(cancellationToken);
+
+                await PublishOfferUpdatedSafelyAsync(offer);
 
                 // Realtime: thẻ proposal được chấp nhận → cập nhật trạng thái Accepted.
                 await PublishMessageUpdatedSafelyAsync(
