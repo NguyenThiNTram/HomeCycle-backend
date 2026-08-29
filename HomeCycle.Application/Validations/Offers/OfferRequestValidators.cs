@@ -32,24 +32,35 @@ namespace HomeCycle.Application.Validations.Offers
                  x.OfferPrice.HasValue ||
                  x.OfferQuantity.HasValue)
              .WithMessage(
-                 "Must provide at least a price or quantity to update.");
+                 "Must provide at least a price or quantity to update");
 
             RuleFor(x => x.OfferPrice)
                 .Cascade(CascadeMode.Stop)
                 .GreaterThan(0m)
-                .WithMessage("Offer price must be greater than 0.")
+                .WithMessage("Offer price must be greater than 0")
                 .PrecisionScale(
                     precision: 18,
                     scale: 2,
                     ignoreTrailingZeros: true)
                 .WithMessage(
-                    "Offer price can have a maximum of 18 digits and 2 decimal places.")
+                    "Offer price can have a maximum of 18 digits and 2 decimal places")
                 .When(x => x.OfferPrice.HasValue);
 
             RuleFor(x => x.OfferQuantity)
                 .GreaterThan(0)
-                .WithMessage("Offer quantity must be greater than 0.")
+                .WithMessage("Offer quantity must be greater than 0")
                 .When(x => x.OfferQuantity.HasValue);
+        }
+    }
+
+    public class AcceptOfferRequestValidator : AbstractValidator<AcceptOfferRequest>
+    {
+        public AcceptOfferRequestValidator()
+        {
+            RuleFor(x => x.Version)
+                .NotNull()
+                .GreaterThan(0)
+                .WithMessage("Version is required or must be greater than 0");
         }
     }
 }
