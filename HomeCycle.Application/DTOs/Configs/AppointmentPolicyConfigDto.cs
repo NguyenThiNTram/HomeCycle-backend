@@ -10,7 +10,7 @@ namespace HomeCycle.Application.DTOs.Configs
     {
         public int CheckInOpenBeforeMinutes { get; set; }
 
-        public int NoInteractionExpiryMinutes { get; set; }
+        public int LateThresholdMinutes { get; set; }
 
         public int RescheduleCutoffHours { get; set; }
 

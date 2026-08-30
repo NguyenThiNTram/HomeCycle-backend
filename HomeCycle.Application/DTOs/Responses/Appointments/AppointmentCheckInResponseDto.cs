@@ -14,7 +14,11 @@ namespace HomeCycle.Application.DTOs.Responses.Appointments
 
         public DateTime? BuyerCheckAt { get; set; }
         public DateTime? SellerCheckAt { get; set; }
-        public DateTime? InteractionDeadlineAt { get; set; }
+
+        public DateTime? LateThresholdAt { get; set; }
+        public bool IsOverdue { get; set; }
+
         public bool IsFullyCheckedIn => BuyerCheckAt.HasValue && SellerCheckAt.HasValue;
     }
+
 }

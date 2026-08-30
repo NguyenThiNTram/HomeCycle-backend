@@ -101,9 +101,50 @@ namespace HomeCycle.Application.Services.Appointments
             var schedule = scheduleResult.Data!;
             var dto = _mapper.Map<AppointmentDetailDto>(appointment);
 
+            var status = appointment.AppointmentStatus.HasValue ? (AppointmentStatus?)appointment.AppointmentStatus.Value : null;
+            var now = DateTime.UtcNow;
+            var policy = await _platformPolicyProvider.GetAppointmentConfigAsync(ct);
+
+            var supportsUserActions = SupportsUserAppointmentActions(schedule);
+            var supportsLateThreshold = SupportsLateThreshold(schedule);
+
+            DateTime? lateThresholdAt = null;
+
+            if (supportsLateThreshold)
+                lateThresholdAt = appointment.LateThresholdAt ?? schedule.ScheduledAt.AddMinutes(policy.LateThresholdMinutes);
+
+            var isActive = status == AppointmentStatus.Scheduled || status == AppointmentStatus.InProgress;
+            var fullyCheckedIn = appointment.BuyerCheckAt.HasValue && appointment.SellerCheckAt.HasValue;
+
+            dto.LateThresholdAt = lateThresholdAt;
+
+            dto.IsOverdue =
+                isActive &&
+                lateThresholdAt.HasValue &&
+                now > lateThresholdAt.Value &&
+                (
+                    schedule.AppointmentType == AppointmentType.Collection ||
+                    !fullyCheckedIn
+                );
+
+            var hasAnyCheckIn =
+                schedule.AppointmentType == AppointmentType.Inspection &&
+                (appointment.BuyerCheckAt.HasValue || appointment.SellerCheckAt.HasValue);
+
             if (schedule.AppointmentType == AppointmentType.Inspection)
             {
                 dto.Inspection = _mapper.Map<InspectionAppointmentDetailDto>(schedule.Inspection);
+
+                var checkInOpenAt = schedule.ScheduledAt.AddMinutes(-policy.CheckInOpenBeforeMinutes);
+                var currentUserCheckedIn = isBuyer ? appointment.BuyerCheckAt.HasValue : appointment.SellerCheckAt.HasValue;
+
+                dto.Inspection.CheckIn = new InspectionCheckInDto
+                {
+                    BuyerCheckAt = appointment.BuyerCheckAt,
+                    SellerCheckAt = appointment.SellerCheckAt,
+                    CheckInOpenAt = checkInOpenAt,
+                    CanCheckIn = isActive && !currentUserCheckedIn && now >= checkInOpenAt
+                };
             }
             else
             {
@@ -125,27 +166,6 @@ namespace HomeCycle.Application.Services.Appointments
                 return Result<AppointmentDetailDto>.Fail(OrderErrors.NotFound);
 
             dto.Order = _mapper.Map<AppointmentOrderSummaryDto>(order);
-
-            var status = appointment.AppointmentStatus.HasValue
-                ? (AppointmentStatus?)appointment.AppointmentStatus.Value
-                : null;
-
-            var now = DateTime.UtcNow;
-            var policy = await _platformPolicyProvider.GetAppointmentConfigAsync(ct);
-
-            var supportsUserActions = SupportsUserAppointmentActions(schedule);
-            var hasAnyCheckIn = appointment.BuyerCheckAt.HasValue || appointment.SellerCheckAt.HasValue;
-            var currentUserCheckedIn = isBuyer ? appointment.BuyerCheckAt.HasValue : appointment.SellerCheckAt.HasValue;
-
-            DateTime? interactionDeadline = null;
-
-            if (supportsUserActions)
-            {
-                interactionDeadline = appointment.InteractionDeadlineAt ??
-                                      schedule.ScheduledAt.AddMinutes(policy.NoInteractionExpiryMinutes);
-
-                dto.InteractionDeadlineAt = interactionDeadline;
-            }
 
             var pendingProposal = status == AppointmentStatus.Proposed
                 ? null
@@ -174,34 +194,21 @@ namespace HomeCycle.Application.Services.Appointments
                 };
             }
 
-            var canCheckIn = false;
-            var canRequestReschedule = false;
+            var canRequestReschedule =
+                supportsUserActions &&
+                status == AppointmentStatus.Scheduled &&
+                !hasAnyCheckIn &&
+                pendingProposal == null &&
+                now <= schedule.ScheduledAt.AddHours(-policy.RescheduleCutoffHours);
+
+            var canCancel =
+                supportsUserActions &&
+                status == AppointmentStatus.Scheduled &&
+                !hasAnyCheckIn &&
+                now <= schedule.ScheduledAt.AddHours(-policy.CancellationCutoffHours);
+
             var canAcceptReschedule = false;
             var canRejectReschedule = false;
-            var canCancel = false;
-
-            if (supportsUserActions &&
-                (status == AppointmentStatus.Scheduled || status == AppointmentStatus.InProgress) &&
-                interactionDeadline.HasValue)
-            {
-                var checkInOpenAt = schedule.ScheduledAt.AddMinutes(-policy.CheckInOpenBeforeMinutes);
-
-                canCheckIn =
-                    !currentUserCheckedIn &&
-                    now >= checkInOpenAt &&
-                    now <= interactionDeadline.Value;
-
-                canRequestReschedule =
-                    status == AppointmentStatus.Scheduled &&
-                    !hasAnyCheckIn &&
-                    pendingProposal == null &&
-                    now <= schedule.ScheduledAt.AddHours(-policy.RescheduleCutoffHours);
-
-                canCancel =
-                    status == AppointmentStatus.Scheduled &&
-                    !hasAnyCheckIn &&
-                    now <= schedule.ScheduledAt.AddHours(-policy.CancellationCutoffHours);
-            }
 
             if (pendingProposal != null && !isCurrentUserRequester && status == AppointmentStatus.Scheduled && !hasAnyCheckIn)
             {
@@ -211,7 +218,6 @@ namespace HomeCycle.Application.Services.Appointments
 
             dto.Actions = new AppointmentActionDto
             {
-                CanCheckIn = canCheckIn,
                 CanRequestReschedule = canRequestReschedule,
                 CanAcceptReschedule = canAcceptReschedule,
                 CanRejectReschedule = canRejectReschedule,
@@ -227,9 +233,7 @@ namespace HomeCycle.Application.Services.Appointments
 
             try
             {
-                var appointment = await _appointmentRepo.GetByIdForUpdateAsync(
-                    appointmentId,
-                    ct);
+                var appointment = await _appointmentRepo.GetByIdForUpdateAsync(appointmentId, ct);
 
                 if (appointment == null)
                 {
@@ -237,9 +241,7 @@ namespace HomeCycle.Application.Services.Appointments
                     return Result<AppointmentCheckInResponseDto>.Fail(AppointmentErrors.NotFound);
                 }
 
-                var agreement = await _agreementRepo.GetByIdAsync(
-                    appointment.AgreementId,
-                    ct);
+                var agreement = await _agreementRepo.GetByIdAsync(appointment.AgreementId, ct);
 
                 if (agreement == null)
                 {
@@ -256,30 +258,21 @@ namespace HomeCycle.Application.Services.Appointments
                     return Result<AppointmentCheckInResponseDto>.Fail(AppointmentErrors.Forbidden);
                 }
 
-                var status = appointment.AppointmentStatus.HasValue
-                    ? (AppointmentStatus?)appointment.AppointmentStatus.Value
-                    : null;
+                if (appointment.AppointmentType != (int)AppointmentType.Inspection)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    return Result<AppointmentCheckInResponseDto>.Fail(AppointmentErrors.CheckInInspectionOnly);
+                }
 
-                if (status == AppointmentStatus.Proposed ||
-                    status == AppointmentStatus.Cancelled ||
-                    status == AppointmentStatus.Completed ||
-                    status == AppointmentStatus.Expired)
+                var status = appointment.AppointmentStatus.HasValue ? (AppointmentStatus?)appointment.AppointmentStatus.Value : null;
+
+                if (status != AppointmentStatus.Scheduled && status != AppointmentStatus.InProgress)
                 {
                     await _unitOfWork.RollbackTransactionAsync(ct);
                     return Result<AppointmentCheckInResponseDto>.Fail(AppointmentErrors.InvalidStatus);
                 }
 
-                if (status != AppointmentStatus.Scheduled &&
-                    status != AppointmentStatus.InProgress)
-                {
-                    await _unitOfWork.RollbackTransactionAsync(ct);
-                    return Result<AppointmentCheckInResponseDto>.Fail(AppointmentErrors.InvalidStatus);
-                }
-
-                var scheduleResult = await GetScheduleContextAsync(
-                    appointment,
-                    agreement,
-                    ct);
+                var scheduleResult = await GetScheduleContextAsync(appointment, agreement, ct);
 
                 if (!scheduleResult.IsSuccess)
                 {
@@ -288,93 +281,56 @@ namespace HomeCycle.Application.Services.Appointments
                 }
 
                 var schedule = scheduleResult.Data!;
-
-                if (!SupportsUserAppointmentActions(schedule))
-                {
-                    await _unitOfWork.RollbackTransactionAsync(ct);
-                    return Result<AppointmentCheckInResponseDto>.Fail(
-                        AppointmentErrors.UnsupportedAction);
-                }
-
                 var policy = await _platformPolicyProvider.GetAppointmentConfigAsync(ct);
 
-                var deadline =
-                    appointment.InteractionDeadlineAt ??
-                    schedule.ScheduledAt.AddMinutes(
-                        policy.NoInteractionExpiryMinutes);
-
-                var checkInOpenAt =
-                    schedule.ScheduledAt.AddMinutes(
-                        -policy.CheckInOpenBeforeMinutes);
-
+                var lateThresholdAt = appointment.LateThresholdAt ?? schedule.ScheduledAt.AddMinutes(policy.LateThresholdMinutes);
+                var checkInOpenAt = schedule.ScheduledAt.AddMinutes(-policy.CheckInOpenBeforeMinutes);
                 var now = DateTime.UtcNow;
 
-                if (isBuyer && appointment.BuyerCheckAt.HasValue ||
-                    isSeller && appointment.SellerCheckAt.HasValue)
+                if ((isBuyer && appointment.BuyerCheckAt.HasValue) ||
+                    (isSeller && appointment.SellerCheckAt.HasValue))
                 {
                     await _unitOfWork.CommitTransactionAsync(ct);
 
-                    return Result<AppointmentCheckInResponseDto>.Success(
-                        new AppointmentCheckInResponseDto
-                        {
-                            AppointmentId = appointment.AppointmentId,
-                            AppointmentStatus = status,
-                            BuyerCheckAt = appointment.BuyerCheckAt,
-                            SellerCheckAt = appointment.SellerCheckAt,
-                            InteractionDeadlineAt = deadline
-                        });
+                    var fullyCheckedIn = appointment.BuyerCheckAt.HasValue && appointment.SellerCheckAt.HasValue;
+
+                    return Result<AppointmentCheckInResponseDto>.Success(new AppointmentCheckInResponseDto
+                    {
+                        AppointmentId = appointment.AppointmentId,
+                        AppointmentStatus = status,
+                        BuyerCheckAt = appointment.BuyerCheckAt,
+                        SellerCheckAt = appointment.SellerCheckAt,
+                        LateThresholdAt = lateThresholdAt,
+                        IsOverdue = now > lateThresholdAt && !fullyCheckedIn
+                    });
                 }
 
                 if (now < checkInOpenAt)
                 {
                     await _unitOfWork.RollbackTransactionAsync(ct);
-                    return Result<AppointmentCheckInResponseDto>.Fail(
-                        AppointmentErrors.CheckInNotOpen(checkInOpenAt));
+                    return Result<AppointmentCheckInResponseDto>.Fail(AppointmentErrors.CheckInNotOpen(checkInOpenAt));
                 }
 
-                if (now > deadline)
-                {
-                    appointment.AppointmentStatus =
-                        (int)AppointmentStatus.Expired;
+                // QUAN TRỌNG:
+                // Không còn check "now > LateThresholdAt => Expired".
+                // Quá 2h vẫn được check-in; timestamp được giữ làm evidence nếu có dispute.
 
-                    appointment.UpdatedAt = now;
+                appointment.LateThresholdAt ??= lateThresholdAt;
 
-                    await _appointmentRepo.UpdateAsync(appointment, ct);
-                    await _unitOfWork.SaveChangesAsync(ct);
-                    await _unitOfWork.CommitTransactionAsync(ct);
-
-                    return Result<AppointmentCheckInResponseDto>.Fail(
-                        AppointmentErrors.InteractionDeadlineExpired(deadline));
-                }
-
-                appointment.InteractionDeadlineAt ??= deadline;
-
-                var pendingProposal =
-                    await _appointmentRepo.GetPendingRescheduleProposalAsync(
-                        appointment.AppointmentId,
-                        ct);
+                var pendingProposal = await _appointmentRepo.GetPendingRescheduleProposalAsync(appointment.AppointmentId, ct);
 
                 if (pendingProposal != null)
                 {
-                    var lockedProposal =
-                        await _appointmentRepo.GetByIdForUpdateAsync(
-                            pendingProposal.AppointmentId,
-                            ct);
+                    var lockedProposal = await _appointmentRepo.GetByIdForUpdateAsync(pendingProposal.AppointmentId, ct);
 
-                    if (lockedProposal?.AppointmentStatus ==
-                        (int)AppointmentStatus.Proposed)
+                    if (lockedProposal?.AppointmentStatus == (int)AppointmentStatus.Proposed)
                     {
-                        lockedProposal.AppointmentStatus =
-                            (int)AppointmentStatus.Cancelled;
-
+                        lockedProposal.AppointmentStatus = (int)AppointmentStatus.Cancelled;
                         lockedProposal.CancelledAt = now;
-                        lockedProposal.CancellationReason =
-                            "Reschedule request invalidated because appointment started.";
+                        lockedProposal.CancellationReason = "Reschedule request invalidated because appointment started.";
                         lockedProposal.UpdatedAt = now;
 
-                        await _appointmentRepo.UpdateAsync(
-                            lockedProposal,
-                            ct);
+                        await _appointmentRepo.UpdateAsync(lockedProposal, ct);
                     }
                 }
 
@@ -383,33 +339,26 @@ namespace HomeCycle.Application.Services.Appointments
                 else
                     appointment.SellerCheckAt = now;
 
-                if (appointment.AppointmentStatus ==
-                    (int)AppointmentStatus.Scheduled)
-                {
-                    appointment.AppointmentStatus =
-                        (int)AppointmentStatus.InProgress;
-                }
+                if (appointment.AppointmentStatus == (int)AppointmentStatus.Scheduled)
+                    appointment.AppointmentStatus = (int)AppointmentStatus.InProgress;
 
                 appointment.UpdatedAt = now;
 
-                await _appointmentRepo.UpdateAsync(
-                    appointment,
-                    ct);
-
+                await _appointmentRepo.UpdateAsync(appointment, ct);
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
 
-                return Result<AppointmentCheckInResponseDto>.Success(
-                    new AppointmentCheckInResponseDto
-                    {
-                        AppointmentId = appointment.AppointmentId,
-                        AppointmentStatus =
-                            (AppointmentStatus)appointment.AppointmentStatus.Value,
-                        BuyerCheckAt = appointment.BuyerCheckAt,
-                        SellerCheckAt = appointment.SellerCheckAt,
-                        InteractionDeadlineAt =
-                            appointment.InteractionDeadlineAt
-                    });
+                var isFullyCheckedIn = appointment.BuyerCheckAt.HasValue && appointment.SellerCheckAt.HasValue;
+
+                return Result<AppointmentCheckInResponseDto>.Success(new AppointmentCheckInResponseDto
+                {
+                    AppointmentId = appointment.AppointmentId,
+                    AppointmentStatus = (AppointmentStatus)appointment.AppointmentStatus.Value,
+                    BuyerCheckAt = appointment.BuyerCheckAt,
+                    SellerCheckAt = appointment.SellerCheckAt,
+                    LateThresholdAt = appointment.LateThresholdAt,
+                    IsOverdue = now > lateThresholdAt && !isFullyCheckedIn
+                });
             }
             catch
             {
@@ -470,11 +419,11 @@ namespace HomeCycle.Application.Services.Appointments
                         AppointmentErrors.InvalidStatus);
                 }
 
-                if (original.BuyerCheckAt.HasValue || original.SellerCheckAt.HasValue)
+                if (original.AppointmentType == (int)AppointmentType.Inspection &&
+                    (original.BuyerCheckAt.HasValue || original.SellerCheckAt.HasValue))
                 {
                     await _unitOfWork.RollbackTransactionAsync(ct);
-                    return Result<AppointmentRescheduleResponseDto>.Fail(
-                        AppointmentErrors.CheckInAlreadyStarted);
+                    return Result<AppointmentRescheduleResponseDto>.Fail(AppointmentErrors.CheckInAlreadyStarted);
                 }
 
                 var scheduleResult =
@@ -548,7 +497,7 @@ namespace HomeCycle.Application.Services.Appointments
                     AppointmentStatus =
                         (int)AppointmentStatus.Proposed,
 
-                    InteractionDeadlineAt = proposedAt.AddMinutes(policy.NoInteractionExpiryMinutes),
+                    LateThresholdAt = proposedAt.AddMinutes(policy.LateThresholdMinutes),
 
                     RescheduledFromAppointmentId = original.AppointmentId,
 
@@ -680,12 +629,11 @@ namespace HomeCycle.Application.Services.Appointments
                         AppointmentErrors.InvalidRescheduleProposal);
                 }
 
-                if (original.BuyerCheckAt.HasValue ||
-                    original.SellerCheckAt.HasValue)
+                if (original.AppointmentType == (int)AppointmentType.Inspection &&
+                    (original.BuyerCheckAt.HasValue || original.SellerCheckAt.HasValue))
                 {
                     await _unitOfWork.RollbackTransactionAsync(ct);
-                    return Result<AppointmentRescheduleResponseDto>.Fail(
-                        AppointmentErrors.CheckInAlreadyStarted);
+                    return Result<AppointmentRescheduleResponseDto>.Fail(AppointmentErrors.CheckInAlreadyStarted);
                 }
 
                 var scheduleResult = await GetScheduleContextAsync(proposal, agreement, ct);
@@ -905,7 +853,8 @@ namespace HomeCycle.Application.Services.Appointments
                     return Result<AppointmentActionResponseDto>.Fail(AppointmentErrors.InvalidStatus);
                 }
 
-                if (appointment.BuyerCheckAt.HasValue || appointment.SellerCheckAt.HasValue)
+                if (appointment.AppointmentType == (int)AppointmentType.Inspection &&
+                    (appointment.BuyerCheckAt.HasValue || appointment.SellerCheckAt.HasValue))
                 {
                     await _unitOfWork.RollbackTransactionAsync(ct);
                     return Result<AppointmentActionResponseDto>.Fail(AppointmentErrors.CheckInAlreadyStarted);
@@ -975,7 +924,6 @@ namespace HomeCycle.Application.Services.Appointments
                     {
                         AppointmentId = appointment.AppointmentId,
                         AppointmentStatus = AppointmentStatus.Cancelled,
-                        InteractionDeadlineAt = appointment.InteractionDeadlineAt,
                         CancelledAt = appointment.CancelledAt,
                         CancellationReason = appointment.CancellationReason,
                         UpdatedAt = appointment.UpdatedAt
@@ -1072,6 +1020,15 @@ namespace HomeCycle.Application.Services.Appointments
 
 
         private static bool SupportsUserAppointmentActions(AppointmentScheduleContext context)
+        {
+            if (context.AppointmentType == AppointmentType.Inspection)
+                return true;
+
+            return context.DeliveryMethod == DeliveryMethod.BuyerPickUp ||
+                   context.DeliveryMethod == DeliveryMethod.SellerDelivers;
+        }
+
+        private static bool SupportsLateThreshold(AppointmentScheduleContext context)
         {
             if (context.AppointmentType == AppointmentType.Inspection)
                 return true;

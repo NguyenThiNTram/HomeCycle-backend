@@ -13,8 +13,6 @@ namespace HomeCycle.Application.DTOs.Responses.Appointments
 
         public AppointmentStatus? AppointmentStatus { get; set; }
 
-        public DateTime? InteractionDeadlineAt { get; set; }
-
         public DateTime? CancelledAt { get; set; }
         public string? CancellationReason { get; set; }
 

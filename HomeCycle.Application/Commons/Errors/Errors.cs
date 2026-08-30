@@ -245,8 +245,11 @@ namespace HomeCycle.Application.Commons.Errors
         public static readonly Error NotFound =
             new("Order.NotFound", "Không tìm thấy đơn hàng.");
 
+        public static readonly Error NotCreated =
+            new("Order.NotCreated", "Thỏa thuận chưa phát sinh đơn hàng do chưa thanh toán thành công.");
+
         public static readonly Error Forbidden =
-            new("Auth.Forbidden", "Bạn không có quyền thực hiện thao tác này trên đơn hàng.");
+            new("Order.Forbidden", "Bạn không có quyền thực hiện thao tác này trên đơn hàng.");
 
         public static readonly Error InvalidStatus =
             new("Order.InvalidStatus", "Trạng thái hiện tại của đơn hàng không cho phép thực hiện thao tác này.");
@@ -257,20 +260,11 @@ namespace HomeCycle.Application.Commons.Errors
         public static readonly Error DirectHandoverOnly =
             new("Order.DirectHandoverOnly", "Xác nhận bàn giao của Seller chỉ áp dụng cho giao nhận trực tiếp.");
 
-        public static readonly Error CollectionAppointmentNotFound =
-            new("Order.CollectionAppointmentNotFound", "Không tìm thấy lịch thu gom của đơn hàng.");
-
-        public static readonly Error BothCheckInRequired =
-            new("Order.BothCheckInRequired", "Buyer và Seller phải check-in lịch thu gom trước khi xác nhận giao nhận.");
-
         public static readonly Error ShipmentNotFound =
             new("Order.ShipmentNotFound", "Không tìm thấy thông tin vận chuyển của đơn hàng.");
 
         public static readonly Error ShipmentNotDelivered =
             new("Order.ShipmentNotDelivered", "Đơn vận chuyển chưa được xác nhận giao thành công.");
-
-        public static readonly Error NotCreated =
-            new("Order.NotCreated", "Thỏa thuận chưa phát sinh đơn hàng do chưa thanh toán thành công.");
     }
 
     public static class PlatformPolicyErrors
@@ -331,11 +325,17 @@ namespace HomeCycle.Application.Commons.Errors
         public static readonly Error InvalidType =
             new("Appointment.InvalidType", "Loại lịch hẹn không hợp lệ.");
 
+        public static readonly Error InvalidStatus =
+            new("Appointment.InvalidStatus", "Trạng thái hiện tại của lịch hẹn không cho phép thực hiện thao tác này.");
+
         public static readonly Error InspectionDetailNotFound =
             new("Appointment.InspectionDetailNotFound", "Không tìm thấy thông tin lịch kiểm định.");
 
         public static readonly Error CollectionDetailNotFound =
             new("Appointment.CollectionDetailNotFound", "Không tìm thấy thông tin lịch thu gom.");
+
+        public static readonly Error ScheduleMissing =
+            new("Appointment.ScheduleMissing", "Không xác định được thời gian của lịch hẹn.");
 
         public static readonly Error Cancelled =
             new("Appointment.Cancelled", "Lịch hẹn đã bị hủy.");
@@ -343,14 +343,11 @@ namespace HomeCycle.Application.Commons.Errors
         public static readonly Error AlreadyCompleted =
             new("Appointment.AlreadyCompleted", "Lịch hẹn đã hoàn tất.");
 
-        public static readonly Error ScheduleMissing =
-            new("Appointment.ScheduleMissing", "Không xác định được thời gian của lịch hẹn.");
-
         public static readonly Error UnsupportedAction =
             new("Appointment.UnsupportedAction", "Lịch hẹn này không hỗ trợ thao tác trực tiếp của người dùng.");
 
-        public static readonly Error Expired =
-            new("Appointment.Expired", "Lịch hẹn đã quá thời hạn tương tác.");
+        public static readonly Error CheckInInspectionOnly =
+            new("Appointment.CheckInInspectionOnly", "Check-in chỉ áp dụng cho lịch kiểm định.");
 
         public static readonly Error CheckInAlreadyStarted =
             new("Appointment.CheckInAlreadyStarted", "Không thể thay đổi lịch sau khi một trong hai bên đã check-in.");
@@ -373,16 +370,13 @@ namespace HomeCycle.Application.Commons.Errors
         public static Error CheckInNotOpen(DateTime openAt) =>
             new("Appointment.CheckInNotOpen", $"Check-in chưa mở. Có thể check-in từ {openAt:O}.");
 
-        public static Error InteractionDeadlineExpired(DateTime deadline) =>
-            new("Appointment.InteractionDeadlineExpired", $"Thời hạn tương tác đã kết thúc lúc {deadline:O}.");
-
         public static Error RescheduleCutoffPassed(DateTime cutoff) =>
             new("Appointment.RescheduleCutoffPassed", $"Đã quá thời hạn yêu cầu đổi lịch. Hạn cuối: {cutoff:O}.");
 
         public static Error CancellationCutoffPassed(DateTime cutoff) =>
             new("Appointment.CancellationCutoffPassed", $"Đã quá thời hạn hủy lịch. Hạn cuối: {cutoff:O}.");
 
-        public static readonly Error InvalidStatus =
-            new("Appointment.InvalidStatus", "Trạng thái hiện tại của lịch hẹn không cho phép thực hiện thao tác này.");
+        public static Error CollectionConfirmationNotOpen(DateTime scheduledAt) =>
+            new("Appointment.CollectionConfirmationNotOpen", $"Chưa đến ngày được phép xác nhận giao nhận. Lịch thu gom: {scheduledAt:O}.");
     }
 }

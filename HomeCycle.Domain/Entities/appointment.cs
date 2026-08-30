@@ -17,7 +17,7 @@ public class appointment
     public DateTime? BuyerCheckAt { get; set; }
     public DateTime? SellerCheckAt { get; set; }
 
-    public DateTime? InteractionDeadlineAt { get; set; }
+    public DateTime? LateThresholdAt { get; set; }
 
     public Guid? RescheduledFromAppointmentId { get; set; }
     public Guid? RescheduleRequestedByUserId { get; set; }

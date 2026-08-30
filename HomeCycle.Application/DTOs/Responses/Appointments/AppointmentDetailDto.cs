@@ -16,10 +16,8 @@ namespace HomeCycle.Application.DTOs.Responses.Appointments
         public AppointmentType? AppointmentType { get; set; }
         public AppointmentStatus? AppointmentStatus { get; set; }
 
-        public DateTime? BuyerCheckAt { get; set; }
-        public DateTime? SellerCheckAt { get; set; }
-
-        public DateTime? InteractionDeadlineAt { get; set; }
+        public DateTime? LateThresholdAt { get; set; }
+        public bool IsOverdue { get; set; }
 
         public DateTime CreatedAt { get; set; }
         public DateTime? CompletedAt { get; set; }
@@ -30,6 +28,7 @@ namespace HomeCycle.Application.DTOs.Responses.Appointments
 
         public AppointmentCancellationDto? Cancellation { get; set; }
         public AppointmentRescheduleInfoDto? Reschedule { get; set; }
+
         public AppointmentOrderSummaryDto Order { get; set; } = null!;
         public AppointmentActionDto Actions { get; set; } = new();
     }
@@ -38,6 +37,19 @@ namespace HomeCycle.Application.DTOs.Responses.Appointments
     {
         public DateTime? InspectionDate { get; set; }
         public string? InspectionAddress { get; set; }
+
+        public InspectionCheckInDto CheckIn { get; set; } = new();
+    }
+
+    public class InspectionCheckInDto
+    {
+        public DateTime? BuyerCheckAt { get; set; }
+        public DateTime? SellerCheckAt { get; set; }
+
+        public DateTime? CheckInOpenAt { get; set; }
+        public bool CanCheckIn { get; set; }
+
+        public bool IsFullyCheckedIn => BuyerCheckAt.HasValue && SellerCheckAt.HasValue;
     }
 
     public class CollectionAppointmentDetailDto
@@ -61,7 +73,6 @@ namespace HomeCycle.Application.DTOs.Responses.Appointments
 
         public Guid? RequestedByUserId { get; set; }
         public DateTime? RequestedAt { get; set; }
-
         public DateTime? ProposedAt { get; set; }
 
         public bool IsCurrentUserRequester { get; set; }
@@ -77,7 +88,6 @@ namespace HomeCycle.Application.DTOs.Responses.Appointments
 
     public class AppointmentActionDto
     {
-        public bool CanCheckIn { get; set; }
         public bool CanRequestReschedule { get; set; }
         public bool CanAcceptReschedule { get; set; }
         public bool CanRejectReschedule { get; set; }

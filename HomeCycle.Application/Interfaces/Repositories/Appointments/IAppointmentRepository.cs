@@ -30,6 +30,5 @@ namespace HomeCycle.Application.Interfaces.Repositories.Appointments
 
         Task<appointment?> GetPendingRescheduleProposalAsync(Guid sourceAppointmentId, CancellationToken ct = default);
 
-        Task<IReadOnlyList<Guid>> GetOverdueCandidateIdsAsync(DateTime now, int batchSize, CancellationToken ct = default);
     }
 }

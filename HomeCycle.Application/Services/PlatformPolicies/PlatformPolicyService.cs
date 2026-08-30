@@ -531,7 +531,7 @@ namespace HomeCycle.Application.Services.PlatformPolicies
             AppointmentPolicyConfigDto config)
         {
             return config.CheckInOpenBeforeMinutes is >= 0 and <= 1440
-                && config.NoInteractionExpiryMinutes is >= 1 and <= 10080
+                && config.LateThresholdMinutes is >= 1 and <= 10080
                 && config.RescheduleCutoffHours is >= 1 and <= 720
                 && config.CancellationCutoffHours is >= 1 and <= 720
                 && config.RescheduleCutoffHours >= config.CancellationCutoffHours;
@@ -551,7 +551,7 @@ namespace HomeCycle.Application.Services.PlatformPolicies
             AppointmentPolicyConfigDto updated)
         {
             return current.CheckInOpenBeforeMinutes == updated.CheckInOpenBeforeMinutes
-                && current.NoInteractionExpiryMinutes == updated.NoInteractionExpiryMinutes
+                && current.LateThresholdMinutes == updated.LateThresholdMinutes
                 && current.RescheduleCutoffHours == updated.RescheduleCutoffHours
                 && current.CancellationCutoffHours == updated.CancellationCutoffHours;
         }

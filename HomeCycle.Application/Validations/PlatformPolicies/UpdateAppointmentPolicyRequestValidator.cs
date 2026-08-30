@@ -16,7 +16,7 @@ namespace HomeCycle.Application.Validations.PlatformPolicies
             RuleFor(x => x)
                 .Must(x =>
                     x.CheckInOpenBeforeMinutes.HasValue ||
-                    x.NoInteractionExpiryMinutes.HasValue ||
+                    x.LateThresholdMinutes.HasValue ||
                     x.RescheduleCutoffHours.HasValue ||
                     x.CancellationCutoffHours.HasValue)
                 .WithMessage("Phải cung cấp ít nhất một cấu hình cần thay đổi.");
@@ -25,9 +25,9 @@ namespace HomeCycle.Application.Validations.PlatformPolicies
                 .Must(x => !x.HasValue || x.Value is >= 0 and <= 1440)
                 .WithMessage("CheckInOpenBeforeMinutes phải từ 0 đến 1440 phút.");
 
-            RuleFor(x => x.NoInteractionExpiryMinutes)
+            RuleFor(x => x.LateThresholdMinutes)
                 .Must(x => !x.HasValue || x.Value is >= 1 and <= 10080)
-                .WithMessage("NoInteractionExpiryMinutes phải từ 1 đến 10080 phút.");
+                .WithMessage("LateThresholdMinutes  phải từ 1 đến 10080 phút.");
 
             RuleFor(x => x.RescheduleCutoffHours)
                 .Must(x => !x.HasValue || x.Value is >= 1 and <= 720)

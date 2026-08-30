@@ -33,6 +33,7 @@ namespace HomeCycle.Application.Services.Orders
         private readonly IUnitOfWork _unitOfWork;
         //private readonly IReviewRepository _reviewRepo;
         private readonly IDisputeWindowPolicy _disputeWindowPolicy;
+        private readonly ICollectionAppointmentRepository _collectionAppointmentRepo;
         private readonly IMapper _mapper;
 
         public OrderService(
@@ -42,6 +43,7 @@ namespace HomeCycle.Application.Services.Orders
             IShipmentRepository shipmentRepo,
             //IReviewRepository reviewRepo,
             IDisputeWindowPolicy disputeWindowPolicy,
+            ICollectionAppointmentRepository collectionAppointmentRepo,
             IUnitOfWork unitOfWork,
             IMapper mapper)
         {
@@ -51,6 +53,7 @@ namespace HomeCycle.Application.Services.Orders
             _shipmentRepo = shipmentRepo;
             //_reviewRepo = reviewRepo;
             _disputeWindowPolicy = disputeWindowPolicy;
+            _collectionAppointmentRepo = collectionAppointmentRepo;
             _unitOfWork = unitOfWork;
             _mapper = mapper;
         }
@@ -126,8 +129,7 @@ namespace HomeCycle.Application.Services.Orders
                 _mapper.Map<OrderReferenceDto>(order));
         }
 
-        public async Task<Result<OrderConfirmationResponseDto>> ConfirmHandoverAsync(
-            Guid orderId, Guid sellerId, CancellationToken ct = default)
+        public async Task<Result<OrderConfirmationResponseDto>> ConfirmHandoverAsync(Guid orderId, Guid sellerId, CancellationToken ct = default)
         {
             await _unitOfWork.BeginTransactionAsync(ct);
 
@@ -155,7 +157,6 @@ namespace HomeCycle.Application.Services.Orders
                     return Result<OrderConfirmationResponseDto>.Fail(OrderErrors.Forbidden);
                 }
 
-                // Order đã hoàn thành thì không ghi lại timestamp.
                 if (order.OrderStatus == (int)OrderStatus.Completed)
                 {
                     await _unitOfWork.CommitTransactionAsync(ct);
@@ -189,7 +190,6 @@ namespace HomeCycle.Application.Services.Orders
 
                 var deliveryMethod = deliveryMethodResult.Data;
 
-                // Seller chỉ cần thao tác "Đã bàn giao" đối với giao nhận trực tiếp.
                 if (deliveryMethod != DeliveryMethod.BuyerPickUp &&
                     deliveryMethod != DeliveryMethod.SellerDelivers)
                 {
@@ -200,33 +200,79 @@ namespace HomeCycle.Application.Services.Orders
                 var collectionAppointment = await _appointmentRepo.GetByAgreementIdAndTypeAsync(
                     agreement.AgreementId,
                     AppointmentType.Collection,
-                ct);
+                    ct);
 
                 if (collectionAppointment == null)
                 {
                     await _unitOfWork.RollbackTransactionAsync(ct);
-                    return Result<OrderConfirmationResponseDto>.Fail(OrderErrors.CollectionAppointmentNotFound);
+                    return Result<OrderConfirmationResponseDto>.Fail(AppointmentErrors.NotFound);
                 }
 
-                // Direct Collection: hai bên phải thực sự check-in tại lịch hẹn trước.
-                if (!collectionAppointment.BuyerCheckAt.HasValue ||
-                    !collectionAppointment.SellerCheckAt.HasValue)
+                var collection = await _collectionAppointmentRepo.GetByAppointmentIdAsync(
+                    collectionAppointment.AppointmentId,
+                    ct);
+
+                if (collection == null)
                 {
                     await _unitOfWork.RollbackTransactionAsync(ct);
-                    return Result<OrderConfirmationResponseDto>.Fail(OrderErrors.BothCheckInRequired);
+                    return Result<OrderConfirmationResponseDto>.Fail(AppointmentErrors.CollectionDetailNotFound);
                 }
 
-                // Idempotent: Seller bấm lại thì không đổi timestamp cũ.
+                if (!collection.CollectionDate.HasValue)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    return Result<OrderConfirmationResponseDto>.Fail(AppointmentErrors.ScheduleMissing);
+                }
+
+                var now = DateTime.UtcNow;
+
+                if (!IsCollectionConfirmationOpen(collection.CollectionDate.Value, now))
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+
+                    return Result<OrderConfirmationResponseDto>.Fail(
+                        AppointmentErrors.CollectionConfirmationNotOpen(collection.CollectionDate.Value));
+                }
+
+                var lockedCollection = await _appointmentRepo.GetByIdForUpdateAsync(
+                    collectionAppointment.AppointmentId,
+                    ct);
+
+                if (lockedCollection == null)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    return Result<OrderConfirmationResponseDto>.Fail(AppointmentErrors.NotFound);
+                }
+
+                if (lockedCollection.AppointmentStatus != (int)AppointmentStatus.Scheduled &&
+                    lockedCollection.AppointmentStatus != (int)AppointmentStatus.InProgress)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    return Result<OrderConfirmationResponseDto>.Fail(AppointmentErrors.InvalidStatus);
+                }
+
+                var changed = false;
+
                 if (!order.SellerHandoverConfirmedAt.HasValue)
                 {
-                    var now = DateTime.UtcNow;
-
                     order.SellerHandoverConfirmedAt = now;
                     order.UpdatedAt = now;
 
                     await _orderRepo.UpdateAsync(order, ct);
-                    await _unitOfWork.SaveChangesAsync(ct);
+                    changed = true;
                 }
+
+                if (lockedCollection.AppointmentStatus == (int)AppointmentStatus.Scheduled)
+                {
+                    lockedCollection.AppointmentStatus = (int)AppointmentStatus.InProgress;
+                    lockedCollection.UpdatedAt = now;
+
+                    await _appointmentRepo.UpdateAsync(lockedCollection, ct);
+                    changed = true;
+                }
+
+                if (changed)
+                    await _unitOfWork.SaveChangesAsync(ct);
 
                 await _unitOfWork.CommitTransactionAsync(ct);
 
@@ -249,8 +295,7 @@ namespace HomeCycle.Application.Services.Orders
             }
         }
 
-        public async Task<Result<OrderConfirmationResponseDto>> ConfirmReceivedAsync(
-    Guid orderId, Guid buyerId, CancellationToken ct = default)
+        public async Task<Result<OrderConfirmationResponseDto>> ConfirmReceivedAsync(Guid orderId, Guid buyerId, CancellationToken ct = default)
         {
             await _unitOfWork.BeginTransactionAsync(ct);
 
@@ -278,8 +323,6 @@ namespace HomeCycle.Application.Services.Orders
                     return Result<OrderConfirmationResponseDto>.Fail(OrderErrors.Forbidden);
                 }
 
-                // Buyer bấm lại sau khi Order đã Completed.
-                // Không ghi lại CompletedAt / BuyerReceivedConfirmedAt.
                 if (order.OrderStatus == (int)OrderStatus.Completed)
                 {
                     await _unitOfWork.CommitTransactionAsync(ct);
@@ -312,8 +355,8 @@ namespace HomeCycle.Application.Services.Orders
                 }
 
                 var deliveryMethod = deliveryMethodResult.Data;
+                appointment? directCollection = null;
 
-                // GHN: chỉ được confirm khi GHN đã báo giao thành công.
                 if (deliveryMethod == DeliveryMethod.GhnDelivery)
                 {
                     var shipment = await _shipmentRepo.GetByOrderIdAsync(order.OrderId, ct);
@@ -324,14 +367,12 @@ namespace HomeCycle.Application.Services.Orders
                         return Result<OrderConfirmationResponseDto>.Fail(OrderErrors.ShipmentNotFound);
                     }
 
-                    if (shipment.ShipmentStatus != ShipmentStatus.Delivered ||
-                        !shipment.DeliveredAt.HasValue)
+                    if (shipment.ShipmentStatus != ShipmentStatus.Delivered || !shipment.DeliveredAt.HasValue)
                     {
                         await _unitOfWork.RollbackTransactionAsync(ct);
                         return Result<OrderConfirmationResponseDto>.Fail(OrderErrors.ShipmentNotDelivered);
                     }
                 }
-                // Direct: hai bên phải check-in Collection.
                 else if (deliveryMethod == DeliveryMethod.BuyerPickUp ||
                          deliveryMethod == DeliveryMethod.SellerDelivers)
                 {
@@ -343,14 +384,50 @@ namespace HomeCycle.Application.Services.Orders
                     if (collectionAppointment == null)
                     {
                         await _unitOfWork.RollbackTransactionAsync(ct);
-                        return Result<OrderConfirmationResponseDto>.Fail(OrderErrors.CollectionAppointmentNotFound);
+                        return Result<OrderConfirmationResponseDto>.Fail(AppointmentErrors.NotFound);
                     }
 
-                    if (!collectionAppointment.BuyerCheckAt.HasValue ||
-                        !collectionAppointment.SellerCheckAt.HasValue)
+                    var collection = await _collectionAppointmentRepo.GetByAppointmentIdAsync(
+                        collectionAppointment.AppointmentId,
+                        ct);
+
+                    if (collection == null)
                     {
                         await _unitOfWork.RollbackTransactionAsync(ct);
-                        return Result<OrderConfirmationResponseDto>.Fail(OrderErrors.BothCheckInRequired);
+                        return Result<OrderConfirmationResponseDto>.Fail(AppointmentErrors.CollectionDetailNotFound);
+                    }
+
+                    if (!collection.CollectionDate.HasValue)
+                    {
+                        await _unitOfWork.RollbackTransactionAsync(ct);
+                        return Result<OrderConfirmationResponseDto>.Fail(AppointmentErrors.ScheduleMissing);
+                    }
+
+                    var now = DateTime.UtcNow;
+
+                    if (!IsCollectionConfirmationOpen(collection.CollectionDate.Value, now))
+                    {
+                        await _unitOfWork.RollbackTransactionAsync(ct);
+
+                        return Result<OrderConfirmationResponseDto>.Fail(
+                            AppointmentErrors.CollectionConfirmationNotOpen(collection.CollectionDate.Value));
+                    }
+
+                    directCollection = await _appointmentRepo.GetByIdForUpdateAsync(
+                        collectionAppointment.AppointmentId,
+                        ct);
+
+                    if (directCollection == null)
+                    {
+                        await _unitOfWork.RollbackTransactionAsync(ct);
+                        return Result<OrderConfirmationResponseDto>.Fail(AppointmentErrors.NotFound);
+                    }
+
+                    if (directCollection.AppointmentStatus != (int)AppointmentStatus.Scheduled &&
+                        directCollection.AppointmentStatus != (int)AppointmentStatus.InProgress)
+                    {
+                        await _unitOfWork.RollbackTransactionAsync(ct);
+                        return Result<OrderConfirmationResponseDto>.Fail(AppointmentErrors.InvalidStatus);
                     }
                 }
                 else
@@ -359,19 +436,25 @@ namespace HomeCycle.Application.Services.Orders
                     return Result<OrderConfirmationResponseDto>.Fail(OrderErrors.DeliveryMethodMissing);
                 }
 
-                var now = DateTime.UtcNow;
+                var completedAt = DateTime.UtcNow;
 
-                // Chỉ ghi thao tác thực sự của Buyer.
-                // Không tự set SellerHandoverConfirmedAt nếu Seller chưa từng bấm.
-                order.BuyerReceivedConfirmedAt = now;
-
-                // Buyer xác nhận đã nhận hàng là đủ căn cứ đóng Order.
+                order.BuyerReceivedConfirmedAt = completedAt;
                 order.OrderStatus = (int)OrderStatus.Completed;
-                order.CompletedAt = now;
+                order.CompletedAt = completedAt;
                 order.CompletionSource = (int)OrderCompletionSource.BuyerConfirmed;
-                order.UpdatedAt = now;
+                order.UpdatedAt = completedAt;
 
                 await _orderRepo.UpdateAsync(order, ct);
+
+                if (directCollection != null)
+                {
+                    directCollection.AppointmentStatus = (int)AppointmentStatus.Completed;
+                    directCollection.CompletedAt = completedAt;
+                    directCollection.UpdatedAt = completedAt;
+
+                    await _appointmentRepo.UpdateAsync(directCollection, ct);
+                }
+
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
 
@@ -406,13 +489,15 @@ namespace HomeCycle.Application.Services.Orders
                 .OrderByDescending(a => a.CreatedAt)
                 .FirstOrDefault();
 
-            var bothCheckedIn =
-                latestCollection?.BuyerCheckAt.HasValue == true &&
-                latestCollection.SellerCheckAt.HasValue;
-
             var isDirect =
                 detail.DeliveryMethod == DeliveryMethod.BuyerPickUp ||
                 detail.DeliveryMethod == DeliveryMethod.SellerDelivers;
+
+            var collectionConfirmationOpen =
+                latestCollection?.ScheduledAt.HasValue == true &&
+                (latestCollection.AppointmentStatus == AppointmentStatus.Scheduled ||
+                 latestCollection.AppointmentStatus == AppointmentStatus.InProgress) &&
+                IsCollectionConfirmationOpen(latestCollection.ScheduledAt.Value, DateTime.UtcNow);
 
             var ghnDelivered =
                 detail.DeliveryMethod == DeliveryMethod.GhnDelivery &&
@@ -423,7 +508,7 @@ namespace HomeCycle.Application.Services.Orders
             {
                 if (isSeller &&
                     isDirect &&
-                    bothCheckedIn &&
+                    collectionConfirmationOpen &&
                     !detail.SellerHandoverConfirmedAt.HasValue)
                 {
                     canConfirm = true;
@@ -431,7 +516,7 @@ namespace HomeCycle.Application.Services.Orders
                 }
                 else if (isBuyer &&
                          !detail.BuyerReceivedConfirmedAt.HasValue &&
-                         ((isDirect && bothCheckedIn) || ghnDelivered))
+                         ((isDirect && collectionConfirmationOpen) || ghnDelivered))
                 {
                     canConfirm = true;
                     confirmAction = OrderConfirmAction.ConfirmReceived;
@@ -547,6 +632,22 @@ namespace HomeCycle.Application.Services.Orders
             }
 
             return Result<bool>.Success(true);
+        }
+
+        private static bool IsCollectionConfirmationOpen(DateTime scheduledAt, DateTime nowUtc)
+        {
+            var scheduledUtc = scheduledAt.Kind == DateTimeKind.Utc
+                ? scheduledAt
+                : DateTime.SpecifyKind(scheduledAt, DateTimeKind.Utc);
+
+            var now = nowUtc.Kind == DateTimeKind.Utc
+                ? nowUtc
+                : DateTime.SpecifyKind(nowUtc, DateTimeKind.Utc);
+
+            var scheduledVietnamDate = DateOnly.FromDateTime(scheduledUtc.AddHours(7));
+            var currentVietnamDate = DateOnly.FromDateTime(now.AddHours(7));
+
+            return currentVietnamDate >= scheduledVietnamDate;
         }
     }
 }

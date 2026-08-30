@@ -85,7 +85,7 @@ namespace HomeCycle.API.Controllers
             return Ok(result.Data);
         }
 
-        // ---- Check-in tại điểm hẹn (Phương án A) ----
+        // ---- Check-in chỉ áp dụng cho Inspection Appointment ----
 
         [HttpPost("{appointmentId:guid}/check-in")]
         public async Task<IActionResult> CheckIn(Guid appointmentId, CancellationToken cancellationToken)

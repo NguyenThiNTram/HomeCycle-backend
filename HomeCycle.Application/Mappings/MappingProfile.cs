@@ -642,7 +642,8 @@ namespace HomeCycle.Application.Mappings
                 .ForMember(dest => dest.Order, opt => opt.Ignore())
                 .ForMember(dest => dest.Actions, opt => opt.Ignore());
 
-            CreateMap<inspection_appointment, InspectionAppointmentDetailDto>();
+            CreateMap<inspection_appointment, InspectionAppointmentDetailDto>()
+                .ForMember(dest => dest.CheckIn, opt => opt.Ignore());
 
             CreateMap<collection_appointment, CollectionAppointmentDetailDto>()
                 .ForMember(dest => dest.DeliveryMethod, opt => opt.Ignore());

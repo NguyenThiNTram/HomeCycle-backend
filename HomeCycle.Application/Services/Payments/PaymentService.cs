@@ -962,7 +962,7 @@ namespace HomeCycle.Application.Services.Payments
                 await _platformPolicyProvider
                     .GetAppointmentConfigAsync(ct);
 
-            var supportsInteractionDeadline =
+            var supportsLateThreshold =
                 appointmentType == AppointmentType.Inspection ||
                 details?.DeliveryMethod == DeliveryMethod.BuyerPickUp ||
                 details?.DeliveryMethod == DeliveryMethod.SellerDelivers;
@@ -974,11 +974,9 @@ namespace HomeCycle.Application.Services.Payments
                 AgreementId = agreement.AgreementId,
                 AppointmentType = (int)appointmentType,
                 AppointmentStatus = (int)AppointmentStatus.Scheduled,
-                InteractionDeadlineAt =
-                    supportsInteractionDeadline
-                        ? scheduledAt.Value.AddMinutes(
-                            appointmentPolicy.NoInteractionExpiryMinutes)
-                        : null,
+                LateThresholdAt = supportsLateThreshold
+                    ? scheduledAt.Value.AddMinutes(appointmentPolicy.LateThresholdMinutes)
+                    : null,
                 CreatedAt = DateTime.UtcNow
                 // UpdatedAt: để null.
             };
