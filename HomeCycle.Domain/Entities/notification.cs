@@ -1,8 +1,9 @@
-﻿using System;
+﻿using HomeCycle.Domain.Enums;
+using Microsoft.EntityFrameworkCore;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
-using Microsoft.EntityFrameworkCore;
 
 namespace HomeCycle.Domain.Entities;
 
@@ -14,12 +15,14 @@ public class notification
     public string? Title { get; set; }
     public string? Message { get; set; }
 
-    public int? TargetType { get; set; }
+    public NotificationTargetType? TargetType { get; set; }
     public Guid? TargetId { get; set; }
 
     public bool IsRead { get; set; }
 
     public DateTime CreatedAt { get; set; }
+
+    public user? User { get; set; }
 
     public notification()
     {

@@ -10,8 +10,7 @@ namespace HomeCycle.API.Hubs
     {
         private readonly IHubContext<ChatHub, IChatClient> _hubContext;
 
-        public SignalRChatRealtimePublisher(
-        IHubContext<ChatHub, IChatClient> hubContext)
+        public SignalRChatRealtimePublisher(IHubContext<ChatHub, IChatClient> hubContext)
         {
             _hubContext = hubContext;
         }

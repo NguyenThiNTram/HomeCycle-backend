@@ -490,12 +490,20 @@ public partial class HomeCycleDbContext : DbContext
             entity.HasKey(e => e.NotificationId).HasName("Notification_pkey");
 
             entity.Property(e => e.NotificationId).ValueGeneratedNever();
+            entity.Property(x => x.Title).HasMaxLength(255);
+            entity.Property(x => x.Message).HasColumnType("text");
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()");
             entity.Property(e => e.IsRead).HasDefaultValue(false);
 
             entity.HasOne(d => d.User).WithMany(p => p.Notifications)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("fk_notification_userid");
+
+            entity.HasIndex(x => new
+            {
+                x.UserId,
+                x.CreatedAt
+            });
         });
 
         modelBuilder.Entity<OTP>(entity =>
