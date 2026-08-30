@@ -13,9 +13,7 @@ public partial class Platform_Policy
     [Key]
     public Guid PolicyId { get; set; }
 
-    [StringLength(50)]
-    public string PolicyType { get; set; } = string.Empty;
-
+    public int PolicyType { get; set; } 
 
     [StringLength(255)]
     public string? Title { get; set; }

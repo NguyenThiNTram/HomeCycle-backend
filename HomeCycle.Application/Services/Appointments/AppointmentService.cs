@@ -180,15 +180,9 @@ namespace HomeCycle.Application.Services.Appointments
 
                 if (inspectionForm != null)
                 {
-                    InspectionConclusion? conclusion = null;
-
-                    if (Enum.TryParse<InspectionConclusion>(
-                        inspectionForm.Conclusion,
-                        true,
-                        out var parsedConclusion))
-                    {
-                        conclusion = parsedConclusion;
-                    }
+                    InspectionConclusion? conclusion = inspectionForm.Conclusion.HasValue
+                        ? (InspectionConclusion?)inspectionForm.Conclusion.Value
+                        : null;
 
                     dto.Inspection.InspectionForm = new InspectionFormReferenceDto
                     {

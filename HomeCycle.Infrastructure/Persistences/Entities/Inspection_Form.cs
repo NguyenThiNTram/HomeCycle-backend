@@ -24,21 +24,14 @@ public partial class Inspection_Form
 
     public DateTime? InspectionTime { get; set; }
 
-    [StringLength(50)]
-    public string? OperatingStatus { get; set; }
-
-    [StringLength(50)]
-    public string? AppearanceStatus { get; set; }
-
-    [StringLength(50)]
-    public string? PartsStatus { get; set; }
-
-    [StringLength(50)]
-    public string? MatchStatus { get; set; }
+    public int? OperatingStatus { get; set; }
+    public int? AppearanceStatus { get; set; }
+    public int? PartsStatus { get; set; }
+    public int? MatchStatus { get; set; }
 
     public string? InspectorNotes { get; set; }
 
-    public string? Conclusion { get; set; }
+    public int? Conclusion { get; set; }
 
     [Precision(18, 2)]
     public decimal? OriginalPrice { get; set; }
@@ -46,8 +39,7 @@ public partial class Inspection_Form
     [Precision(18, 2)]
     public decimal? SuggestedPrice { get; set; }
 
-    [StringLength(100)]
-    public string? CollectAction { get; set; }
+    public int? CollectAction { get; set; }
 
     public int? InspectionStatus { get; set; }
     public int Revision { get; set; }

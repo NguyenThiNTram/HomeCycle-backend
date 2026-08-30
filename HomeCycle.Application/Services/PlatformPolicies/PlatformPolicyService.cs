@@ -180,7 +180,7 @@ namespace HomeCycle.Application.Services.PlatformPolicies
                 var newPolicy = new platform_policy
                 {
                     PolicyId = Guid.NewGuid(),
-                    PolicyType = PlatformPolicyType.Dispute.ToString(),
+                    PolicyType = (int)PlatformPolicyType.Dispute,
                     Title = string.IsNullOrWhiteSpace(current.Title)
                         ? "Dispute Policy"
                         : current.Title,
@@ -290,7 +290,7 @@ namespace HomeCycle.Application.Services.PlatformPolicies
                 var newPolicy = new platform_policy
                 {
                     PolicyId = Guid.NewGuid(),
-                    PolicyType = PlatformPolicyType.Appointment.ToString(),
+                    PolicyType = (int)PlatformPolicyType.Appointment,
                     Title = string.IsNullOrWhiteSpace(current.Title)
                         ? "Appointment Policy"
                         : current.Title,
@@ -424,7 +424,7 @@ namespace HomeCycle.Application.Services.PlatformPolicies
                 var restoredPolicy = new platform_policy
                 {
                     PolicyId = Guid.NewGuid(),
-                    PolicyType = policyType.ToString(),
+                    PolicyType = (int)policyType,
                     Title = source.Title,
                     Content = source.Content,
                     Version = nextVersion,

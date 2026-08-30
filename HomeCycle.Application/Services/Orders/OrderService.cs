@@ -869,13 +869,9 @@ namespace HomeCycle.Application.Services.Orders
             if (form == null)
                 return false;
 
-            if (!Enum.TryParse<InspectionConclusion>(
-                form.Conclusion,
-                true,
-                out var conclusion))
-            {
+            if (!form.Conclusion.HasValue)
                 return false;
-            }
+            var conclusion = (InspectionConclusion)form.Conclusion.Value;
 
             return conclusion != InspectionConclusion.Failed;
         }

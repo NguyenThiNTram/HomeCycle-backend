@@ -568,7 +568,7 @@ namespace HomeCycle.Application.Mappings
 
             CreateMap<platform_policy, PlatformPolicySummaryResponseDto>()
                 .ForMember(dest => dest.PolicyType,
-                    opt => opt.MapFrom(src => Enum.Parse<PlatformPolicyType>(src.PolicyType, true)));
+                    opt => opt.MapFrom(src => (PlatformPolicyType)src.PolicyType));
 
             CreateMap<platform_policy, PlatformPolicyVersionListItemDto>()
                 .ForMember(dest => dest.CanRestore,
@@ -576,7 +576,7 @@ namespace HomeCycle.Application.Mappings
 
             CreateMap<platform_policy, PlatformPolicyVersionDetailDto>()
                 .ForMember(dest => dest.PolicyType,
-                    opt => opt.MapFrom(src => Enum.Parse<PlatformPolicyType>(src.PolicyType, true)))
+                    opt => opt.MapFrom(src => (PlatformPolicyType)src.PolicyType))
                 .ForMember(dest => dest.Config,
                     opt => opt.MapFrom(src =>
                         JsonSerializer.Deserialize<JsonElement>(
@@ -587,12 +587,12 @@ namespace HomeCycle.Application.Mappings
 
             CreateMap<platform_policy, PlatformPolicyResponseDto<DisputePolicyConfigDto>>()
                 .ForMember(dest => dest.PolicyType,
-                    opt => opt.MapFrom(src => Enum.Parse<PlatformPolicyType>(src.PolicyType, true)))
+                    opt => opt.MapFrom(src => (PlatformPolicyType)src.PolicyType))
                 .ForMember(dest => dest.Config, opt => opt.Ignore());
 
             CreateMap<platform_policy, PlatformPolicyResponseDto<AppointmentPolicyConfigDto>>()
                 .ForMember(dest => dest.PolicyType,
-                    opt => opt.MapFrom(src => Enum.Parse<PlatformPolicyType>(src.PolicyType, true)))
+                    opt => opt.MapFrom(src => (PlatformPolicyType)src.PolicyType))
                 .ForMember(dest => dest.Config, opt => opt.Ignore());
 
             CreateMap<DisputePolicyConfigDto, DisputePolicyConfigDto>();
