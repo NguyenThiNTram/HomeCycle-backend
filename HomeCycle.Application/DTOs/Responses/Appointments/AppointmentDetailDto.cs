@@ -37,10 +37,18 @@ namespace HomeCycle.Application.DTOs.Responses.Appointments
     {
         public DateTime? InspectionDate { get; set; }
         public string? InspectionAddress { get; set; }
+        public InspectionFormReferenceDto? InspectionForm { get; set; }
 
         public InspectionCheckInDto CheckIn { get; set; } = new();
     }
 
+    public class InspectionFormReferenceDto
+    {
+        public Guid InspectionFormId { get; set; }
+        public int Revision { get; set; }
+        public InspectionStatus InspectionStatus { get; set; }
+        public InspectionConclusion? Conclusion { get; set; }
+    }
     public class InspectionCheckInDto
     {
         public DateTime? BuyerCheckAt { get; set; }
@@ -91,6 +99,7 @@ namespace HomeCycle.Application.DTOs.Responses.Appointments
         public bool CanRequestReschedule { get; set; }
         public bool CanAcceptReschedule { get; set; }
         public bool CanRejectReschedule { get; set; }
+        public bool CanCreateInspectionForm { get; set; }
         public bool CanCancel { get; set; }
     }
 

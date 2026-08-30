@@ -9,6 +9,7 @@ using HomeCycle.Application.DTOs.Responses.Appointments;
 using HomeCycle.Application.Interfaces.Generics;
 using HomeCycle.Application.Interfaces.Repositories.Agreements;
 using HomeCycle.Application.Interfaces.Repositories.Appointments;
+using HomeCycle.Application.Interfaces.Repositories.Inspections;
 using HomeCycle.Application.Interfaces.Repositories.Orders;
 using HomeCycle.Application.Interfaces.Services.Appointments;
 using HomeCycle.Application.Interfaces.Services.PlatformPolicies;
@@ -37,6 +38,7 @@ namespace HomeCycle.Application.Services.Appointments
         private readonly IValidator<RescheduleAppointmentRequest> _rescheduleValidator;
         private readonly IValidator<RejectAppointmentRescheduleRequest> _rejectRescheduleValidator;
         private readonly IValidator<CancelAppointmentRequest> _cancelValidator;
+        private readonly IInspectionFormRepository _inspectionFormRepo;
 
         public AppointmentService(
             IAppointmentRepository appointmentRepo,
@@ -49,7 +51,8 @@ namespace HomeCycle.Application.Services.Appointments
             IMapper mapper,
             IValidator<RescheduleAppointmentRequest> rescheduleValidator,
             IValidator<RejectAppointmentRescheduleRequest> rejectRescheduleValidator,
-            IValidator<CancelAppointmentRequest> cancelValidator)
+            IValidator<CancelAppointmentRequest> cancelValidator, 
+            IInspectionFormRepository inspectionFormRepository)
         {
             _appointmentRepo = appointmentRepo;
             _inspectionRepo = inspectionRepo;
@@ -62,6 +65,7 @@ namespace HomeCycle.Application.Services.Appointments
             _rescheduleValidator = rescheduleValidator;
             _rejectRescheduleValidator = rejectRescheduleValidator;
             _cancelValidator = cancelValidator;
+            _inspectionFormRepo = inspectionFormRepository;
         }
 
         public async Task<Result<PagedResult<InspectionAppointmentListItemDto>>> GetInspectionListAsync(
@@ -81,10 +85,12 @@ namespace HomeCycle.Application.Services.Appointments
         public async Task<Result<AppointmentDetailDto>> GetDetailAsync(Guid appointmentId, Guid userId, CancellationToken ct = default)
         {
             var appointment = await _appointmentRepo.GetByIdAsync(appointmentId, ct);
+
             if (appointment == null)
                 return Result<AppointmentDetailDto>.Fail(AppointmentErrors.NotFound);
 
             var agreement = await _agreementRepo.GetByIdAsync(appointment.AgreementId, ct);
+
             if (agreement == null)
                 return Result<AppointmentDetailDto>.Fail(AgreementErrors.NotFound);
 
@@ -95,13 +101,17 @@ namespace HomeCycle.Application.Services.Appointments
                 return Result<AppointmentDetailDto>.Fail(AppointmentErrors.Forbidden);
 
             var scheduleResult = await GetScheduleContextAsync(appointment, agreement, ct);
+
             if (!scheduleResult.IsSuccess)
                 return Result<AppointmentDetailDto>.Fail(scheduleResult.Error!);
 
             var schedule = scheduleResult.Data!;
             var dto = _mapper.Map<AppointmentDetailDto>(appointment);
 
-            var status = appointment.AppointmentStatus.HasValue ? (AppointmentStatus?)appointment.AppointmentStatus.Value : null;
+            var status = appointment.AppointmentStatus.HasValue
+                ? (AppointmentStatus?)appointment.AppointmentStatus.Value
+                : null;
+
             var now = DateTime.UtcNow;
             var policy = await _platformPolicyProvider.GetAppointmentConfigAsync(ct);
 
@@ -113,8 +123,13 @@ namespace HomeCycle.Application.Services.Appointments
             if (supportsLateThreshold)
                 lateThresholdAt = appointment.LateThresholdAt ?? schedule.ScheduledAt.AddMinutes(policy.LateThresholdMinutes);
 
-            var isActive = status == AppointmentStatus.Scheduled || status == AppointmentStatus.InProgress;
-            var fullyCheckedIn = appointment.BuyerCheckAt.HasValue && appointment.SellerCheckAt.HasValue;
+            var isActive =
+                status == AppointmentStatus.Scheduled ||
+                status == AppointmentStatus.InProgress;
+
+            var fullyCheckedIn =
+                appointment.BuyerCheckAt.HasValue &&
+                appointment.SellerCheckAt.HasValue;
 
             dto.LateThresholdAt = lateThresholdAt;
 
@@ -129,27 +144,65 @@ namespace HomeCycle.Application.Services.Appointments
 
             var hasAnyCheckIn =
                 schedule.AppointmentType == AppointmentType.Inspection &&
-                (appointment.BuyerCheckAt.HasValue || appointment.SellerCheckAt.HasValue);
+                (
+                    appointment.BuyerCheckAt.HasValue ||
+                    appointment.SellerCheckAt.HasValue
+                );
+
+            inspection_form? inspectionForm = null;
 
             if (schedule.AppointmentType == AppointmentType.Inspection)
             {
-                dto.Inspection = _mapper.Map<InspectionAppointmentDetailDto>(schedule.Inspection);
+                dto.Inspection = _mapper.Map<InspectionAppointmentDetailDto>(schedule.Inspection!);
 
                 var checkInOpenAt = schedule.ScheduledAt.AddMinutes(-policy.CheckInOpenBeforeMinutes);
-                var currentUserCheckedIn = isBuyer ? appointment.BuyerCheckAt.HasValue : appointment.SellerCheckAt.HasValue;
 
-                dto.Inspection.CheckIn = new InspectionCheckInDto
+                var currentUserCheckedIn =
+                    isBuyer
+                        ? appointment.BuyerCheckAt.HasValue
+                        : appointment.SellerCheckAt.HasValue;
+
+                dto.Inspection!.CheckIn = new InspectionCheckInDto
                 {
                     BuyerCheckAt = appointment.BuyerCheckAt,
                     SellerCheckAt = appointment.SellerCheckAt,
                     CheckInOpenAt = checkInOpenAt,
-                    CanCheckIn = isActive && !currentUserCheckedIn && now >= checkInOpenAt
+
+                    CanCheckIn =
+                        isActive &&
+                        !currentUserCheckedIn &&
+                        now >= checkInOpenAt
                 };
+
+                inspectionForm = await _inspectionFormRepo.GetByInspectionAppointmentIdAsync(
+                    schedule.Inspection!.InspectionAppointmentId,
+                    ct);
+
+                if (inspectionForm != null)
+                {
+                    InspectionConclusion? conclusion = null;
+
+                    if (Enum.TryParse<InspectionConclusion>(
+                        inspectionForm.Conclusion,
+                        true,
+                        out var parsedConclusion))
+                    {
+                        conclusion = parsedConclusion;
+                    }
+
+                    dto.Inspection.InspectionForm = new InspectionFormReferenceDto
+                    {
+                        InspectionFormId = inspectionForm.InspectionFormId,
+                        Revision = inspectionForm.Revision,
+                        InspectionStatus = (InspectionStatus)inspectionForm.InspectionStatus,
+                        Conclusion = conclusion
+                    };
+                }
             }
             else
             {
-                dto.Collection = _mapper.Map<CollectionAppointmentDetailDto>(schedule.Collection);
-                dto.Collection.DeliveryMethod = schedule.DeliveryMethod;
+                dto.Collection = _mapper.Map<CollectionAppointmentDetailDto>(schedule.Collection!);
+                dto.Collection!.DeliveryMethod = schedule.DeliveryMethod;
             }
 
             if (appointment.CancelledAt.HasValue)
@@ -162,26 +215,35 @@ namespace HomeCycle.Application.Services.Appointments
             }
 
             var order = await _orderRepo.GetByAgreementIdAsync(appointment.AgreementId, ct);
+
             if (order == null)
                 return Result<AppointmentDetailDto>.Fail(OrderErrors.NotFound);
 
             dto.Order = _mapper.Map<AppointmentOrderSummaryDto>(order);
 
-            var pendingProposal = status == AppointmentStatus.Proposed
-                ? null
-                : await _appointmentRepo.GetPendingRescheduleProposalAsync(appointment.AppointmentId, ct);
+            var pendingProposal =
+                status == AppointmentStatus.Proposed
+                    ? null
+                    : await _appointmentRepo.GetPendingRescheduleProposalAsync(
+                        appointment.AppointmentId,
+                        ct);
 
             DateTime? proposedAt = null;
             var isCurrentUserRequester = false;
 
             if (pendingProposal != null)
             {
-                var proposalScheduleResult = await GetScheduleContextAsync(pendingProposal, agreement, ct);
+                var proposalScheduleResult =
+                    await GetScheduleContextAsync(
+                        pendingProposal,
+                        agreement,
+                        ct);
 
                 if (proposalScheduleResult.IsSuccess)
                     proposedAt = proposalScheduleResult.Data!.ScheduledAt;
 
-                isCurrentUserRequester = pendingProposal.RescheduleRequestedByUserId == userId;
+                isCurrentUserRequester =
+                    pendingProposal.RescheduleRequestedByUserId == userId;
 
                 dto.Reschedule = new AppointmentRescheduleInfoDto
                 {
@@ -210,18 +272,33 @@ namespace HomeCycle.Application.Services.Appointments
             var canAcceptReschedule = false;
             var canRejectReschedule = false;
 
-            if (pendingProposal != null && !isCurrentUserRequester && status == AppointmentStatus.Scheduled && !hasAnyCheckIn)
+            if (
+                pendingProposal != null &&
+                !isCurrentUserRequester &&
+                status == AppointmentStatus.Scheduled &&
+                !hasAnyCheckIn)
             {
-                canAcceptReschedule = proposedAt.HasValue && proposedAt.Value > now;
+                canAcceptReschedule =
+                    proposedAt.HasValue &&
+                    proposedAt.Value > now;
+
                 canRejectReschedule = true;
             }
+
+            var canCreateInspectionForm =
+                isBuyer &&
+                schedule.AppointmentType == AppointmentType.Inspection &&
+                status == AppointmentStatus.InProgress &&
+                fullyCheckedIn &&
+                inspectionForm == null;
 
             dto.Actions = new AppointmentActionDto
             {
                 CanRequestReschedule = canRequestReschedule,
                 CanAcceptReschedule = canAcceptReschedule,
                 CanRejectReschedule = canRejectReschedule,
-                CanCancel = canCancel
+                CanCancel = canCancel,
+                CanCreateInspectionForm = canCreateInspectionForm
             };
 
             return Result<AppointmentDetailDto>.Success(dto);

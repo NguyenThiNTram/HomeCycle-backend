@@ -8,6 +8,7 @@ using HomeCycle.Application.DTOs.Responses.Orders;
 using HomeCycle.Application.Interfaces.Generics;
 using HomeCycle.Application.Interfaces.Repositories.Agreements;
 using HomeCycle.Application.Interfaces.Repositories.Appointments;
+using HomeCycle.Application.Interfaces.Repositories.Inspections;
 using HomeCycle.Application.Interfaces.Repositories.Orders;
 using HomeCycle.Application.Interfaces.Repositories.Reviews;
 using HomeCycle.Application.Interfaces.Repositories.Shipments;
@@ -34,6 +35,7 @@ namespace HomeCycle.Application.Services.Orders
         //private readonly IReviewRepository _reviewRepo;
         private readonly IDisputeWindowPolicy _disputeWindowPolicy;
         private readonly ICollectionAppointmentRepository _collectionAppointmentRepo;
+        private readonly IInspectionFormRepository _inspectionFormRepo;
         private readonly IMapper _mapper;
 
         public OrderService(
@@ -45,6 +47,7 @@ namespace HomeCycle.Application.Services.Orders
             IDisputeWindowPolicy disputeWindowPolicy,
             ICollectionAppointmentRepository collectionAppointmentRepo,
             IUnitOfWork unitOfWork,
+            IInspectionFormRepository inspectionFormRepo,
             IMapper mapper)
         {
             _orderRepo = orderRepo;
@@ -55,6 +58,7 @@ namespace HomeCycle.Application.Services.Orders
             _disputeWindowPolicy = disputeWindowPolicy;
             _collectionAppointmentRepo = collectionAppointmentRepo;
             _unitOfWork = unitOfWork;
+            _inspectionFormRepo = inspectionFormRepo;
             _mapper = mapper;
         }
 
@@ -161,17 +165,19 @@ namespace HomeCycle.Application.Services.Orders
                 {
                     await _unitOfWork.CommitTransactionAsync(ct);
 
-                    return Result<OrderConfirmationResponseDto>.Success(new OrderConfirmationResponseDto
-                    {
-                        OrderId = order.OrderId,
-                        OrderStatus = order.OrderStatus,
-                        SellerHandoverConfirmedAt = order.SellerHandoverConfirmedAt,
-                        BuyerReceivedConfirmedAt = order.BuyerReceivedConfirmedAt,
-                        CompletedAt = order.CompletedAt,
-                        CompletionSource = order.CompletionSource.HasValue
-                            ? (OrderCompletionSource?)order.CompletionSource.Value
-                            : null
-                    });
+                    return Result<OrderConfirmationResponseDto>.Success(
+                        new OrderConfirmationResponseDto
+                        {
+                            OrderId = order.OrderId,
+                            OrderStatus = order.OrderStatus,
+                            SellerHandoverConfirmedAt = order.SellerHandoverConfirmedAt,
+                            BuyerReceivedConfirmedAt = order.BuyerReceivedConfirmedAt,
+                            CompletedAt = order.CompletedAt,
+
+                            CompletionSource = order.CompletionSource.HasValue
+                                ? (OrderCompletionSource?)order.CompletionSource.Value
+                                : null
+                        });
                 }
 
                 if (order.OrderStatus != (int)OrderStatus.Processing)
@@ -180,94 +186,132 @@ namespace HomeCycle.Application.Services.Orders
                     return Result<OrderConfirmationResponseDto>.Fail(OrderErrors.InvalidStatus);
                 }
 
-                var deliveryMethodResult = ResolveDeliveryMethod(agreement);
+                var inspectionCollectNow =
+                    await IsInspectionCollectNowReadyAsync(
+                        order.OrderId,
+                        ct);
 
-                if (!deliveryMethodResult.IsSuccess)
+                appointment? lockedCollection = null;
+
+                if (!inspectionCollectNow)
                 {
-                    await _unitOfWork.RollbackTransactionAsync(ct);
-                    return Result<OrderConfirmationResponseDto>.Fail(deliveryMethodResult.Error!);
+                    var deliveryMethodResult =
+                        ResolveDeliveryMethod(agreement);
+
+                    if (!deliveryMethodResult.IsSuccess)
+                    {
+                        await _unitOfWork.RollbackTransactionAsync(ct);
+                        return Result<OrderConfirmationResponseDto>.Fail(
+                            deliveryMethodResult.Error!);
+                    }
+
+                    var deliveryMethod = deliveryMethodResult.Data;
+
+                    if (
+                        deliveryMethod != DeliveryMethod.BuyerPickUp &&
+                        deliveryMethod != DeliveryMethod.SellerDelivers)
+                    {
+                        await _unitOfWork.RollbackTransactionAsync(ct);
+                        return Result<OrderConfirmationResponseDto>.Fail(
+                            OrderErrors.DirectHandoverOnly);
+                    }
+
+                    var collectionAppointment =
+                        await _appointmentRepo.GetByAgreementIdAndTypeAsync(
+                            agreement.AgreementId,
+                            AppointmentType.Collection,
+                            ct);
+
+                    if (collectionAppointment == null)
+                    {
+                        await _unitOfWork.RollbackTransactionAsync(ct);
+                        return Result<OrderConfirmationResponseDto>.Fail(
+                            AppointmentErrors.NotFound);
+                    }
+
+                    var collection =
+                        await _collectionAppointmentRepo.GetByAppointmentIdAsync(
+                            collectionAppointment.AppointmentId,
+                            ct);
+
+                    if (collection == null)
+                    {
+                        await _unitOfWork.RollbackTransactionAsync(ct);
+                        return Result<OrderConfirmationResponseDto>.Fail(
+                            AppointmentErrors.CollectionDetailNotFound);
+                    }
+
+                    if (!collection.CollectionDate.HasValue)
+                    {
+                        await _unitOfWork.RollbackTransactionAsync(ct);
+                        return Result<OrderConfirmationResponseDto>.Fail(
+                            AppointmentErrors.ScheduleMissing);
+                    }
+
+                    var now = DateTime.UtcNow;
+
+                    if (!IsCollectionConfirmationOpen(
+                        collection.CollectionDate.Value,
+                        now))
+                    {
+                        await _unitOfWork.RollbackTransactionAsync(ct);
+
+                        return Result<OrderConfirmationResponseDto>.Fail(
+                            AppointmentErrors.CollectionConfirmationNotOpen(
+                                collection.CollectionDate.Value));
+                    }
+
+                    lockedCollection =
+                        await _appointmentRepo.GetByIdForUpdateAsync(
+                            collectionAppointment.AppointmentId,
+                            ct);
+
+                    if (lockedCollection == null)
+                    {
+                        await _unitOfWork.RollbackTransactionAsync(ct);
+                        return Result<OrderConfirmationResponseDto>.Fail(
+                            AppointmentErrors.NotFound);
+                    }
+
+                    if (
+                        lockedCollection.AppointmentStatus !=
+                            (int)AppointmentStatus.Scheduled &&
+                        lockedCollection.AppointmentStatus !=
+                            (int)AppointmentStatus.InProgress)
+                    {
+                        await _unitOfWork.RollbackTransactionAsync(ct);
+                        return Result<OrderConfirmationResponseDto>.Fail(
+                            AppointmentErrors.InvalidStatus);
+                    }
                 }
 
-                var deliveryMethod = deliveryMethodResult.Data;
-
-                if (deliveryMethod != DeliveryMethod.BuyerPickUp &&
-                    deliveryMethod != DeliveryMethod.SellerDelivers)
-                {
-                    await _unitOfWork.RollbackTransactionAsync(ct);
-                    return Result<OrderConfirmationResponseDto>.Fail(OrderErrors.DirectHandoverOnly);
-                }
-
-                var collectionAppointment = await _appointmentRepo.GetByAgreementIdAndTypeAsync(
-                    agreement.AgreementId,
-                    AppointmentType.Collection,
-                    ct);
-
-                if (collectionAppointment == null)
-                {
-                    await _unitOfWork.RollbackTransactionAsync(ct);
-                    return Result<OrderConfirmationResponseDto>.Fail(AppointmentErrors.NotFound);
-                }
-
-                var collection = await _collectionAppointmentRepo.GetByAppointmentIdAsync(
-                    collectionAppointment.AppointmentId,
-                    ct);
-
-                if (collection == null)
-                {
-                    await _unitOfWork.RollbackTransactionAsync(ct);
-                    return Result<OrderConfirmationResponseDto>.Fail(AppointmentErrors.CollectionDetailNotFound);
-                }
-
-                if (!collection.CollectionDate.HasValue)
-                {
-                    await _unitOfWork.RollbackTransactionAsync(ct);
-                    return Result<OrderConfirmationResponseDto>.Fail(AppointmentErrors.ScheduleMissing);
-                }
-
-                var now = DateTime.UtcNow;
-
-                if (!IsCollectionConfirmationOpen(collection.CollectionDate.Value, now))
-                {
-                    await _unitOfWork.RollbackTransactionAsync(ct);
-
-                    return Result<OrderConfirmationResponseDto>.Fail(
-                        AppointmentErrors.CollectionConfirmationNotOpen(collection.CollectionDate.Value));
-                }
-
-                var lockedCollection = await _appointmentRepo.GetByIdForUpdateAsync(
-                    collectionAppointment.AppointmentId,
-                    ct);
-
-                if (lockedCollection == null)
-                {
-                    await _unitOfWork.RollbackTransactionAsync(ct);
-                    return Result<OrderConfirmationResponseDto>.Fail(AppointmentErrors.NotFound);
-                }
-
-                if (lockedCollection.AppointmentStatus != (int)AppointmentStatus.Scheduled &&
-                    lockedCollection.AppointmentStatus != (int)AppointmentStatus.InProgress)
-                {
-                    await _unitOfWork.RollbackTransactionAsync(ct);
-                    return Result<OrderConfirmationResponseDto>.Fail(AppointmentErrors.InvalidStatus);
-                }
-
+                var confirmedAt = DateTime.UtcNow;
                 var changed = false;
 
                 if (!order.SellerHandoverConfirmedAt.HasValue)
                 {
-                    order.SellerHandoverConfirmedAt = now;
-                    order.UpdatedAt = now;
+                    order.SellerHandoverConfirmedAt = confirmedAt;
+                    order.UpdatedAt = confirmedAt;
 
                     await _orderRepo.UpdateAsync(order, ct);
+
                     changed = true;
                 }
 
-                if (lockedCollection.AppointmentStatus == (int)AppointmentStatus.Scheduled)
+                if (
+                    lockedCollection != null &&
+                    lockedCollection.AppointmentStatus ==
+                        (int)AppointmentStatus.Scheduled)
                 {
-                    lockedCollection.AppointmentStatus = (int)AppointmentStatus.InProgress;
-                    lockedCollection.UpdatedAt = now;
+                    lockedCollection.AppointmentStatus =
+                        (int)AppointmentStatus.InProgress;
 
-                    await _appointmentRepo.UpdateAsync(lockedCollection, ct);
+                    lockedCollection.UpdatedAt = confirmedAt;
+
+                    await _appointmentRepo.UpdateAsync(
+                        lockedCollection,
+                        ct);
+
                     changed = true;
                 }
 
@@ -276,17 +320,19 @@ namespace HomeCycle.Application.Services.Orders
 
                 await _unitOfWork.CommitTransactionAsync(ct);
 
-                return Result<OrderConfirmationResponseDto>.Success(new OrderConfirmationResponseDto
-                {
-                    OrderId = order.OrderId,
-                    OrderStatus = order.OrderStatus,
-                    SellerHandoverConfirmedAt = order.SellerHandoverConfirmedAt,
-                    BuyerReceivedConfirmedAt = order.BuyerReceivedConfirmedAt,
-                    CompletedAt = order.CompletedAt,
-                    CompletionSource = order.CompletionSource.HasValue
-                        ? (OrderCompletionSource?)order.CompletionSource.Value
-                        : null
-                });
+                return Result<OrderConfirmationResponseDto>.Success(
+                    new OrderConfirmationResponseDto
+                    {
+                        OrderId = order.OrderId,
+                        OrderStatus = order.OrderStatus,
+                        SellerHandoverConfirmedAt = order.SellerHandoverConfirmedAt,
+                        BuyerReceivedConfirmedAt = order.BuyerReceivedConfirmedAt,
+                        CompletedAt = order.CompletedAt,
+
+                        CompletionSource = order.CompletionSource.HasValue
+                            ? (OrderCompletionSource?)order.CompletionSource.Value
+                            : null
+                    });
             }
             catch
             {
@@ -306,169 +352,243 @@ namespace HomeCycle.Application.Services.Orders
                 if (order == null)
                 {
                     await _unitOfWork.RollbackTransactionAsync(ct);
-                    return Result<OrderConfirmationResponseDto>.Fail(OrderErrors.NotFound);
+                    return Result<OrderConfirmationResponseDto>.Fail(
+                        OrderErrors.NotFound);
                 }
 
-                var agreement = await _agreementRepo.GetByIdAsync(order.AgreementId, ct);
+                var agreement =
+                    await _agreementRepo.GetByIdAsync(
+                        order.AgreementId,
+                        ct);
 
                 if (agreement == null)
                 {
                     await _unitOfWork.RollbackTransactionAsync(ct);
-                    return Result<OrderConfirmationResponseDto>.Fail(AgreementErrors.NotFound);
+                    return Result<OrderConfirmationResponseDto>.Fail(
+                        AgreementErrors.NotFound);
                 }
 
                 if (agreement.BuyerId != buyerId)
                 {
                     await _unitOfWork.RollbackTransactionAsync(ct);
-                    return Result<OrderConfirmationResponseDto>.Fail(OrderErrors.Forbidden);
+                    return Result<OrderConfirmationResponseDto>.Fail(
+                        OrderErrors.Forbidden);
                 }
 
                 if (order.OrderStatus == (int)OrderStatus.Completed)
                 {
                     await _unitOfWork.CommitTransactionAsync(ct);
 
-                    return Result<OrderConfirmationResponseDto>.Success(new OrderConfirmationResponseDto
-                    {
-                        OrderId = order.OrderId,
-                        OrderStatus = order.OrderStatus,
-                        SellerHandoverConfirmedAt = order.SellerHandoverConfirmedAt,
-                        BuyerReceivedConfirmedAt = order.BuyerReceivedConfirmedAt,
-                        CompletedAt = order.CompletedAt,
-                        CompletionSource = order.CompletionSource.HasValue
-                            ? (OrderCompletionSource?)order.CompletionSource.Value
-                            : null
-                    });
+                    return Result<OrderConfirmationResponseDto>.Success(
+                        new OrderConfirmationResponseDto
+                        {
+                            OrderId = order.OrderId,
+                            OrderStatus = order.OrderStatus,
+                            SellerHandoverConfirmedAt =
+                                order.SellerHandoverConfirmedAt,
+                            BuyerReceivedConfirmedAt =
+                                order.BuyerReceivedConfirmedAt,
+                            CompletedAt = order.CompletedAt,
+
+                            CompletionSource =
+                                order.CompletionSource.HasValue
+                                    ? (OrderCompletionSource?)order.CompletionSource.Value
+                                    : null
+                        });
                 }
 
                 if (order.OrderStatus != (int)OrderStatus.Processing)
                 {
                     await _unitOfWork.RollbackTransactionAsync(ct);
-                    return Result<OrderConfirmationResponseDto>.Fail(OrderErrors.InvalidStatus);
+                    return Result<OrderConfirmationResponseDto>.Fail(
+                        OrderErrors.InvalidStatus);
                 }
 
-                var deliveryMethodResult = ResolveDeliveryMethod(agreement);
+                var inspectionCollectNow =
+                    await IsInspectionCollectNowReadyAsync(
+                        order.OrderId,
+                        ct);
 
-                if (!deliveryMethodResult.IsSuccess)
-                {
-                    await _unitOfWork.RollbackTransactionAsync(ct);
-                    return Result<OrderConfirmationResponseDto>.Fail(deliveryMethodResult.Error!);
-                }
-
-                var deliveryMethod = deliveryMethodResult.Data;
                 appointment? directCollection = null;
 
-                if (deliveryMethod == DeliveryMethod.GhnDelivery)
+                if (!inspectionCollectNow)
                 {
-                    var shipment = await _shipmentRepo.GetByOrderIdAsync(order.OrderId, ct);
+                    var deliveryMethodResult =
+                        ResolveDeliveryMethod(agreement);
 
-                    if (shipment == null)
-                    {
-                        await _unitOfWork.RollbackTransactionAsync(ct);
-                        return Result<OrderConfirmationResponseDto>.Fail(OrderErrors.ShipmentNotFound);
-                    }
-
-                    if (shipment.ShipmentStatus != ShipmentStatus.Delivered || !shipment.DeliveredAt.HasValue)
-                    {
-                        await _unitOfWork.RollbackTransactionAsync(ct);
-                        return Result<OrderConfirmationResponseDto>.Fail(OrderErrors.ShipmentNotDelivered);
-                    }
-                }
-                else if (deliveryMethod == DeliveryMethod.BuyerPickUp ||
-                         deliveryMethod == DeliveryMethod.SellerDelivers)
-                {
-                    var collectionAppointment = await _appointmentRepo.GetByAgreementIdAndTypeAsync(
-                        agreement.AgreementId,
-                        AppointmentType.Collection,
-                        ct);
-
-                    if (collectionAppointment == null)
-                    {
-                        await _unitOfWork.RollbackTransactionAsync(ct);
-                        return Result<OrderConfirmationResponseDto>.Fail(AppointmentErrors.NotFound);
-                    }
-
-                    var collection = await _collectionAppointmentRepo.GetByAppointmentIdAsync(
-                        collectionAppointment.AppointmentId,
-                        ct);
-
-                    if (collection == null)
-                    {
-                        await _unitOfWork.RollbackTransactionAsync(ct);
-                        return Result<OrderConfirmationResponseDto>.Fail(AppointmentErrors.CollectionDetailNotFound);
-                    }
-
-                    if (!collection.CollectionDate.HasValue)
-                    {
-                        await _unitOfWork.RollbackTransactionAsync(ct);
-                        return Result<OrderConfirmationResponseDto>.Fail(AppointmentErrors.ScheduleMissing);
-                    }
-
-                    var now = DateTime.UtcNow;
-
-                    if (!IsCollectionConfirmationOpen(collection.CollectionDate.Value, now))
+                    if (!deliveryMethodResult.IsSuccess)
                     {
                         await _unitOfWork.RollbackTransactionAsync(ct);
 
                         return Result<OrderConfirmationResponseDto>.Fail(
-                            AppointmentErrors.CollectionConfirmationNotOpen(collection.CollectionDate.Value));
+                            deliveryMethodResult.Error!);
                     }
 
-                    directCollection = await _appointmentRepo.GetByIdForUpdateAsync(
-                        collectionAppointment.AppointmentId,
-                        ct);
+                    var deliveryMethod = deliveryMethodResult.Data;
 
-                    if (directCollection == null)
+                    if (deliveryMethod == DeliveryMethod.GhnDelivery)
+                    {
+                        var shipment =
+                            await _shipmentRepo.GetByOrderIdAsync(
+                                order.OrderId,
+                                ct);
+
+                        if (shipment == null)
+                        {
+                            await _unitOfWork.RollbackTransactionAsync(ct);
+                            return Result<OrderConfirmationResponseDto>.Fail(
+                                OrderErrors.ShipmentNotFound);
+                        }
+
+                        if (
+                            shipment.ShipmentStatus !=
+                                ShipmentStatus.Delivered ||
+                            !shipment.DeliveredAt.HasValue)
+                        {
+                            await _unitOfWork.RollbackTransactionAsync(ct);
+
+                            return Result<OrderConfirmationResponseDto>.Fail(
+                                OrderErrors.ShipmentNotDelivered);
+                        }
+                    }
+                    else if (
+                        deliveryMethod == DeliveryMethod.BuyerPickUp ||
+                        deliveryMethod == DeliveryMethod.SellerDelivers)
+                    {
+                        var collectionAppointment =
+                            await _appointmentRepo.GetByAgreementIdAndTypeAsync(
+                                agreement.AgreementId,
+                                AppointmentType.Collection,
+                                ct);
+
+                        if (collectionAppointment == null)
+                        {
+                            await _unitOfWork.RollbackTransactionAsync(ct);
+
+                            return Result<OrderConfirmationResponseDto>.Fail(
+                                AppointmentErrors.NotFound);
+                        }
+
+                        var collection =
+                            await _collectionAppointmentRepo.GetByAppointmentIdAsync(
+                                collectionAppointment.AppointmentId,
+                                ct);
+
+                        if (collection == null)
+                        {
+                            await _unitOfWork.RollbackTransactionAsync(ct);
+
+                            return Result<OrderConfirmationResponseDto>.Fail(
+                                AppointmentErrors.CollectionDetailNotFound);
+                        }
+
+                        if (!collection.CollectionDate.HasValue)
+                        {
+                            await _unitOfWork.RollbackTransactionAsync(ct);
+
+                            return Result<OrderConfirmationResponseDto>.Fail(
+                                AppointmentErrors.ScheduleMissing);
+                        }
+
+                        var now = DateTime.UtcNow;
+
+                        if (!IsCollectionConfirmationOpen(
+                            collection.CollectionDate.Value,
+                            now))
+                        {
+                            await _unitOfWork.RollbackTransactionAsync(ct);
+
+                            return Result<OrderConfirmationResponseDto>.Fail(
+                                AppointmentErrors.CollectionConfirmationNotOpen(
+                                    collection.CollectionDate.Value));
+                        }
+
+                        directCollection =
+                            await _appointmentRepo.GetByIdForUpdateAsync(
+                                collectionAppointment.AppointmentId,
+                                ct);
+
+                        if (directCollection == null)
+                        {
+                            await _unitOfWork.RollbackTransactionAsync(ct);
+
+                            return Result<OrderConfirmationResponseDto>.Fail(
+                                AppointmentErrors.NotFound);
+                        }
+
+                        if (
+                            directCollection.AppointmentStatus !=
+                                (int)AppointmentStatus.Scheduled &&
+                            directCollection.AppointmentStatus !=
+                                (int)AppointmentStatus.InProgress)
+                        {
+                            await _unitOfWork.RollbackTransactionAsync(ct);
+
+                            return Result<OrderConfirmationResponseDto>.Fail(
+                                AppointmentErrors.InvalidStatus);
+                        }
+                    }
+                    else
                     {
                         await _unitOfWork.RollbackTransactionAsync(ct);
-                        return Result<OrderConfirmationResponseDto>.Fail(AppointmentErrors.NotFound);
-                    }
 
-                    if (directCollection.AppointmentStatus != (int)AppointmentStatus.Scheduled &&
-                        directCollection.AppointmentStatus != (int)AppointmentStatus.InProgress)
-                    {
-                        await _unitOfWork.RollbackTransactionAsync(ct);
-                        return Result<OrderConfirmationResponseDto>.Fail(AppointmentErrors.InvalidStatus);
+                        return Result<OrderConfirmationResponseDto>.Fail(
+                            OrderErrors.DeliveryMethodMissing);
                     }
-                }
-                else
-                {
-                    await _unitOfWork.RollbackTransactionAsync(ct);
-                    return Result<OrderConfirmationResponseDto>.Fail(OrderErrors.DeliveryMethodMissing);
                 }
 
                 var completedAt = DateTime.UtcNow;
 
+                var disputeWindow =
+                    await _disputeWindowPolicy.GetOrderDisputeWindowAsync(
+                        agreement.SellerId,
+                        ct);
+
                 order.BuyerReceivedConfirmedAt = completedAt;
                 order.OrderStatus = (int)OrderStatus.Completed;
                 order.CompletedAt = completedAt;
-                order.CompletionSource = (int)OrderCompletionSource.BuyerConfirmed;
+                order.CompletionSource =
+                    (int)OrderCompletionSource.BuyerConfirmed;
+
+                order.DisputeWindowEndsAt ??=
+                    completedAt.Add(disputeWindow);
+
                 order.UpdatedAt = completedAt;
 
                 await _orderRepo.UpdateAsync(order, ct);
 
                 if (directCollection != null)
                 {
-                    directCollection.AppointmentStatus = (int)AppointmentStatus.Completed;
+                    directCollection.AppointmentStatus =
+                        (int)AppointmentStatus.Completed;
+
                     directCollection.CompletedAt = completedAt;
                     directCollection.UpdatedAt = completedAt;
 
-                    await _appointmentRepo.UpdateAsync(directCollection, ct);
+                    await _appointmentRepo.UpdateAsync(
+                        directCollection,
+                        ct);
                 }
 
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
 
-                return Result<OrderConfirmationResponseDto>.Success(new OrderConfirmationResponseDto
-                {
-                    OrderId = order.OrderId,
-                    OrderStatus = order.OrderStatus,
-                    SellerHandoverConfirmedAt = order.SellerHandoverConfirmedAt,
-                    BuyerReceivedConfirmedAt = order.BuyerReceivedConfirmedAt,
-                    CompletedAt = order.CompletedAt,
-                    CompletionSource = order.CompletionSource.HasValue
-                        ? (OrderCompletionSource?)order.CompletionSource.Value
-                        : null
-                });
+                return Result<OrderConfirmationResponseDto>.Success(
+                    new OrderConfirmationResponseDto
+                    {
+                        OrderId = order.OrderId,
+                        OrderStatus = order.OrderStatus,
+                        SellerHandoverConfirmedAt =
+                            order.SellerHandoverConfirmedAt,
+                        BuyerReceivedConfirmedAt =
+                            order.BuyerReceivedConfirmedAt,
+                        CompletedAt = order.CompletedAt,
+
+                        CompletionSource =
+                            order.CompletionSource.HasValue
+                                ? (OrderCompletionSource?)order.CompletionSource.Value
+                                : null
+                    });
             }
             catch
             {
@@ -479,52 +599,119 @@ namespace HomeCycle.Application.Services.Orders
 
         //================ HELPER =======================
 
-        private async Task<OrderActionDto> BuildOrderActionsAsync(OrderDetailDto detail, agreement_form agreement, bool isBuyer, bool isSeller, CancellationToken ct)
+        private async Task<bool> IsInspectionCollectNowReadyAsync(
+            Guid orderId,
+            CancellationToken ct)
+        {
+            var form =
+                await _inspectionFormRepo
+                    .GetAcceptedCollectNowByOrderIdAsync(
+                        orderId,
+                        ct);
+
+            if (form == null)
+                return false;
+
+            if (!Enum.TryParse<InspectionConclusion>(
+                form.Conclusion,
+                true,
+                out var conclusion))
+            {
+                return false;
+            }
+
+            return conclusion != InspectionConclusion.Failed;
+        }
+        private async Task<OrderActionDto> BuildOrderActionsAsync(
+            OrderDetailDto detail,
+            agreement_form agreement,
+            bool isBuyer,
+            bool isSeller,
+            CancellationToken ct)
         {
             var canConfirm = false;
             OrderConfirmAction? confirmAction = null;
 
-            var latestCollection = detail.Appointments
-                .Where(a => a.AppointmentType == AppointmentType.Collection)
-                .OrderByDescending(a => a.CreatedAt)
-                .FirstOrDefault();
+            var now = DateTime.UtcNow;
+
+            var inspectionCollectNow =
+                await IsInspectionCollectNowReadyAsync(
+                    detail.OrderId,
+                    ct);
+
+            var latestCollection =
+                detail.Appointments
+                    .Where(x =>
+                        x.AppointmentType ==
+                        AppointmentType.Collection)
+                    .OrderByDescending(x => x.CreatedAt)
+                    .FirstOrDefault();
 
             var isDirect =
-                detail.DeliveryMethod == DeliveryMethod.BuyerPickUp ||
-                detail.DeliveryMethod == DeliveryMethod.SellerDelivers;
+                detail.DeliveryMethod ==
+                    DeliveryMethod.BuyerPickUp ||
+                detail.DeliveryMethod ==
+                    DeliveryMethod.SellerDelivers;
 
             var collectionConfirmationOpen =
                 latestCollection?.ScheduledAt.HasValue == true &&
-                (latestCollection.AppointmentStatus == AppointmentStatus.Scheduled ||
-                 latestCollection.AppointmentStatus == AppointmentStatus.InProgress) &&
-                IsCollectionConfirmationOpen(latestCollection.ScheduledAt.Value, DateTime.UtcNow);
+                (
+                    latestCollection.AppointmentStatus ==
+                        AppointmentStatus.Scheduled ||
+                    latestCollection.AppointmentStatus ==
+                        AppointmentStatus.InProgress
+                ) &&
+                IsCollectionConfirmationOpen(
+                    latestCollection.ScheduledAt.Value,
+                    now);
 
             var ghnDelivered =
-                detail.DeliveryMethod == DeliveryMethod.GhnDelivery &&
-                detail.Shipment?.ShipmentStatus == ShipmentStatus.Delivered &&
+                detail.DeliveryMethod ==
+                    DeliveryMethod.GhnDelivery &&
+                detail.Shipment?.ShipmentStatus ==
+                    ShipmentStatus.Delivered &&
                 detail.Shipment.DeliveredAt.HasValue;
 
             if (detail.OrderStatus == OrderStatus.Processing)
             {
-                if (isSeller &&
-                    isDirect &&
-                    collectionConfirmationOpen &&
+                if (
+                    isSeller &&
+                    (
+                        inspectionCollectNow ||
+                        (
+                            isDirect &&
+                            collectionConfirmationOpen
+                        )
+                    ) &&
                     !detail.SellerHandoverConfirmedAt.HasValue)
                 {
                     canConfirm = true;
-                    confirmAction = OrderConfirmAction.ConfirmHandover;
+
+                    confirmAction =
+                        OrderConfirmAction.ConfirmHandover;
                 }
-                else if (isBuyer &&
-                         !detail.BuyerReceivedConfirmedAt.HasValue &&
-                         ((isDirect && collectionConfirmationOpen) || ghnDelivered))
+                else if (
+                    isBuyer &&
+                    !detail.BuyerReceivedConfirmedAt.HasValue &&
+                    (
+                        inspectionCollectNow ||
+                        (
+                            isDirect &&
+                            collectionConfirmationOpen
+                        ) ||
+                        ghnDelivered
+                    ))
                 {
                     canConfirm = true;
-                    confirmAction = OrderConfirmAction.ConfirmReceived;
+
+                    confirmAction =
+                        OrderConfirmAction.ConfirmReceived;
                 }
             }
 
             var canReview =
-                detail.OrderStatus == OrderStatus.Completed &&
+                detail.OrderStatus ==
+                    OrderStatus.Completed &&
                 !detail.Review.HasReviewed;
 
             var canDispute = false;
@@ -537,21 +724,34 @@ namespace HomeCycle.Application.Services.Orders
                 }
                 else if (detail.OrderStatus == OrderStatus.Completed)
                 {
-                    var disputeWindowStart =
-                        detail.Shipment?.DeliveredAt ??
-                        detail.CompletedAt;
+                    DateTime? disputeWindowEndsAt =
+                        detail.DisputeWindowEndsAt;
 
-                    if (disputeWindowStart.HasValue)
+                    // Fallback cho Order cũ được tạo trước Phase 4B,
+                    // chưa có snapshot DisputeWindowEndsAt.
+                    if (!disputeWindowEndsAt.HasValue)
                     {
-                        var disputeWindow =
-                            await _disputeWindowPolicy.GetOrderDisputeWindowAsync(
-                                agreement.SellerId,
-                                ct);
+                        var disputeWindowStart =
+                            detail.Shipment?.DeliveredAt ??
+                            detail.CompletedAt;
 
-                        canDispute =
-                            DateTime.UtcNow <=
-                            disputeWindowStart.Value.Add(disputeWindow);
+                        if (disputeWindowStart.HasValue)
+                        {
+                            var disputeWindow =
+                                await _disputeWindowPolicy
+                                    .GetOrderDisputeWindowAsync(
+                                        agreement.SellerId,
+                                        ct);
+
+                            disputeWindowEndsAt =
+                                disputeWindowStart.Value
+                                    .Add(disputeWindow);
+                        }
                     }
+
+                    canDispute =
+                        disputeWindowEndsAt.HasValue &&
+                        now <= disputeWindowEndsAt.Value;
                 }
             }
 
@@ -559,12 +759,14 @@ namespace HomeCycle.Application.Services.Orders
             {
                 CanConfirm = canConfirm,
                 ConfirmAction = confirmAction,
+
                 CanReview = canReview,
                 CanDispute = canDispute,
 
-                AllowedDisputeCategories = canDispute
-                    ? BuildAllowedDisputeCategories(detail)
-                    : Array.Empty<DisputeCategory>()
+                AllowedDisputeCategories =
+                    canDispute
+                        ? BuildAllowedDisputeCategories(detail)
+                        : Array.Empty<DisputeCategory>()
             };
         }
 

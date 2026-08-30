@@ -95,7 +95,10 @@ namespace HomeCycle.Infrastructure.Repositories.Orders
                 TotalCount = totalCount
             };
         }
-        public async Task<OrderDetailDto?> GetDetailWithRelationsAsync(Guid orderId, Guid currentUserId, CancellationToken ct = default)
+        public async Task<OrderDetailDto?> GetDetailWithRelationsAsync(
+    Guid orderId,
+    Guid currentUserId,
+    CancellationToken ct = default)
         {
             var entity = await _db.Orders
                 .AsNoTracking()
@@ -104,46 +107,74 @@ namespace HomeCycle.Infrastructure.Repositories.Orders
                 .Include(o => o.Shipments)
                 .Include(o => o.Disputes)
                 .Include(o => o.Payments)
-                .Include(o => o.Agreement).ThenInclude(a => a.Buyer)
-                .Include(o => o.Agreement).ThenInclude(a => a.Seller)
-                .FirstOrDefaultAsync(x => x.OrderId == orderId, ct);
+                .Include(o => o.Agreement)
+                    .ThenInclude(a => a.Buyer)
+                .Include(o => o.Agreement)
+                    .ThenInclude(a => a.Seller)
+                .FirstOrDefaultAsync(
+                    x => x.OrderId == orderId,
+                    ct);
 
             if (entity == null)
                 return null;
 
-            var isBuyer = entity.Agreement.BuyerId == currentUserId;
-            var counterparty = isBuyer ? entity.Agreement.Seller : entity.Agreement.Buyer;
+            var isBuyer =
+                entity.Agreement.BuyerId ==
+                currentUserId;
 
-            var thumbnailUrl = await _db.Media
-                .Where(m => m.TargetId == entity.PostId && m.TargetType == "Post")
-                .OrderBy(m => m.DisplayOrder)
-                .Select(m => m.Url)
-                .FirstOrDefaultAsync(ct);
+            var counterparty =
+                isBuyer
+                    ? entity.Agreement.Seller
+                    : entity.Agreement.Buyer;
 
-            var latestPaidPayment = entity.Payments
-                .Where(p =>
-                    p.PaymentStatus == (int)PaymentStatus.Completed &&
-                    p.PaidAt.HasValue)
-                .OrderByDescending(p => p.PaidAt)
-                .FirstOrDefault();
+            var thumbnailUrl =
+                await _db.Media
+                    .Where(m =>
+                        m.TargetId == entity.PostId &&
+                        m.TargetType == "Post")
+                    .OrderBy(m => m.DisplayOrder)
+                    .Select(m => m.Url)
+                    .FirstOrDefaultAsync(ct);
 
-            var latestShipment = entity.Shipments
-                .OrderByDescending(s => s.CreatedAt)
-                .FirstOrDefault();
+            var latestPaidPayment =
+                entity.Payments
+                    .Where(p =>
+                        p.PaidAt.HasValue &&
+                        (
+                            p.PaymentStatus ==
+                                (int)PaymentStatus.Completed ||
+                            p.PaymentStatus ==
+                                (int)PaymentStatus.PartiallyRefunded ||
+                            p.PaymentStatus ==
+                                (int)PaymentStatus.Refunded
+                        ))
+                    .OrderByDescending(p => p.PaidAt)
+                    .FirstOrDefault();
 
-            var latestDispute = entity.Disputes
-                .OrderByDescending(d => d.CreatedAt)
-                .FirstOrDefault();
+            var latestShipment =
+                entity.Shipments
+                    .OrderByDescending(s => s.CreatedAt)
+                    .FirstOrDefault();
+
+            var latestDispute =
+                entity.Disputes
+                    .OrderByDescending(d => d.CreatedAt)
+                    .FirstOrDefault();
 
             AgreementDetailsDto? agreementDetails = null;
 
-            if (!string.IsNullOrWhiteSpace(entity.Agreement.AgreementDetailsJsonb))
+            if (!string.IsNullOrWhiteSpace(
+                entity.Agreement.AgreementDetailsJsonb))
             {
                 try
                 {
-                    agreementDetails = JsonSerializer.Deserialize<AgreementDetailsDto>(
-                        entity.Agreement.AgreementDetailsJsonb,
-                        new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                    agreementDetails =
+                        JsonSerializer.Deserialize<AgreementDetailsDto>(
+                            entity.Agreement.AgreementDetailsJsonb,
+                            new JsonSerializerOptions
+                            {
+                                PropertyNameCaseInsensitive = true
+                            });
                 }
                 catch (JsonException)
                 {
@@ -151,96 +182,191 @@ namespace HomeCycle.Infrastructure.Repositories.Orders
                 }
             }
 
-            var counterpartySummary = new CounterpartySummaryDto
-            {
-                UserId = counterparty.UserId,
-                Username = counterparty.Username,
-                PhoneNumber = counterparty.PhoneNumber,
-                AvatarUrl = counterparty.AvatarUrl
-            };
-
-            var paymentSummary = latestPaidPayment == null
-                ? null
-                : new PaymentSummaryDto
+            var counterpartySummary =
+                new CounterpartySummaryDto
                 {
-                    PaymentId = latestPaidPayment.PaymentId,
-                    PaymentMethod = latestPaidPayment.PaymentMethod.HasValue
-                        ? (PaymentMethod?)latestPaidPayment.PaymentMethod.Value
-                        : null,
-                    Amount = latestPaidPayment.Amount,
-                    PaidAt = latestPaidPayment.PaidAt
+                    UserId = counterparty.UserId,
+                    Username = counterparty.Username,
+                    PhoneNumber = counterparty.PhoneNumber,
+                    AvatarUrl = counterparty.AvatarUrl
                 };
 
-            var shipmentSummary = latestShipment == null
-                ? null
-                : new ShipmentSummaryDto
+            PaymentSummaryDto? paymentSummary = null;
+
+            if (latestPaidPayment != null)
+            {
+                paymentSummary =
+                    new PaymentSummaryDto
+                    {
+                        PaymentId =
+                            latestPaidPayment.PaymentId,
+
+                        PaymentMethod =
+                            latestPaidPayment.PaymentMethod.HasValue
+                                ? (PaymentMethod?)
+                                    latestPaidPayment.PaymentMethod.Value
+                                : null,
+
+                        PaymentStatus =
+                            latestPaidPayment.PaymentStatus.HasValue
+                                ? (PaymentStatus?)
+                                    latestPaidPayment.PaymentStatus.Value
+                                : null,
+
+                        Amount =
+                            latestPaidPayment.Amount,
+
+                        PaidAt =
+                            latestPaidPayment.PaidAt
+                    };
+            }
+
+            ShipmentSummaryDto? shipmentSummary = null;
+
+            if (latestShipment != null)
+            {
+                shipmentSummary =
+                    new ShipmentSummaryDto
+                    {
+                        ShipmentId =
+                            latestShipment.ShipmentId,
+
+                        ShipmentStatus =
+                            latestShipment.ShipmentStatus.HasValue
+                                ? (ShipmentStatus?)
+                                    latestShipment.ShipmentStatus.Value
+                                : null,
+
+                        DeliveredAt =
+                            latestShipment.DeliveredAt
+                    };
+            }
+
+            var disputeSummary =
+                new DisputeSummaryDto
                 {
-                    ShipmentId = latestShipment.ShipmentId,
-                    ShipmentStatus = latestShipment.ShipmentStatus.HasValue
-                        ? (ShipmentStatus?)latestShipment.ShipmentStatus.Value
-                        : null,
-                    DeliveredAt = latestShipment.DeliveredAt
+                    HasActiveDispute =
+                        latestDispute?.DisputeStatus ==
+                        (int)DisputeStatus.Pending,
+
+                    LatestDisputeId =
+                        latestDispute?.DisputeId,
+
+                    LatestDisputeStatus =
+                        latestDispute?.DisputeStatus.HasValue ==
+                        true
+                            ? (DisputeStatus?)
+                                latestDispute.DisputeStatus.Value
+                            : null
                 };
 
-            var disputeSummary = new DisputeSummaryDto
-            {
-                HasActiveDispute = latestDispute?.DisputeStatus == (int)DisputeStatus.Pending,
-                LatestDisputeId = latestDispute?.DisputeId,
-                LatestDisputeStatus = latestDispute?.DisputeStatus.HasValue == true
-                    ? (DisputeStatus?)latestDispute.DisputeStatus.Value
-                    : null
-            };
+            var reviews =
+                entity.Reviews
+                    .Select(r => r.ToDomain())
+                    .ToList();
 
-            var reviews = entity.Reviews
-                .Select(r => r.ToDomain())
-                .ToList();
+            OrderCancellationDto? cancellation = null;
+
+            if (entity.CancelledAt.HasValue)
+            {
+                cancellation =
+                    new OrderCancellationDto
+                    {
+                        CancelledAt =
+                            entity.CancelledAt.Value,
+
+                        CancelledByUserId =
+                            entity.CancelledByUserId,
+
+                        Reason =
+                            entity.CancellationReason
+                    };
+            }
 
             return new OrderDetailDto
             {
                 OrderId = entity.OrderId,
                 AgreementId = entity.AgreementId,
                 PostId = entity.PostId,
-                NegotiationId = entity.Agreement.NegotiationId,
+                NegotiationId =
+                    entity.Agreement.NegotiationId,
 
                 OrderCode = entity.OrderCode,
                 ProductName = entity.ProductName,
                 Quantity = entity.Quantity,
 
-                OriginalTotalAmount = entity.OriginalTotalAmount,
-                FinalTotalAmount = entity.FinalTotalAmount,
-                AmountPaid = entity.AmountPaid,
-                AmountRemaining = entity.AmountRemaining,
-                ShippingFee = agreementDetails?.EstimatedShippingFee,
+                OriginalTotalAmount =
+                    entity.OriginalTotalAmount,
 
-                PaymentStatus = entity.PaymentStatus.HasValue
-                    ? (PaymentStatus?)entity.PaymentStatus.Value
-                    : null,
+                FinalTotalAmount =
+                    entity.FinalTotalAmount,
 
-                OrderStatus = entity.OrderStatus.HasValue
-                    ? (OrderStatus?)entity.OrderStatus.Value
-                    : null,
+                AmountPaid =
+                    entity.AmountPaid,
 
-                DeliveryMethod = agreementDetails?.DeliveryMethod,
+                AmountRemaining =
+                    entity.AmountRemaining,
+
+                ShippingFee =
+                    agreementDetails?.EstimatedShippingFee,
+
+                PaymentStatus =
+                    entity.PaymentStatus.HasValue
+                        ? (PaymentStatus?)
+                            entity.PaymentStatus.Value
+                        : null,
+
+                OrderStatus =
+                    entity.OrderStatus.HasValue
+                        ? (OrderStatus?)
+                            entity.OrderStatus.Value
+                        : null,
+
+                DeliveryMethod =
+                    agreementDetails?.DeliveryMethod,
 
                 CreatedAt = entity.CreatedAt,
                 UpdatedAt = entity.UpdatedAt,
                 CompletedAt = entity.CompletedAt,
 
-                SellerHandoverConfirmedAt = entity.SellerHandoverConfirmedAt,
-                BuyerReceivedConfirmedAt = entity.BuyerReceivedConfirmedAt,
+                SellerHandoverConfirmedAt =
+                    entity.SellerHandoverConfirmedAt,
 
-                CompletionSource = entity.CompletionSource.HasValue
-                    ? (OrderCompletionSource?)entity.CompletionSource.Value
-                    : null,
+                BuyerReceivedConfirmedAt =
+                    entity.BuyerReceivedConfirmedAt,
 
-                ThumbnailUrl = thumbnailUrl,
-                PostDescription = entity.Post?.Description,
+                CompletionSource =
+                    entity.CompletionSource.HasValue
+                        ? (OrderCompletionSource?)
+                            entity.CompletionSource.Value
+                        : null,
 
-                Counterparty = counterpartySummary,
-                Payment = paymentSummary,
-                Shipment = shipmentSummary,
-                Reviews = reviews,
-                Dispute = disputeSummary
+                DisputeWindowEndsAt =
+                    entity.DisputeWindowEndsAt,
+
+                Cancellation =
+                    cancellation,
+
+                ThumbnailUrl =
+                    thumbnailUrl,
+
+                PostDescription =
+                    entity.Post?.Description,
+
+                Counterparty =
+                    counterpartySummary,
+
+                Payment =
+                    paymentSummary,
+
+                Shipment =
+                    shipmentSummary,
+
+                Reviews =
+                    reviews,
+
+                Dispute =
+                    disputeSummary
             };
         }
 

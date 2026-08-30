@@ -627,14 +627,19 @@ namespace HomeCycle.Application.Mappings
                         : null));
 
             CreateMap<appointment, AppointmentDetailDto>()
-                .ForMember(dest => dest.AppointmentType,
-                    opt => opt.MapFrom(src => src.AppointmentType.HasValue
-                        ? (AppointmentType?)src.AppointmentType.Value
-                        : null))
-                .ForMember(dest => dest.AppointmentStatus,
-                    opt => opt.MapFrom(src => src.AppointmentStatus.HasValue
-                        ? (AppointmentStatus?)src.AppointmentStatus.Value
-                        : null))
+                .ForMember(
+                    dest => dest.AppointmentType,
+                    opt => opt.MapFrom(src =>
+                        src.AppointmentType.HasValue
+                            ? (AppointmentType?)src.AppointmentType.Value
+                            : null))
+                .ForMember(
+                    dest => dest.AppointmentStatus,
+                    opt => opt.MapFrom(src =>
+                        src.AppointmentStatus.HasValue
+                            ? (AppointmentStatus?)src.AppointmentStatus.Value
+                            : null))
+                .ForMember(dest => dest.IsOverdue, opt => opt.Ignore())
                 .ForMember(dest => dest.Inspection, opt => opt.Ignore())
                 .ForMember(dest => dest.Collection, opt => opt.Ignore())
                 .ForMember(dest => dest.Cancellation, opt => opt.Ignore())
@@ -643,10 +648,12 @@ namespace HomeCycle.Application.Mappings
                 .ForMember(dest => dest.Actions, opt => opt.Ignore());
 
             CreateMap<inspection_appointment, InspectionAppointmentDetailDto>()
-                .ForMember(dest => dest.CheckIn, opt => opt.Ignore());
+                .ForMember(dest => dest.CheckIn, opt => opt.Ignore())
+                .ForMember(dest => dest.InspectionForm, opt => opt.Ignore());
 
             CreateMap<collection_appointment, CollectionAppointmentDetailDto>()
                 .ForMember(dest => dest.DeliveryMethod, opt => opt.Ignore());
+
         }
     }
 }

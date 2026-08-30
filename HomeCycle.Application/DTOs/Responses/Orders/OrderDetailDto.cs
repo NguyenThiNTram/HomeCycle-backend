@@ -41,6 +41,10 @@ namespace HomeCycle.Application.DTOs.Responses.Orders
         public string? ThumbnailUrl { get; set; }
         public string? PostDescription { get; set; }
 
+        public DateTime? DisputeWindowEndsAt { get; set; }
+
+        public OrderCancellationDto? Cancellation { get; set; }
+
         public CounterpartySummaryDto Counterparty { get; set; } = new();
 
         public PaymentSummaryDto? Payment { get; set; }
@@ -55,6 +59,12 @@ namespace HomeCycle.Application.DTOs.Responses.Orders
         public OrderActionDto Actions { get; set; } = new();
     }
 
+    public class OrderCancellationDto
+    {
+        public DateTime CancelledAt { get; set; }
+        public Guid? CancelledByUserId { get; set; }
+        public string? Reason { get; set; }
+    }
     public class CounterpartySummaryDto
     {
         public Guid UserId { get; set; }
@@ -66,7 +76,10 @@ namespace HomeCycle.Application.DTOs.Responses.Orders
     public class PaymentSummaryDto
     {
         public Guid PaymentId { get; set; }
+
         public PaymentMethod? PaymentMethod { get; set; }
+        public PaymentStatus? PaymentStatus { get; set; }
+
         public decimal? Amount { get; set; }
         public DateTime? PaidAt { get; set; }
     }

@@ -10,6 +10,7 @@ namespace HomeCycle.Infrastructure;
 [Index("InspectionAppointmentId", Name = "Inspection_Form_InspectionAppointmentId_key", IsUnique = true)]
 [Index("InspectorId", Name = "idx_inspection_inspector")]
 [Index("OrderId", Name = "idx_inspection_order")]
+[Index(nameof(InspectionStatus), Name = "idx_inspection_form_status")]
 public partial class Inspection_Form
 {
     [Key]
@@ -17,7 +18,7 @@ public partial class Inspection_Form
 
     public Guid InspectionAppointmentId { get; set; }
 
-    public Guid? OrderId { get; set; }
+    public Guid OrderId { get; set; }
 
     public Guid InspectorId { get; set; }
 
@@ -49,14 +50,23 @@ public partial class Inspection_Form
     public string? CollectAction { get; set; }
 
     public int? InspectionStatus { get; set; }
+    public int Revision { get; set; }
+
+    public DateTime? SubmittedAt { get; set; }
+    public DateTime? SellerDecisionAt { get; set; }
+    public string? SellerDecisionReason { get; set; }
 
     public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
 
-    [ForeignKey("InspectionAppointmentId")]
-    [InverseProperty("Inspection_Form")]
+    [ForeignKey(nameof(InspectionAppointmentId))]
+    [InverseProperty(nameof(Inspection_Appointment.Inspection_Form))]
     public virtual Inspection_Appointment InspectionAppointment { get; set; } = null!;
 
-    [ForeignKey("InspectorId")]
-    [InverseProperty("Inspection_Forms")]
+    [ForeignKey(nameof(InspectorId))]
+    [InverseProperty(nameof(User.Inspection_Forms))]
     public virtual User Inspector { get; set; } = null!;
+
+    [ForeignKey(nameof(OrderId))]
+    public virtual Order Order { get; set; } = null!;
 }

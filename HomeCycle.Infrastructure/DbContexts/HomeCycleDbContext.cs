@@ -402,7 +402,10 @@ public partial class HomeCycleDbContext : DbContext
             entity.HasKey(e => e.InspectionFormId).HasName("Inspection_Form_pkey");
 
             entity.Property(e => e.InspectionFormId).ValueGeneratedNever();
+            entity.Property(e => e.InspectionStatus).HasDefaultValue(0);
+            entity.Property(e => e.Revision).HasDefaultValue(1);
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()");
+            entity.Property(e => e.UpdatedAt).HasDefaultValueSql("now()");
 
             entity.HasOne(d => d.InspectionAppointment).WithOne(p => p.Inspection_Form)
                 .OnDelete(DeleteBehavior.ClientSetNull)
@@ -411,6 +414,11 @@ public partial class HomeCycleDbContext : DbContext
             entity.HasOne(d => d.Inspector).WithMany(p => p.Inspection_Forms)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("fk_insp_form_inspectorid");
+
+            entity.HasOne(d => d.Order).WithMany()
+                .HasForeignKey(d => d.OrderId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("fk_inspection_form_order");
         });
 
         modelBuilder.Entity<Media>(entity =>
@@ -552,6 +560,11 @@ public partial class HomeCycleDbContext : DbContext
             entity.HasOne(d => d.Post).WithMany(p => p.Orders)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("fk_order_postid");
+
+            entity.HasOne<User>().WithMany()
+                .HasForeignKey(e => e.CancelledByUserId)
+                .OnDelete(DeleteBehavior.SetNull)
+                .HasConstraintName("fk_order_cancelled_by");
         });
 
         modelBuilder.Entity<Payment>(entity =>

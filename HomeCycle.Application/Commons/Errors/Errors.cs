@@ -379,4 +379,77 @@ namespace HomeCycle.Application.Commons.Errors
         public static Error CollectionConfirmationNotOpen(DateTime scheduledAt) =>
             new("Appointment.CollectionConfirmationNotOpen", $"Chưa đến ngày được phép xác nhận giao nhận. Lịch thu gom: {scheduledAt:O}.");
     }
+
+    public static class InspectionErrors
+    {
+        public static readonly Error NotFound =
+            new("Inspection.NotFound", "Không tìm thấy biểu mẫu kiểm định.");
+
+        public static readonly Error AlreadyExists =
+            new("Inspection.AlreadyExists", "Lịch kiểm định này đã có biểu mẫu kiểm định.");
+
+        public static readonly Error BuyerOnly =
+            new("Inspection.BuyerOnly", "Chỉ Buyer thực hiện kiểm định mới có quyền thao tác biểu mẫu.");
+
+        public static readonly Error SellerOnly =
+            new("Inspection.SellerOnly", "Chỉ Seller của giao dịch mới có quyền xác nhận kết quả kiểm định.");
+
+        public static readonly Error InvalidAppointment =
+            new("Inspection.InvalidAppointment", "Lịch hẹn này không phải lịch kiểm định hợp lệ.");
+
+        public static readonly Error AppointmentNotInProgress =
+            new("Inspection.AppointmentNotInProgress", "Biểu mẫu chỉ được xử lý khi lịch kiểm định đang diễn ra.");
+
+        public static readonly Error BothCheckInRequired =
+            new("Inspection.BothCheckInRequired", "Buyer và Seller phải check-in trước khi tiến hành kiểm định.");
+
+        public static readonly Error DraftOnly =
+            new("Inspection.DraftOnly", "Chỉ biểu mẫu Draft mới được chỉnh sửa hoặc gửi.");
+
+        public static readonly Error PendingConfirmationOnly =
+            new("Inspection.PendingConfirmationOnly", "Biểu mẫu không ở trạng thái chờ Seller xác nhận.");
+
+        public static readonly Error RevisionMismatch =
+            new("Inspection.RevisionMismatch", "Biểu mẫu kiểm định đã được cập nhật. Vui lòng tải lại phiên bản mới nhất.");
+
+        public static readonly Error Incomplete =
+            new("Inspection.Incomplete", "Vui lòng hoàn thành đầy đủ checklist và kết luận kiểm định trước khi gửi.");
+
+        public static readonly Error SuggestedPriceRequired =
+            new("Inspection.SuggestedPriceRequired", "Kết luận điều chỉnh giá yêu cầu nhập giá mới.");
+
+        public static readonly Error SuggestedPriceUnchanged =
+            new("Inspection.SuggestedPriceUnchanged", "Giá đề xuất mới phải khác giá giao dịch hiện tại.");
+
+        public static readonly Error InvalidOrderPrice =
+            new("Inspection.InvalidOrderPrice", "Không xác định được giá giao dịch hiện tại.");
+
+        public static readonly Error AcceptedRequired =
+            new("Inspection.AcceptedRequired", "Biểu mẫu phải được Seller xác nhận trước khi tiếp tục thu gom.");
+
+        public static readonly Error FailedCannotCollect =
+            new("Inspection.FailedCannotCollect", "Kết quả kiểm định không đạt nên không thể tiếp tục thu gom.");
+
+        public static readonly Error CollectActionAlreadySelected =
+            new("Inspection.CollectActionAlreadySelected", "Phương án thu gom đã được lựa chọn.");
+
+        public static readonly Error CancelRequiresRejectedForm =
+            new("Inspection.CancelRequiresRejectedForm", "Chỉ có thể hủy giao dịch theo luồng này sau khi Seller từ chối kết quả kiểm định.");
+
+        public static readonly Error ActiveDisputeBlocksCancellation =
+            new("Inspection.ActiveDisputeBlocksCancellation", "Đơn hàng đang có tranh chấp nên không thể hủy trực tiếp.");
+
+        public static readonly Error DepositMissing =
+            new("Inspection.DepositMissing", "Không xác định được khoản tiền cọc cần hoàn.");
+
+        public static readonly Error RefundPaymentNotFound =
+            new("Inspection.RefundPaymentNotFound", "Không tìm thấy giao dịch thanh toán để thực hiện hoàn tiền.");
+
+        public static readonly Error RefundWalletNotFound =
+            new("Inspection.RefundWalletNotFound", "Không tìm thấy ví cần thiết để thực hiện hoàn tiền.");
+
+        public static readonly Error InsufficientHeldBalance =
+            new("Inspection.InsufficientHeldBalance", "Số dư đang tạm giữ không đủ để thực hiện hoàn tiền.");
+    }
+
 }
