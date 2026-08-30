@@ -85,13 +85,68 @@ namespace HomeCycle.API.Controllers
             return Ok(result.Data);
         }
 
-        // ---- Check-in tại điểm hẹn (Phương án A) ----
+        // ---- Check-in chỉ áp dụng cho Inspection Appointment ----
 
         [HttpPost("{appointmentId:guid}/check-in")]
         public async Task<IActionResult> CheckIn(Guid appointmentId, CancellationToken cancellationToken)
         {
             var currentUserId = GetCurrentUserId();
             var result = await _appointmentService.CheckInAsync(appointmentId, currentUserId, cancellationToken);
+
+            if (!result.IsSuccess)
+                return BadRequest(result.Error);
+
+            return Ok(result.Data);
+        }
+
+        [HttpPost("{appointmentId:guid}/reschedule")]
+        public async Task<IActionResult> RequestReschedule(Guid appointmentId, [FromBody] RescheduleAppointmentRequest request, CancellationToken cancellationToken)
+        {
+            var currentUserId = GetCurrentUserId();
+
+            var result =
+                await _appointmentService.RequestRescheduleAsync(appointmentId, currentUserId, request, cancellationToken);
+
+            if (!result.IsSuccess)
+                return BadRequest(result.Error);
+
+            return Ok(result.Data);
+        }
+
+
+        [HttpPost("{proposalAppointmentId:guid}/reschedule/accept")]
+        public async Task<IActionResult> AcceptReschedule(Guid proposalAppointmentId, CancellationToken cancellationToken)
+        {
+            var currentUserId = GetCurrentUserId();
+
+            var result = await _appointmentService.AcceptRescheduleAsync(proposalAppointmentId, currentUserId, cancellationToken);
+
+            if (!result.IsSuccess)
+                return BadRequest(result.Error);
+
+            return Ok(result.Data);
+        }
+
+        [HttpPost("{proposalAppointmentId:guid}/reschedule/reject")]
+        public async Task<IActionResult> RejectReschedule(Guid proposalAppointmentId, [FromBody] RejectAppointmentRescheduleRequest request, CancellationToken cancellationToken)
+        {
+            var currentUserId = GetCurrentUserId();
+
+            var result = await _appointmentService.RejectRescheduleAsync(proposalAppointmentId, currentUserId, request, cancellationToken);
+
+            if (!result.IsSuccess)
+                return BadRequest(result.Error);
+
+            return Ok(result.Data);
+        }
+
+
+        [HttpPost("{appointmentId:guid}/cancel")]
+        public async Task<IActionResult> Cancel(Guid appointmentId, [FromBody] CancelAppointmentRequest request, CancellationToken cancellationToken)
+        {
+            var currentUserId = GetCurrentUserId();
+
+            var result = await _appointmentService.CancelAsync(appointmentId, currentUserId, request, cancellationToken);
 
             if (!result.IsSuccess)
                 return BadRequest(result.Error);

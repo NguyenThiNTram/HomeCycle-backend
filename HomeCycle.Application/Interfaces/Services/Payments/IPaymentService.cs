@@ -2,6 +2,7 @@
 using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Requests.Payments;
 using HomeCycle.Application.DTOs.Responses.Payments;
+using HomeCycle.Domain.Entities;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -17,5 +18,6 @@ namespace HomeCycle.Application.Interfaces.Services.Payments
         Task<Result<bool>> ExecuteWalletPaymentAsync(Guid agreementId, Guid payerId, CancellationToken ct = default);
         Task<Result<string>> SyncPaymentStatusAsync(Guid agreementId, Guid payerId, CancellationToken ct = default);
         Task<Result<PagedResult<PaymentHistoryResponseDto>>> GetMyPaymentHistoryAsync(Guid userId, PaymentHistorySearchRequest request, CancellationToken ct = default);
+        Task<Result<bool>> RefundOrderHeldAmountAsync(order order, agreement_form agreement, decimal amount, CancellationToken ct = default);
     }
 }

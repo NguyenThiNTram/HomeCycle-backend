@@ -248,9 +248,6 @@ namespace HomeCycle.Application.Commons.Errors
         public static readonly Error OrderNotFound =
             new("DISPUTE_ORDER_NOT_FOUND", "Không tìm thấy đơn hàng.");
 
-        public static readonly Error AgreementNotFound =
-            new("DISPUTE_AGREEMENT_NOT_FOUND", "Không tìm thấy thỏa thuận của đơn hàng.");
-
         public static readonly Error Forbidden =
             new("DISPUTE_FORBIDDEN", "Bạn không có quyền thực hiện thao tác này trên đơn hàng hoặc tranh chấp.");
 
@@ -284,11 +281,11 @@ namespace HomeCycle.Application.Commons.Errors
         public static readonly Error NotFound =
             new("Order.NotFound", "Không tìm thấy đơn hàng.");
 
-        public static readonly Error AgreementNotFound =
-            new("Agreement.NotFound", "Không tìm thấy thỏa thuận của đơn hàng.");
+        public static readonly Error NotCreated =
+            new("Order.NotCreated", "Thỏa thuận chưa phát sinh đơn hàng do chưa thanh toán thành công.");
 
         public static readonly Error Forbidden =
-            new("Auth.Forbidden", "Bạn không có quyền thực hiện thao tác này trên đơn hàng.");
+            new("Order.Forbidden", "Bạn không có quyền thực hiện thao tác này trên đơn hàng.");
 
         public static readonly Error InvalidStatus =
             new("Order.InvalidStatus", "Trạng thái hiện tại của đơn hàng không cho phép thực hiện thao tác này.");
@@ -299,16 +296,204 @@ namespace HomeCycle.Application.Commons.Errors
         public static readonly Error DirectHandoverOnly =
             new("Order.DirectHandoverOnly", "Xác nhận bàn giao của Seller chỉ áp dụng cho giao nhận trực tiếp.");
 
-        public static readonly Error CollectionAppointmentNotFound =
-            new("Order.CollectionAppointmentNotFound", "Không tìm thấy lịch thu gom của đơn hàng.");
-
-        public static readonly Error BothCheckInRequired =
-            new("Order.BothCheckInRequired", "Buyer và Seller phải check-in lịch thu gom trước khi xác nhận giao nhận.");
-
         public static readonly Error ShipmentNotFound =
             new("Order.ShipmentNotFound", "Không tìm thấy thông tin vận chuyển của đơn hàng.");
 
         public static readonly Error ShipmentNotDelivered =
             new("Order.ShipmentNotDelivered", "Đơn vận chuyển chưa được xác nhận giao thành công.");
+        public static readonly Error CancellationRequiresRejectedInspection =
+            new("Order.CancellationRequiresRejectedInspection", "Chỉ có thể hủy đơn theo luồng này sau khi Seller từ chối kết quả kiểm định.");
+
+        public static readonly Error ActiveDisputeBlocksCancellation =
+            new("Order.ActiveDisputeBlocksCancellation", "Đơn hàng đang có tranh chấp nên không thể hủy trực tiếp.");
     }
+
+    public static class PlatformPolicyErrors
+    {
+        public static Error ActiveNotFound(PlatformPolicyType policyType) =>
+            new("PlatformPolicy.ActiveNotFound", $"Không tìm thấy policy đang hoạt động cho '{policyType}'.");
+
+        public static Error InvalidContent(PlatformPolicyType policyType) =>
+            new("PlatformPolicy.InvalidContent", $"Nội dung cấu hình của policy '{policyType}' không hợp lệ.");
+
+        public static readonly Error InvalidDisputePolicy =
+            new("PlatformPolicy.InvalidDisputePolicy", "Thời gian dispute của tài khoản uy tín thấp không được ngắn hơn thời gian dispute thông thường.");
+
+        public static readonly Error InvalidAppointmentPolicy =
+            new("PlatformPolicy.InvalidAppointmentPolicy", "Thời hạn yêu cầu đổi lịch phải lớn hơn hoặc bằng thời hạn được phép hủy lịch.");
+        public static Error VersionNotFound(PlatformPolicyType policyType, int version) =>
+            new("PlatformPolicy.VersionNotFound", $"Không tìm thấy version {version} của policy '{policyType}'.");
+
+        public static readonly Error VersionAlreadyActive =
+            new("PlatformPolicy.VersionAlreadyActive", "Version này hiện đang là version được áp dụng.");
+
+        public static Error UnsupportedType(string policyType) =>
+            new("PlatformPolicy.UnsupportedType", $"Policy type '{policyType}' không được hệ thống hỗ trợ.");
+    }
+
+    public static class AgreementErrors
+    {
+        public static readonly Error NotFound =
+            new("Agreement.NotFound", "Không tìm thấy thỏa thuận.");
+
+        public static readonly Error AlreadyExists =
+            new("Agreement.AlreadyExists", "Thỏa thuận đã tồn tại.");
+
+        public static readonly Error Forbidden =
+            new("Agreement.Forbidden", "Bạn không có quyền thực hiện thao tác này trên thỏa thuận.");
+
+        public static readonly Error InvalidStatus =
+            new("Agreement.InvalidStatus", "Trạng thái hiện tại của thỏa thuận không cho phép thực hiện thao tác này.");
+
+        public static readonly Error AlreadyConfirmed =
+            new("Agreement.AlreadyConfirmed", "Bạn đã xác nhận thỏa thuận này rồi.");
+
+        public static readonly Error RevisionMismatch =
+            new("Agreement.RevisionMismatch", "Nội dung thỏa thuận vừa được cập nhật. Vui lòng tải lại và xem nội dung mới nhất trước khi xác nhận.");
+
+        public static readonly Error OnlySellerCanCreate =
+            new("Agreement.OnlySellerCanCreate", "Chỉ người bán mới có quyền tạo thỏa thuận.");
+    }
+
+    public static class AppointmentErrors
+    {
+        public static readonly Error NotFound =
+            new("Appointment.NotFound", "Không tìm thấy lịch hẹn.");
+
+        public static readonly Error Forbidden =
+            new("Appointment.Forbidden", "Bạn không có quyền thực hiện thao tác này trên lịch hẹn.");
+
+        public static readonly Error InvalidType =
+            new("Appointment.InvalidType", "Loại lịch hẹn không hợp lệ.");
+
+        public static readonly Error InvalidStatus =
+            new("Appointment.InvalidStatus", "Trạng thái hiện tại của lịch hẹn không cho phép thực hiện thao tác này.");
+
+        public static readonly Error InspectionDetailNotFound =
+            new("Appointment.InspectionDetailNotFound", "Không tìm thấy thông tin lịch kiểm định.");
+
+        public static readonly Error CollectionDetailNotFound =
+            new("Appointment.CollectionDetailNotFound", "Không tìm thấy thông tin lịch thu gom.");
+
+        public static readonly Error ScheduleMissing =
+            new("Appointment.ScheduleMissing", "Không xác định được thời gian của lịch hẹn.");
+
+        public static readonly Error Cancelled =
+            new("Appointment.Cancelled", "Lịch hẹn đã bị hủy.");
+
+        public static readonly Error AlreadyCompleted =
+            new("Appointment.AlreadyCompleted", "Lịch hẹn đã hoàn tất.");
+
+        public static readonly Error UnsupportedAction =
+            new("Appointment.UnsupportedAction", "Lịch hẹn này không hỗ trợ thao tác trực tiếp của người dùng.");
+
+        public static readonly Error CheckInInspectionOnly =
+            new("Appointment.CheckInInspectionOnly", "Check-in chỉ áp dụng cho lịch kiểm định.");
+
+        public static readonly Error CheckInAlreadyStarted =
+            new("Appointment.CheckInAlreadyStarted", "Không thể thay đổi lịch sau khi một trong hai bên đã check-in.");
+
+        public static readonly Error PendingRescheduleExists =
+            new("Appointment.PendingRescheduleExists", "Lịch hẹn đang có một yêu cầu đổi lịch chưa được phản hồi.");
+
+        public static readonly Error InvalidRescheduleProposal =
+            new("Appointment.InvalidRescheduleProposal", "Yêu cầu đổi lịch không hợp lệ.");
+
+        public static readonly Error CannotRespondOwnReschedule =
+            new("Appointment.CannotRespondOwnReschedule", "Người gửi yêu cầu đổi lịch không thể tự chấp nhận hoặc từ chối yêu cầu của mình.");
+
+        public static readonly Error RescheduleProposalExpired =
+            new("Appointment.RescheduleProposalExpired", "Thời gian được đề xuất cho lịch mới đã qua.");
+
+        public static readonly Error SameSchedule =
+            new("Appointment.SameSchedule", "Thời gian đề xuất mới phải khác lịch hiện tại.");
+
+        public static Error CheckInNotOpen(DateTime openAt) =>
+            new("Appointment.CheckInNotOpen", $"Check-in chưa mở. Có thể check-in từ {openAt:O}.");
+
+        public static Error RescheduleCutoffPassed(DateTime cutoff) =>
+            new("Appointment.RescheduleCutoffPassed", $"Đã quá thời hạn yêu cầu đổi lịch. Hạn cuối: {cutoff:O}.");
+
+        public static Error CancellationCutoffPassed(DateTime cutoff) =>
+            new("Appointment.CancellationCutoffPassed", $"Đã quá thời hạn hủy lịch. Hạn cuối: {cutoff:O}.");
+
+        public static Error CollectionConfirmationNotOpen(DateTime scheduledAt) =>
+            new("Appointment.CollectionConfirmationNotOpen", $"Chưa đến ngày được phép xác nhận giao nhận. Lịch thu gom: {scheduledAt:O}.");
+    }
+
+    public static class InspectionErrors
+    {
+        public static readonly Error NotFound =
+            new("Inspection.NotFound", "Không tìm thấy biểu mẫu kiểm định.");
+
+        public static readonly Error AlreadyExists =
+            new("Inspection.AlreadyExists", "Lịch kiểm định này đã có biểu mẫu kiểm định.");
+
+        public static readonly Error BuyerOnly =
+            new("Inspection.BuyerOnly", "Chỉ Buyer thực hiện kiểm định mới có quyền thao tác biểu mẫu.");
+
+        public static readonly Error SellerOnly =
+            new("Inspection.SellerOnly", "Chỉ Seller của giao dịch mới có quyền xác nhận kết quả kiểm định.");
+
+        public static readonly Error InvalidAppointment =
+            new("Inspection.InvalidAppointment", "Lịch hẹn này không phải lịch kiểm định hợp lệ.");
+
+        public static readonly Error AppointmentNotInProgress =
+            new("Inspection.AppointmentNotInProgress", "Biểu mẫu chỉ được xử lý khi lịch kiểm định đang diễn ra.");
+
+        public static readonly Error BothCheckInRequired =
+            new("Inspection.BothCheckInRequired", "Buyer và Seller phải check-in trước khi tiến hành kiểm định.");
+
+        public static readonly Error DraftOnly =
+            new("Inspection.DraftOnly", "Chỉ biểu mẫu Draft mới được chỉnh sửa hoặc gửi.");
+
+        public static readonly Error PendingConfirmationOnly =
+            new("Inspection.PendingConfirmationOnly", "Biểu mẫu không ở trạng thái chờ Seller xác nhận.");
+
+        public static readonly Error RevisionMismatch =
+            new("Inspection.RevisionMismatch", "Biểu mẫu kiểm định đã được cập nhật. Vui lòng tải lại phiên bản mới nhất.");
+
+        public static readonly Error Incomplete =
+            new("Inspection.Incomplete", "Vui lòng hoàn thành đầy đủ checklist và kết luận kiểm định trước khi gửi.");
+
+        public static readonly Error SuggestedPriceRequired =
+            new("Inspection.SuggestedPriceRequired", "Kết luận điều chỉnh giá yêu cầu nhập giá mới.");
+
+        public static readonly Error SuggestedPriceUnchanged =
+            new("Inspection.SuggestedPriceUnchanged", "Giá đề xuất mới phải khác giá giao dịch hiện tại.");
+
+        public static readonly Error InvalidOrderPrice =
+            new("Inspection.InvalidOrderPrice", "Không xác định được giá giao dịch hiện tại.");
+
+        public static readonly Error AcceptedRequired =
+            new("Inspection.AcceptedRequired", "Biểu mẫu phải được Seller xác nhận trước khi tiếp tục thu gom.");
+
+        public static readonly Error FailedCannotCollect =
+            new("Inspection.FailedCannotCollect", "Kết quả kiểm định không đạt nên không thể tiếp tục thu gom.");
+
+        public static readonly Error CollectActionAlreadySelected =
+            new("Inspection.CollectActionAlreadySelected", "Phương án thu gom đã được lựa chọn.");
+
+        public static readonly Error DepositMissing =
+            new("Inspection.DepositMissing", "Không xác định được khoản tiền cọc cần hoàn.");
+    }
+
+    public static class PaymentErrors
+    {
+        public static readonly Error RefundPaymentNotFound =
+            new("Payment.RefundPaymentNotFound", "Không tìm thấy giao dịch thanh toán để thực hiện hoàn tiền.");
+
+        public static readonly Error RefundWalletNotFound =
+            new("Payment.RefundWalletNotFound", "Không tìm thấy ví cần thiết để thực hiện hoàn tiền.");
+
+        public static readonly Error InsufficientHeldBalance =
+            new("Payment.InsufficientHeldBalance", "Số dư đang tạm giữ không đủ để thực hiện hoàn tiền.");
+
+        public static readonly Error InvalidRefundAmount =
+            new("Payment.InvalidRefundAmount", "Số tiền hoàn không hợp lệ.");
+
+        public static readonly Error AlreadyRefunded =
+            new("Payment.AlreadyRefunded", "Khoản thanh toán đã được hoàn toàn bộ.");
+    }
+
 }

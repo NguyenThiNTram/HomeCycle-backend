@@ -91,6 +91,14 @@ using HomeCycle.Application.Interfaces.Repositories.Disputes;
 using HomeCycle.Infrastructure.Repositories.Disputes;
 using HomeCycle.Application.Interfaces.Services.Disputes;
 using HomeCycle.Application.Services.Disputes;
+using HomeCycle.Application.Interfaces.Repositories.PlatformPolicies;
+using HomeCycle.Infrastructure.Repositories.PlatformPolicies;
+using HomeCycle.Application.Interfaces.Services.PlatformPolicies;
+using HomeCycle.Application.Services.PlatformPolicies;
+using HomeCycle.Application.Interfaces.Repositories.Inspections;
+using HomeCycle.Infrastructure.Repositories.Inspections;
+using HomeCycle.Application.Interfaces.Services.Inspections;
+using HomeCycle.Application.Services.Inspections;
 
 namespace HomeCycle.Infrastructure
 {
@@ -183,6 +191,8 @@ namespace HomeCycle.Infrastructure
             services.AddScoped<IGhnWebhookService, GhnWebhookService>();
             services.AddScoped<IWithdrawalRepository, WithdrawalRepository>();
             services.AddScoped<IDisputeRepository, DisputeRepository>();
+            services.AddScoped<IPlatformPolicyRepository, PlatformPolicyRepository>();
+            services.AddScoped<IInspectionFormRepository, InspectionFormRepository>();
 
             // register Services
             services.AddScoped<IAuthService, AuthService>();
@@ -217,6 +227,12 @@ namespace HomeCycle.Infrastructure
             services.AddScoped<IDisputeService, DisputeService>();
             services.AddScoped<IDisputeWindowPolicy, DisputeWindowPolicy>();
             services.AddScoped<IDisputeTargetHandler, OrderDisputeTargetHandler>();
+            services.AddScoped<PlatformPolicyService>();
+            services.AddScoped<IPlatformPolicyService>(sp => sp.GetRequiredService<PlatformPolicyService>());
+            services.AddScoped<IPlatformPolicyProvider>(sp => sp.GetRequiredService<PlatformPolicyService>());
+            services.AddScoped<IInspectionFormService, InspectionFormService>();
+
+
 
 
             services.Configure<PayOSSettings>(configuration.GetSection("PayOS"));

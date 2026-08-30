@@ -11,7 +11,7 @@ public class inspection_form
 
     public Guid InspectionFormId { get; set; }
     public Guid InspectionAppointmentId { get; set; }
-    public Guid? OrderId { get; set; }
+    public Guid OrderId { get; set; }
     public Guid InspectorId { get; set; }
 
     public DateTime? InspectionTime { get; set; }
@@ -29,8 +29,14 @@ public class inspection_form
     public string? CollectAction { get; set; }
 
     public int? InspectionStatus { get; set; }
+    public int Revision { get; set; }
+
+    public DateTime? SubmittedAt { get; set; }
+    public DateTime? SellerDecisionAt { get; set; }
+    public string? SellerDecisionReason { get; set; }
 
     public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
 
     public inspection_form()
     {

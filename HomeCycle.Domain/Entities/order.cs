@@ -32,6 +32,12 @@ public class order
     public DateTime? SellerHandoverConfirmedAt { get; set; }
     public DateTime? BuyerReceivedConfirmedAt { get; set; }
     public int? CompletionSource { get; set; }
+
+    public DateTime? CancelledAt { get; set; }
+    public Guid? CancelledByUserId { get; set; }
+    public string? CancellationReason { get; set; }
+
+    public DateTime? DisputeWindowEndsAt { get; set; }
     public order()
     {
     }
