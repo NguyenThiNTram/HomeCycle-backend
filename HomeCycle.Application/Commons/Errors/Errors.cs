@@ -265,6 +265,11 @@ namespace HomeCycle.Application.Commons.Errors
 
         public static readonly Error ShipmentNotDelivered =
             new("Order.ShipmentNotDelivered", "Đơn vận chuyển chưa được xác nhận giao thành công.");
+        public static readonly Error CancellationRequiresRejectedInspection =
+            new("Order.CancellationRequiresRejectedInspection", "Chỉ có thể hủy đơn theo luồng này sau khi Seller từ chối kết quả kiểm định.");
+
+        public static readonly Error ActiveDisputeBlocksCancellation =
+            new("Order.ActiveDisputeBlocksCancellation", "Đơn hàng đang có tranh chấp nên không thể hủy trực tiếp.");
     }
 
     public static class PlatformPolicyErrors
@@ -433,23 +438,26 @@ namespace HomeCycle.Application.Commons.Errors
         public static readonly Error CollectActionAlreadySelected =
             new("Inspection.CollectActionAlreadySelected", "Phương án thu gom đã được lựa chọn.");
 
-        public static readonly Error CancelRequiresRejectedForm =
-            new("Inspection.CancelRequiresRejectedForm", "Chỉ có thể hủy giao dịch theo luồng này sau khi Seller từ chối kết quả kiểm định.");
-
-        public static readonly Error ActiveDisputeBlocksCancellation =
-            new("Inspection.ActiveDisputeBlocksCancellation", "Đơn hàng đang có tranh chấp nên không thể hủy trực tiếp.");
-
         public static readonly Error DepositMissing =
             new("Inspection.DepositMissing", "Không xác định được khoản tiền cọc cần hoàn.");
+    }
 
+    public static class PaymentErrors
+    {
         public static readonly Error RefundPaymentNotFound =
-            new("Inspection.RefundPaymentNotFound", "Không tìm thấy giao dịch thanh toán để thực hiện hoàn tiền.");
+            new("Payment.RefundPaymentNotFound", "Không tìm thấy giao dịch thanh toán để thực hiện hoàn tiền.");
 
         public static readonly Error RefundWalletNotFound =
-            new("Inspection.RefundWalletNotFound", "Không tìm thấy ví cần thiết để thực hiện hoàn tiền.");
+            new("Payment.RefundWalletNotFound", "Không tìm thấy ví cần thiết để thực hiện hoàn tiền.");
 
         public static readonly Error InsufficientHeldBalance =
-            new("Inspection.InsufficientHeldBalance", "Số dư đang tạm giữ không đủ để thực hiện hoàn tiền.");
+            new("Payment.InsufficientHeldBalance", "Số dư đang tạm giữ không đủ để thực hiện hoàn tiền.");
+
+        public static readonly Error InvalidRefundAmount =
+            new("Payment.InvalidRefundAmount", "Số tiền hoàn không hợp lệ.");
+
+        public static readonly Error AlreadyRefunded =
+            new("Payment.AlreadyRefunded", "Khoản thanh toán đã được hoàn toàn bộ.");
     }
 
 }

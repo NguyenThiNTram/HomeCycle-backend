@@ -1,4 +1,5 @@
 ﻿using FluentValidation;
+using HomeCycle.Application.Commons.Errors;
 using HomeCycle.Application.Commons.Paginations;
 using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Requests.Agreements;
@@ -622,8 +623,172 @@ namespace HomeCycle.Application.Services.Payments
             return Result<PagedResult<PaymentHistoryResponseDto>>.Success(result);
         }
 
+        public async Task<Result<bool>> RefundOrderHeldAmountAsync(
+            order order,
+            agreement_form agreement,
+            decimal amount,
+            CancellationToken ct = default)
+        {
+            var currentOrderPaid = order.AmountPaid ?? 0;
 
-        //=========================== HELPER =================================
+            if (amount <= AmountEpsilon ||
+                currentOrderPaid <= AmountEpsilon ||
+                amount > currentOrderPaid + AmountEpsilon)
+            {
+                return Result<bool>.Fail(PaymentErrors.InvalidRefundAmount);
+            }
+
+            var payment = await _paymentRepo.GetLatestPaidByOrderIdAsync(
+                order.OrderId,
+                ct);
+
+            if (payment == null)
+                return Result<bool>.Fail(PaymentErrors.RefundPaymentNotFound);
+
+            if (payment.PaymentStatus == (int)PaymentStatus.Refunded)
+                return Result<bool>.Fail(PaymentErrors.AlreadyRefunded);
+
+            wallet? buyerWallet;
+            wallet? sellerWallet;
+
+            // Giữ deterministic locking giống payment flow hiện tại.
+            if (string.Compare(
+                    agreement.BuyerId.ToString(),
+                    agreement.SellerId.ToString(),
+                    StringComparison.Ordinal) < 0)
+            {
+                buyerWallet = await _walletRepo.GetUserWalletForUpdateAsync(
+                    agreement.BuyerId,
+                    ct);
+
+                sellerWallet = await _walletRepo.GetUserWalletForUpdateAsync(
+                    agreement.SellerId,
+                    ct);
+            }
+            else
+            {
+                sellerWallet = await _walletRepo.GetUserWalletForUpdateAsync(
+                    agreement.SellerId,
+                    ct);
+
+                buyerWallet = await _walletRepo.GetUserWalletForUpdateAsync(
+                    agreement.BuyerId,
+                    ct);
+            }
+
+            if (buyerWallet == null || sellerWallet == null)
+                return Result<bool>.Fail(PaymentErrors.RefundWalletNotFound);
+
+            if (sellerWallet.HoldBalance + AmountEpsilon < amount)
+                return Result<bool>.Fail(PaymentErrors.InsufficientHeldBalance);
+
+            var now = DateTime.UtcNow;
+            var walletTransactionId = Guid.NewGuid();
+
+            var walletTransaction = new wallet_transaction
+            {
+                WalletTransactionId = walletTransactionId,
+
+                FromWalletId = sellerWallet.WalletId,
+                ToWalletId = buyerWallet.WalletId,
+
+                PaymentId = payment.PaymentId,
+
+                ReferenceId = order.OrderId,
+                ReferenceType = (int)ReferenceType.Order,
+
+                TransactionType = (int)TransactionType.Order_Refund,
+
+                Amount = amount,
+
+                WalletTransactionStatus =
+                    (int)WalletTransactionStatus.Completed,
+
+                CreatedAt = now
+            };
+
+            var sellerLedger = new wallet_ledger
+            {
+                LedgerId = Guid.NewGuid(),
+
+                WalletTransactionId = walletTransactionId,
+                WalletId = sellerWallet.WalletId,
+
+                Direction = (int)LedgerDirection.Out,
+                BalanceType = (int)BalanceType.Hold,
+
+                Amount = amount,
+
+                BalanceBefore = sellerWallet.HoldBalance,
+                BalanceAfter = sellerWallet.HoldBalance - amount,
+
+                ReferenceType = (int)ReferenceType.Order,
+                ReferenceId = order.OrderId,
+
+                Description =
+                    $"Hoan tien tam giu cho Order {order.OrderId}",
+
+                CreatedAt = now
+            };
+
+            var buyerLedger = new wallet_ledger
+            {
+                LedgerId = Guid.NewGuid(),
+
+                WalletTransactionId = walletTransactionId,
+                WalletId = buyerWallet.WalletId,
+
+                Direction = (int)LedgerDirection.In,
+                BalanceType = (int)BalanceType.Available,
+
+                Amount = amount,
+
+                BalanceBefore = buyerWallet.AvailableBalance,
+                BalanceAfter = buyerWallet.AvailableBalance + amount,
+
+                ReferenceType = (int)ReferenceType.Order,
+                ReferenceId = order.OrderId,
+
+                Description =
+                    $"Nhan hoan tien tu Order {order.OrderId}",
+
+                CreatedAt = now
+            };
+
+            sellerWallet.HoldBalance -= amount;
+            sellerWallet.UpdatedAt = now;
+
+            buyerWallet.AvailableBalance += amount;
+            buyerWallet.UpdatedAt = now;
+
+            // QUAN TRỌNG:
+            // So với AmountPaid hiện tại của Order,
+            // KHÔNG so với Payment.Amount ban đầu.
+            var isFullRefund =
+                amount >= currentOrderPaid - AmountEpsilon;
+
+            payment.PaymentStatus = isFullRefund
+                ? (int)PaymentStatus.Refunded
+                : (int)PaymentStatus.PartiallyRefunded;
+
+            await _walletRepo.UpdateAsync(sellerWallet, ct);
+            await _walletRepo.UpdateAsync(buyerWallet, ct);
+
+            await _walletTxRepo.AddAsync(walletTransaction, ct);
+
+            await _ledgerRepo.AddAsync(sellerLedger, ct);
+            await _ledgerRepo.AddAsync(buyerLedger, ct);
+
+            await _paymentRepo.UpdateAsync(payment, ct);
+
+            return Result<bool>.Success(true);
+        }
+
+
+
+        #region HELPER
+
+         
         private async Task ExecuteSuccessfulPaymentCoreAsync(string payOsOrderCode, string payOsTransactionId, CancellationToken ct)
         {
             var paymentTx = await _paymentTxRepo.GetByPayOSOrderCodeAsync(payOsOrderCode, ct);
@@ -1265,5 +1430,7 @@ namespace HomeCycle.Application.Services.Payments
             var randomPart = Guid.NewGuid().ToString("N").Substring(0, 4).ToUpperInvariant();
             return $"HC-{datePart}-{randomPart}";
         }
+
+        #endregion
     }
 }

@@ -22,5 +22,6 @@ namespace HomeCycle.Application.Interfaces.Services.Orders
 
         Task<Result<OrderConfirmationResponseDto>> ConfirmReceivedAsync(Guid orderId, Guid buyerId, CancellationToken ct = default);
         Task<Result<OrderReferenceDto>> GetByAgreementAsync(Guid agreementId, Guid userId, CancellationToken ct = default);
+        Task<Result<OrderCancellationResponseDto>> CancelAfterRejectedInspectionAsync(Guid orderId, Guid userId, CancellationToken ct = default);
     }
 }

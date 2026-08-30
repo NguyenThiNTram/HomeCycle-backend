@@ -70,13 +70,6 @@ namespace HomeCycle.API.Controllers
             return result.IsSuccess ? Ok(result.Data) : BadRequest(result.Error);
         }
 
-        [HttpPost("{inspectionFormId:guid}/cancel-transaction")]
-        public async Task<IActionResult> CancelTransaction(Guid inspectionFormId, [FromBody] InspectionRevisionRequest request, CancellationToken cancellationToken)
-        {
-            var result = await _inspectionService.CancelTransactionAsync(inspectionFormId, GetCurrentUserId(), request, cancellationToken);
-            return result.IsSuccess ? Ok(result.Data) : BadRequest(result.Error);
-        }
-
         private Guid GetCurrentUserId()
         {
             var claim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;

@@ -11,6 +11,7 @@ namespace HomeCycle.Application.DTOs.Responses.Orders
     {
         public bool CanConfirm { get; set; }
         public OrderConfirmAction? ConfirmAction { get; set; }
+        public bool CanCancel { get; set; }
         public bool CanReview { get; set; }
         public bool CanDispute { get; set; }
         public IReadOnlyList<DisputeCategory> AllowedDisputeCategories { get; set; } = Array.Empty<DisputeCategory>();

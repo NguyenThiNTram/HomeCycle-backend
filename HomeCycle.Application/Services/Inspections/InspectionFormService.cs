@@ -13,6 +13,7 @@ using HomeCycle.Application.Interfaces.Repositories.Orders;
 using HomeCycle.Application.Interfaces.Repositories.Payments;
 using HomeCycle.Application.Interfaces.Repositories.Wallets;
 using HomeCycle.Application.Interfaces.Services.Inspections;
+using HomeCycle.Application.Interfaces.Services.Payments;
 using HomeCycle.Application.Interfaces.Services.Posts;
 using HomeCycle.Domain.Entities;
 using HomeCycle.Domain.Enums;
@@ -35,12 +36,9 @@ namespace HomeCycle.Application.Services.Inspections
         private readonly IAppointmentRepository _appointmentRepo;
         private readonly IAgreementFormRepository _agreementRepo;
         private readonly IOrderRepository _orderRepo;
-        private readonly IPaymentRepository _paymentRepo;
-        private readonly IWalletRepository _walletRepo;
-        private readonly IWalletTransactionRepository _walletTxRepo;
-        private readonly IWalletLedgerRepository _ledgerRepo;
         private readonly IDisputeRepository _disputeRepo;
         private readonly IMediaService _mediaService;
+        private readonly IPaymentService _paymentService;
         private readonly IUnitOfWork _unitOfWork;
 
         private readonly IValidator<CreateInspectionFormRequest> _createValidator;
@@ -48,19 +46,16 @@ namespace HomeCycle.Application.Services.Inspections
         private readonly IValidator<InspectionRevisionRequest> _revisionValidator;
         private readonly IValidator<RejectInspectionFormRequest> _rejectValidator;
 
-        public InspectionFormService(IInspectionFormRepository inspectionFormRepo, IInspectionAppointmentRepository inspectionAppointmentRepo, IAppointmentRepository appointmentRepo, IAgreementFormRepository agreementRepo, IOrderRepository orderRepo, IPaymentRepository paymentRepo, IWalletRepository walletRepo, IWalletTransactionRepository walletTxRepo, IWalletLedgerRepository ledgerRepo, IDisputeRepository disputeRepo, IMediaService mediaService, IUnitOfWork unitOfWork, IValidator<CreateInspectionFormRequest> createValidator, IValidator<UpdateInspectionFormRequest> updateValidator, IValidator<InspectionRevisionRequest> revisionValidator, IValidator<RejectInspectionFormRequest> rejectValidator)
+        public InspectionFormService(IInspectionFormRepository inspectionFormRepo, IInspectionAppointmentRepository inspectionAppointmentRepo, IAppointmentRepository appointmentRepo, IAgreementFormRepository agreementRepo, IOrderRepository orderRepo, IDisputeRepository disputeRepo, IMediaService mediaService, IPaymentService paymentService, IUnitOfWork unitOfWork, IValidator<CreateInspectionFormRequest> createValidator, IValidator<UpdateInspectionFormRequest> updateValidator, IValidator<InspectionRevisionRequest> revisionValidator, IValidator<RejectInspectionFormRequest> rejectValidator)
         {
             _inspectionFormRepo = inspectionFormRepo;
             _inspectionAppointmentRepo = inspectionAppointmentRepo;
             _appointmentRepo = appointmentRepo;
             _agreementRepo = agreementRepo;
             _orderRepo = orderRepo;
-            _paymentRepo = paymentRepo;
-            _walletRepo = walletRepo;
-            _walletTxRepo = walletTxRepo;
-            _ledgerRepo = ledgerRepo;
             _disputeRepo = disputeRepo;
             _mediaService = mediaService;
+            _paymentService = paymentService;
             _unitOfWork = unitOfWork;
             _createValidator = createValidator;
             _updateValidator = updateValidator;
@@ -474,155 +469,254 @@ namespace HomeCycle.Application.Services.Inspections
             }
         }
 
-        public async Task<Result<InspectionFormResponseDto>> SellerConfirmAsync(Guid inspectionFormId, Guid sellerId, InspectionRevisionRequest request, CancellationToken ct = default)
+        public async Task<Result<InspectionFormResponseDto>> SellerConfirmAsync(
+            Guid inspectionFormId,
+            Guid sellerId,
+            InspectionRevisionRequest request,
+            CancellationToken ct = default)
         {
             var validation = await _revisionValidator.ValidateAsync(request, ct);
 
             if (!validation.IsValid)
-                return Result<InspectionFormResponseDto>.Fail(new Error("Validation.InvalidRequest", string.Join(" | ", validation.Errors.Select(x => x.ErrorMessage))));
+            {
+                return Result<InspectionFormResponseDto>.Fail(
+                    new Error(
+                        "Validation.InvalidRequest",
+                        string.Join(" | ", validation.Errors.Select(x => x.ErrorMessage))));
+            }
 
             await _unitOfWork.BeginTransactionAsync(ct);
 
             try
             {
-                var form = await _inspectionFormRepo.GetByIdForUpdateAsync(inspectionFormId, ct);
+                var form = await _inspectionFormRepo.GetByIdForUpdateAsync(
+                    inspectionFormId,
+                    ct);
 
                 if (form == null)
                 {
                     await _unitOfWork.RollbackTransactionAsync(ct);
-                    return Result<InspectionFormResponseDto>.Fail(InspectionErrors.NotFound);
+                    return Result<InspectionFormResponseDto>.Fail(
+                        InspectionErrors.NotFound);
                 }
 
                 if (form.Revision != request.ExpectedRevision)
                 {
                     await _unitOfWork.RollbackTransactionAsync(ct);
-                    return Result<InspectionFormResponseDto>.Fail(InspectionErrors.RevisionMismatch);
+                    return Result<InspectionFormResponseDto>.Fail(
+                        InspectionErrors.RevisionMismatch);
                 }
 
-                if (form.InspectionStatus != (int)InspectionStatus.PendingSellerConfirmation)
+                if (form.InspectionStatus !=
+                    (int)InspectionStatus.PendingSellerConfirmation)
                 {
                     await _unitOfWork.RollbackTransactionAsync(ct);
-                    return Result<InspectionFormResponseDto>.Fail(InspectionErrors.PendingConfirmationOnly);
+
+                    return Result<InspectionFormResponseDto>.Fail(
+                        InspectionErrors.PendingConfirmationOnly);
                 }
 
-                var order = await _orderRepo.GetByIdForUpdateAsync(form.OrderId, ct);
+                var order = await _orderRepo.GetByIdForUpdateAsync(
+                    form.OrderId,
+                    ct);
 
                 if (order == null)
                 {
                     await _unitOfWork.RollbackTransactionAsync(ct);
-                    return Result<InspectionFormResponseDto>.Fail(OrderErrors.NotFound);
+                    return Result<InspectionFormResponseDto>.Fail(
+                        OrderErrors.NotFound);
                 }
 
                 if (order.OrderStatus != (int)OrderStatus.Processing)
                 {
                     await _unitOfWork.RollbackTransactionAsync(ct);
-                    return Result<InspectionFormResponseDto>.Fail(OrderErrors.InvalidStatus);
+                    return Result<InspectionFormResponseDto>.Fail(
+                        OrderErrors.InvalidStatus);
                 }
 
-                var agreement = await _agreementRepo.GetByIdAsync(order.AgreementId, ct);
+                var agreement = await _agreementRepo.GetByIdAsync(
+                    order.AgreementId,
+                    ct);
 
                 if (agreement == null)
                 {
                     await _unitOfWork.RollbackTransactionAsync(ct);
-                    return Result<InspectionFormResponseDto>.Fail(AgreementErrors.NotFound);
+                    return Result<InspectionFormResponseDto>.Fail(
+                        AgreementErrors.NotFound);
                 }
 
                 if (agreement.SellerId != sellerId)
                 {
                     await _unitOfWork.RollbackTransactionAsync(ct);
-                    return Result<InspectionFormResponseDto>.Fail(InspectionErrors.SellerOnly);
+                    return Result<InspectionFormResponseDto>.Fail(
+                        InspectionErrors.SellerOnly);
                 }
 
-                var inspection = await _inspectionAppointmentRepo.GetByIdAsync(form.InspectionAppointmentId, ct);
+                var inspection =
+                    await _inspectionAppointmentRepo.GetByIdAsync(
+                        form.InspectionAppointmentId,
+                        ct);
 
                 if (inspection == null)
                 {
                     await _unitOfWork.RollbackTransactionAsync(ct);
-                    return Result<InspectionFormResponseDto>.Fail(InspectionErrors.InvalidAppointment);
+                    return Result<InspectionFormResponseDto>.Fail(
+                        InspectionErrors.InvalidAppointment);
                 }
 
-                var appointment = await _appointmentRepo.GetByIdForUpdateAsync(inspection.AppointmentId, ct);
+                var appointment =
+                    await _appointmentRepo.GetByIdForUpdateAsync(
+                        inspection.AppointmentId,
+                        ct);
 
-                if (appointment == null || appointment.AppointmentStatus != (int)AppointmentStatus.InProgress)
+                if (appointment == null ||
+                    appointment.AppointmentStatus !=
+                        (int)AppointmentStatus.InProgress)
                 {
                     await _unitOfWork.RollbackTransactionAsync(ct);
-                    return Result<InspectionFormResponseDto>.Fail(InspectionErrors.AppointmentNotInProgress);
+
+                    return Result<InspectionFormResponseDto>.Fail(
+                        InspectionErrors.AppointmentNotInProgress);
                 }
 
-                var conclusion = ParseEnum<InspectionConclusion>(form.Conclusion);
+                var conclusion =
+                    ParseEnum<InspectionConclusion>(
+                        form.Conclusion);
 
                 if (!conclusion.HasValue)
                 {
                     await _unitOfWork.RollbackTransactionAsync(ct);
-                    return Result<InspectionFormResponseDto>.Fail(InspectionErrors.Incomplete);
+
+                    return Result<InspectionFormResponseDto>.Fail(
+                        InspectionErrors.Incomplete);
                 }
 
                 var now = DateTime.UtcNow;
 
-                form.InspectionStatus = (int)InspectionStatus.Accepted;
+                form.InspectionStatus =
+                    (int)InspectionStatus.Accepted;
+
                 form.SellerDecisionAt = now;
                 form.SellerDecisionReason = null;
                 form.UpdatedAt = now;
 
-                appointment.AppointmentStatus = (int)AppointmentStatus.Completed;
+                appointment.AppointmentStatus =
+                    (int)AppointmentStatus.Completed;
+
                 appointment.CompletedAt = now;
                 appointment.UpdatedAt = now;
 
+
+                // PRICE ADJUSTMENT
                 if (conclusion == InspectionConclusion.PriceAdjustment)
                 {
-                    if (!form.SuggestedPrice.HasValue || form.SuggestedPrice.Value <= 0)
+                    if (!form.SuggestedPrice.HasValue ||
+                        form.SuggestedPrice.Value <= 0)
                     {
                         await _unitOfWork.RollbackTransactionAsync(ct);
-                        return Result<InspectionFormResponseDto>.Fail(InspectionErrors.SuggestedPriceRequired);
+
+                        return Result<InspectionFormResponseDto>.Fail(
+                            InspectionErrors.SuggestedPriceRequired);
                     }
 
                     var newTotal = form.SuggestedPrice.Value;
-                    var amountPaid = order.AmountPaid ?? 0;
+                    var currentAmountPaid = order.AmountPaid ?? 0;
 
-                    if (newTotal < amountPaid - AmountEpsilon)
+                   
+                    if (currentAmountPaid > newTotal + AmountEpsilon)
                     {
-                        var refundResult = await RefundHeldAmountAsync(order, agreement, amountPaid - newTotal, ct);
+                        var refundAmount =
+                            currentAmountPaid - newTotal;
+
+                        var refundResult =
+                            await _paymentService
+                                .RefundOrderHeldAmountAsync(
+                                    order,
+                                    agreement,
+                                    refundAmount,
+                                    ct);
 
                         if (!refundResult.IsSuccess)
                         {
                             await _unitOfWork.RollbackTransactionAsync(ct);
-                            return Result<InspectionFormResponseDto>.Fail(refundResult.Error!);
+
+                            return Result<InspectionFormResponseDto>.Fail(
+                                refundResult.Error!);
                         }
+
+                        // AmountPaid phải phản ánh số tiền NET
+                        // còn được áp dụng cho Order sau refund.
+                        order.AmountPaid =
+                            currentAmountPaid - refundAmount;
                     }
 
                     order.FinalTotalAmount = newTotal;
-                    order.AmountRemaining = Math.Max(newTotal - amountPaid, 0);
-                    order.PaymentStatus = order.AmountRemaining <= AmountEpsilon
-                        ? (int)PaymentStatus.Completed
-                        : (int)PaymentStatus.Pending;
+
+                    var effectiveAmountPaid =
+                        order.AmountPaid ?? 0;
+
+                    order.AmountRemaining =
+                        Math.Max(
+                            newTotal - effectiveAmountPaid,
+                            0);
+
+
+                    // còn tiền trả trực tiếp -> Pending
+                    // đã đủ theo final price -> Completed.
+                    order.PaymentStatus =
+                        order.AmountRemaining <= AmountEpsilon
+                            ? (int)PaymentStatus.Completed
+                            : (int)PaymentStatus.Pending;
 
                     order.UpdatedAt = now;
                 }
+
+                // FAILED INSPECTION
                 else if (conclusion == InspectionConclusion.Failed)
                 {
-                    var deposit = order.AmountPaid ?? 0;
+                    var deposit =
+                        order.AmountPaid ?? 0;
 
                     if (deposit <= AmountEpsilon)
                     {
                         await _unitOfWork.RollbackTransactionAsync(ct);
-                        return Result<InspectionFormResponseDto>.Fail(InspectionErrors.DepositMissing);
+
+                        return Result<InspectionFormResponseDto>.Fail(
+                            InspectionErrors.DepositMissing);
                     }
 
-                    var refundResult = await RefundHeldAmountAsync(order, agreement, deposit, ct);
+                    var refundResult =
+                        await _paymentService
+                            .RefundOrderHeldAmountAsync(
+                                order,
+                                agreement,
+                                deposit,
+                                ct);
 
                     if (!refundResult.IsSuccess)
                     {
                         await _unitOfWork.RollbackTransactionAsync(ct);
-                        return Result<InspectionFormResponseDto>.Fail(refundResult.Error!);
+
+                        return Result<InspectionFormResponseDto>.Fail(
+                            refundResult.Error!);
                     }
 
-                    order.OrderStatus = (int)OrderStatus.Cancelled;
-                    order.PaymentStatus = (int)PaymentStatus.Refunded;
+                    // Refund full.
+                    order.AmountPaid = 0;
                     order.AmountRemaining = 0;
+
+                    order.PaymentStatus =
+                        (int)PaymentStatus.Refunded;
+
+                    order.OrderStatus =
+                        (int)OrderStatus.Cancelled;
 
                     order.CancelledAt = now;
                     order.CancelledByUserId = sellerId;
-                    order.CancellationReason = "Inspection result confirmed as failed.";
+
+                    order.CancellationReason =
+                        "Inspection result confirmed as failed.";
+
                     order.DisputeWindowEndsAt = null;
                     order.UpdatedAt = now;
                 }
@@ -634,7 +728,11 @@ namespace HomeCycle.Application.Services.Inspections
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
 
-                return Result<InspectionFormResponseDto>.Success(await BuildResponseAsync(form, sellerId, ct));
+                return Result<InspectionFormResponseDto>.Success(
+                    await BuildResponseAsync(
+                        form,
+                        sellerId,
+                        ct));
             }
             catch
             {
@@ -727,130 +825,6 @@ namespace HomeCycle.Application.Services.Inspections
             }
         }
 
-        public async Task<Result<InspectionFormResponseDto>> CancelTransactionAsync(Guid inspectionFormId, Guid userId, InspectionRevisionRequest request, CancellationToken ct = default)
-        {
-            await _unitOfWork.BeginTransactionAsync(ct);
-
-            try
-            {
-                var form = await _inspectionFormRepo.GetByIdForUpdateAsync(inspectionFormId, ct);
-
-                if (form == null)
-                {
-                    await _unitOfWork.RollbackTransactionAsync(ct);
-                    return Result<InspectionFormResponseDto>.Fail(InspectionErrors.NotFound);
-                }
-
-                if (form.Revision != request.ExpectedRevision)
-                {
-                    await _unitOfWork.RollbackTransactionAsync(ct);
-                    return Result<InspectionFormResponseDto>.Fail(InspectionErrors.RevisionMismatch);
-                }
-
-                if (form.InspectionStatus != (int)InspectionStatus.Rejected)
-                {
-                    await _unitOfWork.RollbackTransactionAsync(ct);
-                    return Result<InspectionFormResponseDto>.Fail(InspectionErrors.CancelRequiresRejectedForm);
-                }
-
-                var order = await _orderRepo.GetByIdForUpdateAsync(form.OrderId, ct);
-
-                if (order == null)
-                {
-                    await _unitOfWork.RollbackTransactionAsync(ct);
-                    return Result<InspectionFormResponseDto>.Fail(OrderErrors.NotFound);
-                }
-
-                if (order.OrderStatus != (int)OrderStatus.Processing)
-                {
-                    await _unitOfWork.RollbackTransactionAsync(ct);
-                    return Result<InspectionFormResponseDto>.Fail(OrderErrors.InvalidStatus);
-                }
-
-                var agreement = await _agreementRepo.GetByIdAsync(order.AgreementId, ct);
-
-                if (agreement == null)
-                {
-                    await _unitOfWork.RollbackTransactionAsync(ct);
-                    return Result<InspectionFormResponseDto>.Fail(AgreementErrors.NotFound);
-                }
-
-                if (agreement.BuyerId != userId && agreement.SellerId != userId)
-                {
-                    await _unitOfWork.RollbackTransactionAsync(ct);
-                    return Result<InspectionFormResponseDto>.Fail(OrderErrors.Forbidden);
-                }
-
-                var hasActiveDispute = await _disputeRepo.ExistsActiveAsync(DisputeTargetType.Order, order.OrderId, ct);
-
-                if (hasActiveDispute)
-                {
-                    await _unitOfWork.RollbackTransactionAsync(ct);
-                    return Result<InspectionFormResponseDto>.Fail(InspectionErrors.ActiveDisputeBlocksCancellation);
-                }
-
-                var deposit = order.AmountPaid ?? 0;
-
-                if (deposit <= AmountEpsilon)
-                {
-                    await _unitOfWork.RollbackTransactionAsync(ct);
-                    return Result<InspectionFormResponseDto>.Fail(InspectionErrors.DepositMissing);
-                }
-
-                var refundResult = await RefundHeldAmountAsync(order, agreement, deposit, ct);
-
-                if (!refundResult.IsSuccess)
-                {
-                    await _unitOfWork.RollbackTransactionAsync(ct);
-                    return Result<InspectionFormResponseDto>.Fail(refundResult.Error!);
-                }
-
-                var inspection = await _inspectionAppointmentRepo.GetByIdAsync(form.InspectionAppointmentId, ct);
-
-                if (inspection == null)
-                {
-                    await _unitOfWork.RollbackTransactionAsync(ct);
-                    return Result<InspectionFormResponseDto>.Fail(InspectionErrors.InvalidAppointment);
-                }
-
-                var appointment = await _appointmentRepo.GetByIdForUpdateAsync(inspection.AppointmentId, ct);
-
-                if (appointment == null)
-                {
-                    await _unitOfWork.RollbackTransactionAsync(ct);
-                    return Result<InspectionFormResponseDto>.Fail(AppointmentErrors.NotFound);
-                }
-
-                var now = DateTime.UtcNow;
-
-                appointment.AppointmentStatus = (int)AppointmentStatus.Completed;
-                appointment.CompletedAt ??= now;
-                appointment.UpdatedAt = now;
-
-                order.OrderStatus = (int)OrderStatus.Cancelled;
-                order.PaymentStatus = (int)PaymentStatus.Refunded;
-                order.AmountRemaining = 0;
-
-                order.CancelledAt = now;
-                order.CancelledByUserId = userId;
-                order.CancellationReason = form.SellerDecisionReason ?? "Transaction cancelled after rejected inspection result.";
-                order.DisputeWindowEndsAt = null;
-                order.UpdatedAt = now;
-
-                await _appointmentRepo.UpdateAsync(appointment, ct);
-                await _orderRepo.UpdateAsync(order, ct);
-
-                await _unitOfWork.SaveChangesAsync(ct);
-                await _unitOfWork.CommitTransactionAsync(ct);
-
-                return Result<InspectionFormResponseDto>.Success(await BuildResponseAsync(form, userId, ct));
-            }
-            catch
-            {
-                await _unitOfWork.RollbackTransactionAsync(ct);
-                throw;
-            }
-        }
 
         public async Task<Result<InspectionFormResponseDto>> GetByAppointmentAsync(Guid appointmentId, Guid userId, CancellationToken ct = default)
         {
@@ -883,7 +857,8 @@ namespace HomeCycle.Application.Services.Inspections
             return Result<InspectionFormResponseDto>.Success(await BuildResponseAsync(form, userId, ct));
         }
 
-        // ================= HELPER ======================
+
+        #region HELPER
 
         private async Task<InspectionFormResponseDto> BuildResponseAsync(inspection_form form, Guid currentUserId, CancellationToken ct)
         {
@@ -1004,107 +979,8 @@ namespace HomeCycle.Application.Services.Inspections
             return Enum.TryParse<TEnum>(value, true, out var parsed) ? parsed : null;
         }
 
-        private async Task<Result<bool>> RefundHeldAmountAsync(order order, agreement_form agreement, decimal amount, CancellationToken ct)
-        {
-            if (amount <= AmountEpsilon)
-                return Result<bool>.Success(true);
+        #endregion
 
-            var payment = await _paymentRepo.GetLatestPaidByOrderIdAsync(order.OrderId, ct);
 
-            if (payment == null)
-                return Result<bool>.Fail(InspectionErrors.RefundPaymentNotFound);
-
-            wallet? buyerWallet;
-            wallet? sellerWallet;
-
-            if (string.Compare(agreement.BuyerId.ToString(), agreement.SellerId.ToString(), StringComparison.Ordinal) < 0)
-            {
-                buyerWallet = await _walletRepo.GetUserWalletForUpdateAsync(agreement.BuyerId, ct);
-                sellerWallet = await _walletRepo.GetUserWalletForUpdateAsync(agreement.SellerId, ct);
-            }
-            else
-            {
-                sellerWallet = await _walletRepo.GetUserWalletForUpdateAsync(agreement.SellerId, ct);
-                buyerWallet = await _walletRepo.GetUserWalletForUpdateAsync(agreement.BuyerId, ct);
-            }
-
-            if (buyerWallet == null || sellerWallet == null)
-                return Result<bool>.Fail(InspectionErrors.RefundWalletNotFound);
-
-            if (sellerWallet.HoldBalance + AmountEpsilon < amount)
-                return Result<bool>.Fail(InspectionErrors.InsufficientHeldBalance);
-
-            var now = DateTime.UtcNow;
-            var walletTransactionId = Guid.NewGuid();
-
-            var walletTransaction = new wallet_transaction
-            {
-                WalletTransactionId = walletTransactionId,
-                FromWalletId = sellerWallet.WalletId,
-                ToWalletId = buyerWallet.WalletId,
-                PaymentId = payment.PaymentId,
-                ReferenceId = order.OrderId,
-                ReferenceType = (int)ReferenceType.Order,
-                TransactionType = (int)TransactionType.Order_Refund,
-                Amount = amount,
-                WalletTransactionStatus = (int)WalletTransactionStatus.Completed,
-                CreatedAt = now
-            };
-
-            var sellerLedger = new wallet_ledger
-            {
-                LedgerId = Guid.NewGuid(),
-                WalletTransactionId = walletTransactionId,
-                WalletId = sellerWallet.WalletId,
-                Direction = (int)LedgerDirection.Out,
-                BalanceType = (int)BalanceType.Hold,
-                Amount = amount,
-                BalanceBefore = sellerWallet.HoldBalance,
-                BalanceAfter = sellerWallet.HoldBalance - amount,
-                ReferenceType = (int)ReferenceType.Order,
-                ReferenceId = order.OrderId,
-                Description = $"Hoan tien tam giu cho Order {order.OrderId}",
-                CreatedAt = now
-            };
-
-            var buyerLedger = new wallet_ledger
-            {
-                LedgerId = Guid.NewGuid(),
-                WalletTransactionId = walletTransactionId,
-                WalletId = buyerWallet.WalletId,
-                Direction = (int)LedgerDirection.In,
-                BalanceType = (int)BalanceType.Available,
-                Amount = amount,
-                BalanceBefore = buyerWallet.AvailableBalance,
-                BalanceAfter = buyerWallet.AvailableBalance + amount,
-                ReferenceType = (int)ReferenceType.Order,
-                ReferenceId = order.OrderId,
-                Description = $"Nhan hoan tien tu Order {order.OrderId}",
-                CreatedAt = now
-            };
-
-            sellerWallet.HoldBalance -= amount;
-            sellerWallet.UpdatedAt = now;
-
-            buyerWallet.AvailableBalance += amount;
-            buyerWallet.UpdatedAt = now;
-
-            var paymentAmount = payment.Amount ?? 0;
-
-            payment.PaymentStatus = amount >= paymentAmount - AmountEpsilon
-                ? (int)PaymentStatus.Refunded
-                : (int)PaymentStatus.PartiallyRefunded;
-
-            await _walletRepo.UpdateAsync(sellerWallet, ct);
-            await _walletRepo.UpdateAsync(buyerWallet, ct);
-
-            await _walletTxRepo.AddAsync(walletTransaction, ct);
-            await _ledgerRepo.AddAsync(sellerLedger, ct);
-            await _ledgerRepo.AddAsync(buyerLedger, ct);
-
-            await _paymentRepo.UpdateAsync(payment, ct);
-
-            return Result<bool>.Success(true);
-        }
     }
 }

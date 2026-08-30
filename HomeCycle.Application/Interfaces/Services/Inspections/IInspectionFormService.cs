@@ -23,6 +23,5 @@ namespace HomeCycle.Application.Interfaces.Services.Inspections
 
         Task<Result<InspectionFormResponseDto>> CollectNowAsync(Guid inspectionFormId, Guid buyerId, InspectionRevisionRequest request, CancellationToken ct = default);
 
-        Task<Result<InspectionFormResponseDto>> CancelTransactionAsync(Guid inspectionFormId, Guid userId, InspectionRevisionRequest request, CancellationToken ct = default);
     }
 }

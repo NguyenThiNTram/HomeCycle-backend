@@ -8,12 +8,14 @@ using HomeCycle.Application.DTOs.Responses.Orders;
 using HomeCycle.Application.Interfaces.Generics;
 using HomeCycle.Application.Interfaces.Repositories.Agreements;
 using HomeCycle.Application.Interfaces.Repositories.Appointments;
+using HomeCycle.Application.Interfaces.Repositories.Disputes;
 using HomeCycle.Application.Interfaces.Repositories.Inspections;
 using HomeCycle.Application.Interfaces.Repositories.Orders;
 using HomeCycle.Application.Interfaces.Repositories.Reviews;
 using HomeCycle.Application.Interfaces.Repositories.Shipments;
 using HomeCycle.Application.Interfaces.Services.Disputes;
 using HomeCycle.Application.Interfaces.Services.Orders;
+using HomeCycle.Application.Interfaces.Services.Payments;
 using HomeCycle.Domain.Entities;
 using HomeCycle.Domain.Enums;
 using System;
@@ -36,6 +38,9 @@ namespace HomeCycle.Application.Services.Orders
         private readonly IDisputeWindowPolicy _disputeWindowPolicy;
         private readonly ICollectionAppointmentRepository _collectionAppointmentRepo;
         private readonly IInspectionFormRepository _inspectionFormRepo;
+        private readonly IInspectionAppointmentRepository _inspectionAppointmentRepo;
+        private readonly IDisputeRepository _disputeRepo;
+        private readonly IPaymentService _paymentService;
         private readonly IMapper _mapper;
 
         public OrderService(
@@ -48,6 +53,9 @@ namespace HomeCycle.Application.Services.Orders
             ICollectionAppointmentRepository collectionAppointmentRepo,
             IUnitOfWork unitOfWork,
             IInspectionFormRepository inspectionFormRepo,
+            IInspectionAppointmentRepository inspectionAppointmentRepo,
+            IDisputeRepository disputeRepo,
+            IPaymentService paymentService,
             IMapper mapper)
         {
             _orderRepo = orderRepo;
@@ -59,6 +67,9 @@ namespace HomeCycle.Application.Services.Orders
             _collectionAppointmentRepo = collectionAppointmentRepo;
             _unitOfWork = unitOfWork;
             _inspectionFormRepo = inspectionFormRepo;
+            _inspectionAppointmentRepo = inspectionAppointmentRepo;
+            _disputeRepo = disputeRepo;
+            _paymentService = paymentService;
             _mapper = mapper;
         }
 
@@ -546,6 +557,11 @@ namespace HomeCycle.Application.Services.Orders
 
                 order.BuyerReceivedConfirmedAt = completedAt;
                 order.OrderStatus = (int)OrderStatus.Completed;
+                // nếu Order trước đó là Deposit -> Pending,
+                // Buyer confirm nhận hàng nghĩa là giao dịch trực tiếp
+                // đã hoàn tất nên Order payment chuyển Completed.
+                order.PaymentStatus =
+                    (int)PaymentStatus.Completed;
                 order.CompletedAt = completedAt;
                 order.CompletionSource =
                     (int)OrderCompletionSource.BuyerConfirmed;
@@ -588,6 +604,247 @@ namespace HomeCycle.Application.Services.Orders
                             order.CompletionSource.HasValue
                                 ? (OrderCompletionSource?)order.CompletionSource.Value
                                 : null
+                    });
+            }
+            catch
+            {
+                await _unitOfWork.RollbackTransactionAsync(ct);
+                throw;
+            }
+        }
+
+        public async Task<Result<OrderCancellationResponseDto>> CancelAfterRejectedInspectionAsync(
+            Guid orderId,
+            Guid userId,
+            CancellationToken ct = default)
+        {
+            await _unitOfWork.BeginTransactionAsync(ct);
+
+            try
+            {
+                var order =
+                    await _orderRepo.GetByIdForUpdateAsync(
+                        orderId,
+                        ct);
+
+                if (order == null)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+
+                    return Result<OrderCancellationResponseDto>.Fail(
+                        OrderErrors.NotFound);
+                }
+
+                var agreement =
+                    await _agreementRepo.GetByIdAsync(
+                        order.AgreementId,
+                        ct);
+
+                if (agreement == null)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+
+                    return Result<OrderCancellationResponseDto>.Fail(
+                        AgreementErrors.NotFound);
+                }
+
+                var isBuyer =
+                    agreement.BuyerId == userId;
+
+                var isSeller =
+                    agreement.SellerId == userId;
+
+                // Cả Buyer và Seller đều được cancel
+                // sau rejected inspection.
+                if (!isBuyer && !isSeller)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+
+                    return Result<OrderCancellationResponseDto>.Fail(
+                        OrderErrors.Forbidden);
+                }
+
+                // Idempotent cho retry sau request thành công.
+                if (order.OrderStatus == (int)OrderStatus.Cancelled &&
+                    order.CancelledAt.HasValue)
+                {
+                    await _unitOfWork.CommitTransactionAsync(ct);
+
+                    return Result<OrderCancellationResponseDto>.Success(
+                        new OrderCancellationResponseDto
+                        {
+                            OrderId = order.OrderId,
+
+                            OrderStatus =
+                                OrderStatus.Cancelled,
+
+                            PaymentStatus =
+                                order.PaymentStatus.HasValue
+                                    ? (PaymentStatus?)
+                                        order.PaymentStatus.Value
+                                    : null,
+
+                            CancelledAt =
+                                order.CancelledAt.Value,
+
+                            CancelledByUserId =
+                                order.CancelledByUserId,
+
+                            CancellationReason =
+                                order.CancellationReason
+                        });
+                }
+
+                if (order.OrderStatus !=
+                    (int)OrderStatus.Processing)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+
+                    return Result<OrderCancellationResponseDto>.Fail(
+                        OrderErrors.InvalidStatus);
+                }
+
+                var inspectionForm =
+                    await _inspectionFormRepo.GetLatestByOrderIdAsync(
+                        order.OrderId,
+                        ct);
+
+                if (inspectionForm == null ||
+                    inspectionForm.InspectionStatus !=
+                        (int)InspectionStatus.Rejected)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+
+                    return Result<OrderCancellationResponseDto>.Fail(
+                        OrderErrors.CancellationRequiresRejectedInspection);
+                }
+
+                var hasActiveDispute =
+                    await _disputeRepo.ExistsActiveAsync(
+                        DisputeTargetType.Order,
+                        order.OrderId,
+                        ct);
+
+                if (hasActiveDispute)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+
+                    return Result<OrderCancellationResponseDto>.Fail(
+                        OrderErrors.ActiveDisputeBlocksCancellation);
+                }
+
+                var inspectionAppointment =
+                    await _inspectionAppointmentRepo.GetByIdAsync(
+                        inspectionForm.InspectionAppointmentId,
+                        ct);
+
+                if (inspectionAppointment == null)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+
+                    return Result<OrderCancellationResponseDto>.Fail(
+                        InspectionErrors.InvalidAppointment);
+                }
+
+                var appointment =
+                    await _appointmentRepo.GetByIdForUpdateAsync(
+                        inspectionAppointment.AppointmentId,
+                        ct);
+
+                if (appointment == null)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+
+                    return Result<OrderCancellationResponseDto>.Fail(
+                        AppointmentErrors.NotFound);
+                }
+
+                var amountToRefund =
+                    order.AmountPaid ?? 0;
+
+                if (amountToRefund <= 0.01m)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+
+                    return Result<OrderCancellationResponseDto>.Fail(
+                        PaymentErrors.InvalidRefundAmount);
+                }
+
+                var refundResult =
+                    await _paymentService
+                        .RefundOrderHeldAmountAsync(
+                            order,
+                            agreement,
+                            amountToRefund,
+                            ct);
+
+                if (!refundResult.IsSuccess)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+
+                    return Result<OrderCancellationResponseDto>.Fail(
+                        refundResult.Error!);
+                }
+
+                var now = DateTime.UtcNow;
+
+                // Appointment đã thật sự diễn ra:
+                // check-in + inspection + form + seller reject.
+                // Vì vậy Completed hợp lý hơn Cancelled.
+                appointment.AppointmentStatus =
+                    (int)AppointmentStatus.Completed;
+
+                appointment.CompletedAt ??= now;
+                appointment.UpdatedAt = now;
+
+                order.OrderStatus =
+                    (int)OrderStatus.Cancelled;
+
+                order.PaymentStatus =
+                    (int)PaymentStatus.Refunded;
+
+                order.AmountPaid = 0;
+                order.AmountRemaining = 0;
+
+                order.CancelledAt = now;
+                order.CancelledByUserId = userId;
+
+                order.CancellationReason =
+                    !string.IsNullOrWhiteSpace(
+                        inspectionForm.SellerDecisionReason)
+                        ? inspectionForm.SellerDecisionReason
+                        : "Transaction cancelled after rejected inspection result.";
+
+                order.DisputeWindowEndsAt = null;
+                order.UpdatedAt = now;
+
+                await _appointmentRepo.UpdateAsync(
+                    appointment,
+                    ct);
+
+                await _orderRepo.UpdateAsync(
+                    order,
+                    ct);
+
+                await _unitOfWork.SaveChangesAsync(ct);
+                await _unitOfWork.CommitTransactionAsync(ct);
+
+                return Result<OrderCancellationResponseDto>.Success(
+                    new OrderCancellationResponseDto
+                    {
+                        OrderId = order.OrderId,
+
+                        OrderStatus =
+                            OrderStatus.Cancelled,
+
+                        PaymentStatus =
+                            PaymentStatus.Refunded,
+
+                        CancelledAt = now,
+                        CancelledByUserId = userId,
+
+                        CancellationReason =
+                            order.CancellationReason
                     });
             }
             catch
@@ -755,11 +1012,22 @@ namespace HomeCycle.Application.Services.Orders
                 }
             }
 
+            var latestInspectionForm =
+                await _inspectionFormRepo.GetLatestByOrderIdAsync(
+                    detail.OrderId,
+                    ct);
+
+            var canCancel =
+                detail.OrderStatus == OrderStatus.Processing &&
+                !detail.Dispute.HasActiveDispute &&
+                latestInspectionForm?.InspectionStatus ==
+                    (int)InspectionStatus.Rejected;
+
             return new OrderActionDto
             {
                 CanConfirm = canConfirm,
                 ConfirmAction = confirmAction,
-
+                CanCancel = canCancel,
                 CanReview = canReview,
                 CanDispute = canDispute,
 
