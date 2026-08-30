@@ -1,4 +1,5 @@
 ﻿using FluentValidation;
+using HomeCycle.Application.Commons.Errors;
 using HomeCycle.Application.Commons.Paginations;
 using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Requests.Agreements;
@@ -15,6 +16,7 @@ using HomeCycle.Application.Interfaces.Repositories.Posts;
 using HomeCycle.Application.Interfaces.Repositories.Shipments;
 using HomeCycle.Application.Interfaces.Repositories.Wallets;
 using HomeCycle.Application.Interfaces.Services.Payments;
+using HomeCycle.Application.Interfaces.Services.PlatformPolicies;
 using HomeCycle.Domain.Entities;
 using HomeCycle.Domain.Enums;
 using Microsoft.Extensions.Logging;
@@ -65,6 +67,8 @@ namespace HomeCycle.Application.Services.Payments
         private readonly IShipmentRepository _shipmentRepo;
         private readonly IGhnShipmentRepository _ghnShipmentRepo;
         private readonly IValidator<PayOSCheckoutRequest> _payOSCheckoutValidator;
+        private readonly IPlatformPolicyProvider _platformPolicyProvider;
+
         public PaymentService(
             IUnitOfWork unitOfWork,
             IPaymentGatewayService gatewayService,
@@ -82,7 +86,8 @@ namespace HomeCycle.Application.Services.Payments
             ILogger<PaymentService> logger,
             IShipmentRepository shipmentRepository,
             IGhnShipmentRepository ghnShipmentRepository,
-            IValidator<PayOSCheckoutRequest> payOSCheckoutValidator)
+            IValidator<PayOSCheckoutRequest> payOSCheckoutValidator, 
+            IPlatformPolicyProvider platformPolicyProvider)
         {
             _unitOfWork = unitOfWork;
             _gatewayService = gatewayService;
@@ -101,6 +106,7 @@ namespace HomeCycle.Application.Services.Payments
             _postRepo = postRepo;
             _logger = logger;
             _payOSCheckoutValidator = payOSCheckoutValidator;
+            _platformPolicyProvider = platformPolicyProvider;
         }
 
         public async Task<Result<string>> GeneratePayOSCheckoutUrlAsync(Guid agreementId, Guid payerId, string returnUrl, string cancelUrl, CancellationToken ct = default)
@@ -617,8 +623,172 @@ namespace HomeCycle.Application.Services.Payments
             return Result<PagedResult<PaymentHistoryResponseDto>>.Success(result);
         }
 
+        public async Task<Result<bool>> RefundOrderHeldAmountAsync(
+            order order,
+            agreement_form agreement,
+            decimal amount,
+            CancellationToken ct = default)
+        {
+            var currentOrderPaid = order.AmountPaid ?? 0;
 
-        //=========================== HELPER =================================
+            if (amount <= AmountEpsilon ||
+                currentOrderPaid <= AmountEpsilon ||
+                amount > currentOrderPaid + AmountEpsilon)
+            {
+                return Result<bool>.Fail(PaymentErrors.InvalidRefundAmount);
+            }
+
+            var payment = await _paymentRepo.GetLatestPaidByOrderIdAsync(
+                order.OrderId,
+                ct);
+
+            if (payment == null)
+                return Result<bool>.Fail(PaymentErrors.RefundPaymentNotFound);
+
+            if (payment.PaymentStatus == (int)PaymentStatus.Refunded)
+                return Result<bool>.Fail(PaymentErrors.AlreadyRefunded);
+
+            wallet? buyerWallet;
+            wallet? sellerWallet;
+
+            // Giữ deterministic locking giống payment flow hiện tại.
+            if (string.Compare(
+                    agreement.BuyerId.ToString(),
+                    agreement.SellerId.ToString(),
+                    StringComparison.Ordinal) < 0)
+            {
+                buyerWallet = await _walletRepo.GetUserWalletForUpdateAsync(
+                    agreement.BuyerId,
+                    ct);
+
+                sellerWallet = await _walletRepo.GetUserWalletForUpdateAsync(
+                    agreement.SellerId,
+                    ct);
+            }
+            else
+            {
+                sellerWallet = await _walletRepo.GetUserWalletForUpdateAsync(
+                    agreement.SellerId,
+                    ct);
+
+                buyerWallet = await _walletRepo.GetUserWalletForUpdateAsync(
+                    agreement.BuyerId,
+                    ct);
+            }
+
+            if (buyerWallet == null || sellerWallet == null)
+                return Result<bool>.Fail(PaymentErrors.RefundWalletNotFound);
+
+            if (sellerWallet.HoldBalance + AmountEpsilon < amount)
+                return Result<bool>.Fail(PaymentErrors.InsufficientHeldBalance);
+
+            var now = DateTime.UtcNow;
+            var walletTransactionId = Guid.NewGuid();
+
+            var walletTransaction = new wallet_transaction
+            {
+                WalletTransactionId = walletTransactionId,
+
+                FromWalletId = sellerWallet.WalletId,
+                ToWalletId = buyerWallet.WalletId,
+
+                PaymentId = payment.PaymentId,
+
+                ReferenceId = order.OrderId,
+                ReferenceType = (int)ReferenceType.Order,
+
+                TransactionType = (int)TransactionType.Order_Refund,
+
+                Amount = amount,
+
+                WalletTransactionStatus =
+                    (int)WalletTransactionStatus.Completed,
+
+                CreatedAt = now
+            };
+
+            var sellerLedger = new wallet_ledger
+            {
+                LedgerId = Guid.NewGuid(),
+
+                WalletTransactionId = walletTransactionId,
+                WalletId = sellerWallet.WalletId,
+
+                Direction = (int)LedgerDirection.Out,
+                BalanceType = (int)BalanceType.Hold,
+
+                Amount = amount,
+
+                BalanceBefore = sellerWallet.HoldBalance,
+                BalanceAfter = sellerWallet.HoldBalance - amount,
+
+                ReferenceType = (int)ReferenceType.Order,
+                ReferenceId = order.OrderId,
+
+                Description =
+                    $"Hoan tien tam giu cho Order {order.OrderId}",
+
+                CreatedAt = now
+            };
+
+            var buyerLedger = new wallet_ledger
+            {
+                LedgerId = Guid.NewGuid(),
+
+                WalletTransactionId = walletTransactionId,
+                WalletId = buyerWallet.WalletId,
+
+                Direction = (int)LedgerDirection.In,
+                BalanceType = (int)BalanceType.Available,
+
+                Amount = amount,
+
+                BalanceBefore = buyerWallet.AvailableBalance,
+                BalanceAfter = buyerWallet.AvailableBalance + amount,
+
+                ReferenceType = (int)ReferenceType.Order,
+                ReferenceId = order.OrderId,
+
+                Description =
+                    $"Nhan hoan tien tu Order {order.OrderId}",
+
+                CreatedAt = now
+            };
+
+            sellerWallet.HoldBalance -= amount;
+            sellerWallet.UpdatedAt = now;
+
+            buyerWallet.AvailableBalance += amount;
+            buyerWallet.UpdatedAt = now;
+
+            // QUAN TRỌNG:
+            // So với AmountPaid hiện tại của Order,
+            // KHÔNG so với Payment.Amount ban đầu.
+            var isFullRefund =
+                amount >= currentOrderPaid - AmountEpsilon;
+
+            payment.PaymentStatus = isFullRefund
+                ? (int)PaymentStatus.Refunded
+                : (int)PaymentStatus.PartiallyRefunded;
+
+            await _walletRepo.UpdateAsync(sellerWallet, ct);
+            await _walletRepo.UpdateAsync(buyerWallet, ct);
+
+            await _walletTxRepo.AddAsync(walletTransaction, ct);
+
+            await _ledgerRepo.AddAsync(sellerLedger, ct);
+            await _ledgerRepo.AddAsync(buyerLedger, ct);
+
+            await _paymentRepo.UpdateAsync(payment, ct);
+
+            return Result<bool>.Success(true);
+        }
+
+
+
+        #region HELPER
+
+         
         private async Task ExecuteSuccessfulPaymentCoreAsync(string payOsOrderCode, string payOsTransactionId, CancellationToken ct)
         {
             var paymentTx = await _paymentTxRepo.GetByPayOSOrderCodeAsync(payOsOrderCode, ct);
@@ -943,13 +1113,35 @@ namespace HomeCycle.Application.Services.Payments
                 ? AppointmentType.Inspection
                 : AppointmentType.Collection;
 
+            DateTime? scheduledAt = appointmentType == AppointmentType.Inspection
+                ? details?.InspectionDate
+                : details?.CollectionDate;
+
+            if (!scheduledAt.HasValue)
+            {
+                throw new InvalidOperationException(
+                    "Agreement không có thời gian lịch hẹn hợp lệ.");
+            }
+
+            var appointmentPolicy =
+                await _platformPolicyProvider
+                    .GetAppointmentConfigAsync(ct);
+
+            var supportsLateThreshold =
+                appointmentType == AppointmentType.Inspection ||
+                details?.DeliveryMethod == DeliveryMethod.BuyerPickUp ||
+                details?.DeliveryMethod == DeliveryMethod.SellerDelivers;
+
             var appointmentId = Guid.NewGuid();
             var appointment = new appointment
             {
                 AppointmentId = appointmentId,
                 AgreementId = agreement.AgreementId,
                 AppointmentType = (int)appointmentType,
-                AppointmentStatus = (int)AppointmentStatus.Pending,
+                AppointmentStatus = (int)AppointmentStatus.Scheduled,
+                LateThresholdAt = supportsLateThreshold
+                    ? scheduledAt.Value.AddMinutes(appointmentPolicy.LateThresholdMinutes)
+                    : null,
                 CreatedAt = DateTime.UtcNow
                 // UpdatedAt: để null.
             };
@@ -967,7 +1159,7 @@ namespace HomeCycle.Application.Services.Payments
                     InspectionAppointmentId = Guid.NewGuid(),
                     AppointmentId = appointmentId,
                     InspectionAddress = details?.InspectionAddress ?? string.Empty,
-                    InspectionDate = details?.InspectionDate ?? DateTime.UtcNow.AddDays(1)
+                    InspectionDate = scheduledAt.Value
                 };
                 await _inspectionRepo.AddAsync(inspectionAppt, ct);
             }
@@ -977,7 +1169,7 @@ namespace HomeCycle.Application.Services.Payments
                 {
                     CollectionAppointmentId = Guid.NewGuid(),
                     AppointmentId = appointmentId,
-                    CollectionDate = details?.CollectionDate,
+                    CollectionDate = scheduledAt.Value,
                     PickupAddress = details?.PickupAddress,
                     DeliveryAddress = details?.DeliveryAddress,
                     DeliveryMethod = details?.DeliveryMethod?.ToString()
@@ -1238,5 +1430,7 @@ namespace HomeCycle.Application.Services.Payments
             var randomPart = Guid.NewGuid().ToString("N").Substring(0, 4).ToUpperInvariant();
             return $"HC-{datePart}-{randomPart}";
         }
+
+        #endregion
     }
 }

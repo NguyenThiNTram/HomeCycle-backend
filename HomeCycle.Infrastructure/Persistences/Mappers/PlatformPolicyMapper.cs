@@ -20,6 +20,8 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 Content = entity.Content,
                 Version = entity.Version,
                 IsActive = entity.IsActive,
+                CreatedAt = entity.CreatedAt,
+                CreatedBy = entity.CreatedBy,
                 UpdatedAt = entity.UpdatedAt
             };
         }
@@ -34,6 +36,8 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 Content = entity.Content,
                 Version = entity.Version,
                 IsActive = entity.IsActive,
+                CreatedAt = entity.CreatedAt,
+                CreatedBy = entity.CreatedBy,
                 UpdatedAt = entity.UpdatedAt
             };
         }

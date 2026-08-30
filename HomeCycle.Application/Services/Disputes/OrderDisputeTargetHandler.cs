@@ -73,7 +73,7 @@ namespace HomeCycle.Application.Services.Disputes
                         cancellationToken);
 
             if (agreement == null)
-                return Result<DisputeTargetCreateContext>.Fail(DisputeErrors.AgreementNotFound);
+                return Result<DisputeTargetCreateContext>.Fail(AgreementErrors.NotFound);
 
             // Chỉ Buyer hoặc Seller của Order mới được dispute.
             bool isBuyer =
@@ -282,6 +282,9 @@ namespace HomeCycle.Application.Services.Disputes
                         order.AgreementId,
                         cancellationToken);
 
+            if (agreement == null)
+                return Result<DisputeTargetSummaryDto>.Fail(AgreementErrors.NotFound);
+
             var shipment =
                 await _shipmentRepository
                     .GetByOrderIdAsync(
@@ -292,25 +295,14 @@ namespace HomeCycle.Application.Services.Disputes
                 shipment?.DeliveredAt
                 ?? order.CompletedAt;
 
-            DateTime? deadline = null;
 
-            int windowHours = 72;
+            var window = await _windowPolicy.GetOrderDisputeWindowAsync(agreement.SellerId, cancellationToken);
 
-            if (windowStart.HasValue &&
-                agreement != null)
-            {
-                var window =
-                    await _windowPolicy
-                        .GetOrderDisputeWindowAsync(
-                            agreement.SellerId,
-                            cancellationToken);
+            int windowHours = (int)window.TotalHours;
 
-                windowHours =
-                    (int)window.TotalHours;
-
-                deadline =
-                    windowStart.Value.Add(window);
-            }
+            DateTime? deadline = windowStart.HasValue
+                ? windowStart.Value.Add(window)
+                : null;
 
             var orderSummary =
                 new OrderDisputeSummaryDto

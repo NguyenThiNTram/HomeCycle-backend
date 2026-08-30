@@ -1,4 +1,5 @@
-﻿using System;
+﻿using HomeCycle.Domain.Enums;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -9,9 +10,15 @@ namespace HomeCycle.Application.DTOs.Responses.Appointments
     public class AppointmentCheckInResponseDto
     {
         public Guid AppointmentId { get; set; }
-        public int? AppointmentStatus { get; set; }
+        public AppointmentStatus? AppointmentStatus { get; set; }
+
         public DateTime? BuyerCheckAt { get; set; }
         public DateTime? SellerCheckAt { get; set; }
+
+        public DateTime? LateThresholdAt { get; set; }
+        public bool IsOverdue { get; set; }
+
         public bool IsFullyCheckedIn => BuyerCheckAt.HasValue && SellerCheckAt.HasValue;
     }
+
 }

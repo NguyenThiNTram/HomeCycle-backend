@@ -55,6 +55,12 @@ public partial class Order
 
     public int? CompletionSource { get; set; }
 
+    public DateTime? CancelledAt { get; set; }
+    public Guid? CancelledByUserId { get; set; }
+    public string? CancellationReason { get; set; }
+
+    public DateTime? DisputeWindowEndsAt { get; set; }
+
     [ForeignKey("AgreementId")]
     [InverseProperty("Order")]
     public virtual Agreement_Form Agreement { get; set; } = null!;
