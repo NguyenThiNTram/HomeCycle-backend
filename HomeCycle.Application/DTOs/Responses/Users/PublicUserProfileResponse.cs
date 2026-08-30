@@ -13,7 +13,7 @@ namespace HomeCycle.Application.DTOs.Responses.Users
         public string Username { get; set; } = null!;
         public string? AvatarUrl { get; set; }
         public int ReputationScore { get; set; }
-        public double DisplayStarRating { get; set; }
+        public double? DisplayStarRating { get; set; }
         //public bool IsVerified { get; set; }
         public DateTime JoinedAt { get; set; }
         public int ActivePostCount { get; set; }
