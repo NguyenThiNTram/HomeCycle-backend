@@ -28,7 +28,12 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 SuggestedPrice = entity.SuggestedPrice,
                 CollectAction = entity.CollectAction,
                 InspectionStatus = entity.InspectionStatus,
-                CreatedAt = entity.CreatedAt
+                Revision = entity.Revision,
+                SubmittedAt = entity.SubmittedAt,
+                SellerDecisionAt = entity.SellerDecisionAt,
+                SellerDecisionReason = entity.SellerDecisionReason,
+                CreatedAt = entity.CreatedAt,
+                UpdatedAt = entity.UpdatedAt
             };
         }
         public static Inspection_Form ToInfrastructure(this inspection_form entity)
@@ -50,7 +55,12 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 SuggestedPrice = entity.SuggestedPrice,
                 CollectAction = entity.CollectAction,
                 InspectionStatus = entity.InspectionStatus,
-                CreatedAt = entity.CreatedAt
+                Revision = entity.Revision,
+                SubmittedAt = entity.SubmittedAt,
+                SellerDecisionAt = entity.SellerDecisionAt,
+                SellerDecisionReason = entity.SellerDecisionReason,
+                CreatedAt = entity.CreatedAt,
+                UpdatedAt = entity.UpdatedAt
             };
         }
     }

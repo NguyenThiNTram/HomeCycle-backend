@@ -31,7 +31,11 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 CompletedAt = entity.CompletedAt,
                 SellerHandoverConfirmedAt = entity.SellerHandoverConfirmedAt,
                 BuyerReceivedConfirmedAt = entity.BuyerReceivedConfirmedAt,
-                CompletionSource = entity.CompletionSource
+                CompletionSource = entity.CompletionSource,
+                CancelledAt = entity.CancelledAt,
+                CancelledByUserId = entity.CancelledByUserId,
+                CancellationReason = entity.CancellationReason,
+                DisputeWindowEndsAt = entity.DisputeWindowEndsAt
             };
         }
         public static Order ToInfrastructure(this order entity)
@@ -56,7 +60,11 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 CompletedAt = entity.CompletedAt,
                 SellerHandoverConfirmedAt = entity.SellerHandoverConfirmedAt,
                 BuyerReceivedConfirmedAt = entity.BuyerReceivedConfirmedAt,
-                CompletionSource = entity.CompletionSource
+                CompletionSource = entity.CompletionSource,
+                CancelledAt = entity.CancelledAt,
+                CancelledByUserId = entity.CancelledByUserId,
+                CancellationReason = entity.CancellationReason,
+                DisputeWindowEndsAt = entity.DisputeWindowEndsAt
             };
         }
     }

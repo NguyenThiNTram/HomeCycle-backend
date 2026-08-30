@@ -8,10 +8,11 @@ namespace HomeCycle.Domain.Enums
 {
     public enum AppointmentStatus
     {
-        Pending = 0,
-        Confirmed = 1,
-        Completed = 2,
-        Cancelled = 3,
-        Misssed = 4
+        Proposed = 0, // lịch đề xuất mới, đang chờ bên kia accept
+        Scheduled = 1, // lịch chính thức đã được hai bên thống nhất
+        Completed = 2, // nghiệp vụ của cuộc hẹn đã hoàn tất
+        Cancelled = 3, // lịch bị hủy hoặc bị thay thế
+        Expired = 4, // quá hạn nhưng cuộc hẹn không hoàn thành
+        InProgress = 5 // cuộc hẹn đã thực sự bắt đầu
     }
 }

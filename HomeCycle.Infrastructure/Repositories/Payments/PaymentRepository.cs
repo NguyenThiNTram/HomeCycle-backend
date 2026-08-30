@@ -92,5 +92,23 @@ namespace HomeCycle.Infrastructure.Repositories.Payments
                 TotalCount = totalCount
             };
         }
+
+        public async Task<payment?> GetLatestPaidByOrderIdAsync(Guid orderId, CancellationToken ct = default)
+        {
+            var entity = await _db.Payments
+                .AsNoTracking()
+                .Where(x =>
+                    x.OrderId == orderId &&
+                    x.PaidAt.HasValue &&
+                    (
+                        x.PaymentStatus == (int)PaymentStatus.Completed ||
+                        x.PaymentStatus == (int)PaymentStatus.PartiallyRefunded ||
+                        x.PaymentStatus == (int)PaymentStatus.Refunded
+                    ))
+                .OrderByDescending(x => x.PaidAt)
+                .FirstOrDefaultAsync(ct);
+
+            return entity?.ToDomain();
+        }
     }
 }

@@ -1,15 +1,18 @@
 ﻿using AutoMapper;
 using HomeCycle.Application.Commons.Paginations;
+using HomeCycle.Application.DTOs.Configs;
 using HomeCycle.Application.DTOs.Requests.Auths;
 using HomeCycle.Application.DTOs.Requests.Banks;
 using HomeCycle.Application.DTOs.Requests.Brands;
 using HomeCycle.Application.DTOs.Requests.Categories;
 using HomeCycle.Application.DTOs.Requests.Media;
 using HomeCycle.Application.DTOs.Requests.Offers;
+using HomeCycle.Application.DTOs.Requests.PlatformPolicies;
 using HomeCycle.Application.DTOs.Requests.Posts;
 using HomeCycle.Application.DTOs.Requests.Products;
 using HomeCycle.Application.DTOs.Requests.Profiles;
 using HomeCycle.Application.DTOs.Requests.Users;
+using HomeCycle.Application.DTOs.Responses.Appointments;
 using HomeCycle.Application.DTOs.Responses.Auths;
 using HomeCycle.Application.DTOs.Responses.Banks;
 using HomeCycle.Application.DTOs.Responses.Brands;
@@ -17,6 +20,8 @@ using HomeCycle.Application.DTOs.Responses.Categories;
 using HomeCycle.Application.DTOs.Responses.Media;
 using HomeCycle.Application.DTOs.Responses.Negotiations;
 using HomeCycle.Application.DTOs.Responses.Offers;
+using HomeCycle.Application.DTOs.Responses.Orders;
+using HomeCycle.Application.DTOs.Responses.PlatformPolicies;
 using HomeCycle.Application.DTOs.Responses.Posts;
 using HomeCycle.Application.DTOs.Responses.Products;
 using HomeCycle.Application.DTOs.Responses.Profiles;
@@ -27,6 +32,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Text.Json;
 using System.Threading.Tasks;
 
 namespace HomeCycle.Application.Mappings
@@ -554,6 +560,98 @@ namespace HomeCycle.Application.Mappings
                 .ForMember(dest => dest.CurrentOfferQuantity, opt => opt.MapFrom(src => src.Offer.OfferQuantity));
 
             CreateMap<message, MessageResponse>();
+
+
+            // ==================== PLATFORM POLICY ====================
+
+            CreateMap<platform_policy, PlatformPolicySummaryResponseDto>()
+                .ForMember(dest => dest.PolicyType,
+                    opt => opt.MapFrom(src => Enum.Parse<PlatformPolicyType>(src.PolicyType, true)));
+
+            CreateMap<platform_policy, PlatformPolicyVersionListItemDto>()
+                .ForMember(dest => dest.CanRestore,
+                    opt => opt.MapFrom(src => !src.IsActive));
+
+            CreateMap<platform_policy, PlatformPolicyVersionDetailDto>()
+                .ForMember(dest => dest.PolicyType,
+                    opt => opt.MapFrom(src => Enum.Parse<PlatformPolicyType>(src.PolicyType, true)))
+                .ForMember(dest => dest.Config,
+                    opt => opt.MapFrom(src =>
+                        JsonSerializer.Deserialize<JsonElement>(
+                            src.Content,
+                            (JsonSerializerOptions?)null)))
+                .ForMember(dest => dest.CanRestore,
+                    opt => opt.MapFrom(src => !src.IsActive));
+
+            CreateMap<platform_policy, PlatformPolicyResponseDto<DisputePolicyConfigDto>>()
+                .ForMember(dest => dest.PolicyType,
+                    opt => opt.MapFrom(src => Enum.Parse<PlatformPolicyType>(src.PolicyType, true)))
+                .ForMember(dest => dest.Config, opt => opt.Ignore());
+
+            CreateMap<platform_policy, PlatformPolicyResponseDto<AppointmentPolicyConfigDto>>()
+                .ForMember(dest => dest.PolicyType,
+                    opt => opt.MapFrom(src => Enum.Parse<PlatformPolicyType>(src.PolicyType, true)))
+                .ForMember(dest => dest.Config, opt => opt.Ignore());
+
+            CreateMap<DisputePolicyConfigDto, DisputePolicyConfigDto>();
+
+            CreateMap<AppointmentPolicyConfigDto, AppointmentPolicyConfigDto>();
+
+            CreateMap<UpdateDisputePolicyRequest, DisputePolicyConfigDto>()
+                .ForAllMembers(opt => opt.Condition(
+                    (src, dest, srcMember) => srcMember != null));
+
+            CreateMap<UpdateAppointmentPolicyRequest, AppointmentPolicyConfigDto>()
+                .ForAllMembers(opt => opt.Condition(
+                    (src, dest, srcMember) => srcMember != null));
+
+
+            // ==================== ORDER / APPOINTMENT READ MODEL ====================
+
+            CreateMap<order, OrderReferenceDto>()
+                .ForMember(dest => dest.OrderStatus,
+                    opt => opt.MapFrom(src => src.OrderStatus.HasValue
+                        ? (OrderStatus?)src.OrderStatus.Value
+                        : null))
+                .ForMember(dest => dest.PaymentStatus,
+                    opt => opt.MapFrom(src => src.PaymentStatus.HasValue
+                        ? (PaymentStatus?)src.PaymentStatus.Value
+                        : null));
+
+            CreateMap<order, AppointmentOrderSummaryDto>()
+                .ForMember(dest => dest.OrderStatus,
+                    opt => opt.MapFrom(src => src.OrderStatus.HasValue
+                        ? (OrderStatus?)src.OrderStatus.Value
+                        : null));
+
+            CreateMap<appointment, AppointmentDetailDto>()
+                .ForMember(
+                    dest => dest.AppointmentType,
+                    opt => opt.MapFrom(src =>
+                        src.AppointmentType.HasValue
+                            ? (AppointmentType?)src.AppointmentType.Value
+                            : null))
+                .ForMember(
+                    dest => dest.AppointmentStatus,
+                    opt => opt.MapFrom(src =>
+                        src.AppointmentStatus.HasValue
+                            ? (AppointmentStatus?)src.AppointmentStatus.Value
+                            : null))
+                .ForMember(dest => dest.IsOverdue, opt => opt.Ignore())
+                .ForMember(dest => dest.Inspection, opt => opt.Ignore())
+                .ForMember(dest => dest.Collection, opt => opt.Ignore())
+                .ForMember(dest => dest.Cancellation, opt => opt.Ignore())
+                .ForMember(dest => dest.Reschedule, opt => opt.Ignore())
+                .ForMember(dest => dest.Order, opt => opt.Ignore())
+                .ForMember(dest => dest.Actions, opt => opt.Ignore());
+
+            CreateMap<inspection_appointment, InspectionAppointmentDetailDto>()
+                .ForMember(dest => dest.CheckIn, opt => opt.Ignore())
+                .ForMember(dest => dest.InspectionForm, opt => opt.Ignore());
+
+            CreateMap<collection_appointment, CollectionAppointmentDetailDto>()
+                .ForMember(dest => dest.DeliveryMethod, opt => opt.Ignore());
+
         }
     }
 }
