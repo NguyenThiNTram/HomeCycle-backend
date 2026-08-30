@@ -5,11 +5,13 @@ using HomeCycle.Application.Commons.Paginations;
 using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Requests.Offers;
 using HomeCycle.Application.DTOs.Responses.Negotiations;
+using HomeCycle.Application.DTOs.Responses.Notifications;
 using HomeCycle.Application.DTOs.Responses.Offers;
 using HomeCycle.Application.Interfaces.Generics;
 using HomeCycle.Application.Interfaces.Repositories.Offers;
 using HomeCycle.Application.Interfaces.Repositories.Posts;
 using HomeCycle.Application.Interfaces.Repositories.Users;
+using HomeCycle.Application.Interfaces.Services.Notifications;
 using HomeCycle.Application.Interfaces.Services.Offers;
 using HomeCycle.Domain.Entities;
 using HomeCycle.Domain.Enums;
@@ -39,6 +41,7 @@ namespace HomeCycle.Application.Services.Offers
         private readonly IMapper _mapper;
         private readonly IUnitOfWork _unitOfWork;
         private readonly IChatRealtimePublisher _realtimePublisher;
+        private readonly INotificationService _notificationService;
 
         private const decimal MinPriceFactor = 0.2m;
         private const decimal MaxPriceFactor = 3m;
@@ -56,7 +59,8 @@ namespace HomeCycle.Application.Services.Offers
             IValidator<CounterInitialOfferRequest> counterInitialValidator,
             IMapper mapper,
             IUnitOfWork unitOfWork,
-            IChatRealtimePublisher realtimePublisher)
+            IChatRealtimePublisher realtimePublisher,
+            INotificationService notificationService)
         {
             _offerRepository = offerRepository;
             _offerTermsPolicy = offerTermsPolicy;
@@ -71,6 +75,7 @@ namespace HomeCycle.Application.Services.Offers
             _mapper = mapper;
             _unitOfWork = unitOfWork;
             _realtimePublisher = realtimePublisher;
+            _notificationService = notificationService;
         }
 
         // ================== GIAI ĐOẠN 1: NGOÀI NEGOTIATION ==================
@@ -126,10 +131,21 @@ namespace HomeCycle.Application.Services.Offers
             offer.Version = 1; //thêm version để check update
             offer.CreatedAt = DateTime.UtcNow;
 
+            notification createdNotification = null!;
+
             try
             {
                 await _offerRepository.AddAsync(offer, cancellationToken);
                 _logger.LogInformation("Creating offer for PostId: {PostId}", offer.PostId);
+
+                createdNotification =
+                    await AddOfferNotificationPendingAsync(
+                        offer,
+                        userId,
+                        "Bạn có đề nghị mới",
+                        "Bạn vừa nhận được một đề nghị thương lượng mới.",
+                        cancellationToken);
+
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 
             }
@@ -144,6 +160,7 @@ namespace HomeCycle.Application.Services.Offers
                 return Result<OfferResponse>.Fail(OfferErrors.NotFound);
             
             await PublishOfferCreatedSafelyAsync(created);
+            await _notificationService.PublishCreatedSafelyAsync(createdNotification);
 
             return Result<OfferResponse>.Success(_mapper.Map<OfferResponse>(created));
         }
@@ -157,6 +174,7 @@ namespace HomeCycle.Application.Services.Offers
 
             await _unitOfWork.BeginTransactionAsync(cancellationToken);
             offer? updatedOffer = null;
+            notification updatedNotification = null!;
             try
             {
                 // Khóa Offer để Update không chạy đồng thời với Accept
@@ -224,8 +242,30 @@ namespace HomeCycle.Application.Services.Offers
                 //offer.OfferPrice = request.OfferPrice.Value;
                 //offer.OfferQuantity = request.OfferQuantity.Value;
 
-                _mapper.Map(request, offer);
-                offer.Version++;
+                //_mapper.Map(request, offer);
+                //offer.Version++;
+
+                var termsChanged = offer.OfferPrice != newPrice || offer.OfferQuantity != newQuantity;
+
+                if (!termsChanged)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+
+                    return Result<OfferResponse>.Success(
+                        _mapper.Map<OfferResponse>(offer));
+                }
+
+                offer.OfferPrice = newPrice;
+                offer.OfferQuantity = newQuantity;
+                offer.Version = (offer.Version ?? 1) + 1;
+
+                updatedNotification =
+                    await AddOfferNotificationPendingAsync(
+                        offer,
+                        userId,
+                        "Đề nghị đã được cập nhật",
+                        "Người gửi đã cập nhật giá hoặc số lượng của đề nghị.",
+                        cancellationToken);
 
                 await _offerRepository.UpdateAsync(offer, cancellationToken);
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -233,6 +273,7 @@ namespace HomeCycle.Application.Services.Offers
 
                 //await PublishOfferUpdatedSafelyAsync(offer);
                 updatedOffer = offer;
+                
             }
             catch
             {
@@ -241,6 +282,7 @@ namespace HomeCycle.Application.Services.Offers
             }
             // Chỉ realtime sau khi transaction đã commit success
             await PublishOfferUpdatedSafelyAsync(updatedOffer);
+            await _notificationService.PublishCreatedSafelyAsync(updatedNotification);
 
             return Result<OfferResponse>.Success( _mapper.Map<OfferResponse>(updatedOffer));
         }
@@ -248,6 +290,9 @@ namespace HomeCycle.Application.Services.Offers
         // Người gửi tự hủy request && hủy Offer ban đầu khi còn Pending
         public async Task<Result<OfferResponse>> CancelAsync(Guid userId, Guid offerId, CancellationToken cancellationToken = default)
         {
+            offer cancelledOffer = null!;
+            notification cancelledNotification = null!;
+
             await _unitOfWork.BeginTransactionAsync(cancellationToken);
             try
             {
@@ -272,10 +317,17 @@ namespace HomeCycle.Application.Services.Offers
 
                 offer.OfferStatus = OfferStatus.Cancelled;
 
+                cancelledNotification = await AddOfferNotificationPendingAsync(
+                    offer, userId,
+                    "Đề nghị đã được hủy",
+                    "Người gửi đã hủy đề nghị thương lượng.",
+                    cancellationToken);
+
                 await _offerRepository.UpdateAsync(offer, cancellationToken);
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
-
-                await PublishOfferUpdatedSafelyAsync(offer);
+                await _unitOfWork.CommitTransactionAsync(cancellationToken);
+                //await PublishOfferUpdatedSafelyAsync(offer);
+                cancelledOffer = offer;
             }
             catch
             {
@@ -284,7 +336,9 @@ namespace HomeCycle.Application.Services.Offers
             }
 
             var cancelOffer = await _offerRepository.GetByIdAsync(offerId, cancellationToken);
+
             await PublishOfferUpdatedSafelyAsync(cancelOffer!);
+            await _notificationService.PublishCreatedSafelyAsync(cancelledNotification);
 
             return Result<OfferResponse>.Success(_mapper.Map<OfferResponse>(cancelOffer));
         }
@@ -292,6 +346,9 @@ namespace HomeCycle.Application.Services.Offers
         // Người nhận từ chối request ban đầu
         public async Task<Result<OfferResponse>> RejectAsync(Guid userId, Guid offerId, CancellationToken cancellationToken = default)
         {
+            offer rejectedOffer = null!;
+            notification rejectedNotification = null!;
+
             await _unitOfWork.BeginTransactionAsync(cancellationToken);
             try
             {
@@ -316,10 +373,21 @@ namespace HomeCycle.Application.Services.Offers
 
                 offer.OfferStatus = OfferStatus.Rejected;
 
+                // Người nhận từ chối -> thông báo ngược lại cho người gửi.
+                rejectedNotification =
+                    await AddOfferNotificationPendingAsync(
+                        offer,
+                        userId,
+                        "Đề nghị đã bị từ chối",
+                        "Người nhận đã từ chối đề nghị thương lượng của bạn.",
+                        cancellationToken);
+
                 await _offerRepository.UpdateAsync(offer, cancellationToken);
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
+                await _unitOfWork.CommitTransactionAsync(cancellationToken);
 
-                await PublishOfferUpdatedSafelyAsync(offer);
+                //await PublishOfferUpdatedSafelyAsync(offer);
+                rejectedOffer = offer;
             }
             catch
             {
@@ -328,7 +396,9 @@ namespace HomeCycle.Application.Services.Offers
             }
 
             var rejectOffer = await _offerRepository.GetByIdAsync(offerId, cancellationToken);
+
             await PublishOfferUpdatedSafelyAsync(rejectOffer!);
+            await _notificationService.PublishCreatedSafelyAsync(rejectedNotification);
 
             return Result<OfferResponse>.Success(_mapper.Map<OfferResponse>(rejectOffer));
         }
@@ -414,6 +484,14 @@ namespace HomeCycle.Application.Services.Offers
                 // Offer Accepted nghĩa là Offer đã được xử lý và đưa vào Negotiation.
                 offer.OfferStatus = OfferStatus.Accepted;
 
+                var acceptedNotification =
+                    await AddOfferNotificationPendingAsync(
+                        offer,
+                        userId,
+                        "Đề nghị đã được chấp nhận",
+                        "Người nhận đã chấp nhận đề nghị của bạn.",
+                        cancellationToken);
+
                 await _offerRepository.UpdateAsync(offer, cancellationToken);
                 await _negotiationRepository.AddAsync(negotiation, cancellationToken);
                 await _messageRepository.AddAsync(initialOfferMessage, cancellationToken);
@@ -438,6 +516,7 @@ namespace HomeCycle.Application.Services.Offers
 
                 // Realtime: đẩy OfferUpdated cho cả 2 bên (Sender + Receiver) để cập nhật trạng thái Accepted
                 await PublishOfferUpdatedSafelyAsync(offer);
+                await _notificationService.PublishCreatedSafelyAsync(acceptedNotification);
 
                 return Result<AcceptOfferResponse>.Success(
                     new AcceptOfferResponse
@@ -555,7 +634,16 @@ namespace HomeCycle.Application.Services.Offers
                 offer.OfferPrice = request.OfferPrice;
                 offer.OfferQuantity = request.OfferQuantity;
                 offer.OfferStatus = OfferStatus.Accepted;
-                offer.Version++;
+                //offer.Version++;
+                offer.Version = (offer.Version ?? 1) + 1;
+
+                var counterNotification =
+                    await AddOfferNotificationPendingAsync(
+                        offer,
+                        userId,
+                        "Bạn nhận được đề nghị đối ứng",
+                        "Người nhận đã gửi lại một đề nghị với giá hoặc số lượng mới.",
+                        cancellationToken);
 
                 // Gắn Offer vào negotiation để response counter hiện tại
                 negotiation.Offer = offer;
@@ -567,6 +655,8 @@ namespace HomeCycle.Application.Services.Offers
 
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync(cancellationToken);
+
+                await _notificationService.PublishCreatedSafelyAsync(counterNotification);
 
                 // Realtime: đẩy lịch sử offer gốc + counter mới cho group negotiation
                 await PublishMessageCreatedSafelyAsync(
@@ -924,6 +1014,28 @@ namespace HomeCycle.Application.Services.Offers
                     "Không thể phát OfferCreated cho OfferId {OfferId}.",
                     offer.OfferId);
             }
+        }
+
+        private Task<notification> AddOfferNotificationPendingAsync(offer offer, Guid actorId, string title, string message, CancellationToken cancellationToken)
+        {
+            Guid recipientId;
+
+            if (actorId == offer.SenderId)
+                recipientId = offer.ReceiverId;
+            else if (actorId == offer.ReceiverId)
+                recipientId = offer.SenderId;
+            else
+                throw new InvalidOperationException(
+                    "Người thực hiện không thuộc Offer.");
+
+            return _notificationService.AddPendingAsync(
+                new CreateNotificationCommand(
+                    recipientId,
+                    title,
+                    message,
+                    NotificationTargetType.Offer,
+                    offer.OfferId),
+                cancellationToken);
         }
     }
 }

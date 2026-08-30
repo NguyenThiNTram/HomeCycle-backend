@@ -113,8 +113,8 @@ namespace HomeCycle.API.Controllers
                 "của đối phương chuyển thành Superseded. Không được tự counter " +
                 "proposal Pending do chính mình vừa gửi."
         )]
-        [ProducesResponseType(typeof(Result<NegotiationProposalResponse>), StatusCodes.Status200OK)]
-        [ProducesResponseType(typeof(Result<NegotiationProposalResponse>), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(Result<NegotiationActionResponse>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(Result<NegotiationActionResponse>), StatusCodes.Status400BadRequest)]
         public async Task<IActionResult> Counter(
             Guid negotiationId,
             [FromBody] SendNegotiationCounterRequest request,
@@ -137,8 +137,8 @@ namespace HomeCycle.API.Controllers
                 "Negotiation chuyển sang Agreed và chốt FinalPrice/FinalQuantity. " +
                 "Không được chấp nhận proposal do chính mình gửi."
         )]
-        [ProducesResponseType(typeof(Result<NegotiationResponse>), StatusCodes.Status200OK)]
-        [ProducesResponseType(typeof(Result<NegotiationResponse>), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(Result<NegotiationActionResponse>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(Result<NegotiationActionResponse>), StatusCodes.Status400BadRequest)]
         public async Task<IActionResult> AcceptProposal(
             Guid negotiationId,
             Guid proposalMessageId,
@@ -160,8 +160,8 @@ namespace HomeCycle.API.Controllers
                 "Từ chối proposal Pending của đối phương. Proposal chuyển sang " +
                 "Rejected nhưng Negotiation vẫn Open để hai bên có thể tiếp tục counter."
         )]
-        [ProducesResponseType(typeof(Result<NegotiationProposalResponse>), StatusCodes.Status200OK)]
-        [ProducesResponseType(typeof(Result<NegotiationProposalResponse>), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(Result<NegotiationActionResponse>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(Result<NegotiationActionResponse>), StatusCodes.Status400BadRequest)]
         public async Task<IActionResult> RejectProposal(
             Guid negotiationId,
             Guid proposalMessageId,
@@ -184,8 +184,8 @@ namespace HomeCycle.API.Controllers
                 "thỏa thuận. Negotiation chuyển sang Closed và không thể gửi " +
                 "hoặc xử lý proposal mới."
         )]
-        [ProducesResponseType(typeof(Result<NegotiationResponse>), StatusCodes.Status200OK)]
-        [ProducesResponseType(typeof(Result<NegotiationResponse>), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(Result<NegotiationActionResponse>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(Result<NegotiationActionResponse>), StatusCodes.Status400BadRequest)]
         public async Task<IActionResult> Cancel(
             Guid negotiationId,
             CancellationToken cancellationToken)
