@@ -32,7 +32,7 @@ namespace HomeCycle.Application.Commons.Errors
 
         // AUTHENTICATION
 
-        public static readonly Error InvalidCredential = new("AUTH_INVALID_CREDENTIAL","Invalid username or password.");
+        public static readonly Error InvalidCredential = new("AUTH_INVALID_CREDENTIAL", "Invalid username or password.");
 
         public static readonly Error UserNotFound = new("AUTH_USER_NOT_FOUND", "User not found.");
 
@@ -310,5 +310,10 @@ namespace HomeCycle.Application.Commons.Errors
 
         public static readonly Error ShipmentNotDelivered =
             new("Order.ShipmentNotDelivered", "Đơn vận chuyển chưa được xác nhận giao thành công.");
+    }
+
+    public static class NotificationErrors
+    {
+        public static readonly Error NotFound = new("NOTIFICATION_NOT_FOUND", "can not found notification");
     }
 }

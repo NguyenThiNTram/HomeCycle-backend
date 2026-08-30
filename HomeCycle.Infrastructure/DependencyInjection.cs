@@ -7,7 +7,10 @@ using HomeCycle.Application.Interfaces.Repositories.Agreements;
 using HomeCycle.Application.Interfaces.Repositories.Appointments;
 using HomeCycle.Application.Interfaces.Repositories.Banks;
 using HomeCycle.Application.Interfaces.Repositories.Carts;
+using HomeCycle.Application.Interfaces.Repositories.Disputes;
+using HomeCycle.Application.Interfaces.Repositories.GHN;
 using HomeCycle.Application.Interfaces.Repositories.Media;
+using HomeCycle.Application.Interfaces.Repositories.Notifications;
 using HomeCycle.Application.Interfaces.Repositories.Offers;
 using HomeCycle.Application.Interfaces.Repositories.Orders;
 using HomeCycle.Application.Interfaces.Repositories.Payments;
@@ -20,41 +23,57 @@ using HomeCycle.Application.Interfaces.Repositories.Users;
 using HomeCycle.Application.Interfaces.Repositories.Wallets;
 using HomeCycle.Application.Interfaces.Security;
 using HomeCycle.Application.Interfaces.Services.Agreements;
+using HomeCycle.Application.Interfaces.Services.Appointments;
 using HomeCycle.Application.Interfaces.Services.Auths;
 using HomeCycle.Application.Interfaces.Services.Carts;
+using HomeCycle.Application.Interfaces.Services.Disputes;
 using HomeCycle.Application.Interfaces.Services.Externals;
+using HomeCycle.Application.Interfaces.Services.GHN;
 using HomeCycle.Application.Interfaces.Services.Moderators;
 using HomeCycle.Application.Interfaces.Services.Negotiates;
+using HomeCycle.Application.Interfaces.Services.Notifications;
 using HomeCycle.Application.Interfaces.Services.Offers;
+using HomeCycle.Application.Interfaces.Services.Orders;
 using HomeCycle.Application.Interfaces.Services.Payments;
 using HomeCycle.Application.Interfaces.Services.Posts;
 using HomeCycle.Application.Interfaces.Services.Products;
 using HomeCycle.Application.Interfaces.Services.Profiles;
 using HomeCycle.Application.Interfaces.Services.Reviews;
 using HomeCycle.Application.Interfaces.Services.Users;
+using HomeCycle.Application.Interfaces.Services.Wallets;
 using HomeCycle.Application.Mappings;
 using HomeCycle.Application.Services.Agreements;
+using HomeCycle.Application.Services.Appointments;
 using HomeCycle.Application.Services.Auths;
 using HomeCycle.Application.Services.Carts;
+using HomeCycle.Application.Services.Disputes;
+using HomeCycle.Application.Services.GHN;
 using HomeCycle.Application.Services.Moderators;
 using HomeCycle.Application.Services.Negotiates;
+using HomeCycle.Application.Services.Notifications;
 using HomeCycle.Application.Services.Offers;
+using HomeCycle.Application.Services.Orders;
 using HomeCycle.Application.Services.Payments;
 using HomeCycle.Application.Services.Personals;
 using HomeCycle.Application.Services.Posts;
 using HomeCycle.Application.Services.Products;
 using HomeCycle.Application.Services.Profiles;
 using HomeCycle.Application.Services.Reviews;
+using HomeCycle.Application.Services.Wallets;
 using HomeCycle.Application.Validations.Agreements;
 using HomeCycle.Application.Validations.Auths;
 using HomeCycle.Application.Validations.Users;
 using HomeCycle.Infrastructure.DbContexts;
 using HomeCycle.Infrastructure.Externals;
 using HomeCycle.Infrastructure.Externals.GHN;
+using HomeCycle.Infrastructure.Externals.PayOS;
 using HomeCycle.Infrastructure.Repositories.Agreements;
 using HomeCycle.Infrastructure.Repositories.Appointments;
 using HomeCycle.Infrastructure.Repositories.Banks;
 using HomeCycle.Infrastructure.Repositories.Carts;
+using HomeCycle.Infrastructure.Repositories.Disputes;
+using HomeCycle.Infrastructure.Repositories.GHN;
+using HomeCycle.Infrastructure.Repositories.Notifications;
 using HomeCycle.Infrastructure.Repositories.Offers;
 using HomeCycle.Infrastructure.Repositories.Orders;
 using HomeCycle.Infrastructure.Repositories.Payments;
@@ -75,22 +94,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using System.Net.Http.Headers;
-
-using HomeCycle.Application.Interfaces.Services.Appointments;
-using HomeCycle.Application.Interfaces.Services.Orders;
-using HomeCycle.Application.Services.Appointments;
-using HomeCycle.Application.Services.Orders;
-using HomeCycle.Infrastructure.Externals.PayOS;
-using HomeCycle.Application.Interfaces.Repositories.GHN;
-using HomeCycle.Infrastructure.Repositories.GHN;
-using HomeCycle.Application.Interfaces.Services.GHN;
-using HomeCycle.Application.Services.GHN;
-using HomeCycle.Application.Interfaces.Services.Wallets;
-using HomeCycle.Application.Services.Wallets;
-using HomeCycle.Application.Interfaces.Repositories.Disputes;
-using HomeCycle.Infrastructure.Repositories.Disputes;
-using HomeCycle.Application.Interfaces.Services.Disputes;
-using HomeCycle.Application.Services.Disputes;
 
 namespace HomeCycle.Infrastructure
 {
@@ -183,6 +186,7 @@ namespace HomeCycle.Infrastructure
             services.AddScoped<IGhnWebhookService, GhnWebhookService>();
             services.AddScoped<IWithdrawalRepository, WithdrawalRepository>();
             services.AddScoped<IDisputeRepository, DisputeRepository>();
+            services.AddScoped<INotificationRepository, NotificationRepository>();
 
             // register Services
             services.AddScoped<IAuthService, AuthService>();
@@ -217,6 +221,7 @@ namespace HomeCycle.Infrastructure
             services.AddScoped<IDisputeService, DisputeService>();
             services.AddScoped<IDisputeWindowPolicy, DisputeWindowPolicy>();
             services.AddScoped<IDisputeTargetHandler, OrderDisputeTargetHandler>();
+            services.AddScoped<INotificationService, NotificationService>();
 
 
             services.Configure<PayOSSettings>(configuration.GetSection("PayOS"));
