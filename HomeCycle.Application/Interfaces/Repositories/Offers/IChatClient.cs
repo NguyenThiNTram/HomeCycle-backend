@@ -1,4 +1,5 @@
 ﻿using HomeCycle.Application.DTOs.Responses.Negotiations;
+using HomeCycle.Application.DTOs.Responses.Notifications;
 using HomeCycle.Application.DTOs.Responses.Offers;
 using System;
 using System.Collections.Generic;
@@ -18,7 +19,16 @@ namespace HomeCycle.Application.Interfaces.Repositories.Offers
 
         Task ConversationUpdated(ConversationUpdatedResponse response);
 
+        // Offer
         Task OfferCreated(OfferResponse offer);
+
         Task OfferUpdated(OfferResponse offer);
+
+        // Notification
+        Task NotificationCreated(NotificationResponse notification);
+
+        Task NotificationRead(NotificationReadResponse response);
+
+        Task NotificationsReadAll(NotificationsReadAllResponse response);
     }
 }
