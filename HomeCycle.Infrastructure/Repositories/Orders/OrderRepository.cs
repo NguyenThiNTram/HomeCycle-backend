@@ -246,8 +246,8 @@ namespace HomeCycle.Infrastructure.Repositories.Orders
                 new DisputeSummaryDto
                 {
                     HasActiveDispute =
-                        latestDispute?.DisputeStatus ==
-                        (int)DisputeStatus.Pending,
+                        latestDispute?.DisputeStatus == (int)DisputeStatus.Pending ||
+                        latestDispute?.DisputeStatus == (int)DisputeStatus.UnderReview,
 
                     LatestDisputeId =
                         latestDispute?.DisputeId,

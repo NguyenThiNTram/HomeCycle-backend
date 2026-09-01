@@ -1,6 +1,9 @@
-﻿using HomeCycle.Application.DTOs.Requests.Disputes;
+﻿using HomeCycle.Application.Commons.Errors;
+using HomeCycle.Application.Commons.Results;
+using HomeCycle.Application.DTOs.Requests.Disputes;
 using HomeCycle.Application.DTOs.Requests.Moderators;
 using HomeCycle.Application.DTOs.Requests.Wallets;
+using HomeCycle.Application.DTOs.Responses.Disputes;
 using HomeCycle.Application.Interfaces.Services.Disputes;
 using HomeCycle.Application.Interfaces.Services.Moderators;
 using HomeCycle.Application.Interfaces.Services.Posts;
@@ -8,6 +11,7 @@ using HomeCycle.Application.Interfaces.Services.Wallets;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Swashbuckle.AspNetCore.Annotations;
 using System.Security.Claims;
 
 namespace HomeCycle.API.Controllers
@@ -261,7 +265,13 @@ namespace HomeCycle.API.Controllers
             return Ok(new { success = true, message = "Đã từ chối yêu cầu rút tiền." });
         }
 
+
         [HttpGet("disputes")]
+        [SwaggerOperation(
+            Summary = "Lấy danh sách tranh chấp cho Moderator",
+            Description = "Trả về danh sách tranh chấp có hỗ trợ lọc, tìm kiếm và phân trang."
+        )]
+        [ProducesResponseType(StatusCodes.Status200OK)]
         public async Task<IActionResult> GetDisputes(
             [FromQuery] DisputeSearchRequest request,
             CancellationToken cancellationToken)
@@ -269,42 +279,138 @@ namespace HomeCycle.API.Controllers
             var result = await _disputeService.GetAllForModeratorAsync(request, cancellationToken);
 
             if (!result.IsSuccess)
-            {
-                return BadRequest(new
-                {
-                    success = false,
-                    code = result.Error!.Code,
-                    message = result.Error.Message
-                });
-            }
+                return MapDisputeError(result.Error!);
 
-            return Ok(new
-            {
-                success = true,
-                data = result.Data
-            });
+            return Ok(result.Data);
         }
 
+
         [HttpGet("disputes/{disputeId:guid}")]
+        [SwaggerOperation(
+            Summary = "Lấy chi tiết tranh chấp",
+            Description = "Trả về thông tin chi tiết tranh chấp và các action hiện tại của Moderator."
+        )]
+        [ProducesResponseType(typeof(DisputeDetailResponse), StatusCodes.Status200OK)]
         public async Task<IActionResult> GetDisputeDetail(Guid disputeId, CancellationToken cancellationToken)
         {
-            var result = await _disputeService.GetDetailForModeratorAsync(disputeId, cancellationToken);
+            var moderatorId = GetCurrentUserId();
+
+            if (moderatorId == Guid.Empty)
+                return Unauthorized();
+
+            var result = await _disputeService.GetDetailForModeratorAsync(
+                disputeId,
+                moderatorId,
+                cancellationToken);
 
             if (!result.IsSuccess)
+                return MapDisputeError(result.Error!);
+
+            return Ok(result.Data);
+        }
+
+
+        [HttpPost("disputes/{disputeId:guid}/claim")]
+        [SwaggerOperation(
+            Summary = "Moderator tiếp nhận tranh chấp",
+            Description = "Gán tranh chấp đang Pending cho Moderator hiện tại và chuyển trạng thái sang UnderReview."
+        )]
+        [ProducesResponseType(typeof(ClaimDisputeResponse), StatusCodes.Status200OK)]
+        public async Task<IActionResult> ClaimDispute(
+            Guid disputeId,
+            CancellationToken cancellationToken)
+        {
+            var moderatorId = GetCurrentUserId();
+
+            if (moderatorId == Guid.Empty)
+                return Unauthorized();
+
+            var result = await _disputeService.ClaimForModeratorAsync(
+                disputeId,
+                moderatorId,
+                cancellationToken);
+
+            if (!result.IsSuccess)
+                return MapDisputeError(result.Error!);
+
+            return Ok(result.Data);
+        }
+
+
+        [HttpPost("disputes/{disputeId:guid}/resolve")]
+        [SwaggerOperation(
+            Summary = "Moderator xác nhận tranh chấp có căn cứ",
+            Description = "Kết thúc quá trình đánh giá tranh chấp với trạng thái Resolved. Order tiếp tục ở trạng thái Disputing để chờ bước xử lý settlement."
+        )]
+        [ProducesResponseType(typeof(DisputeDecisionResponse), StatusCodes.Status200OK)]
+        public async Task<IActionResult> ResolveDispute(
+            Guid disputeId,
+            [FromBody] DisputeModeratorDecisionRequest request,
+            CancellationToken cancellationToken)
+        {
+            var moderatorId = GetCurrentUserId();
+
+            if (moderatorId == Guid.Empty)
+                return Unauthorized();
+
+            var result = await _disputeService.ResolveByModeratorAsync(
+                disputeId,
+                moderatorId,
+                request,
+                cancellationToken);
+
+            if (!result.IsSuccess)
+                return MapDisputeError(result.Error!);
+
+            return Ok(result.Data);
+        }
+
+
+        [HttpPost("disputes/{disputeId:guid}/reject")]
+        [SwaggerOperation(
+            Summary = "Moderator từ chối tranh chấp",
+            Description = "Kết thúc tranh chấp do không hợp lệ hoặc không đủ căn cứ và khôi phục trạng thái Order trước khi tranh chấp."
+        )]
+        [ProducesResponseType(typeof(DisputeDecisionResponse), StatusCodes.Status200OK)]
+        public async Task<IActionResult> RejectDispute(
+            Guid disputeId,
+            [FromBody] DisputeModeratorDecisionRequest request,
+            CancellationToken cancellationToken)
+        {
+            var moderatorId = GetCurrentUserId();
+
+            if (moderatorId == Guid.Empty)
+                return Unauthorized();
+
+            var result = await _disputeService.RejectByModeratorAsync(
+                disputeId,
+                moderatorId,
+                request,
+                cancellationToken);
+
+            if (!result.IsSuccess)
+                return MapDisputeError(result.Error!);
+
+            return Ok(result.Data);
+        }
+
+        private IActionResult MapDisputeError(Error error)
+        {
+            if (error == DisputeErrors.NotFound || error == OrderErrors.NotFound)
+                return NotFound(error);
+
+            if (error == DisputeErrors.Forbidden || error == DisputeErrors.NotAssignedModerator)
+                return StatusCode(StatusCodes.Status403Forbidden, error);
+
+            if (error == DisputeErrors.AlreadyClaimed ||
+                error == DisputeErrors.ClaimNotAllowed ||
+                error == DisputeErrors.DecisionNotAllowed ||
+                error == OrderErrors.NotDisputing)
             {
-                return BadRequest(new
-                {
-                    success = false,
-                    code = result.Error!.Code,
-                    message = result.Error.Message
-                });
+                return Conflict(error);
             }
 
-            return Ok(new
-            {
-                success = true,
-                data = result.Data
-            });
+            return BadRequest(error);
         }
 
         private Guid GetCurrentUserId()

@@ -76,7 +76,8 @@ namespace HomeCycle.Infrastructure.Repositories.Disputes
             var query = _db.Disputes
                 .AsNoTracking()
                 .Where(x =>
-                    x.DisputeStatus == (int)DisputeStatus.Pending);
+                    x.DisputeStatus == (int)DisputeStatus.Pending ||
+                    x.DisputeStatus ==  (int)DisputeStatus.UnderReview);
 
             query = targetType switch
             {

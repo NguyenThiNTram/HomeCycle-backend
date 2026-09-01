@@ -36,7 +36,25 @@ namespace HomeCycle.Application.Interfaces.Services.Disputes
         Task<Result<DisputeDetailResponse>>
             GetDetailForModeratorAsync(
                 Guid disputeId,
+                Guid moderatorId,
                 CancellationToken cancellationToken = default);
+
+        Task<Result<ClaimDisputeResponse>> ClaimForModeratorAsync(
+            Guid disputeId,
+            Guid moderatorId,
+            CancellationToken cancellationToken = default);
+
+        Task<Result<DisputeDecisionResponse>> ResolveByModeratorAsync(
+            Guid disputeId,
+            Guid moderatorId,
+            DisputeModeratorDecisionRequest request,
+            CancellationToken cancellationToken = default);
+
+        Task<Result<DisputeDecisionResponse>> RejectByModeratorAsync(
+            Guid disputeId,
+            Guid moderatorId,
+            DisputeModeratorDecisionRequest request,
+            CancellationToken cancellationToken = default);
 
         Task<Result<CloseDisputeResponse>> CloseDisputeAsync(
             Guid disputeId,

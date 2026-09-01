@@ -42,5 +42,8 @@ namespace HomeCycle.Application.DTOs.Responses.Disputes
     public class DisputeActionDto
     {
         public bool CanCloseDispute { get; set; }
+        public bool CanClaimDispute { get; set; }
+        public bool CanResolveDispute { get; set; }
+        public bool CanRejectDispute { get; set; }
     }
 }

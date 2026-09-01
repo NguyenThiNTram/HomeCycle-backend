@@ -210,7 +210,7 @@ namespace HomeCycle.Application.Commons.Errors
             new("DISPUTE_NOT_FOUND", "Không tìm thấy tranh chấp.");
 
         public static readonly Error Forbidden =
-            new("DISPUTE_FORBIDDEN", "Bạn không có quyền thực hiện thao tác này trên đơn hàng hoặc tranh chấp.");
+            new("DISPUTE_FORBIDDEN", "Bạn không có quyền thực hiện thao tác này đối với tranh chấp này.");
 
         public static readonly Error DuplicateActiveDispute =
             new("DISPUTE_ALREADY_ACTIVE", "Đơn hàng đang có một tranh chấp chưa được xử lý.");
@@ -236,6 +236,17 @@ namespace HomeCycle.Application.Commons.Errors
         public static readonly Error AlreadyUnderReview =
             new("DISPUTE_ALREADY_UNDER_REVIEW", "Tranh chấp đã được Moderator tiếp nhận và không thể tự đóng.");
 
+        public static readonly Error ClaimNotAllowed =
+            new("DISPUTE_CLAIM_NOT_ALLOWED", "Chỉ có thể tiếp nhận tranh chấp đang ở trạng thái chờ xử lý.");
+
+        public static readonly Error AlreadyClaimed =
+            new("DISPUTE_ALREADY_CLAIMED", "Tranh chấp đã được Moderator khác tiếp nhận.");
+
+        public static readonly Error DecisionNotAllowed =
+            new("DISPUTE_DECISION_NOT_ALLOWED", "Chỉ có thể đưa ra kết luận khi tranh chấp đang được Moderator xử lý.");
+
+        public static readonly Error NotAssignedModerator =
+            new("DISPUTE_NOT_ASSIGNED_MODERATOR", "Bạn không phải Moderator đang phụ trách tranh chấp này.");
     }
 
     public static class OrderErrors
