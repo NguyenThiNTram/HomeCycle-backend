@@ -17,6 +17,10 @@ namespace HomeCycle.Application.Interfaces.Services.Disputes
                 Guid senderId,
                 CreateDisputeRequest request,
                 CancellationToken cancellationToken = default);
+        Task<Result<PagedResult<DisputeListItemResponse>>> GetForUserAsync(
+            Guid currentUserId,
+            DisputeSearchRequest request,
+            CancellationToken cancellationToken = default);
 
         Task<Result<DisputeDetailResponse>>
             GetDetailForUserAsync(
@@ -33,5 +37,10 @@ namespace HomeCycle.Application.Interfaces.Services.Disputes
             GetDetailForModeratorAsync(
                 Guid disputeId,
                 CancellationToken cancellationToken = default);
+
+        Task<Result<CloseDisputeResponse>> CloseDisputeAsync(
+            Guid disputeId,
+            Guid currentUserId,
+            CancellationToken cancellationToken = default);
     }
 }

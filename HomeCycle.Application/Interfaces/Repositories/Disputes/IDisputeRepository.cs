@@ -16,19 +16,25 @@ namespace HomeCycle.Application.Interfaces.Repositories.Disputes
         Task AddAsync(
             dispute dispute,
             CancellationToken cancellationToken = default);
+        Task UpdateAsync(dispute dispute, CancellationToken cancellationToken = default);
 
         Task<dispute?> GetByIdAsync(
             Guid disputeId,
             CancellationToken cancellationToken = default);
+        Task<dispute?> GetByIdForUpdateAsync(Guid disputeId, CancellationToken cancellationToken = default);
 
         Task<bool> ExistsActiveAsync(
             DisputeTargetType targetType,
             Guid targetId,
             CancellationToken cancellationToken = default);
 
-        Task<PagedResult<DisputeListItemResponse>>
-            GetPagedForModeratorAsync(
-                DisputeSearchRequest request,
-                CancellationToken cancellationToken = default);
+        Task<PagedResult<DisputeListItemResponse>> GetPagedForModeratorAsync(
+            DisputeSearchRequest request,
+            CancellationToken cancellationToken = default);
+
+        Task<PagedResult<DisputeListItemResponse>> GetPagedForUserAsync(
+            Guid userId,
+            DisputeSearchRequest request,
+            CancellationToken cancellationToken = default);
     }
 }

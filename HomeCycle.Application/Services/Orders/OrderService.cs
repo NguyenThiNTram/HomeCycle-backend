@@ -16,6 +16,7 @@ using HomeCycle.Application.Interfaces.Repositories.Shipments;
 using HomeCycle.Application.Interfaces.Services.Disputes;
 using HomeCycle.Application.Interfaces.Services.Orders;
 using HomeCycle.Application.Interfaces.Services.Payments;
+using HomeCycle.Application.Services.Disputes;
 using HomeCycle.Domain.Entities;
 using HomeCycle.Domain.Enums;
 using System;
@@ -985,8 +986,8 @@ namespace HomeCycle.Application.Services.Orders
                     if (!disputeWindowEndsAt.HasValue)
                     {
                         var disputeWindowStart =
-                            detail.Shipment?.DeliveredAt ??
-                            detail.CompletedAt;
+                            detail.CompletedAt ??
+                            detail.Shipment?.DeliveredAt; ;
 
                         if (disputeWindowStart.HasValue)
                         {
@@ -1036,27 +1037,35 @@ namespace HomeCycle.Application.Services.Orders
 
         private static IReadOnlyList<DisputeCategory> BuildAllowedDisputeCategories(OrderDetailDto detail)
         {
-            var categories = new List<DisputeCategory>();
-
-            if (detail.Appointments.Count > 0)
-                categories.Add(DisputeCategory.NoShow);
-
-            categories.Add(DisputeCategory.ItemMismatch);
-
-            if (detail.DeliveryMethod == DeliveryMethod.GhnDelivery)
-            {
-                categories.Add(DisputeCategory.SellerNotShipped);
-                categories.Add(DisputeCategory.DamagedOrLost);
-                categories.Add(DisputeCategory.ItemNotReceived);
-            }
-
-            categories.Add(DisputeCategory.FraudOrScam);
-            categories.Add(DisputeCategory.PaymentNotCompleted);
-            categories.Add(DisputeCategory.CommitmentViolation);
-            categories.Add(DisputeCategory.Other);
-
-            return categories;
+            return OrderDisputeCategoryPolicy
+                .BuildAllowedCategories(
+                    detail.Appointments.Count > 0,
+                    detail.DeliveryMethod);
         }
+
+        //private static IReadOnlyList<DisputeCategory> BuildAllowedDisputeCategories(OrderDetailDto detail)
+        //{
+        //    var categories = new List<DisputeCategory>();
+
+        //    if (detail.Appointments.Count > 0)
+        //        categories.Add(DisputeCategory.NoShow);
+
+        //    categories.Add(DisputeCategory.ItemMismatch);
+
+        //    if (detail.DeliveryMethod == DeliveryMethod.GhnDelivery)
+        //    {
+        //        categories.Add(DisputeCategory.SellerNotShipped);
+        //        categories.Add(DisputeCategory.DamagedOrLost);
+        //        categories.Add(DisputeCategory.ItemNotReceived);
+        //    }
+
+        //    categories.Add(DisputeCategory.FraudOrScam);
+        //    categories.Add(DisputeCategory.PaymentNotCompleted);
+        //    categories.Add(DisputeCategory.CommitmentViolation);
+        //    categories.Add(DisputeCategory.Other);
+
+        //    return categories;
+        //}
 
         private static Result<DeliveryMethod> ResolveDeliveryMethod(agreement_form agreement)
         {

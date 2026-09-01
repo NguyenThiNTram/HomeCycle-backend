@@ -28,8 +28,8 @@ namespace HomeCycle.Application.Services.Inspections
     public class InspectionFormService : IInspectionFormService
     {
         private const decimal AmountEpsilon = 0.01m;
-        private const string InspectionMediaTargetType = "InspectionForm";
-        private const string InspectionMediaFolder = "inspection-forms";
+        //private const string InspectionMediaTargetType = "InspectionForm";
+        //private const string InspectionMediaFolder = "inspection-forms";
 
         private readonly IInspectionFormRepository _inspectionFormRepo;
         private readonly IInspectionAppointmentRepository _inspectionAppointmentRepo;
@@ -194,7 +194,13 @@ namespace HomeCycle.Application.Services.Inspections
 
                 if (request.Images?.Any(x => x.Length > 0) == true)
                 {
-                    var mediaResult = await _mediaService.UploadAndSaveMediaAsync(form.InspectionFormId, InspectionMediaTargetType, InspectionMediaFolder, request.Images, ct);
+                    var mediaResult =
+                        await _mediaService.UploadAndSaveMediaAsync(
+                            targetId: form.InspectionFormId,
+                            targetType: MediaTargetTypes.Inspection.ToString(),
+                            folderName: $"inspection-forms/{form.InspectionFormId}",
+                            files: request.Images,
+                            cancellationToken: ct);
 
                     if (!mediaResult.IsSuccess)
                     {
@@ -290,7 +296,13 @@ namespace HomeCycle.Application.Services.Inspections
 
                     if (request.Images?.Any(x => x.Length > 0) == true)
                     {
-                        var replaceResult = await _mediaService.ReplaceMediaAsync(form.InspectionFormId, InspectionMediaTargetType, InspectionMediaFolder, request.Images, ct);
+                        var replaceResult =
+                            await _mediaService.ReplaceMediaAsync(
+                                targetId: form.InspectionFormId,
+                                targetType: MediaTargetTypes.Inspection.ToString(),
+                                folderName: $"inspection-forms/{form.InspectionFormId}",
+                                files: request.Images,
+                                cancellationToken: ct);
 
                         if (!replaceResult.IsSuccess)
                         {
@@ -300,7 +312,11 @@ namespace HomeCycle.Application.Services.Inspections
                     }
                     else
                     {
-                        deleteResult = await _mediaService.DeleteByTargetAsync(form.InspectionFormId, InspectionMediaTargetType, ct);
+                        deleteResult =
+                            await _mediaService.DeleteByTargetAsync(
+                                form.InspectionFormId,
+                                MediaTargetTypes.Inspection.ToString(),
+                                ct);
 
                         if (!deleteResult.IsSuccess)
                         {
@@ -909,7 +925,11 @@ namespace HomeCycle.Application.Services.Inspections
             var isBuyer = agreement.BuyerId == currentUserId;
             var isSeller = agreement.SellerId == currentUserId;
 
-            var mediaResult = await _mediaService.GetByTargetsAsync(new[] { form.InspectionFormId }, InspectionMediaTargetType, ct);
+            var mediaResult =
+                await _mediaService.GetByTargetsAsync(
+                    new[] { form.InspectionFormId },
+                    MediaTargetTypes.Inspection.ToString(),
+                    ct);
 
             IReadOnlyList<MediaResponse> images = Array.Empty<MediaResponse>();
 

@@ -17,6 +17,7 @@ using HomeCycle.Application.DTOs.Responses.Auths;
 using HomeCycle.Application.DTOs.Responses.Banks;
 using HomeCycle.Application.DTOs.Responses.Brands;
 using HomeCycle.Application.DTOs.Responses.Categories;
+using HomeCycle.Application.DTOs.Responses.Disputes;
 using HomeCycle.Application.DTOs.Responses.Media;
 using HomeCycle.Application.DTOs.Responses.Negotiations;
 using HomeCycle.Application.DTOs.Responses.Offers;
@@ -654,6 +655,9 @@ namespace HomeCycle.Application.Mappings
             CreateMap<collection_appointment, CollectionAppointmentDetailDto>()
                 .ForMember(dest => dest.DeliveryMethod, opt => opt.Ignore());
 
+
+            // ==================== DISPUTE ====================
+            CreateMap<user, DisputeUserSummaryDto>();
         }
     }
 }

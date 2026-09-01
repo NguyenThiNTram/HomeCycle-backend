@@ -38,9 +38,9 @@ namespace HomeCycle.Application.Validations.Disputes
                 .NotNull()
                 .Must(files =>
                     files != null &&
-                    files.Count >= 3 &&
+                    files.Count >= 2 &&
                     files.Count <= 5)
-                .WithMessage("Phải cung cấp từ 3 đến 5 ảnh bằng chứng.");
+                .WithMessage("Phải cung cấp từ 2 đến 5 ảnh bằng chứng.");
 
             RuleForEach(x => x.EvidenceImages)
                 .SetValidator(new FormFileValidator());

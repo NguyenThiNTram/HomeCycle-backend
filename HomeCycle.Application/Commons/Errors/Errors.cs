@@ -209,20 +209,11 @@ namespace HomeCycle.Application.Commons.Errors
         public static readonly Error NotFound =
             new("DISPUTE_NOT_FOUND", "Không tìm thấy tranh chấp.");
 
-        public static readonly Error OrderNotFound =
-            new("DISPUTE_ORDER_NOT_FOUND", "Không tìm thấy đơn hàng.");
-
         public static readonly Error Forbidden =
             new("DISPUTE_FORBIDDEN", "Bạn không có quyền thực hiện thao tác này trên đơn hàng hoặc tranh chấp.");
 
         public static readonly Error DuplicateActiveDispute =
             new("DISPUTE_ALREADY_ACTIVE", "Đơn hàng đang có một tranh chấp chưa được xử lý.");
-
-        public static readonly Error InvalidOrderStatus =
-            new("DISPUTE_INVALID_ORDER_STATUS", "Trạng thái hiện tại của đơn hàng không cho phép tạo tranh chấp.");
-
-        public static readonly Error InvalidCompletionState =
-            new("DISPUTE_INVALID_COMPLETION_STATE", "Không xác định được thời điểm hoàn tất hoặc giao hàng của đơn hàng.");
 
         public static readonly Error MissingTarget =
             new("DISPUTE_TARGET_MISSING", "Tranh chấp không xác định được đối tượng liên quan.");
@@ -238,6 +229,13 @@ namespace HomeCycle.Application.Commons.Errors
 
         public static Error InvalidCategory(DisputeCategory category) =>
             new("DISPUTE_INVALID_CATEGORY", $"Loại tranh chấp '{category}' không phù hợp với tranh chấp đơn hàng.");
+
+        public static readonly Error CloseNotAllowed =
+            new("DISPUTE_CLOSE_NOT_ALLOWED", "Chỉ có thể đóng tranh chấp đang ở trạng thái chờ xử lý.");
+
+        public static readonly Error AlreadyUnderReview =
+            new("DISPUTE_ALREADY_UNDER_REVIEW", "Tranh chấp đã được Moderator tiếp nhận và không thể tự đóng.");
+
     }
 
     public static class OrderErrors
@@ -270,6 +268,14 @@ namespace HomeCycle.Application.Commons.Errors
 
         public static readonly Error ActiveDisputeBlocksCancellation =
             new("Order.ActiveDisputeBlocksCancellation", "Đơn hàng đang có tranh chấp nên không thể hủy trực tiếp.");
+
+        public static readonly Error InvalidCompletionState =
+            new("Order.InvalidCompletionState", "Đơn hàng đã hoàn tất nhưng không xác định được thời điểm hoàn tất hoặc giao hàng.");
+
+        public static readonly Error NotDisputing =
+            new(
+                "Order.NotDisputing",
+                "Đơn hàng hiện không ở trạng thái tranh chấp.");
     }
 
     public static class PlatformPolicyErrors

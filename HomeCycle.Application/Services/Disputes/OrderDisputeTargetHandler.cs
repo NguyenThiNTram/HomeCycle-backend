@@ -1,7 +1,9 @@
 ﻿using HomeCycle.Application.Commons.Errors;
 using HomeCycle.Application.Commons.Results;
+using HomeCycle.Application.DTOs.Requests.Agreements;
 using HomeCycle.Application.DTOs.Responses.Disputes;
 using HomeCycle.Application.Interfaces.Repositories.Agreements;
+using HomeCycle.Application.Interfaces.Repositories.Appointments;
 using HomeCycle.Application.Interfaces.Repositories.Disputes;
 using HomeCycle.Application.Interfaces.Repositories.Orders;
 using HomeCycle.Application.Interfaces.Repositories.Shipments;
@@ -12,373 +14,233 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Text.Json;
 using System.Threading.Tasks;
 
 namespace HomeCycle.Application.Services.Disputes
 {
-    public class OrderDisputeTargetHandler
-        : IDisputeTargetHandler
+    public class OrderDisputeTargetHandler : IDisputeTargetHandler
     {
         private readonly IOrderRepository _orderRepository;
-        private readonly IAgreementFormRepository
-            _agreementRepository;
-        private readonly IShipmentRepository
-            _shipmentRepository;
-        private readonly IDisputeRepository
-            _disputeRepository;
-        private readonly IDisputeWindowPolicy
-            _windowPolicy;
+        private readonly IAgreementFormRepository _agreementRepository;
+        private readonly IShipmentRepository _shipmentRepository;
+        private readonly IAppointmentRepository _appointmentRepository;
+        private readonly IDisputeRepository _disputeRepository;
+        private readonly IDisputeWindowPolicy _windowPolicy;
 
-        public DisputeTargetType TargetType
-            => DisputeTargetType.Order;
+        public DisputeTargetType TargetType => DisputeTargetType.Order;
 
         public OrderDisputeTargetHandler(
             IOrderRepository orderRepository,
             IAgreementFormRepository agreementRepository,
             IShipmentRepository shipmentRepository,
+            IAppointmentRepository appointmentRepository,
             IDisputeRepository disputeRepository,
             IDisputeWindowPolicy windowPolicy)
         {
             _orderRepository = orderRepository;
             _agreementRepository = agreementRepository;
             _shipmentRepository = shipmentRepository;
+            _appointmentRepository = appointmentRepository;
             _disputeRepository = disputeRepository;
             _windowPolicy = windowPolicy;
         }
 
-        public async Task<
-            Result<DisputeTargetCreateContext>>
-            PrepareCreateAsync(
-                Guid senderId,
-                Guid targetId,
-                DisputeCategory category,
-                DateTime nowUtc,
-                CancellationToken cancellationToken = default)
+        public async Task<Result<DisputeTargetCreateContext>> PrepareCreateAsync(
+            Guid senderId,
+            Guid targetId,
+            DisputeCategory category,
+            DateTime nowUtc,
+            CancellationToken cancellationToken = default)
         {
-            // Quan trọng:
-            // lock Order trước để tránh 2 request tạo dispute song song.
-            var order =
-                await _orderRepository
-                    .GetByIdForUpdateAsync(
-                        targetId,
-                        cancellationToken);
+            // Lock Order trước để serialize các thao tác thay đổi business state trên cùng Order.
+            var order = await _orderRepository.GetByIdForUpdateAsync(targetId, cancellationToken);
 
             if (order == null)
-                return Result<DisputeTargetCreateContext>.Fail(DisputeErrors.OrderNotFound);
+                return Result<DisputeTargetCreateContext>.Fail(OrderErrors.NotFound);
 
-            var agreement =
-                await _agreementRepository
-                    .GetByIdAsync(
-                        order.AgreementId,
-                        cancellationToken);
+            var agreement = await _agreementRepository.GetByIdAsync(order.AgreementId, cancellationToken);
 
             if (agreement == null)
                 return Result<DisputeTargetCreateContext>.Fail(AgreementErrors.NotFound);
 
-            // Chỉ Buyer hoặc Seller của Order mới được dispute.
-            bool isBuyer =
-                agreement.BuyerId == senderId;
-
-            bool isSeller =
-                agreement.SellerId == senderId;
+            var isBuyer = agreement.BuyerId == senderId;
+            var isSeller = agreement.SellerId == senderId;
 
             if (!isBuyer && !isSeller)
-            {
-                return Result<DisputeTargetCreateContext>
-                    .Fail(DisputeErrors.Forbidden);
-            }
+                return Result<DisputeTargetCreateContext>.Fail(OrderErrors.Forbidden);
 
-            if (!IsValidOrderCategory(category))
-            {
-                return Result<DisputeTargetCreateContext>
-                    .Fail(
-                        DisputeErrors.InvalidCategory(
-                            category));
-            }
+            var orderStatus = order.OrderStatus.HasValue
+                ? (OrderStatus?)order.OrderStatus.Value
+                : null;
 
-            // Sau khi đã lock Order mới kiểm tra duplicate.
-            var hasActiveDispute =
-                await _disputeRepository
-                    .ExistsActiveAsync(
-                        DisputeTargetType.Order,
-                        order.OrderId,
-                        cancellationToken);
+            if (orderStatus != OrderStatus.Processing && orderStatus != OrderStatus.Completed)
+                return Result<DisputeTargetCreateContext>.Fail(OrderErrors.InvalidStatus);
+
+            var appointments = await _appointmentRepository.GetAppointmentSummariesByAgreementIdAsync(
+                order.AgreementId,
+                cancellationToken);
+
+            var deliveryMethod = TryResolveDeliveryMethod(agreement);
+
+            if (!OrderDisputeCategoryPolicy.IsAllowed(category, appointments.Count > 0, deliveryMethod))
+                return Result<DisputeTargetCreateContext>.Fail(DisputeErrors.InvalidCategory(category));
+
+            // Order đã được lock trước khi check duplicate nên 2 request tạo dispute song song
+            // trên cùng Order không thể cùng thay đổi state thành công.
+            var hasActiveDispute = await _disputeRepository.ExistsActiveAsync(
+                DisputeTargetType.Order,
+                order.OrderId,
+                cancellationToken);
 
             if (hasActiveDispute)
-            {
-                return Result<DisputeTargetCreateContext>
-                    .Fail(
-                        DisputeErrors
-                            .DuplicateActiveDispute);
-            }
-
-            var status =
-                order.OrderStatus.HasValue
-                    ? (OrderStatus?)
-                        order.OrderStatus.Value
-                    : null;
-
-            // Chỉ cho phép trong quá trình giao dịch
-            // hoặc khoảng grace period sau giao hàng/completed.
-            if (status != OrderStatus.Processing &&
-                status != OrderStatus.Completed)
-            {
-                return Result<DisputeTargetCreateContext>
-                    .Fail(
-                        DisputeErrors
-                            .InvalidOrderStatus);
-            }
-
-            var shipment =
-                await _shipmentRepository
-                    .GetByOrderIdAsync(
-                        order.OrderId,
-                        cancellationToken);
-
-            /*
-             * Requirement lấy mốc giao nhận thành công.
-             *
-             * Ưu tiên Shipment.DeliveredAt.
-             *
-             * Với pickup / trường hợp không có shipment DeliveredAt,
-             * fallback Order.CompletedAt.
-             */
-            DateTime? disputeWindowStart =
-                shipment?.DeliveredAt
-                ?? order.CompletedAt;
+                return Result<DisputeTargetCreateContext>.Fail(DisputeErrors.DuplicateActiveDispute);
 
             DateTime? disputeDeadlineUtc = null;
 
-            /*
-             * Nếu Order vẫn Processing và chưa giao xong
-             * thì dispute được phép tạo,
-             * chưa có deadline hậu giao dịch.
-             *
-             * Nếu đã có DeliveredAt dù Order vẫn Processing,
-             * grace period đã bắt đầu.
-             */
-            if (disputeWindowStart.HasValue)
+            if (orderStatus == OrderStatus.Completed)
             {
-                var window =
-                    await _windowPolicy
-                        .GetOrderDisputeWindowAsync(
-                            agreement.SellerId,
-                            cancellationToken);
+                // Ưu tiên snapshot đã lưu trên Order.
+                disputeDeadlineUtc = order.DisputeWindowEndsAt;
 
-                disputeDeadlineUtc =
-                    disputeWindowStart.Value
-                        .Add(window);
-
-                if (nowUtc >
-                    disputeDeadlineUtc.Value)
+                // Fallback chỉ dành cho dữ liệu Order legacy chưa có snapshot.
+                if (!disputeDeadlineUtc.HasValue)
                 {
-                    return Result<
-                        DisputeTargetCreateContext>
-                        .Fail(
-                            DisputeErrors
-                                .WindowExpired(
-                                    disputeDeadlineUtc
-                                        .Value));
+                    DateTime? fallbackWindowStart = order.CompletedAt;
+
+                    if (!fallbackWindowStart.HasValue)
+                    {
+                        var shipment = await _shipmentRepository.GetByOrderIdAsync(order.OrderId, cancellationToken);
+                        fallbackWindowStart = shipment?.DeliveredAt;
+                    }
+
+                    if (!fallbackWindowStart.HasValue)
+                        return Result<DisputeTargetCreateContext>.Fail(OrderErrors.InvalidCompletionState);
+
+                    var disputeWindow = await _windowPolicy.GetOrderDisputeWindowAsync(
+                        agreement.SellerId,
+                        cancellationToken);
+
+                    disputeDeadlineUtc = fallbackWindowStart.Value.Add(disputeWindow);
                 }
-            }
-            else if (status ==
-                     OrderStatus.Completed)
-            {
-                /*
-                 * Completed mà không có DeliveredAt
-                 * cũng không có CompletedAt
-                 * là trạng thái dữ liệu không hợp lệ.
-                 */
-                return Result<
-                    DisputeTargetCreateContext>
-                    .Fail(
-                        DisputeErrors
-                            .InvalidCompletionState);
+
+                if (nowUtc > disputeDeadlineUtc.Value)
+                    return Result<DisputeTargetCreateContext>.Fail(
+                        DisputeErrors.WindowExpired(disputeDeadlineUtc.Value));
             }
 
-            /*
-             * Backend tự suy ra người bị khiếu nại.
-             */
-            Guid targetUserId =
-                isBuyer
-                    ? agreement.SellerId
-                    : agreement.BuyerId;
+            var targetUserId = isBuyer ? agreement.SellerId : agreement.BuyerId;
 
-            /*
-             * Có dispute -> freeze business state.
-             *
-             * Completed cũng được chuyển lại Disputing.
-             * Không xóa CompletedAt vì cần giữ audit/mốc thời gian.
-             */
-            order.OrderStatus =
-                (int)OrderStatus.Disputing;
-
+            // Freeze transaction trong thời gian dispute Pending.
+            // CompletedAt vẫn được giữ để có thể restore về Completed khi Close Dispute.
+            order.OrderStatus = (int)OrderStatus.Disputing;
             order.UpdatedAt = nowUtc;
 
-            await _orderRepository.UpdateAsync(
-                order,
-                cancellationToken);
+            await _orderRepository.UpdateAsync(order, cancellationToken);
 
-            return Result<
-                DisputeTargetCreateContext>
-                .Success(
-                    new DisputeTargetCreateContext
-                    {
-                        TargetType =
-                            DisputeTargetType.Order,
-
-                        TargetId =
-                            order.OrderId,
-
-                        TargetUserId =
-                            targetUserId,
-
-                        OrderId =
-                            order.OrderId,
-
-                        ReviewId =
-                            null,
-
-                        DisputeDeadlineUtc =
-                            disputeDeadlineUtc
-                    });
+            return Result<DisputeTargetCreateContext>.Success(new DisputeTargetCreateContext
+            {
+                TargetType = DisputeTargetType.Order,
+                TargetId = order.OrderId,
+                TargetUserId = targetUserId,
+                OrderId = order.OrderId,
+                ReviewId = null,
+                DisputeDeadlineUtc = disputeDeadlineUtc
+            });
         }
 
-        public async Task<
-            Result<DisputeTargetSummaryDto>>
-            BuildSummaryAsync(
-                dispute dispute,
-                CancellationToken cancellationToken = default)
+        public async Task<Result<DisputeTargetSummaryDto>> BuildSummaryAsync(
+            dispute dispute,
+            CancellationToken cancellationToken = default)
         {
             if (!dispute.OrderId.HasValue)
             {
-                return Result<
-                    DisputeTargetSummaryDto>
-                    .Fail(
-                        new Error(
-                            "DISPUTE_ORDER_MISSING",
-                            "Tranh chấp không có OrderId."));
+                return Result<DisputeTargetSummaryDto>.Fail(
+                    new Error("DISPUTE_ORDER_MISSING", "Tranh chấp không có OrderId."));
             }
 
-            var order =
-                await _orderRepository
-                    .GetByIdAsync(
-                        dispute.OrderId.Value,
-                        cancellationToken);
+            var order = await _orderRepository.GetByIdAsync(dispute.OrderId.Value, cancellationToken);
 
             if (order == null)
-            {
-                return Result<
-                    DisputeTargetSummaryDto>
-                    .Fail(
-                        new Error(
-                            "ORDER_NOT_FOUND",
-                            "Không tìm thấy đơn hàng."));
-            }
+                return Result<DisputeTargetSummaryDto>.Fail(OrderErrors.NotFound);
 
-            var agreement =
-                await _agreementRepository
-                    .GetByIdAsync(
-                        order.AgreementId,
-                        cancellationToken);
+            var agreement = await _agreementRepository.GetByIdAsync(order.AgreementId, cancellationToken);
 
             if (agreement == null)
                 return Result<DisputeTargetSummaryDto>.Fail(AgreementErrors.NotFound);
 
-            var shipment =
-                await _shipmentRepository
-                    .GetByOrderIdAsync(
-                        order.OrderId,
-                        cancellationToken);
+            var shipment = await _shipmentRepository.GetByOrderIdAsync(order.OrderId, cancellationToken);
 
-            DateTime? windowStart =
-                shipment?.DeliveredAt
-                ?? order.CompletedAt;
+            var windowStart = order.CompletedAt ?? shipment?.DeliveredAt;
+            var deadline = order.DisputeWindowEndsAt;
 
+            int windowHours;
 
-            var window = await _windowPolicy.GetOrderDisputeWindowAsync(agreement.SellerId, cancellationToken);
+            if (deadline.HasValue && windowStart.HasValue)
+            {
+                windowHours = Math.Max(
+                    0,
+                    (int)Math.Round((deadline.Value - windowStart.Value).TotalHours));
+            }
+            else
+            {
+                var disputeWindow = await _windowPolicy.GetOrderDisputeWindowAsync(
+                    agreement.SellerId,
+                    cancellationToken);
 
-            int windowHours = (int)window.TotalHours;
+                windowHours = Math.Max(0, (int)Math.Round(disputeWindow.TotalHours));
 
-            DateTime? deadline = windowStart.HasValue
-                ? windowStart.Value.Add(window)
-                : null;
+                // Fallback cho Order legacy chưa snapshot.
+                if (!deadline.HasValue && windowStart.HasValue)
+                    deadline = windowStart.Value.Add(disputeWindow);
+            }
 
-            var orderSummary =
-                new OrderDisputeSummaryDto
-                {
-                    OrderId =
-                        order.OrderId,
+            var orderSummary = new OrderDisputeSummaryDto
+            {
+                OrderId = order.OrderId,
+                OrderCode = order.OrderCode,
+                PostId = order.PostId,
+                ProductName = order.ProductName,
+                Quantity = order.Quantity,
+                FinalTotalAmount = order.FinalTotalAmount,
+                OrderStatus = order.OrderStatus.HasValue ? (OrderStatus?)order.OrderStatus.Value : null,
+                PaymentStatus = order.PaymentStatus.HasValue ? (PaymentStatus?)order.PaymentStatus.Value : null,
+                CompletedAt = order.CompletedAt,
+                DeliveredAt = shipment?.DeliveredAt,
+                DisputeDeadlineUtc = deadline,
+                DisputeWindowHours = windowHours
+            };
 
-                    OrderCode =
-                        order.OrderCode,
-
-                    PostId =
-                        order.PostId,
-
-                    ProductName =
-                        order.ProductName,
-
-                    Quantity =
-                        order.Quantity,
-
-                    FinalTotalAmount =
-                        order.FinalTotalAmount,
-
-                    OrderStatus =
-                        order.OrderStatus.HasValue
-                            ? (OrderStatus?)
-                                order.OrderStatus.Value
-                            : null,
-
-                    PaymentStatus =
-                        order.PaymentStatus.HasValue
-                            ? (PaymentStatus?)
-                                order.PaymentStatus.Value
-                            : null,
-
-                    CompletedAt =
-                        order.CompletedAt,
-
-                    DeliveredAt =
-                        shipment?.DeliveredAt,
-
-                    DisputeDeadlineUtc =
-                        deadline,
-
-                    DisputeWindowHours =
-                        windowHours
-                };
-
-            return Result<
-                DisputeTargetSummaryDto>
-                .Success(
-                    new DisputeTargetSummaryDto
-                    {
-                        TargetType =
-                            DisputeTargetType.Order,
-
-                        TargetId =
-                            order.OrderId,
-
-                        Order =
-                            orderSummary
-                    });
+            return Result<DisputeTargetSummaryDto>.Success(new DisputeTargetSummaryDto
+            {
+                TargetType = DisputeTargetType.Order,
+                TargetId = order.OrderId,
+                Order = orderSummary
+            });
         }
 
-        private static bool IsValidOrderCategory(
-            DisputeCategory category)
+        private static DeliveryMethod? TryResolveDeliveryMethod(agreement_form agreement)
         {
-            return category is
-                DisputeCategory.NoShow
-                or DisputeCategory.ItemMismatch
-                or DisputeCategory.SellerNotShipped
-                or DisputeCategory.DamagedOrLost
-                or DisputeCategory.ItemNotReceived
-                or DisputeCategory.FraudOrScam
-                or DisputeCategory.PaymentNotCompleted
-                or DisputeCategory.CommitmentViolation
-                or DisputeCategory.Other;
+            if (string.IsNullOrWhiteSpace(agreement.AgreementDetailsJsonb))
+                return null;
+
+            try
+            {
+                var details = JsonSerializer.Deserialize<AgreementDetailsDto>(
+                    agreement.AgreementDetailsJsonb,
+                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+                var deliveryMethod = details?.DeliveryMethod;
+
+                if (!deliveryMethod.HasValue || deliveryMethod.Value == DeliveryMethod.Unknown)
+                    return null;
+
+                return deliveryMethod.Value;
+            }
+            catch (JsonException)
+            {
+                return null;
+            }
         }
     }
 }

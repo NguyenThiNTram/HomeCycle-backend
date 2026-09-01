@@ -36,5 +36,11 @@ namespace HomeCycle.Application.DTOs.Responses.Disputes
 
         public IReadOnlyList<MediaResponse> EvidenceImages { get; set; }
             = Array.Empty<MediaResponse>();
+        public DisputeActionDto Actions { get; set; } = new();
+    }
+
+    public class DisputeActionDto
+    {
+        public bool CanCloseDispute { get; set; }
     }
 }

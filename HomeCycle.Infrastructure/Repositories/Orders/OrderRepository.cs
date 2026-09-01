@@ -96,9 +96,9 @@ namespace HomeCycle.Infrastructure.Repositories.Orders
             };
         }
         public async Task<OrderDetailDto?> GetDetailWithRelationsAsync(
-    Guid orderId,
-    Guid currentUserId,
-    CancellationToken ct = default)
+            Guid orderId,
+            Guid currentUserId,
+            CancellationToken ct = default)
         {
             var entity = await _db.Orders
                 .AsNoTracking()
