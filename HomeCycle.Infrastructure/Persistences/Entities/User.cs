@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using HomeCycle.Infrastructure.Persistences.Entities;
 using Microsoft.EntityFrameworkCore;
 
 namespace HomeCycle.Infrastructure;
@@ -112,4 +113,10 @@ public partial class User
 
     [InverseProperty("User")]
     public virtual ICollection<Wallet> Wallets { get; set; } = new List<Wallet>();
+
+    [InverseProperty("UserOne")]
+    public virtual ICollection<Conversation> ConversationUserOnes { get; set; } = new List<Conversation>();
+
+    [InverseProperty("UserTwo")]
+    public virtual ICollection<Conversation> ConversationUserTwos { get; set; } = new List<Conversation>();
 }

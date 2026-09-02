@@ -1025,8 +1025,7 @@ namespace HomeCycle.Application.Services.Offers
             else if (actorId == offer.ReceiverId)
                 recipientId = offer.SenderId;
             else
-                throw new InvalidOperationException(
-                    "Người thực hiện không thuộc Offer.");
+                throw new InvalidOperationException("Người thực hiện không thuộc Offer.");
 
             return _notificationService.AddPendingAsync(
                 new CreateNotificationCommand(
