@@ -5,7 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace HomeCycle.Application.DTOs.Responses.Negotiations
+namespace HomeCycle.Application.DTOs.Responses.Messages
 {
     public class MessageResponse
     {

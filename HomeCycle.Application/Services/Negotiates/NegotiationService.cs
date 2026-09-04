@@ -5,6 +5,8 @@ using HomeCycle.Application.Commons.Helpers;
 using HomeCycle.Application.Commons.Paginations;
 using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Requests.Negotiates;
+using HomeCycle.Application.DTOs.Responses.Conversations;
+using HomeCycle.Application.DTOs.Responses.Messages;
 using HomeCycle.Application.DTOs.Responses.Negotiations;
 using HomeCycle.Application.DTOs.Responses.Offers;
 using HomeCycle.Application.Interfaces.Generics;
@@ -1063,26 +1065,23 @@ namespace HomeCycle.Application.Services.Negotiates
             }
         }
 
-        private async Task PublishConversationUpdatedSafelyAsync(
-            Guid conversationId,
-            Guid negotiationId,
-            Guid sellerId,
-            Guid buyerId,
-            MessageResponse lastMessage,
-            NegotiationStatus status,
-            decimal? price,
-            int quantity,
-            int? version)
+        private async Task PublishConversationUpdatedSafelyAsync(Guid conversationId, Guid negotiationId, Guid sellerId, Guid buyerId, MessageResponse lastMessage, NegotiationStatus status, decimal? price, int quantity, int? version)
         {
             try
             {
                 using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
 
-                var unread = await _messageRepository.GetUnreadCountsByConversationAsync(
-                    conversationId,
-                    sellerId,
-                    buyerId,
-                    timeout.Token);
+                var unreadDetails = await _messageRepository.GetUnreadCountsDetailAsync(conversationId, sellerId, buyerId, timeout.Token);
+
+                var conversationUnread = unreadDetails.ToDictionary(
+                    kv => kv.Key,
+                    kv => kv.Value.TotalConversationUnread);
+
+                var negotiationUnread = unreadDetails.ToDictionary(
+                    kv => kv.Key,
+                    kv => kv.Value.UnreadByNegotiation.ToDictionary(
+                        innerKv => innerKv.Key,
+                        innerKv => (int?)innerKv.Value));
 
                 await _realtimePublisher.PublishConversationUpdatedAsync(
                     new[] { sellerId, buyerId },
@@ -1098,7 +1097,9 @@ namespace HomeCycle.Application.Services.Negotiates
                         CurrentOfferQuantity = quantity,
                         CurrentOfferVersion = version,
                         NegotiationStatus = status,
-                        UnreadCountByUser = unread
+
+                        ConversationUnreadByUser = conversationUnread,
+                        NegotiationUnreadByUser = negotiationUnread
                     },
                     timeout.Token);
             }
@@ -1130,25 +1131,22 @@ namespace HomeCycle.Application.Services.Negotiates
             }
         }
 
-        private async Task PublishConversationCancelledSafelyAsync(
-            Guid conversationId,
-            Guid negotiationId,
-            Guid sellerId,
-            Guid buyerId,
-            Guid cancelledBy,
-            DateTime cancelledAt,
-            decimal? price,
-            int quantity,
-            int? version)
+        private async Task PublishConversationCancelledSafelyAsync(Guid conversationId, Guid negotiationId, Guid sellerId, Guid buyerId, Guid cancelledBy, DateTime cancelledAt, decimal? price, int quantity, int? version)
         {
             try
             {
                 using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-                var unread = await _messageRepository.GetUnreadCountsByConversationAsync(
-                    conversationId,
-                    sellerId,
-                    buyerId,
-                    timeout.Token);
+                var unreadDetails = await _messageRepository.GetUnreadCountsDetailAsync(conversationId, sellerId, buyerId, timeout.Token);
+
+                var conversationUnread = unreadDetails.ToDictionary(
+                    kv => kv.Key,
+                    kv => kv.Value.TotalConversationUnread);
+
+                var negotiationUnread = unreadDetails.ToDictionary(
+                    kv => kv.Key,
+                    kv => kv.Value.UnreadByNegotiation.ToDictionary(
+                        innerKv => innerKv.Key,
+                        innerKv => (int?)innerKv.Value));
 
                 await _realtimePublisher.PublishConversationUpdatedAsync(
                     new[] { sellerId, buyerId },
@@ -1164,7 +1162,9 @@ namespace HomeCycle.Application.Services.Negotiates
                         CurrentOfferQuantity = quantity,
                         CurrentOfferVersion = version,
                         NegotiationStatus = NegotiationStatus.Cancelled,
-                        UnreadCountByUser = unread
+
+                        ConversationUnreadByUser = conversationUnread,
+                        NegotiationUnreadByUser = negotiationUnread
                     }, timeout.Token);
             }
             catch (Exception exception)

@@ -1,4 +1,5 @@
 using HomeCycle.Application.Commons.Paginations;
+using HomeCycle.Application.DTOs.Responses.Messages;
 using HomeCycle.Application.Interfaces.Repositories.Offers;
 using HomeCycle.Domain.Entities;
 using HomeCycle.Domain.Enums;
@@ -401,6 +402,52 @@ namespace HomeCycle.Infrastructure.Repositories.Offers
                     result[userTwoId] += item.Count;
                 else if (item.SenderId == userTwoId)
                     result[userOneId] += item.Count;
+            }
+
+            return result;
+        }
+
+        public async Task<Dictionary<Guid, UnreadCountResult>> GetUnreadCountsDetailAsync(Guid conversationId, Guid userOneId, Guid userTwoId, CancellationToken cancellationToken = default)
+        {
+            // Khởi tạo khung kết quả cho cả 2 User
+            var result = new Dictionary<Guid, UnreadCountResult>
+            {
+                [userOneId] = new UnreadCountResult(),
+                [userTwoId] = new UnreadCountResult()
+            };
+
+            // Lấy danh sách tin nhắn chưa đọc grouped theo SenderId và NegotiationId
+            var rawCounts = await _db.Messages
+                .AsNoTracking()
+                .Where(m => m.ConversationId == conversationId && !m.IsRead)
+                .GroupBy(m => new { m.SenderId, m.NegotiationId })
+                .Select(g => new
+                {
+                    SenderId = g.Key.SenderId,
+                    NegotiationId = g.Key.NegotiationId,
+                    Count = g.Count()
+                })
+                .ToListAsync(cancellationToken);
+
+            foreach (var item in rawCounts)
+            {
+                // Tin do userOne gửi -> tính vào Unread của userTwo
+                // Tin do userTwo gửi -> tính vào Unread của userOne
+                var recipientId = (item.SenderId == userOneId) ? userTwoId : userOneId;
+
+                // Cộng dồn tổng cho Conversation
+                result[recipientId].TotalConversationUnread += item.Count;
+
+                // Ghi nhận chi tiết cho Negotiation (nếu có NegotiationId)
+                if (item.NegotiationId.HasValue)
+                {
+                    var negId = item.NegotiationId.Value;
+                    if (!result[recipientId].UnreadByNegotiation.ContainsKey(negId))
+                    {
+                        result[recipientId].UnreadByNegotiation[negId] = 0;
+                    }
+                    result[recipientId].UnreadByNegotiation[negId] += item.Count;
+                }
             }
 
             return result;
