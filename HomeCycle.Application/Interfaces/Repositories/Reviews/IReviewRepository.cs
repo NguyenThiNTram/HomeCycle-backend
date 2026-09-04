@@ -23,10 +23,11 @@ namespace HomeCycle.Application.Interfaces.Repositories.Reviews
 
         Task<IReadOnlyList<review>> GetValidReviewsByRevieweeAsync(Guid revieweeId, CancellationToken ct = default);
 
-        Task<PagedResult<ReviewResponseDto>> GetPagedByRevieweeAsync(
-            Guid revieweeId, int pageNumber, int pageSize, CancellationToken ct = default);
+        Task<PagedResult<ReviewResponseDto>> GetPagedByRevieweeAsync(Guid revieweeId, int pageNumber, int pageSize, CancellationToken ct = default);
 
-        Task<PagedResult<ReviewResponseDto>> GetPagedByOrderAsync(
-            Guid orderId, int pageNumber, int pageSize, CancellationToken ct = default);
+        Task<PagedResult<ReviewResponseDto>> GetPagedByOrderAsync(Guid orderId, int pageNumber, int pageSize, CancellationToken ct = default);
+
+        Task<(double AverageRating, int TotalReviews)> GetRatingStatsByRevieweeIdAsync(Guid revieweeId, CancellationToken cancellationToken = default);
+
     }
 }
