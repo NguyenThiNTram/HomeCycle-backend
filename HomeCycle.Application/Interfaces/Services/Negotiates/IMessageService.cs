@@ -1,7 +1,7 @@
 ﻿using HomeCycle.Application.Commons.Paginations;
 using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Requests.Negotiates;
-using HomeCycle.Application.DTOs.Responses.Negotiations;
+using HomeCycle.Application.DTOs.Responses.Messages;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -23,6 +23,11 @@ namespace HomeCycle.Application.Interfaces.Services.Negotiates
         Task<Result> MarkAsReadAsync(
             Guid userId,
             Guid negotiationId,
+            CancellationToken cancellationToken = default);
+
+        Task<Result> MarkConversationAsReadAsync(
+            Guid userId,
+            Guid conversationId,
             CancellationToken cancellationToken = default);
     }
 }

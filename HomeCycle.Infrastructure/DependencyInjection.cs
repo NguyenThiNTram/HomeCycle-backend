@@ -252,6 +252,7 @@ namespace HomeCycle.Infrastructure
             services.AddScoped<IPlatformPolicyService>(sp => sp.GetRequiredService<PlatformPolicyService>());
             services.AddScoped<IPlatformPolicyProvider>(sp => sp.GetRequiredService<PlatformPolicyService>());
             services.AddScoped<IInspectionFormService, InspectionFormService>();
+            services.AddScoped<IConversationService, ConversationService>();
 
 
             services.AddScoped<INotificationService, NotificationService>();

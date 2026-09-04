@@ -6,7 +6,7 @@ using HomeCycle.Application.DTOs.Requests.Agreements;
 using HomeCycle.Application.DTOs.Requests.GHN;
 using HomeCycle.Application.DTOs.Responses.Agreements;
 using HomeCycle.Application.DTOs.Responses.GHN;
-using HomeCycle.Application.DTOs.Responses.Negotiations;
+using HomeCycle.Application.DTOs.Responses.Messages;
 using HomeCycle.Application.Interfaces.Externals;
 using HomeCycle.Application.Interfaces.Generics;
 using HomeCycle.Application.Interfaces.Repositories.Agreements;

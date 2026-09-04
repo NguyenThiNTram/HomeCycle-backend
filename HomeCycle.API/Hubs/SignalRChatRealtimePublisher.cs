@@ -1,4 +1,5 @@
-﻿using HomeCycle.Application.DTOs.Responses.Negotiations;
+﻿using HomeCycle.Application.DTOs.Responses.Conversations;
+using HomeCycle.Application.DTOs.Responses.Messages;
 using HomeCycle.Application.DTOs.Responses.Offers;
 using HomeCycle.Application.Interfaces.Repositories.Offers;
 using Microsoft.AspNetCore.SignalR;

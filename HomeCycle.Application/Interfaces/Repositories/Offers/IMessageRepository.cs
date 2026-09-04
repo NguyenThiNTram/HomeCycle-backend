@@ -1,4 +1,5 @@
 using HomeCycle.Application.Commons.Paginations;
+using HomeCycle.Application.DTOs.Responses.Messages;
 using HomeCycle.Domain.Entities;
 using HomeCycle.Domain.Enums;
 using System;
@@ -47,5 +48,7 @@ namespace HomeCycle.Application.Interfaces.Repositories.Offers
         Task<Dictionary<Guid, message>> GetLatestByConversationsAsync(IReadOnlyCollection<Guid> conversationIds, CancellationToken cancellationToken = default);
 
         Task<Dictionary<Guid, int>> GetUnreadCountsByConversationAsync(Guid conversationId,  Guid userOneId, Guid userTwoId, CancellationToken cancellationToken = default);
+
+        Task<Dictionary<Guid, UnreadCountResult>> GetUnreadCountsDetailAsync(Guid conversationId, Guid userOneId, Guid userTwoId, CancellationToken cancellationToken = default);
     }
 }
