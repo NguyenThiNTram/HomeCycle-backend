@@ -11,6 +11,7 @@ namespace HomeCycle.Application.DTOs.Responses.Negotiations
     {
         public Guid MessageId { get; set; }
         public Guid NegotiationId { get; set; }
+        public Guid? ConversationId { get; set; }
         public Guid SenderId { get; set; }
 
         public Guid? ClientMessageId { get; set; }

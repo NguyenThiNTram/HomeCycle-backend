@@ -228,6 +228,194 @@ namespace HomeCycle.Infrastructure.Repositories.Offers
             return result;
         }
 
+        public async Task<PagedResult<message>> GetByConversationIdAsync(Guid conversationId, PaginationRequest request, CancellationToken cancellationToken = default)
+        {
+            var query = _db.Messages
+                .AsNoTracking()
+                .Where(x => x.ConversationId == conversationId);
+
+            var totalCount = await query.CountAsync(cancellationToken);
+            var skip = (request.PageNumber - 1) * request.PageSize;
+
+            // Page 1 chứa nhóm tin mới nhất
+            var entities = await query
+                .OrderByDescending(x => x.CreatedAt)
+                .ThenByDescending(x => x.MessageId)
+                .Skip(skip)
+                .Take(request.PageSize)
+                .ToListAsync(cancellationToken);
+
+            // Trong từng page, trả về theo chiều cũ -> mới
+            var items = entities
+                .OrderBy(x => x.CreatedAt)
+                .ThenBy(x => x.MessageId)
+                .Select(x => x.ToDomain())
+                .ToList();
+
+            return new PagedResult<message>
+            {
+                Items = items,
+                PageNumber = request.PageNumber,
+                PageSize = request.PageSize,
+                TotalCount = totalCount
+            };
+        }
+
+        public async Task<int> MarkConversationAsReadAsync(Guid conversationId, Guid readerId, DateTime readAt, CancellationToken cancellationToken = default)
+        {
+            EnsureUtc(readAt);
+
+            return await _db.Messages
+                .Where(x =>
+                    x.ConversationId == conversationId &&
+                    x.SenderId != readerId &&
+                    !x.IsRead &&
+                    x.CreatedAt <= readAt)
+                .ExecuteUpdateAsync(
+                    setters => setters
+                        .SetProperty(x => x.IsRead, true)
+                        .SetProperty(x => x.UpdatedAt, readAt),
+                    cancellationToken);
+        }
+
+        public Task<int> CountUnreadByConversationForUserAsync(Guid conversationId, Guid userId, CancellationToken cancellationToken = default)
+        {
+            return _db.Messages
+                .AsNoTracking()
+                .CountAsync(
+                    x =>
+                        x.ConversationId == conversationId &&
+                        x.SenderId != userId &&
+                        !x.IsRead,
+                    cancellationToken);
+        }
+
+        public async Task<Dictionary<Guid, int>> GetUnreadCountsByConversationsAsync(Guid userId, IReadOnlyCollection<Guid> conversationIds, CancellationToken cancellationToken = default)
+        {
+            if (conversationIds.Count == 0)
+                return new Dictionary<Guid, int>();
+
+            var distinctIds = conversationIds
+                .Distinct()
+                .ToList();
+
+            var counts = await _db.Messages
+                .AsNoTracking()
+                .Where(x =>
+                    x.ConversationId.HasValue &&
+                    distinctIds.Contains(x.ConversationId.Value) &&
+                    x.SenderId != userId &&
+                    !x.IsRead)
+                .GroupBy(x => x.ConversationId!.Value)
+                .Select(group => new
+                {
+                    ConversationId = group.Key,
+                    Count = group.Count()
+                })
+                .ToListAsync(cancellationToken);
+
+            var result = distinctIds.ToDictionary(
+                conversationId => conversationId,
+                _ => 0);
+
+            foreach (var item in counts)
+            {
+                result[item.ConversationId] = item.Count;
+            }
+
+            return result;
+        }
+
+        public async Task<Dictionary<Guid, message>> GetLatestByConversationsAsync(IReadOnlyCollection<Guid> conversationIds, CancellationToken cancellationToken = default)
+        {
+            if (conversationIds.Count == 0)
+                return new Dictionary<Guid, message>();
+
+            var distinctIds = conversationIds
+                .Distinct()
+                .ToList();
+
+            var latestMessageIds = _db.Messages
+                .AsNoTracking()
+                .Where(x =>
+                    x.ConversationId.HasValue &&
+                    distinctIds.Contains(x.ConversationId.Value))
+                .GroupBy(x => x.ConversationId)
+                .Select(group => group
+                    .OrderByDescending(x => x.CreatedAt)
+                    .ThenByDescending(x => x.MessageId)
+                    .Select(x => x.MessageId)
+                    .First());
+
+            var entities = await _db.Messages
+                .AsNoTracking()
+                .Where(x => latestMessageIds.Contains(x.MessageId))
+                .ToListAsync(cancellationToken);
+
+            return entities
+                .Where(x => x.ConversationId.HasValue)
+                .ToDictionary(
+                    x => x.ConversationId!.Value,
+                    x => x.ToDomain());
+        }
+
+        public async Task<message?> GetByClientMessageIdInConversationAsync(Guid conversationId, Guid senderId, Guid clientMessageId, CancellationToken cancellationToken = default)
+        {
+            var entity = await _db.Messages
+                .AsNoTracking()
+                .FirstOrDefaultAsync(
+                    x =>
+                        x.ConversationId == conversationId &&
+                        x.SenderId == senderId &&
+                        x.ClientMessageId == clientMessageId,
+                    cancellationToken);
+
+            return entity?.ToDomain();
+        }
+
+        public async Task<Dictionary<Guid, int>> GetUnreadCountsByConversationAsync(Guid conversationId, Guid userOneId, Guid userTwoId, CancellationToken cancellationToken = default)
+        {
+            var result = new Dictionary<Guid, int>
+            {
+                [userOneId] = 0,
+                [userTwoId] = 0
+            };
+
+            var counts = await _db.Messages
+                .AsNoTracking()
+                .Where(x =>
+                    x.ConversationId == conversationId &&
+                    !x.IsRead)
+                .GroupBy(x => x.SenderId)
+                .Select(group => new
+                {
+                    SenderId = group.Key,
+                    Count = group.Count()
+                })
+                .ToListAsync(cancellationToken);
+
+            foreach (var item in counts)
+            {
+                // Tin do user one gửi là unread của user two.
+                if (item.SenderId == userOneId)
+                    result[userTwoId] += item.Count;
+                else if (item.SenderId == userTwoId)
+                    result[userOneId] += item.Count;
+            }
+
+            return result;
+        }
+
+        private static void EnsureUtc(DateTime value)
+        {
+            if (value.Kind != DateTimeKind.Utc)
+            {
+                throw new ArgumentException(
+                    "Thời gian đọc tin nhắn phải sử dụng UTC.",
+                    nameof(value));
+            }
+        }
+
         private void EnsureActiveTransaction()
         {
             if (_db.Database.CurrentTransaction is null)
@@ -236,5 +424,7 @@ namespace HomeCycle.Infrastructure.Repositories.Offers
                     "FOR UPDATE requires an active database transaction.");
             }
         }
+
+
     }
 }

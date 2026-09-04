@@ -427,6 +427,7 @@ namespace HomeCycle.Application.Mappings
                 .ForMember(d => d.ProductId, o => o.MapFrom(s => s.Product == null ? Guid.Empty : s.Product.ProductId))
                 .ForMember(d => d.AvatarUrl, o => o.MapFrom(s => s.User == null ? string.Empty : s.User.AvatarUrl))
                 .ForMember(d => d.ProductName, o => o.MapFrom(s => s.Product == null ? null : s.Product.ProductName))
+                .ForMember(d => d.OwnerName, o => o.MapFrom(s => s.User == null ? string.Empty : s.User.Username))
                 .ForMember(d => d.ProductTypeName, o => o.MapFrom(s => s.Product == null ? null : s.Product.ProductTypeName))
                 .ForMember(d => d.CategoryName, o => o.MapFrom(s => s.Product == null ? null : s.Product.CategoryName))
                 .ForMember(d => d.BrandName, o => o.MapFrom(s => s.Product == null ? null : s.Product.BrandName))

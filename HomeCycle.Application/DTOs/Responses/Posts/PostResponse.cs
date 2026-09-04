@@ -22,6 +22,12 @@ namespace HomeCycle.Application.DTOs.Responses.Posts
 
         public string? ProductName { get; set; }
 
+        public string OwnerName { get; set; }
+
+        public double? AverageRating { get; set; }
+
+        public int TotalReviews { get; set; }
+
         public string? ProductTypeName { get; set; }
 
         public string? CategoryName { get; set; }

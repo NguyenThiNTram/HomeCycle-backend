@@ -6,7 +6,8 @@ namespace HomeCycle.Application.DTOs.Responses.Negotiations
 {
     public sealed class ConversationUpdatedResponse
     {
-        public Guid NegotiationId { get; set; }
+        public Guid ConversationId { get; set; }
+        public Guid? NegotiationId { get; set; }
         public Guid? LastSenderId { get; set; }
         public string? LastMessagePreview { get; set; }
         public MessageType? LastMessageType { get; set; }
@@ -16,8 +17,6 @@ namespace HomeCycle.Application.DTOs.Responses.Negotiations
         public int CurrentOfferQuantity { get; set; }
         public int? CurrentOfferVersion { get; set; }
         public NegotiationStatus? NegotiationStatus { get; set; }
-
-        // Key = userId, Value = số tin chưa đọc tương ứng của người đó.
         public Dictionary<Guid, int> UnreadCountByUser { get; set; } = new();
     }
 }

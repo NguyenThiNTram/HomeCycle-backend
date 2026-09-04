@@ -9,12 +9,8 @@ namespace HomeCycle.Application.DTOs.Responses.Negotiations
 {
     public class NegotiationActionResponse
     {
-        //public NegotiationResponse Negotiation { get; set; } = null!;
-
-        //public NegotiationProposalResponse? Proposal { get; set; }
-
-        //public MessageResponse SystemMessage { get; set; } = null!;
         public Guid NegotiationId { get; set; }
+        public Guid? ConversationId { get; set; }
         public Guid OfferId { get; set; }
 
         public NegotiationStatus NegotiationStatus { get; set; }

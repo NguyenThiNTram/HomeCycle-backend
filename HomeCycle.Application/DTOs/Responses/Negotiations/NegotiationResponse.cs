@@ -11,6 +11,7 @@ namespace HomeCycle.Application.DTOs.Responses.Negotiations
     {
         public Guid OfferId { get; set; }
         public Guid NegotiationId { get; set; }
+        public Guid? ConversationId { get; set; }
         public NegotiationStatus NegotiationStatus { get; set; }
         public OfferStatus OfferStatus { get; set; }
         public decimal? CurrentOfferPrice { get; set; }

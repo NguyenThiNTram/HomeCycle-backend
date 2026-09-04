@@ -213,6 +213,7 @@ namespace HomeCycle.Infrastructure
             services.AddScoped<IPlatformPolicyRepository, PlatformPolicyRepository>();
             services.AddScoped<IInspectionFormRepository, InspectionFormRepository>();
             services.AddScoped<INotificationRepository, NotificationRepository>();
+            services.AddScoped<IConversationRepository, ConversationRepository>();
 
             // register Services
             services.AddScoped<IAuthService, AuthService>();

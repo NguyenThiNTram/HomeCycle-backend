@@ -16,6 +16,7 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
             {
                 MessageId = entity.MessageId,
                 NegotiationId = entity.NegotiationId,
+                ConversationId = entity.ConversationId,
                 SenderId = entity.SenderId,
                 ClientMessageId = entity.ClientMessageId,
                 MessageContent = entity.MessageContent,
@@ -36,6 +37,7 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
             {
                 MessageId = entity.MessageId,
                 NegotiationId = entity.NegotiationId,
+                ConversationId = entity.ConversationId,
                 SenderId = entity.SenderId,
                 ClientMessageId = entity.ClientMessageId,
                 MessageContent = entity.MessageContent,

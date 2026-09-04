@@ -20,13 +20,10 @@ namespace HomeCycle.Application.Interfaces.Services.Reviews
 
         Task<Result<ReviewResponseDto>> GetByIdAsync(Guid reviewId, CancellationToken ct = default);
 
-        Task<Result<ReviewResponseDto>> GetMyReviewForOrderAsync(
-            Guid orderId, Guid currentUserId, CancellationToken ct = default);
+        Task<Result<ReviewResponseDto>> GetMyReviewForOrderAsync(Guid orderId, Guid currentUserId, CancellationToken ct = default);
 
-        Task<Result<PagedResult<ReviewResponseDto>>> GetReviewsByUserAsync(
-            Guid userId, int pageNumber, int pageSize, CancellationToken ct = default);
+        Task<Result<PagedResult<ReviewResponseDto>>> GetReviewsByUserAsync(Guid userId, int pageNumber, int pageSize, CancellationToken ct = default);
 
-        Task<Result<PagedResult<ReviewResponseDto>>> GetReviewsByOrderAsync(
-            Guid orderId, Guid currentUserId, int pageNumber, int pageSize, CancellationToken ct = default);
+        Task<Result<PagedResult<ReviewResponseDto>>> GetReviewsByOrderAsync(Guid orderId, Guid currentUserId, int pageNumber, int pageSize, CancellationToken ct = default);
     }
 }
