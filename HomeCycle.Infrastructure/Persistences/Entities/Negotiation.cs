@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using HomeCycle.Infrastructure.Persistences.Entities;
 using Microsoft.EntityFrameworkCore;
 
 namespace HomeCycle.Infrastructure;
@@ -24,6 +25,8 @@ public partial class Negotiation
     public Guid SellerId { get; set; }
 
     public Guid BuyerId { get; set; }
+
+    public Guid? ConversationId { get; set; }
 
     [Precision(18, 2)]
     public decimal? FinalPrice { get; set; }
@@ -57,4 +60,8 @@ public partial class Negotiation
     [ForeignKey("SellerId")]
     [InverseProperty("NegotiationSellers")]
     public virtual User Seller { get; set; } = null!;
+
+    [ForeignKey("ConversationId")]
+    [InverseProperty("Negotiations")]
+    public virtual Conversation? Conversation { get; set; }
 }

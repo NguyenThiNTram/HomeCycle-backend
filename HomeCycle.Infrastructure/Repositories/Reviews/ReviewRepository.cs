@@ -151,5 +151,21 @@ namespace HomeCycle.Infrastructure.Repositories.Reviews
                 TotalCount = totalCount
             };
         }
+
+        public async Task<(double AverageRating, int TotalReviews)> GetRatingStatsByRevieweeIdAsync(Guid revieweeId, CancellationToken cancellationToken = default)
+        {
+            var query = _db.Reviews
+                .AsNoTracking()
+                .Where(r => r.RevieweeId == revieweeId && r.Rating.HasValue);
+
+            var totalReviews = await query.CountAsync(cancellationToken);
+
+            if (totalReviews == 0)
+                return (0, 0);
+
+            var averageRating = await query.AverageAsync(r => r.Rating!.Value, cancellationToken);
+
+            return (Math.Round(averageRating, 1), totalReviews);
+        }
     }
 }

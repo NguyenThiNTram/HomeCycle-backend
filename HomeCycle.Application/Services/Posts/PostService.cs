@@ -9,6 +9,7 @@ using HomeCycle.Application.DTOs.Responses.Media;
 using HomeCycle.Application.DTOs.Responses.Posts;
 using HomeCycle.Application.Interfaces.Generics;
 using HomeCycle.Application.Interfaces.Repositories.Posts;
+using HomeCycle.Application.Interfaces.Repositories.Reviews;
 using HomeCycle.Application.Interfaces.Repositories.Users;
 using HomeCycle.Application.Interfaces.Services.Posts;
 using HomeCycle.Application.Interfaces.Services.Products;
@@ -30,6 +31,7 @@ namespace HomeCycle.Application.Services.Posts
         private readonly IProductService _productService;
         private readonly IMediaService _mediaService;
         private readonly IUserRepository _userRepository;
+        private readonly IReviewRepository _reviewRepository;
         private readonly IValidator<CreateSellPostRequest> _createSellValidator;
         private readonly IValidator<CreateBuyPostRequest> _createBuyValidator;
         private readonly IValidator<UpdateSellPostRequest> _updateSellValidator;
@@ -46,6 +48,7 @@ namespace HomeCycle.Application.Services.Posts
             IProductService productService,
             IMediaService mediaService,
             IUserRepository userRepository,
+            IReviewRepository reviewRepository,
             IValidator<CreateSellPostRequest> createSellValidator,
             IValidator<CreateBuyPostRequest> createBuyValidator,
             IValidator<UpdateSellPostRequest> updateSellValidator,
@@ -58,6 +61,7 @@ namespace HomeCycle.Application.Services.Posts
             _productService = productService;
             _mediaService = mediaService;
             _userRepository = userRepository;
+            _reviewRepository = reviewRepository;
             _createSellValidator = createSellValidator;
             _createBuyValidator = createBuyValidator;
             _updateSellValidator = updateSellValidator;
@@ -340,6 +344,11 @@ namespace HomeCycle.Application.Services.Posts
                 return Result<PostDetailResponse>.Fail(PostErrors.NotFound);
 
             var response = _mapper.Map<PostDetailResponse>(entity);
+
+            var (averageRating, totalReviews) = await _reviewRepository.GetRatingStatsByRevieweeIdAsync(entity.OwnerId, cancellationToken);
+
+            response.AverageRating = averageRating;
+            response.TotalReviews = totalReviews;
 
             var productResult = await _productService.GetDetailByPostIdAsync(postId, cancellationToken);
 
