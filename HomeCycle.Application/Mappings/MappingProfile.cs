@@ -18,6 +18,7 @@ using HomeCycle.Application.DTOs.Responses.Banks;
 using HomeCycle.Application.DTOs.Responses.Brands;
 using HomeCycle.Application.DTOs.Responses.Categories;
 using HomeCycle.Application.DTOs.Responses.Media;
+using HomeCycle.Application.DTOs.Responses.Messages;
 using HomeCycle.Application.DTOs.Responses.Negotiations;
 using HomeCycle.Application.DTOs.Responses.Offers;
 using HomeCycle.Application.DTOs.Responses.Orders;

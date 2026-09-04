@@ -4,6 +4,8 @@ using HomeCycle.Application.Commons.Errors;
 using HomeCycle.Application.Commons.Paginations;
 using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Requests.Offers;
+using HomeCycle.Application.DTOs.Responses.Conversations;
+using HomeCycle.Application.DTOs.Responses.Messages;
 using HomeCycle.Application.DTOs.Responses.Negotiations;
 using HomeCycle.Application.DTOs.Responses.Notifications;
 using HomeCycle.Application.DTOs.Responses.Offers;
@@ -510,20 +512,26 @@ namespace HomeCycle.Application.Services.Offers
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync(cancellationToken);
 
+                var initialOfferMessageResponse = _mapper.Map<MessageResponse>(initialOfferMessage);
+
                 // Realtime: đẩy message mở negotiation
                 await PublishMessageCreatedSafelyAsync(
                     negotiation.NegotiationId,
                     _mapper.Map<MessageResponse>(initialOfferMessage));
 
+                await PublishConversationMessageCreatedSafelyAsync(conversation.ConversationId, initialOfferMessageResponse);
+
                 // Realtime: hiện hộp chat Nego mới mở cho cả 2 bên (Buyer + Seller)
                 await PublishConversationUpdatedSafelyAsync(
+                    conversation.ConversationId,
                     negotiation.NegotiationId,
                     negotiation.SellerId,
                     negotiation.BuyerId,
-                    _mapper.Map<MessageResponse>(initialOfferMessage),
+                    initialOfferMessageResponse,
                     NegotiationStatus.Agreed,
                     offer.OfferPrice,
-                    offer.OfferQuantity);
+                    offer.OfferQuantity,
+                    offer.Version);
 
                 // Realtime: đẩy OfferUpdated cho cả 2 bên (Sender + Receiver) để cập nhật trạng thái Accepted
                 await PublishOfferUpdatedSafelyAsync(offer);
@@ -689,24 +697,28 @@ namespace HomeCycle.Application.Services.Offers
 
                 await _notificationService.PublishCreatedSafelyAsync(counterNotification);
 
-                // Realtime: đẩy lịch sử offer gốc + counter mới cho group negotiation
-                await PublishMessageCreatedSafelyAsync(
-                    negotiation.NegotiationId,
-                    _mapper.Map<MessageResponse>(initialOfferMessage));
+                var initialOfferMessageResponse = _mapper.Map<MessageResponse>(initialOfferMessage);
+                var counterMessageResponse = _mapper.Map<MessageResponse>(counterMessage);
 
-                await PublishMessageCreatedSafelyAsync(
-                    negotiation.NegotiationId,
-                    _mapper.Map<MessageResponse>(counterMessage));
+                // Realtime: đẩy lịch sử offer gốc (đã Superseded) cho group negotiation + group conversation
+                await PublishMessageCreatedSafelyAsync(negotiation.NegotiationId, initialOfferMessageResponse);
+                await PublishConversationMessageCreatedSafelyAsync(conversation.ConversationId, initialOfferMessageResponse);
+
+                // Realtime: đẩy counter mới cho group negotiation + group conversation
+                await PublishMessageCreatedSafelyAsync(negotiation.NegotiationId, counterMessageResponse);
+                await PublishConversationMessageCreatedSafelyAsync(conversation.ConversationId, counterMessageResponse);
 
                 // Realtime: hiện hộp chat Nego mới mở cho cả 2 bên (Buyer + Seller)
                 await PublishConversationUpdatedSafelyAsync(
+                    conversation.ConversationId,
                     negotiation.NegotiationId,
                     negotiation.SellerId,
                     negotiation.BuyerId,
-                    _mapper.Map<MessageResponse>(counterMessage),
+                    counterMessageResponse,
                     NegotiationStatus.Open,
                     counterMessage.OfferPrice,
-                    counterMessage.OfferQuantity);
+                    counterMessage.OfferQuantity,
+                    offer.Version);
 
                 // Realtime: đẩy OfferUpdated cho cả 2 bên (Sender + Receiver) để cập nhật trạng thái Accepted
                 await PublishOfferUpdatedSafelyAsync(offer);
@@ -935,19 +947,35 @@ namespace HomeCycle.Application.Services.Offers
             }
         }
 
-        private async Task PublishConversationUpdatedSafelyAsync(Guid negotiationId, Guid sellerId, Guid buyerId, MessageResponse lastMessage, NegotiationStatus status, decimal? price, int quantity)
+        private async Task PublishConversationUpdatedSafelyAsync(Guid conversationId, Guid negotiationId, Guid sellerId, Guid buyerId, MessageResponse lastMessage, NegotiationStatus status, decimal? price, int quantity, int? version)
         {
             try
             {
                 using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
 
-                var unread = await _messageRepository.GetUnreadCountsByNegotiationAsync(
-                    negotiationId, buyerId, sellerId, timeout.Token);
+                //var unread = await _messageRepository.GetUnreadCountsByNegotiationAsync(
+                //    negotiationId, buyerId, sellerId, timeout.Token);
+
+                // Lấy dữ liệu unread tổng hợp 2 cấp
+                var unreadDetails = await _messageRepository.GetUnreadCountsDetailAsync(
+                    conversationId, sellerId, buyerId, timeout.Token);
+
+                // Tách dữ liệu cho DTO
+                var conversationUnread = unreadDetails.ToDictionary(
+                    kv => kv.Key,
+                    kv => kv.Value.TotalConversationUnread);
+
+                var negotiationUnread = unreadDetails.ToDictionary(
+                    kv => kv.Key,
+                    kv => kv.Value.UnreadByNegotiation.ToDictionary(
+                        innerKv => innerKv.Key,
+                        innerKv => (int?)innerKv.Value));
 
                 await _realtimePublisher.PublishConversationUpdatedAsync(
                     new[] { sellerId, buyerId },
                     new ConversationUpdatedResponse
                     {
+                        ConversationId = conversationId,
                         NegotiationId = negotiationId,
                         LastSenderId = lastMessage.SenderId,
                         LastMessagePreview = BuildConversationPreview(lastMessage),
@@ -955,8 +983,12 @@ namespace HomeCycle.Application.Services.Offers
                         LastMessageAt = lastMessage.CreatedAt,
                         CurrentOfferPrice = price,
                         CurrentOfferQuantity = quantity,
+                        CurrentOfferVersion = version,
                         NegotiationStatus = status,
-                        UnreadCountByUser = unread
+                        //UnreadCountByUser = unread
+
+                        ConversationUnreadByUser = conversationUnread,
+                        NegotiationUnreadByUser = negotiationUnread
                     },
                     timeout.Token);
             }
@@ -1050,6 +1082,26 @@ namespace HomeCycle.Application.Services.Offers
                     exception,
                     "Không thể phát OfferCreated cho OfferId {OfferId}.",
                     offer.OfferId);
+            }
+        }
+
+        private async Task PublishConversationMessageCreatedSafelyAsync(Guid conversationId, MessageResponse response)
+        {
+            try
+            {
+                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+                await _realtimePublisher.PublishConversationMessageCreatedAsync(
+                    conversationId,
+                    response,
+                    timeout.Token);
+            }
+            catch (Exception exception)
+            {
+                _logger.LogWarning(
+                    exception,
+                    "Không thể phát ConversationMessageCreated cho MessageId {MessageId}.",
+                    response.MessageId);
             }
         }
 

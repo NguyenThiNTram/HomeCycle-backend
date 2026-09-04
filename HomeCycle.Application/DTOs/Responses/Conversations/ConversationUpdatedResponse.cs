@@ -2,7 +2,7 @@ using HomeCycle.Domain.Enums;
 using System;
 using System.Collections.Generic;
 
-namespace HomeCycle.Application.DTOs.Responses.Negotiations
+namespace HomeCycle.Application.DTOs.Responses.Conversations
 {
     public sealed class ConversationUpdatedResponse
     {
@@ -17,6 +17,11 @@ namespace HomeCycle.Application.DTOs.Responses.Negotiations
         public int CurrentOfferQuantity { get; set; }
         public int? CurrentOfferVersion { get; set; }
         public NegotiationStatus? NegotiationStatus { get; set; }
-        public Dictionary<Guid, int> UnreadCountByUser { get; set; } = new();
+
+        // tin chưa đọc tổng của Conversation
+        public Dictionary<Guid, int> ConversationUnreadByUser { get; set; }
+
+        // tin chưa đọc chi tiết từng Negotiation
+        public Dictionary<Guid, Dictionary<Guid, int?>> NegotiationUnreadByUser { get; set; }
     }
 }

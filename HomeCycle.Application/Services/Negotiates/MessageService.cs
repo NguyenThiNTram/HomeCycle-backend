@@ -5,6 +5,8 @@ using HomeCycle.Application.Commons.Helpers;
 using HomeCycle.Application.Commons.Paginations;
 using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Requests.Negotiates;
+using HomeCycle.Application.DTOs.Responses.Conversations;
+using HomeCycle.Application.DTOs.Responses.Messages;
 using HomeCycle.Application.DTOs.Responses.Negotiations;
 using HomeCycle.Application.Interfaces.Generics;
 using HomeCycle.Application.Interfaces.Repositories.Offers;
@@ -297,7 +299,17 @@ namespace HomeCycle.Application.Services.Negotiates
             await PublishMessagesReadSafelyAsync(negotiationId, readResponse);
 
             // cập nhật unread trên thẻ chat ngoài list cho cả 2 bên
-            var lastMessages = await _messageRepository.GetByNegotiationIdAsync(negotiationId, new PaginationRequest { PageNumber = 1, PageSize = 1 }, cancellationToken);
+            //var lastMessages = await _messageRepository.GetByNegotiationIdAsync(negotiationId, new PaginationRequest { PageNumber = 1, PageSize = 1 }, cancellationToken);
+
+            //Preview ngoài Inbox luôn là tin nhắn mới nhất tuyệt đối của cuộc trò chuyện, bất kể hành động đọc diễn ra ở Negotiation nào
+            var lastMessages =
+                await _messageRepository.GetByConversationIdAsync(
+                    conversationId,
+                    new PaginationRequest
+                    {
+                        PageNumber = 1,
+                        PageSize = 1
+                    }, cancellationToken);
 
             var currentOffer = negotiation.Offer ?? await _offerRepository.GetByIdAsync(negotiation.OfferId, cancellationToken);
 
@@ -305,8 +317,8 @@ namespace HomeCycle.Application.Services.Negotiates
             if (lastMessage is not null)
             {
                 await PublishConversationUpdatedSafelyAsync(
+                    conversationId, 
                     negotiationId,
-                    conversationId,
                     negotiation.SellerId,
                     negotiation.BuyerId,
                     _mapper.Map<MessageResponse>(lastMessage),
@@ -317,6 +329,63 @@ namespace HomeCycle.Application.Services.Negotiates
                     currentOffer?.OfferPrice,
                     currentOffer?.OfferQuantity ?? 0,
                     currentOffer?.Version);
+            }
+
+            return Result.Success();
+        }
+
+        public async Task<Result> MarkConversationAsReadAsync(Guid userId, Guid conversationId, CancellationToken cancellationToken = default)
+        {
+            var conversation = await _conversationRepository.GetByIdAsync(conversationId, cancellationToken);
+            if (conversation is null)
+                return Result.Fail(NegotiationErrors.NotFound);
+
+            var isParticipant = conversation.UserOneId == userId || conversation.UserTwoId == userId;
+            if (!isParticipant)
+                return Result.Fail(NegotiationErrors.Forbidden);
+
+            var readAt = DateTime.UtcNow;
+
+            var updatedCount =
+                await _messageRepository.MarkConversationAsReadAsync(
+                    conversationId,
+                    userId,
+                    readAt,
+                    cancellationToken);
+
+            if (updatedCount == 0)
+                return Result.Success();
+
+            var readResponse = new ConversationMessagesReadResponse
+            {
+                ConversationId = conversationId,
+                ReaderId = userId,
+                ReadAt = readAt,
+                UpdatedCount = updatedCount
+            };
+
+            await PublishConversationMessagesReadSafelyAsync(conversationId, readResponse);
+
+            var lastMessages = await _messageRepository.GetByConversationIdAsync(conversationId, new PaginationRequest { PageNumber = 1, PageSize = 1 }, cancellationToken);
+            var lastMessage = lastMessages.Items.FirstOrDefault();
+
+            if (lastMessage is not null)
+            {
+                var negotiation = await _negotiationRepository.GetByIdAsync(lastMessage.NegotiationId ?? Guid.Empty, cancellationToken);
+                if (negotiation is not null)
+                {
+                    var currentOffer = negotiation.Offer ?? await _offerRepository.GetByIdAsync(negotiation.OfferId, cancellationToken);
+                    await PublishConversationUpdatedSafelyAsync(
+                        conversationId,
+                        negotiation.NegotiationId,
+                        negotiation.SellerId,
+                        negotiation.BuyerId,
+                        _mapper.Map<MessageResponse>(lastMessage),
+                        negotiation.NegotiationStatus ?? NegotiationStatus.Open,
+                        currentOffer?.OfferPrice,
+                        currentOffer?.OfferQuantity ?? 0,
+                        currentOffer?.Version);
+                }
             }
 
             return Result.Success();
@@ -370,16 +439,48 @@ namespace HomeCycle.Application.Services.Negotiates
             }
         }
 
+        private async Task PublishConversationMessagesReadSafelyAsync(Guid conversationId,
+            ConversationMessagesReadResponse response)
+        {
+            try
+            {
+                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+                await _realtimePublisher.PublishConversationMessagesReadAsync(
+                    conversationId,
+                    response,
+                    timeout.Token);
+            }
+            catch (Exception exception)
+            {
+                _logger.LogWarning(
+                    exception,
+                    "Không thể phát ConversationMessagesRead cho ConversationId " +
+                    "{ConversationId}. Trạng thái đã đọc đã được lưu.",
+                    conversationId);
+            }
+        }
+
         private async Task PublishConversationUpdatedSafelyAsync(
-            Guid negotiationId, Guid conversationId, Guid sellerId, Guid buyerId,
+            Guid conversationId, Guid negotiationId, Guid sellerId, Guid buyerId,
             MessageResponse lastMessage, NegotiationStatus status,
             decimal? price, int quantity, int? version)
         {
             try
             {
                 using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-                var unread = await _messageRepository.GetUnreadCountsByNegotiationAsync(
-                    negotiationId, buyerId, sellerId, timeout.Token);
+                var unreadDetails = await _messageRepository.GetUnreadCountsDetailAsync(
+                    conversationId, sellerId, buyerId, timeout.Token);
+
+                var conversationUnread = unreadDetails.ToDictionary(
+                    kv => kv.Key,
+                    kv => kv.Value.TotalConversationUnread);
+
+                var negotiationUnread = unreadDetails.ToDictionary(
+                    kv => kv.Key,
+                    kv => kv.Value.UnreadByNegotiation.ToDictionary(
+                        innerKv => innerKv.Key,
+                        innerKv => (int?)innerKv.Value));
 
                 await _realtimePublisher.PublishConversationUpdatedAsync(
                     new[] { sellerId, buyerId },
@@ -395,7 +496,9 @@ namespace HomeCycle.Application.Services.Negotiates
                         CurrentOfferQuantity = quantity,
                         CurrentOfferVersion = version,
                         NegotiationStatus = status,
-                        UnreadCountByUser = unread
+
+                        ConversationUnreadByUser = conversationUnread,
+                        NegotiationUnreadByUser = negotiationUnread
                     },
                     timeout.Token);
             }

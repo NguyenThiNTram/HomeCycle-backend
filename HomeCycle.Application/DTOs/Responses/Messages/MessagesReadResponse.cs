@@ -4,11 +4,11 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace HomeCycle.Application.DTOs.Responses.Negotiations
+namespace HomeCycle.Application.DTOs.Responses.Messages
 {
-    public class ConversationMessagesReadResponse
+    public class MessagesReadResponse
     {
-        public Guid ConversationId { get; set; }
+        public Guid NegotiationId { get; set; }
         public Guid ReaderId { get; set; }
         public DateTime ReadAt { get; set; }
         public int UpdatedCount { get; set; }
