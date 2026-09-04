@@ -45,6 +45,36 @@ namespace HomeCycle.API.Hubs
                 .WaitAsync(cancellationToken);
         }
 
+        public Task PublishConversationMessageCreatedAsync(Guid conversationId, MessageResponse message, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            return _hubContext.Clients
+                .Group(ChatGroupName.ForConversation(conversationId))
+                .ConversationMessageCreated(message)
+                .WaitAsync(cancellationToken);
+        }
+
+        public Task PublishConversationMessageUpdatedAsync(Guid conversationId, MessageResponse message, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            return _hubContext.Clients
+                .Group(ChatGroupName.ForConversation(conversationId))
+                .ConversationMessageUpdated(message)
+                .WaitAsync(cancellationToken);
+        }
+
+        public Task PublishConversationMessagesReadAsync(Guid conversationId, ConversationMessagesReadResponse response, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            return _hubContext.Clients
+                .Group(ChatGroupName.ForConversation(conversationId))
+                .ConversationMessagesRead(response)
+                .WaitAsync(cancellationToken);
+        }
+
         public Task PublishConversationUpdatedAsync(IReadOnlyList<Guid> userIds, ConversationUpdatedResponse response, CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
