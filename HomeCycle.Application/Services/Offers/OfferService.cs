@@ -32,6 +32,7 @@ namespace HomeCycle.Application.Services.Offers
         private readonly IOfferTermsPolicy _offerTermsPolicy;
         private readonly INegotiationRepository _negotiationRepository;
         private readonly IMessageRepository _messageRepository;
+        private readonly IConversationRepository _conversationRepository;
         private readonly IPostRepository _postRepository;
         private readonly IUserRepository _userRepository;
         private readonly ILogger<OfferService> _logger;
@@ -51,6 +52,7 @@ namespace HomeCycle.Application.Services.Offers
             IOfferTermsPolicy offerTermsPolicy,
             INegotiationRepository negotiationRepository,
             IMessageRepository messageRepository,
+            IConversationRepository conversationRepository,
             IPostRepository postRepository,
             IUserRepository userRepository,
             ILogger<OfferService> logger,
@@ -66,6 +68,7 @@ namespace HomeCycle.Application.Services.Offers
             _offerTermsPolicy = offerTermsPolicy;
             _negotiationRepository = negotiationRepository;
             _messageRepository = messageRepository;
+            _conversationRepository = conversationRepository;
             _postRepository = postRepository;
             _userRepository = userRepository;
             _logger = logger;
@@ -474,12 +477,19 @@ namespace HomeCycle.Application.Services.Offers
                 // Hai bên đã đồng ý nguyên điều khoản của Offer.
                 var negotiation = CreateAgreedNegotiation(offer, post, now);
 
-                var initialOfferMessage = CreateInitialOfferMessage(
-                    offer,
-                    negotiation.NegotiationId,
-                    post.BasePrice,
-                    MessageOfferStatus.Accepted,
-                    now);
+                var hasActiveNegotiation = await _negotiationRepository.ExistsActiveByPostAndParticipantsAsync(negotiation.PostId, negotiation.SellerId, negotiation.BuyerId, cancellationToken);
+
+                if (hasActiveNegotiation)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<AcceptOfferResponse>.Fail(NegotiationErrors.AlreadyExists);
+                }
+
+                var conversation = await _conversationRepository.GetOrCreateAsync(negotiation.SellerId, negotiation.BuyerId, now, cancellationToken);
+
+                negotiation.ConversationId = conversation.ConversationId;
+
+                var initialOfferMessage = CreateInitialOfferMessage(offer, conversation.ConversationId, negotiation.NegotiationId, post.BasePrice, MessageOfferStatus.Accepted, now);
 
                 // Offer Accepted nghĩa là Offer đã được xử lý và đưa vào Negotiation.
                 offer.OfferStatus = OfferStatus.Accepted;
@@ -495,16 +505,17 @@ namespace HomeCycle.Application.Services.Offers
                 await _offerRepository.UpdateAsync(offer, cancellationToken);
                 await _negotiationRepository.AddAsync(negotiation, cancellationToken);
                 await _messageRepository.AddAsync(initialOfferMessage, cancellationToken);
+                await _conversationRepository.UpdateLastActivityAsync(conversation.ConversationId, now, cancellationToken);
 
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync(cancellationToken);
 
-                // Realtime: đẩy message mở negotiation cho group negotiation.
+                // Realtime: đẩy message mở negotiation
                 await PublishMessageCreatedSafelyAsync(
                     negotiation.NegotiationId,
                     _mapper.Map<MessageResponse>(initialOfferMessage));
 
-                // Realtime: hiện hộp chat Nego mới mở cho cả 2 bên (Buyer + Seller).
+                // Realtime: hiện hộp chat Nego mới mở cho cả 2 bên (Buyer + Seller)
                 await PublishConversationUpdatedSafelyAsync(
                     negotiation.NegotiationId,
                     negotiation.SellerId,
@@ -523,9 +534,15 @@ namespace HomeCycle.Application.Services.Offers
                     {
                         OfferId = offer.OfferId,
                         NegotiationId = negotiation.NegotiationId,
+                        ConversationId = conversation.ConversationId,
                         OfferStatus = OfferStatus.Accepted,
                         NegotiationStatus = NegotiationStatus.Agreed
                     });
+            }
+            catch (DbUpdateException exception) when (IsUniqueViolation(exception))
+            {
+                await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                return Result<AcceptOfferResponse>.Fail(NegotiationErrors.AlreadyExists);
             }
             catch
             {
@@ -611,13 +628,26 @@ namespace HomeCycle.Application.Services.Offers
                 var now = DateTime.UtcNow;
                 var negotiation = CreateOpenNegotiation(offer, post, now);
 
+                var hasActiveNegotiation = await _negotiationRepository.ExistsActiveByPostAndParticipantsAsync(negotiation.PostId, negotiation.SellerId,  negotiation.BuyerId, cancellationToken);
+
+                if (hasActiveNegotiation)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<NegotiationResponse>.Fail(NegotiationErrors.AlreadyExists);
+                }
+
+                var conversation = await _conversationRepository.GetOrCreateAsync(negotiation.SellerId, negotiation.BuyerId, now, cancellationToken);
+
+                negotiation.ConversationId = conversation.ConversationId;
+
                 // Giữ lịch sử request gốc
-                var initialOfferMessage = CreateInitialOfferMessage(offer, negotiation.NegotiationId, post.BasePrice, MessageOfferStatus.Superseded, now);
+                var initialOfferMessage = CreateInitialOfferMessage(offer, conversation.ConversationId, negotiation.NegotiationId, post.BasePrice, MessageOfferStatus.Superseded, now);
 
                 var counterMessage = new message
                 {
                     MessageId = Guid.NewGuid(),
                     NegotiationId = negotiation.NegotiationId,
+                    ConversationId = conversation.ConversationId,
                     SenderId = userId,
                     MessageType = MessageType.CounterOffer,
                     OfferPrice = request.OfferPrice,
@@ -652,6 +682,7 @@ namespace HomeCycle.Application.Services.Offers
                 await _negotiationRepository.AddAsync(negotiation, cancellationToken);
                 await _messageRepository.AddAsync(initialOfferMessage, cancellationToken);
                 await _messageRepository.AddAsync(counterMessage, cancellationToken);
+                await _conversationRepository.UpdateLastActivityAsync(conversation.ConversationId, now, cancellationToken);
 
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync(cancellationToken);
@@ -667,7 +698,7 @@ namespace HomeCycle.Application.Services.Offers
                     negotiation.NegotiationId,
                     _mapper.Map<MessageResponse>(counterMessage));
 
-                // Realtime: hiện hộp chat Nego mới mở cho cả 2 bên (Buyer + Seller).
+                // Realtime: hiện hộp chat Nego mới mở cho cả 2 bên (Buyer + Seller)
                 await PublishConversationUpdatedSafelyAsync(
                     negotiation.NegotiationId,
                     negotiation.SellerId,
@@ -682,6 +713,11 @@ namespace HomeCycle.Application.Services.Offers
 
                 return Result<NegotiationResponse>.Success(
                     _mapper.Map<NegotiationResponse>(negotiation));
+            }
+            catch (DbUpdateException exception) when (IsUniqueViolation(exception))
+            {
+                await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                return Result<NegotiationResponse>.Fail(NegotiationErrors.AlreadyExists);
             }
             catch
             {
@@ -772,12 +808,13 @@ namespace HomeCycle.Application.Services.Offers
             return negotiation;
         }
 
-        private message CreateInitialOfferMessage(offer offer, Guid negotiationId, decimal? basePrice, MessageOfferStatus status, DateTime now)
+        private message CreateInitialOfferMessage(offer offer, Guid conversationId, Guid negotiationId, decimal? basePrice, MessageOfferStatus status, DateTime now)
         {
             var initialMessage = _mapper.Map<message>(offer);
 
             initialMessage.MessageId = Guid.NewGuid();
             initialMessage.NegotiationId = negotiationId;
+            initialMessage.ConversationId = conversationId;
             initialMessage.MessageContent = "Đề nghị thương lượng ban đầu";
             initialMessage.MessageType = MessageType.Offer;
             initialMessage.OfferStatus = status;
@@ -1025,7 +1062,7 @@ namespace HomeCycle.Application.Services.Offers
             else if (actorId == offer.ReceiverId)
                 recipientId = offer.SenderId;
             else
-                throw new InvalidOperationException("Người thực hiện không thuộc Offer.");
+                throw new InvalidOperationException("Người thực hiện không thuộc Offer");
 
             return _notificationService.AddPendingAsync(
                 new CreateNotificationCommand(

@@ -17,6 +17,13 @@ namespace HomeCycle.Application.Interfaces.Repositories.Offers
 
         Task MessagesRead(MessagesReadResponse response);
 
+        // Conversation
+        Task ConversationMessageCreated(MessageResponse message);
+
+        Task ConversationMessageUpdated(MessageResponse message);
+
+        Task ConversationMessagesRead(ConversationMessagesReadResponse response);
+
         Task ConversationUpdated(ConversationUpdatedResponse response);
 
         // Offer
@@ -30,5 +37,7 @@ namespace HomeCycle.Application.Interfaces.Repositories.Offers
         Task NotificationRead(NotificationReadResponse response);
 
         Task NotificationsReadAll(NotificationsReadAllResponse response);
+
+
     }
 }

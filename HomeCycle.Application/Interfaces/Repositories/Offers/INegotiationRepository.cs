@@ -17,6 +17,10 @@ namespace HomeCycle.Application.Interfaces.Repositories.Offers
 
         Task<PagedResult<negotiation>> GetByParticipantAsync(Guid userId, PaginationRequest request, CancellationToken cancellationToken = default);
 
+        Task<PagedResult<negotiation>> GetByConversationIdAsync(Guid conversationId, PaginationRequest request, CancellationToken cancellationToken = default);
+
+        Task<bool> ExistsActiveByPostAndParticipantsAsync(Guid postId, Guid sellerId, Guid buyerId, CancellationToken cancellationToken = default);
+
         Task AddAsync(negotiation entity, CancellationToken cancellationToken = default);
 
         Task UpdateAsync(negotiation entity, CancellationToken cancellationToken = default);
