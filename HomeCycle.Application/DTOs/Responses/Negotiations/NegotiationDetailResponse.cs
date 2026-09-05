@@ -1,3 +1,4 @@
+using HomeCycle.Application.DTOs.Responses.Messages;
 using HomeCycle.Domain.Enums;
 using System;
 using System.Collections.Generic;
@@ -10,6 +11,7 @@ namespace HomeCycle.Application.DTOs.Responses.Negotiations
     public sealed class NegotiationDetailResponse
     {
         public Guid NegotiationId { get; set; }
+        public Guid? ConversationId { get; set; }
         public Guid OfferId { get; set; }
         public Guid PostId { get; set; }
 
@@ -23,6 +25,8 @@ namespace HomeCycle.Application.DTOs.Responses.Negotiations
 
         public decimal? CurrentOfferPrice { get; set; }
         public int CurrentOfferQuantity { get; set; }
+
+        public int? CurrentOfferVersion { get; set; }
 
         public DateTime? LastMessageAt { get; set; }
         public DateTime CreatedAt { get; set; }

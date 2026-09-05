@@ -75,6 +75,7 @@ namespace HomeCycle.Application.Services.Auths
                     Username = user.Username,
                     AvatarUrl = user.AvatarUrl,
                     ReputationScore = business.ReputationScore,
+                    DisplayStarRating = business.DisplayStarRating,
                     //IsVerified = business.VerificationStatus == (int)VerificationStatus.Verified,
                     JoinedAt = user.CreatedAt,
                     ActivePostCount = activePostCount,
@@ -112,6 +113,7 @@ namespace HomeCycle.Application.Services.Auths
                         Username = user.Username,
                         AvatarUrl = user.AvatarUrl,
                         ReputationScore = personal.ReputationScore,
+                        DisplayStarRating = personal.DisplayStarRating,
                         JoinedAt = user.CreatedAt,
                         ActivePostCount = activePostCount,
                         FullName = personal.FullName

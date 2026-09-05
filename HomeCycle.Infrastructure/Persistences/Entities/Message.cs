@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using HomeCycle.Infrastructure.Persistences.Entities;
 using Microsoft.EntityFrameworkCore;
 
 namespace HomeCycle.Infrastructure;
@@ -14,10 +15,12 @@ public partial class Message
     [Key]
     public Guid MessageId { get; set; }
 
-    public Guid NegotiationId { get; set; }
+    public Guid? NegotiationId { get; set; }
+
+    public Guid? ConversationId { get; set; }
 
     public Guid SenderId { get; set; }
-    public Guid ClientMessageId { get; set; }
+    public Guid? ClientMessageId { get; set; }
 
     public string? MessageContent { get; set; }
 
@@ -48,4 +51,8 @@ public partial class Message
     [ForeignKey("SenderId")]
     [InverseProperty("Messages")]
     public virtual User Sender { get; set; } = null!;
+
+    [ForeignKey("ConversationId")]
+    [InverseProperty("Messages")]
+    public virtual Conversation? Conversation { get; set; }
 }

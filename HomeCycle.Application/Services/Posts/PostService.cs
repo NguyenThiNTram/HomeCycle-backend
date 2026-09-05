@@ -6,10 +6,13 @@ using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Requests.Media;
 using HomeCycle.Application.DTOs.Requests.Posts;
 using HomeCycle.Application.DTOs.Responses.Media;
+using HomeCycle.Application.DTOs.Responses.Notifications;
 using HomeCycle.Application.DTOs.Responses.Posts;
 using HomeCycle.Application.Interfaces.Generics;
 using HomeCycle.Application.Interfaces.Repositories.Posts;
+using HomeCycle.Application.Interfaces.Repositories.Reviews;
 using HomeCycle.Application.Interfaces.Repositories.Users;
+using HomeCycle.Application.Interfaces.Services.Notifications;
 using HomeCycle.Application.Interfaces.Services.Posts;
 using HomeCycle.Application.Interfaces.Services.Products;
 using HomeCycle.Domain.Entities;
@@ -30,6 +33,7 @@ namespace HomeCycle.Application.Services.Posts
         private readonly IProductService _productService;
         private readonly IMediaService _mediaService;
         private readonly IUserRepository _userRepository;
+        private readonly IReviewRepository _reviewRepository;
         private readonly IValidator<CreateSellPostRequest> _createSellValidator;
         private readonly IValidator<CreateBuyPostRequest> _createBuyValidator;
         private readonly IValidator<UpdateSellPostRequest> _updateSellValidator;
@@ -37,6 +41,7 @@ namespace HomeCycle.Application.Services.Posts
         private readonly IValidator<PostSearchRequest> _searchValidator;
         private readonly IMapper _mapper;
         private readonly IUnitOfWork _unitOfWork;
+        private readonly INotificationService _notificationService;
 
         private const string PostMediaTargetType = "Post";
         private const string PostMediaFolder = "posts";
@@ -46,18 +51,21 @@ namespace HomeCycle.Application.Services.Posts
             IProductService productService,
             IMediaService mediaService,
             IUserRepository userRepository,
+            IReviewRepository reviewRepository,
             IValidator<CreateSellPostRequest> createSellValidator,
             IValidator<CreateBuyPostRequest> createBuyValidator,
             IValidator<UpdateSellPostRequest> updateSellValidator,
             IValidator<UpdateBuyPostRequest> updateBuyValidator,
             IValidator<PostSearchRequest> searchValidator,
             IMapper mapper,
-            IUnitOfWork unitOfWork)
+            IUnitOfWork unitOfWork,
+            INotificationService notificationService)
         {
             _postRepository = postRepository;
             _productService = productService;
             _mediaService = mediaService;
             _userRepository = userRepository;
+            _reviewRepository = reviewRepository;
             _createSellValidator = createSellValidator;
             _createBuyValidator = createBuyValidator;
             _updateSellValidator = updateSellValidator;
@@ -65,6 +73,7 @@ namespace HomeCycle.Application.Services.Posts
             _searchValidator = searchValidator;
             _mapper = mapper;
             _unitOfWork = unitOfWork;
+            _notificationService = notificationService;
         }
 
         // ================== CREATE - SELL ==================
@@ -74,17 +83,25 @@ namespace HomeCycle.Application.Services.Posts
         {
             var validation = await _createSellValidator.ValidateAsync(request, cancellationToken);
             if (!validation.IsValid)
+            {
+                await SendPostCreationFailedNotificationAsync(ownerId, "Tạo bài đăng bán thất bại: " + string.Join(", ", validation.Errors.Select(e => e.ErrorMessage)), cancellationToken);
                 return Result<PostResponse>.Fail(
                     ValidationErrors.InvalidRequest(string.Join("\n", validation.Errors.Select(e => e.ErrorMessage))));
+            }
 
             var roleError = await ValidateCreateRoleAsync(ownerId, UserRole.Personal, cancellationToken);
             if (roleError is not null)
+            {
+                await SendPostCreationFailedNotificationAsync(ownerId, "Tạo bài đăng bán thất bại: " + roleError.Message, cancellationToken);
                 return Result<PostResponse>.Fail(roleError);
+            }
 
             if (request.Medias == null || !request.Medias.Any())
             {
+                var error = "Bài đăng bán bắt buộc phải có ít nhất 1 hình ảnh sản phẩm.";
+                await SendPostCreationFailedNotificationAsync(ownerId, "Tạo bài đăng bán thất bại: " + error, cancellationToken);
                 return Result<PostResponse>.Fail(
-                    ValidationErrors.InvalidRequest("Bài đăng bán bắt buộc phải có ít nhất 1 hình ảnh sản phẩm."));
+                    ValidationErrors.InvalidRequest(error));
             }
 
             var now = DateTime.UtcNow;
@@ -93,7 +110,6 @@ namespace HomeCycle.Application.Services.Posts
             post.PostId = Guid.NewGuid();
             post.OwnerId = ownerId;
             post.PostType = PostType.Sell;
-            //post.ProductName = request.Product?.ProductName;
             post.BasePrice = request.BasePrice;
             post.CreatedAt = now;
             post.UpdatedAt = now;
@@ -110,6 +126,7 @@ namespace HomeCycle.Application.Services.Posts
                 if (!productResult.IsSuccess)
                 {
                     await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    await SendPostCreationFailedNotificationAsync(ownerId, "Tạo bài đăng bán thất bại: " + productResult.Error!.Message, cancellationToken);
                     return Result<PostResponse>.Fail(productResult.Error!);
                 }
 
@@ -123,6 +140,7 @@ namespace HomeCycle.Application.Services.Posts
                 if (!mediaResult.IsSuccess)
                 {
                     await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    await SendPostCreationFailedNotificationAsync(ownerId, "Tạo bài đăng bán thất bại: " + mediaResult.Error!.Message, cancellationToken);
                     return Result<PostResponse>.Fail(mediaResult.Error!);
                 }
 
@@ -130,11 +148,16 @@ namespace HomeCycle.Application.Services.Posts
                 await _unitOfWork.CommitTransactionAsync(cancellationToken);
 
                 var response = _mapper.Map<PostResponse>(post);
+
+                // Gửi thông báo realtime khi tạo bài đăng thành công
+                await SendPostCreatedNotificationAsync(ownerId, post.PostId, "Bài đăng bán đã được tạo thành công", "Bài đăng bán của bạn đã được đăng tải.", cancellationToken);
+
                 return Result<PostResponse>.Success(response);
             }
-            catch
+            catch (Exception ex)
             {
                 await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                await SendPostCreationFailedNotificationAsync(ownerId, "Tạo bài đăng bán thất bại: " + ex.Message, cancellationToken);
                 throw;
             }
         }
@@ -146,12 +169,18 @@ namespace HomeCycle.Application.Services.Posts
         {
             var validation = await _createBuyValidator.ValidateAsync(request, cancellationToken);
             if (!validation.IsValid)
+            {
+                await SendPostCreationFailedNotificationAsync(ownerId, "Tạo bài đăng mua thất bại: " + string.Join(", ", validation.Errors.Select(e => e.ErrorMessage)), cancellationToken);
                 return Result<PostResponse>.Fail(
                     ValidationErrors.InvalidRequest(string.Join("\n", validation.Errors.Select(e => e.ErrorMessage))));
+            }
 
             var roleError = await ValidateCreateRoleAsync(ownerId, UserRole.Business, cancellationToken);
             if (roleError is not null)
+            {
+                await SendPostCreationFailedNotificationAsync(ownerId, "Tạo bài đăng mua thất bại: " + roleError.Message, cancellationToken);
                 return Result<PostResponse>.Fail(roleError);
+            }
 
             var now = DateTime.UtcNow;
             var post = _mapper.Map<post>(request);
@@ -175,6 +204,7 @@ namespace HomeCycle.Application.Services.Posts
                 if (!productResult.IsSuccess)
                 {
                     await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    await SendPostCreationFailedNotificationAsync(ownerId, "Tạo bài đăng mua thất bại: " + productResult.Error!.Message, cancellationToken);
                     return Result<PostResponse>.Fail(productResult.Error!);
                 }
 
@@ -188,6 +218,7 @@ namespace HomeCycle.Application.Services.Posts
                 if (!mediaResult.IsSuccess)
                 {
                     await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    await SendPostCreationFailedNotificationAsync(ownerId, "Tạo bài đăng mua thất bại: " + mediaResult.Error!.Message, cancellationToken);
                     return Result<PostResponse>.Fail(mediaResult.Error!);
                 }
 
@@ -195,11 +226,16 @@ namespace HomeCycle.Application.Services.Posts
                 await _unitOfWork.CommitTransactionAsync(cancellationToken);
 
                 var response = _mapper.Map<PostResponse>(post);
+
+                // Gửi thông báo realtime khi tạo bài đăng thành công
+                await SendPostCreatedNotificationAsync(ownerId, post.PostId, "Bài đăng mua đã được tạo thành công", "Bài đăng mua của bạn đã được đăng tải.", cancellationToken);
+
                 return Result<PostResponse>.Success(response);
             }
-            catch
+            catch (Exception ex)
             {
                 await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                await SendPostCreationFailedNotificationAsync(ownerId, "Tạo bài đăng mua thất bại: " + ex.Message, cancellationToken);
                 throw;
             }
         }
@@ -341,6 +377,11 @@ namespace HomeCycle.Application.Services.Posts
                 return Result<PostDetailResponse>.Fail(PostErrors.NotFound);
 
             var response = _mapper.Map<PostDetailResponse>(entity);
+
+            var (averageRating, totalReviews) = await _reviewRepository.GetRatingStatsByRevieweeIdAsync(entity.OwnerId, cancellationToken);
+
+            response.AverageRating = averageRating;
+            response.TotalReviews = totalReviews;
 
             var productResult = await _productService.GetDetailByPostIdAsync(postId, cancellationToken);
 
@@ -720,6 +761,48 @@ namespace HomeCycle.Application.Services.Posts
                 return PostErrors.InvalidUpdateQuantity(soldQuantity, newQuantity);
 
             return null;
+        }
+
+        private async Task SendPostCreatedNotificationAsync(Guid userId, Guid postId, string title, string message, CancellationToken cancellationToken)
+        {
+            try
+            {
+                var notification = await _notificationService.AddPendingAsync(
+                    new CreateNotificationCommand(
+                        userId,
+                        title,
+                        message,
+                        NotificationTargetType.Post,
+                        postId),
+                    cancellationToken);
+
+                await _notificationService.PublishCreatedSafelyAsync(notification);
+            }
+            catch (Exception)
+            {
+                // Log warning but don't fail the main operation
+            }
+        }
+
+        private async Task SendPostCreationFailedNotificationAsync(Guid userId, string message, CancellationToken cancellationToken)
+        {
+            try
+            {
+                var notification = await _notificationService.AddPendingAsync(
+                    new CreateNotificationCommand(
+                        userId,
+                        "Tạo bài đăng thất bại",
+                        message,
+                        NotificationTargetType.Post,
+                        Guid.Empty),
+                    cancellationToken);
+
+                await _notificationService.PublishCreatedSafelyAsync(notification);
+            }
+            catch (Exception)
+            {
+                // Log warning but don't fail the main operation
+            }
         }
 
     }

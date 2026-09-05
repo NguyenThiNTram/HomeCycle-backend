@@ -35,7 +35,6 @@ namespace HomeCycle.Infrastructure.Repositories.Users
         public async Task<personal_profile?> GetByUserIdAsync(Guid userId, CancellationToken cancellationToken = default)
         {
             var entity = await _db.Personal_Profiles.FirstOrDefaultAsync(x => x.UserId == userId, cancellationToken);
-
             return entity?.ToDomain();
         }
 

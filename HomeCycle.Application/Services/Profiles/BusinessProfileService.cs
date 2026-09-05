@@ -143,6 +143,7 @@ namespace HomeCycle.Application.Services.Profiles
                     newProfile.UserId = userId;
                     newProfile.Status = (int)BusinessProfileStatus.Pending;
                     newProfile.ReputationScore = 100;
+                    newProfile.DisplayStarRating = 4.8;
                     newProfile.CreatedAt = now;
                     newProfile.UpdatedAt = now;
 

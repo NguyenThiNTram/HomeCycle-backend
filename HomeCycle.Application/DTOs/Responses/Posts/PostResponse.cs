@@ -11,13 +11,29 @@ namespace HomeCycle.Application.DTOs.Responses.Posts
     public class PostResponse
     {
         public Guid PostId { get; set; }
+
         public Guid OwnerId { get; set; }
-        public string AvataUrl { get; set; } = string.Empty;
+
+        public string? AvatarUrl { get; set; }
+
+        public VerifyStatus? VerifyStatus { get; set; }
+
         public Guid ProductId { get; set; }
+
         public string? ProductName { get; set; }
+
+        public string OwnerName { get; set; }
+
+        public double? AverageRating { get; set; }
+
+        public int TotalReviews { get; set; }
+
         public string? ProductTypeName { get; set; }
+
         public string? CategoryName { get; set; }
+
         public string? BrandName { get; set; }
+
         public string? Description { get; set; }
 
         public int? Quantity { get; set; }

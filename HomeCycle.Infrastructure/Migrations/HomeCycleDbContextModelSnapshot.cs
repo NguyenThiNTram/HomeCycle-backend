@@ -344,6 +344,11 @@ namespace HomeCycle.Infrastructure.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasDefaultValueSql("now()");
 
+                    b.Property<double>("DisplayStarRating")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("double precision")
+                        .HasDefaultValue(4.7999999999999998);
+
                     b.Property<string>("FullName")
                         .HasMaxLength(255)
                         .HasColumnType("character varying(255)");
@@ -1154,6 +1159,9 @@ namespace HomeCycle.Infrastructure.Migrations
                         .HasPrecision(18, 2)
                         .HasColumnType("numeric(18,2)");
 
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<DateTime>("CreatedAt")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("timestamp with time zone")
@@ -1162,6 +1170,11 @@ namespace HomeCycle.Infrastructure.Migrations
                     b.Property<decimal?>("FinalTotalAmount")
                         .HasPrecision(18, 2)
                         .HasColumnType("numeric(18,2)");
+
+                    b.Property<string>("OrderCode")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
 
                     b.Property<int?>("OrderStatus")
                         .HasColumnType("integer");
@@ -1399,6 +1412,11 @@ namespace HomeCycle.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("timestamp with time zone")
                         .HasDefaultValueSql("now()");
+
+                    b.Property<double>("DisplayStarRating")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("double precision")
+                        .HasDefaultValue(4.7999999999999998);
 
                     b.Property<string>("FrontIDCardImage")
                         .HasMaxLength(500)
@@ -2084,12 +2102,15 @@ namespace HomeCycle.Infrastructure.Migrations
                         .HasPrecision(18, 2)
                         .HasColumnType("numeric(18,2)");
 
+                    b.Property<int?>("Purpose")
+                        .HasColumnType("integer");
+
                     b.Property<DateTime>("UpdatedAt")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("timestamp with time zone")
                         .HasDefaultValueSql("now()");
 
-                    b.Property<Guid>("UserId")
+                    b.Property<Guid?>("UserId")
                         .HasColumnType("uuid");
 
                     b.Property<int>("WalletType")
@@ -2217,6 +2238,16 @@ namespace HomeCycle.Infrastructure.Migrations
                         .HasPrecision(18, 2)
                         .HasColumnType("numeric(18,2)");
 
+                    b.Property<DateTime?>("ProcessedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("ProcessedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("RejectReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
                     b.Property<DateTime?>("RequestedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -2231,6 +2262,8 @@ namespace HomeCycle.Infrastructure.Migrations
 
                     b.HasKey("WithdrawalId")
                         .HasName("Withdrawal_pkey");
+
+                    b.HasIndex("ProcessedBy");
 
                     b.HasIndex("UserBankId");
 
@@ -2866,7 +2899,6 @@ namespace HomeCycle.Infrastructure.Migrations
                     b.HasOne("HomeCycle.Infrastructure.User", "User")
                         .WithMany("Wallets")
                         .HasForeignKey("UserId")
-                        .IsRequired()
                         .HasConstraintName("fk_wallet_user");
 
                     b.Navigation("User");
@@ -2917,6 +2949,12 @@ namespace HomeCycle.Infrastructure.Migrations
 
             modelBuilder.Entity("HomeCycle.Infrastructure.Withdrawal", b =>
                 {
+                    b.HasOne("HomeCycle.Infrastructure.User", "ProcessedByUser")
+                        .WithMany()
+                        .HasForeignKey("ProcessedBy")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_withdrawal_processedby");
+
                     b.HasOne("HomeCycle.Infrastructure.Bank_Account", "UserBank")
                         .WithMany("Withdrawals")
                         .HasForeignKey("UserBankId")
@@ -2928,6 +2966,8 @@ namespace HomeCycle.Infrastructure.Migrations
                         .HasForeignKey("WalletId")
                         .IsRequired()
                         .HasConstraintName("fk_withdrawal_walletid");
+
+                    b.Navigation("ProcessedByUser");
 
                     b.Navigation("UserBank");
 

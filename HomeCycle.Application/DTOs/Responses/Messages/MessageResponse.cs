@@ -5,12 +5,13 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace HomeCycle.Application.DTOs.Responses.Negotiations
+namespace HomeCycle.Application.DTOs.Responses.Messages
 {
     public class MessageResponse
     {
         public Guid MessageId { get; set; }
         public Guid NegotiationId { get; set; }
+        public Guid? ConversationId { get; set; }
         public Guid SenderId { get; set; }
 
         public Guid? ClientMessageId { get; set; }

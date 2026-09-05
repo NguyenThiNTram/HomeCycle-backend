@@ -1,4 +1,5 @@
 ﻿using HomeCycle.Domain.Entities;
+using HomeCycle.Domain.Enums;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -18,7 +19,7 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 UserId = entity.UserId,
                 Title = entity.Title,
                 Message = entity.Message,
-                TargetType = entity.TargetType,
+                TargetType = (NotificationTargetType?)entity.TargetType,
                 TargetId = entity.TargetId,
                 IsRead = entity.IsRead,
                 CreatedAt = entity.CreatedAt
@@ -33,7 +34,7 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 UserId = entity.UserId,
                 Title = entity.Title,
                 Message = entity.Message,
-                TargetType = entity.TargetType,
+                TargetType = (int?)entity.TargetType,
                 TargetId = entity.TargetId,
                 IsRead = entity.IsRead,
                 CreatedAt = entity.CreatedAt

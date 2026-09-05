@@ -19,6 +19,7 @@ using HomeCycle.Application.DTOs.Responses.Brands;
 using HomeCycle.Application.DTOs.Responses.Categories;
 using HomeCycle.Application.DTOs.Responses.Disputes;
 using HomeCycle.Application.DTOs.Responses.Media;
+using HomeCycle.Application.DTOs.Responses.Messages;
 using HomeCycle.Application.DTOs.Responses.Negotiations;
 using HomeCycle.Application.DTOs.Responses.Offers;
 using HomeCycle.Application.DTOs.Responses.Orders;
@@ -48,6 +49,7 @@ namespace HomeCycle.Application.Mappings
             .ForMember(dest => dest.UserId, opt => opt.Ignore())
             .ForMember(dest => dest.Password, opt => opt.Ignore())
             .ForMember(dest => dest.Role, opt => opt.Ignore())
+            .ForMember(dest => dest.AvatarUrl, o => o.Ignore())
             .ForMember(dest => dest.Status, opt => opt.Ignore())
             .ForMember(dest => dest.CreatedAt, opt => opt.Ignore())
             .ForMember(dest => dest.IsEmailVerified, opt => opt.Ignore());
@@ -75,6 +77,22 @@ namespace HomeCycle.Application.Mappings
 
             CreateMap<UpdateAvatarRequest, user>()
                 .ForMember(d => d.AvatarUrl, o => o.MapFrom(s => s.AvatarUrl != null));
+
+            CreateMap<RegisterPersonalRequest, personal_profile>()
+                .ForMember(d => d.PersonalProfileId, o => o.Ignore())
+                .ForMember(d => d.UserId, o => o.Ignore())
+                .ForMember(d => d.FrontIDCardImage, o => o.Ignore())
+                .ForMember(d => d.BackIDCardImage, o => o.Ignore())
+                .ForMember(d => d.VerificationStatus, o => o.Ignore())
+                .ForMember(d => d.VerifiedBy, o => o.Ignore())
+                .ForMember(d => d.VerifiedAt, o => o.Ignore())
+                .ForMember(d => d.CreatedAt, o => o.Ignore());
+
+            CreateMap<RegisterPersonalRequest, bank_account>()
+                .ForMember(d => d.UserBankId, o => o.Ignore())
+                .ForMember(d => d.UserId, o => o.Ignore())
+                .ForMember(d => d.VerifyStatus, o => o.Ignore())
+                .ForMember(d => d.CreatedAt, o => o.Ignore());
 
             CreateMap<UpdateIdCardRequest, personal_profile>()
                 .ForMember(d => d.VerificationStatus, o => o.Ignore())
@@ -404,40 +422,22 @@ namespace HomeCycle.Application.Mappings
                 .ForMember(dest => dest.ProductId, opt => opt.Ignore())
                 .ForMember(dest => dest.PostId, opt => opt.Ignore());
 
-            CreateMap<post, PostResponse>();
-            CreateMap<post, PostDetailResponse>();
+            //CreateMap<post, PostResponse>();
+            //CreateMap<post, PostDetailResponse>();
 
             CreateMap<post, PostResponse>()
-                .ForMember(d => d.ProductId,
-                    o => o.MapFrom(s =>
-                        s.Product == null
-                            ? Guid.Empty
-                            : s.Product.ProductId))
-                .ForMember(d => d.AvataUrl,
-                    o => o.MapFrom(s =>
-                        s.User == null
-                            ? string.Empty
-                            : s.User.AvatarUrl))
-                .ForMember(d => d.ProductName,
-                    o => o.MapFrom(s =>
-                        s.Product == null
-                            ? null
-                            : s.Product.ProductName))
-                .ForMember(d => d.ProductTypeName,
-                    o => o.MapFrom(s =>
-                        s.Product == null
-                            ? null
-                            : s.Product.ProductTypeName))
-                .ForMember(d => d.CategoryName,
-                    o => o.MapFrom(s =>
-                        s.Product == null
-                            ? null
-                            : s.Product.CategoryName))
-                .ForMember(d => d.BrandName,
-                    o => o.MapFrom(s =>
-                        s.Product == null
-                            ? null
-                            : s.Product.BrandName))
+                .ForMember(d => d.ProductId, o => o.MapFrom(s => s.Product == null ? Guid.Empty : s.Product.ProductId))
+                .ForMember(d => d.AvatarUrl, o => o.MapFrom(s => s.User == null ? string.Empty : s.User.AvatarUrl))
+                .ForMember(d => d.ProductName, o => o.MapFrom(s => s.Product == null ? null : s.Product.ProductName))
+                .ForMember(d => d.OwnerName, o => o.MapFrom(s => s.User == null ? string.Empty : s.User.Username))
+                .ForMember(d => d.ProductTypeName, o => o.MapFrom(s => s.Product == null ? null : s.Product.ProductTypeName))
+                .ForMember(d => d.CategoryName, o => o.MapFrom(s => s.Product == null ? null : s.Product.CategoryName))
+                .ForMember(d => d.BrandName, o => o.MapFrom(s => s.Product == null ? null : s.Product.BrandName))
+                .ForMember(d => d.Medias, o => o.Ignore());
+
+            CreateMap<post, PostDetailResponse>()
+                .IncludeBase<post, PostResponse>()
+                .ForMember(d => d.Product, o => o.Ignore())
                 .ForMember(d => d.Medias, o => o.Ignore());
 
             CreateMap<PagedResult<post>, PagedResult<PostResponse>>()

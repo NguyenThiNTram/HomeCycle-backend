@@ -10,9 +10,10 @@ namespace HomeCycle.Domain.Entities;
 public class message
 {
     public Guid MessageId { get; set; }
-    public Guid NegotiationId { get; set; }
+    public Guid? NegotiationId { get; set; }
+    public Guid? ConversationId { get; set; }
     public Guid SenderId { get; set; }
-    public Guid ClientMessageId { get; set; }
+    public Guid? ClientMessageId { get; set; }
 
     public string? MessageContent { get; set; }
     public MessageType? MessageType { get; set; }
@@ -38,5 +39,6 @@ public class message
         this.MessageId = MessageId;
         this.NegotiationId = NegotiationId;
         this.SenderId = SenderId;
+        this.ConversationId = ConversationId;
     }
 }

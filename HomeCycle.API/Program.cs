@@ -1,10 +1,12 @@
 ﻿using HomeCycle.API.Hubs;
 using HomeCycle.API.Middlewares;
+using HomeCycle.Application.Interfaces.Repositories.Notifications;
 using HomeCycle.Application.Interfaces.Repositories.Offers;
 using HomeCycle.Application.Interfaces.Services.Negotiates;
 using HomeCycle.Application.Services.Negotiates;
 using HomeCycle.Infrastructure;
 using HomeCycle.Infrastructure.DbContexts;
+using MathNet.Numerics;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
@@ -29,20 +31,9 @@ namespace HomeCycle.API
             builder.Services.AddSignalR();
             builder.Services.AddScoped<IMessageService, MessageService>();
             builder.Services.AddSingleton<IChatRealtimePublisher, SignalRChatRealtimePublisher>();
+            builder.Services.AddSingleton<INotificationRealtimePublisher, SignalRNotificationRealtimePublisher>();
 
             builder.Services.AddScoped<IAuthorizationHandler, ActiveUserHandler>();
-
-            // Config CORS
-            //builder.Services.AddCors(options =>
-            //{
-            //    options.AddPolicy("AllowAll", policy =>
-            //    {
-            //        policy.AllowAnyOrigin()
-            //              .AllowAnyMethod()
-            //              .AllowAnyHeader()
-            //              .AllowCredentials(); // truyền Connection ID
-            //    });
-            //});
 
             builder.Services.AddCors(options =>
             {
@@ -54,8 +45,6 @@ namespace HomeCycle.API
                           .AllowCredentials();
                 });
             });
-
-            
 
             // Add services to the container.
 
@@ -177,17 +166,6 @@ namespace HomeCycle.API
                     return Task.CompletedTask;
                 };
             });
-
-            ////builder.Services.AddAuthorization();
-            //builder.Services.AddAuthorization(options =>
-            //{
-            //    options.FallbackPolicy = new AuthorizationPolicyBuilder()
-            //        .RequireAuthenticatedUser()
-            //        .AddRequirements(new ActiveUserRequirement())
-            //        .Build();
-            //    // FallbackPolicy áp dụng cho MỌI endpoint có [Authorize] (không có tên Policy cụ thể) —
-            //    // tự động phủ toàn bộ Controller hiện có, không cần sửa từng Controller một.
-            //});
 
             var app = builder.Build();
 

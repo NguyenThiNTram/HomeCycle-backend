@@ -18,15 +18,23 @@ namespace HomeCycle.Application.Interfaces.Services.Negotiates
 
         Task<Result<PagedResult<NegotiationListItemResponse>>> GetMyNegotiationsAsync(Guid userId, PaginationRequest request, CancellationToken cancellationToken = default);
 
-        Task<Result<NegotiationProposalResponse>> CounterAsync(Guid userId, Guid negotiationId, SendNegotiationCounterRequest request, CancellationToken cancellationToken = default);
+        //Task<Result<NegotiationProposalResponse>> CounterAsync(Guid userId, Guid negotiationId, SendNegotiationCounterRequest request, CancellationToken cancellationToken = default);
 
-        Task<Result<NegotiationResponse>> AcceptProposalAsync(Guid userId, Guid negotiationId, Guid proposalMessageId, CancellationToken cancellationToken = default);
+        //Task<Result<NegotiationResponse>> AcceptProposalAsync(Guid userId, Guid negotiationId, Guid proposalMessageId, CancellationToken cancellationToken = default);
 
-        Task<Result<NegotiationProposalResponse>> RejectProposalAsync(Guid userId, Guid negotiationId, Guid proposalMessageId,
-            CancellationToken cancellationToken = default);
+        //Task<Result<NegotiationProposalResponse>> RejectProposalAsync(Guid userId, Guid negotiationId, Guid proposalMessageId,
+        //    CancellationToken cancellationToken = default);
 
-        // Buyer hoặc Seller đều được hủy khi Open
-        Task<Result<NegotiationResponse>> CancelAsync(Guid userId, Guid negotiationId, CancellationToken cancellationToken = default);
+        //// Buyer hoặc Seller đều được hủy khi Open
+        //Task<Result<NegotiationResponse>> CancelAsync(Guid userId, Guid negotiationId, CancellationToken cancellationToken = default);
+
+        Task<Result<NegotiationActionResponse>> CounterAsync(Guid userId, Guid negotiationId, SendNegotiationCounterRequest request, CancellationToken cancellationToken = default);
+
+        Task<Result<NegotiationActionResponse>> AcceptProposalAsync(Guid userId, Guid negotiationId, Guid proposalMessageId, CancellationToken cancellationToken = default);
+
+        Task<Result<NegotiationActionResponse>> RejectProposalAsync(Guid userId, Guid negotiationId, Guid proposalMessageId, CancellationToken cancellationToken = default);
+
+        Task<Result<NegotiationActionResponse>> CancelAsync(Guid userId, Guid negotiationId, CancellationToken cancellationToken = default);
 
         // Chỉ gọi nội bộ sau khi Agreement/Order hoàn tất
         Task<Result> CloseAsync(Guid negotiationId, CancellationToken cancellationToken = default);

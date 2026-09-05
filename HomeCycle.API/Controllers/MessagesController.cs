@@ -1,7 +1,7 @@
 ﻿using HomeCycle.Application.Commons.Paginations;
 using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Requests.Negotiates;
-using HomeCycle.Application.DTOs.Responses.Negotiations;
+using HomeCycle.Application.DTOs.Responses.Messages;
 using HomeCycle.Application.Interfaces.Services.Negotiates;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;

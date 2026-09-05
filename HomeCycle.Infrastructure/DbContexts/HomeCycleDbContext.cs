@@ -38,6 +38,8 @@ public partial class HomeCycleDbContext : DbContext
     public virtual DbSet<Cart_Item> Cart_Items { get; set; }
 
     public virtual DbSet<Collection_Appointment> Collection_Appointments { get; set; }
+    
+    public virtual DbSet<Conversation> Conversations { get; set; }
 
     public virtual DbSet<Dispute> Disputes { get; set; }
 
@@ -280,6 +282,7 @@ public partial class HomeCycleDbContext : DbContext
             entity.Property(e => e.BusinessProfileId).ValueGeneratedNever();
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()");
             entity.Property(e => e.ReputationScore).HasDefaultValue(100);
+            entity.Property(e => e.DisplayStarRating).HasDefaultValue(4.8);
             entity.Property(e => e.IdentityNumber).HasMaxLength(20).IsRequired();
             entity.Property(e => e.FullName)
                 .HasMaxLength(255)
@@ -336,6 +339,56 @@ public partial class HomeCycleDbContext : DbContext
                 .HasForeignKey(d => d.PostId)
                 .OnDelete(DeleteBehavior.Cascade)
                 .HasConstraintName("fk_cart_item_post");
+        });
+
+        modelBuilder.Entity<Conversation>(entity =>
+        {
+            entity.HasKey(e => e.ConversationId)
+                .HasName("Conversation_pkey");
+
+            entity.Property(e => e.ConversationId)
+                .ValueGeneratedNever();
+
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("now()");
+
+            entity.Property(e => e.LastActivityAt)
+                .HasDefaultValueSql("now()");
+
+            entity.HasIndex(e => new { e.UserOneId, e.UserTwoId })
+                .IsUnique()
+                .HasDatabaseName("uq_conversation_user_pair");
+
+            entity.HasIndex(e => new { e.UserOneId, e.LastActivityAt })
+                .HasDatabaseName("idx_conversation_user_one_activity")
+                .IsDescending(false, true);
+
+            entity.HasIndex(e => new { e.UserTwoId, e.LastActivityAt })
+                .HasDatabaseName("idx_conversation_user_two_activity")
+                .IsDescending(false, true);
+
+            entity.HasOne(e => e.UserOne)
+                .WithMany(u => u.ConversationUserOnes)
+                .HasForeignKey(e => e.UserOneId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("fk_conversation_user_one");
+
+            entity.HasOne(e => e.UserTwo)
+                .WithMany(u => u.ConversationUserTwos)
+                .HasForeignKey(e => e.UserTwoId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("fk_conversation_user_two");
+
+            entity.ToTable("Conversation", table =>
+            {
+                table.HasCheckConstraint(
+                    "ck_conversation_distinct_users",
+                    "\"UserOneId\" <> \"UserTwoId\"");
+
+                table.HasCheckConstraint(
+                    "ck_conversation_ordered_users",
+                    "\"UserOneId\" < \"UserTwoId\"");
+            });
         });
 
         modelBuilder.Entity<Collection_Appointment>(entity =>
@@ -435,11 +488,11 @@ public partial class HomeCycleDbContext : DbContext
             entity.HasKey(e => e.MessageId).HasName("Messages_pkey");
 
             entity.Property(e => e.MessageId).ValueGeneratedNever();
+            entity.Property(e => e.ConversationId).IsRequired(false);
+            entity.Property(e => e.NegotiationId).IsRequired(false);
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()");
             entity.Property(e => e.UpdatedAt).HasDefaultValueSql("now()");
             entity.Property(e => e.IsRead).HasDefaultValue(false);
-
-            //entity.Property(x => x.ClientMessageId).IsRequired(false);
             entity.Property(x => x.ClientMessageId);
 
             entity.HasIndex(x => new
@@ -451,13 +504,43 @@ public partial class HomeCycleDbContext : DbContext
                 .IsUnique()
                 .HasFilter("\"ClientMessageId\" IS NOT NULL");
 
-            entity.HasOne(d => d.Negotiation).WithMany(p => p.Messages)
+            //tin nhắn có NegotiationId = null
+            entity.HasIndex(x => new
+            {
+                x.ConversationId,
+                x.SenderId,
+                x.ClientMessageId
+            })
+            .IsUnique()
+            .HasDatabaseName("uq_message_conversation_sender_client")
+            .HasFilter("\"ConversationId\" IS NOT NULL " + "AND \"ClientMessageId\" IS NOT NULL");
+
+            entity.HasOne(d => d.Negotiation)
+                .WithMany(p => p.Messages)
+                .HasForeignKey(e => e.NegotiationId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("fk_msg_neg");
 
-            entity.HasOne(d => d.Sender).WithMany(p => p.Messages)
+            entity.HasOne(d => d.Sender)
+                .WithMany(p => p.Messages)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("fk_msg_sender");
+
+            entity.HasOne(e => e.Conversation)
+                .WithMany(c => c.Messages)
+                .HasForeignKey(e => e.ConversationId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("fk_msg_conversation");
+
+            entity.HasIndex(
+                e => new
+                {
+                    e.ConversationId,
+                    e.CreatedAt,
+                    e.MessageId
+                })
+            .HasDatabaseName("idx_message_conversation_created")
+            .IsDescending(false, true, true);
         });
 
         modelBuilder.Entity<Negotiation>(entity =>
@@ -465,6 +548,7 @@ public partial class HomeCycleDbContext : DbContext
             entity.HasKey(e => e.NegotiationId).HasName("Negotiation_pkey");
 
             entity.Property(e => e.NegotiationId).ValueGeneratedNever();
+            entity.Property(e => e.ConversationId).IsRequired(false);
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()");
 
             entity.HasOne(d => d.Buyer).WithMany(p => p.NegotiationBuyers)
@@ -482,6 +566,16 @@ public partial class HomeCycleDbContext : DbContext
             entity.HasOne(d => d.Seller).WithMany(p => p.NegotiationSellers)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("fk_neg_seller");
+
+            entity.HasIndex(e => new { e.ConversationId, e.LastMessageAt })
+                .HasDatabaseName("idx_negotiation_conversation_last_message")
+                .IsDescending(false, true);
+
+            entity.HasOne(e => e.Conversation)
+                .WithMany(c => c.Negotiations)
+                .HasForeignKey(e => e.ConversationId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("fk_neg_conversation");
         });
 
         modelBuilder.Entity<Notification>(entity =>
@@ -489,12 +583,20 @@ public partial class HomeCycleDbContext : DbContext
             entity.HasKey(e => e.NotificationId).HasName("Notification_pkey");
 
             entity.Property(e => e.NotificationId).ValueGeneratedNever();
+            entity.Property(x => x.Title).HasMaxLength(255);
+            entity.Property(x => x.Message).HasColumnType("text");
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()");
             entity.Property(e => e.IsRead).HasDefaultValue(false);
 
             entity.HasOne(d => d.User).WithMany(p => p.Notifications)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("fk_notification_userid");
+
+            entity.HasIndex(x => new
+            {
+                x.UserId,
+                x.CreatedAt
+            });
         });
 
         modelBuilder.Entity<OTP>(entity =>
@@ -607,6 +709,7 @@ public partial class HomeCycleDbContext : DbContext
             entity.Property(e => e.PersonalProfileId).ValueGeneratedNever();
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()");
             entity.Property(e => e.ReputationScore).HasDefaultValue(100);
+            entity.Property(e => e.DisplayStarRating).HasDefaultValue(4.8);
             entity.Property(e => e.VerifiedAt).HasDefaultValueSql("now()");
 
             entity.HasOne(d => d.User).WithOne(p => p.Personal_ProfileUser)

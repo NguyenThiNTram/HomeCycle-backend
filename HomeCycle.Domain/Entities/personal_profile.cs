@@ -28,6 +28,7 @@ public class personal_profile
     public DateTime? VerifiedAt { get; set; }
 
     public int ReputationScore { get; set; }
+    public double? DisplayStarRating { get; set; }
 
     public DateTime CreatedAt { get; set; }
 

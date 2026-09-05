@@ -14,6 +14,7 @@ public partial class negotiation
     public Guid OfferId { get; set; }
     public Guid SellerId { get; set; }
     public Guid BuyerId { get; set; }
+    public Guid? ConversationId { get; set; }
 
     public decimal? FinalPrice { get; set; }
 
@@ -23,6 +24,8 @@ public partial class negotiation
     public DateTime CreatedAt { get; set; }
 
     public NegotiationStatus? NegotiationStatus { get; set; }
+
+    public virtual conversation? Conversation { get; set; }
 
     public virtual post? Post { get; set; } = null!;
     public virtual offer? Offer { get; set; } = null!;

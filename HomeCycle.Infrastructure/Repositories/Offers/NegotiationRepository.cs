@@ -1,6 +1,7 @@
-using HomeCycle.Application.Commons.Paginations;
+﻿using HomeCycle.Application.Commons.Paginations;
 using HomeCycle.Application.Interfaces.Repositories.Offers;
 using HomeCycle.Domain.Entities;
+using HomeCycle.Domain.Enums;
 using HomeCycle.Infrastructure.DbContexts;
 using HomeCycle.Infrastructure.Persistences.Mappers;
 using Microsoft.EntityFrameworkCore;
@@ -45,20 +46,75 @@ namespace HomeCycle.Infrastructure.Repositories.Offers
 
         public async Task<negotiation?> GetByIdForUpdateAsync(Guid negotiationId, CancellationToken cancellationToken = default)
         {
-            //FOR UPDATE để khóa dòng dữ liệu trong Postgres.
-            //AsNoTracking: tránh xung đột ChangeTracker với UpdateAsync.
+            EnsureActiveTransaction();
+
             var entity = await _db.Negotiations
                 .FromSqlInterpolated($@"
                     SELECT *
                     FROM ""Negotiation""
                     WHERE ""NegotiationId"" = {negotiationId}
                     FOR UPDATE")
-                        .Include(x => x.Offer) // Bổ sung Include Offer
+                        .Include(x => x.Offer)
                         .Include(x => x.Post)
                         .AsNoTracking()
                         .SingleOrDefaultAsync(cancellationToken);
 
             return entity?.ToDomain();
+        }
+
+        public async Task<PagedResult<negotiation>> GetByConversationIdAsync(Guid conversationId, PaginationRequest request, CancellationToken cancellationToken = default)
+        {
+            var query = _db.Negotiations
+                .AsNoTracking()
+                .Include(x => x.Offer)
+                .Include(x => x.Post)
+                .Include(x => x.Seller)
+                .Include(x => x.Buyer)
+                .Where(x => x.ConversationId == conversationId);
+
+            var totalCount = await query.CountAsync(cancellationToken);
+
+            var entities = await query
+                .OrderByDescending(x => x.LastMessageAt ?? x.CreatedAt)
+                .ThenByDescending(x => x.CreatedAt)
+                .ThenByDescending(x => x.NegotiationId)
+                .Skip((request.PageNumber - 1) * request.PageSize)
+                .Take(request.PageSize)
+                .ToListAsync(cancellationToken);
+
+            return new PagedResult<negotiation>
+            {
+                Items = entities
+                    .Select(x => x.ToDomain())
+                    .ToList(),
+
+                PageNumber = request.PageNumber,
+                PageSize = request.PageSize,
+                TotalCount = totalCount
+            };
+        }
+
+        public Task<bool> ExistsActiveByPostAndParticipantsAsync(Guid postId, Guid sellerId, Guid buyerId, CancellationToken cancellationToken = default)
+        {
+            var open = (int)NegotiationStatus.Open;
+            var agreed = (int)NegotiationStatus.Agreed;
+            var agreementPending =
+                (int)NegotiationStatus.AgreementPending;
+
+            return _db.Negotiations
+                .AsNoTracking()
+                .AnyAsync(
+                    x =>
+                        x.PostId == postId &&
+                        x.SellerId == sellerId &&
+                        x.BuyerId == buyerId &&
+                        (
+                            x.NegotiationStatus == null ||
+                            x.NegotiationStatus == open ||
+                            x.NegotiationStatus == agreed ||
+                            x.NegotiationStatus == agreementPending
+                        ),
+                    cancellationToken);
         }
 
         public async Task AddAsync(negotiation entity, CancellationToken cancellationToken = default)
@@ -100,6 +156,16 @@ namespace HomeCycle.Infrastructure.Repositories.Offers
             var infraEntity = entity.ToInfrastructure();
             _db.Negotiations.Update(infraEntity);
             return Task.CompletedTask;
+        }
+
+        //tái sử dụng đoạn guard clause
+        private void EnsureActiveTransaction()
+        {
+            if (_db.Database.CurrentTransaction is null)
+            {
+                throw new InvalidOperationException(
+                    "FOR UPDATE requires an active database transaction.");
+            }
         }
     }
 }
