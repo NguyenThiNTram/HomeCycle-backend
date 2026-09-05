@@ -14,6 +14,8 @@ namespace HomeCycle.Application.DTOs.Responses.Orders
         public bool CanCancel { get; set; }
         public bool CanReview { get; set; }
         public bool CanDispute { get; set; }
+        public bool CanConfirmReturn { get; set; }
+        public bool CanConfirmReturnReceived { get; set; }
         public IReadOnlyList<DisputeCategory> AllowedDisputeCategories { get; set; } = Array.Empty<DisputeCategory>();
     }
 }

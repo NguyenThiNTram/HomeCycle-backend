@@ -12,6 +12,7 @@ namespace HomeCycle.Domain.Enums
         Processing = 1, 
         Completed = 2,    
         Cancelled = 3,       
-        Disputing = 4      
+        Disputing = 4,
+        Returned = 5
     }
 }

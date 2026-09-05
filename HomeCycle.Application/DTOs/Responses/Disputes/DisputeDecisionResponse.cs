@@ -13,8 +13,11 @@ namespace HomeCycle.Application.DTOs.Responses.Disputes
         public DisputeStatus Status { get; set; }
         public Guid ModeratorId { get; set; }
         public string ModeratorNote { get; set; } = string.Empty;
+        public DisputeResolutionOutcome? ResolutionOutcome { get; set; }
         public Guid? OrderId { get; set; }
         public OrderStatus? OrderStatus { get; set; }
+        public decimal RefundedAmount { get; set; }
+        public DateTime? ReturnDueAt { get; set; }
         public DateTime ResolvedAt { get; set; }
     }
 }

@@ -655,9 +655,31 @@ namespace HomeCycle.Application.Mappings
             CreateMap<collection_appointment, CollectionAppointmentDetailDto>()
                 .ForMember(dest => dest.DeliveryMethod, opt => opt.Ignore());
 
+            CreateMap<order, OrderReturnConfirmationResponseDto>()
+                .ForMember(dest => dest.OrderStatus,
+                    opt => opt.MapFrom(src => (OrderStatus)src.OrderStatus!.Value))
+                .ForMember(dest => dest.DisputeId, opt => opt.Ignore())
+                .ForMember(dest => dest.DisputeStatus, opt => opt.Ignore())
+                .ForMember(dest => dest.RefundedAmount, opt => opt.Ignore());
+
 
             // ==================== DISPUTE ====================
             CreateMap<user, DisputeUserSummaryDto>();
+
+            CreateMap<dispute, DisputeDecisionResponse>()
+                .ForMember(dest => dest.Status,
+                    opt => opt.MapFrom(src => (DisputeStatus)src.DisputeStatus!.Value))
+                .ForMember(dest => dest.ResolutionOutcome,
+                    opt => opt.MapFrom(src => src.ResolutionOutcome.HasValue
+                        ? (DisputeResolutionOutcome?)src.ResolutionOutcome.Value
+                        : null))
+                .ForMember(dest => dest.ModeratorId,
+                    opt => opt.MapFrom(src => src.ModeratorId.GetValueOrDefault()))
+                .ForMember(dest => dest.ModeratorNote,
+                    opt => opt.MapFrom(src => src.ModeratorNote ?? string.Empty))
+                .ForMember(dest => dest.OrderStatus, opt => opt.Ignore())
+                .ForMember(dest => dest.RefundedAmount, opt => opt.Ignore())
+                .ForMember(dest => dest.ReturnDueAt, opt => opt.Ignore());
         }
     }
 }

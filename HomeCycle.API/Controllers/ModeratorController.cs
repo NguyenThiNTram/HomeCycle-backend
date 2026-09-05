@@ -339,13 +339,13 @@ namespace HomeCycle.API.Controllers
 
         [HttpPost("disputes/{disputeId:guid}/resolve")]
         [SwaggerOperation(
-            Summary = "Moderator xác nhận tranh chấp có căn cứ",
-            Description = "Kết thúc quá trình đánh giá tranh chấp với trạng thái Resolved. Order tiếp tục ở trạng thái Disputing để chờ bước xử lý settlement."
+            Summary = "Moderator giải quyết tranh chấp",
+            Description = "Kết luận BuyerFavored hoặc SellerFavored và thực hiện xử lý nền tảng tương ứng."
         )]
         [ProducesResponseType(typeof(DisputeDecisionResponse), StatusCodes.Status200OK)]
         public async Task<IActionResult> ResolveDispute(
             Guid disputeId,
-            [FromBody] DisputeModeratorDecisionRequest request,
+            [FromBody] ResolveDisputeRequest request,
             CancellationToken cancellationToken)
         {
             var moderatorId = GetCurrentUserId();
@@ -394,18 +394,59 @@ namespace HomeCycle.API.Controllers
             return Ok(result.Data);
         }
 
+
+        [HttpPost("disputes/{disputeId:guid}/verify-return")]
+        [SwaggerOperation(
+            Summary = "Moderator xác minh hoàn trả hàng",
+            Description = "Xác minh việc hoàn trả sau khi Buyer đã xác nhận trả hàng và Seller không phản hồi đúng hạn."
+        )]
+        [ProducesResponseType(typeof(DisputeDecisionResponse), StatusCodes.Status200OK)]
+        public async Task<IActionResult> VerifyDisputeReturn(
+            Guid disputeId,
+            [FromBody] VerifyDisputeReturnRequest request,
+            CancellationToken cancellationToken)
+        {
+            var moderatorId = GetCurrentUserId();
+
+            if (moderatorId == Guid.Empty)
+                return Unauthorized();
+
+            var result = await _disputeService.VerifyReturnByModeratorAsync(
+                disputeId,
+                moderatorId,
+                request,
+                cancellationToken);
+
+            if (!result.IsSuccess)
+                return MapDisputeError(result.Error!);
+
+            return Ok(result.Data);
+        }
+
         private IActionResult MapDisputeError(Error error)
         {
-            if (error == DisputeErrors.NotFound || error == OrderErrors.NotFound)
+            if (error == DisputeErrors.NotFound ||
+                error == OrderErrors.NotFound ||
+                error == AgreementErrors.NotFound ||
+                error == ProfileErrors.UserNotFound ||
+                error == ProfileErrors.ProfileNotFound)
+            {
                 return NotFound(error);
+            }
 
-            if (error == DisputeErrors.Forbidden || error == DisputeErrors.NotAssignedModerator)
+            if (error == DisputeErrors.Forbidden ||
+                error == DisputeErrors.NotAssignedModerator)
+            {
                 return StatusCode(StatusCodes.Status403Forbidden, error);
+            }
 
             if (error == DisputeErrors.AlreadyClaimed ||
                 error == DisputeErrors.ClaimNotAllowed ||
                 error == DisputeErrors.DecisionNotAllowed ||
-                error == OrderErrors.NotDisputing)
+                error == DisputeErrors.ReturnVerificationNotAllowed ||
+                error.Code == "DISPUTE_RETURN_VERIFICATION_NOT_DUE" ||
+                error == OrderErrors.NotDisputing ||
+                error == OrderErrors.InvalidCompletionState)
             {
                 return Conflict(error);
             }

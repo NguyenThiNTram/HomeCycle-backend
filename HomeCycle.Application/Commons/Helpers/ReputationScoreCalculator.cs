@@ -33,5 +33,10 @@ namespace HomeCycle.Application.Commons.Helpers
 
             return (int)Math.Clamp(Math.Round(rawScore, MidpointRounding.AwayFromZero), MinScore, MaxScore);
         }
+
+        public static int ApplyDelta(int currentScore, int pointDelta)
+        {
+            return Math.Clamp(currentScore + pointDelta, MinScore, MaxScore);
+        }
     }
 }

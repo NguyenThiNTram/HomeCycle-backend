@@ -35,7 +35,11 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 CancelledAt = entity.CancelledAt,
                 CancelledByUserId = entity.CancelledByUserId,
                 CancellationReason = entity.CancellationReason,
-                DisputeWindowEndsAt = entity.DisputeWindowEndsAt
+                DisputeWindowEndsAt = entity.DisputeWindowEndsAt,
+                BuyerReturnConfirmedAt = entity.BuyerReturnConfirmedAt,
+                SellerReturnReceivedAt = entity.SellerReturnReceivedAt,
+                ReturnDueAt = entity.ReturnDueAt,
+                ReturnedAt = entity.ReturnedAt
             };
         }
         public static Order ToInfrastructure(this order entity)
@@ -64,7 +68,11 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 CancelledAt = entity.CancelledAt,
                 CancelledByUserId = entity.CancelledByUserId,
                 CancellationReason = entity.CancellationReason,
-                DisputeWindowEndsAt = entity.DisputeWindowEndsAt
+                DisputeWindowEndsAt = entity.DisputeWindowEndsAt,
+                BuyerReturnConfirmedAt = entity.BuyerReturnConfirmedAt,
+                SellerReturnReceivedAt = entity.SellerReturnReceivedAt,
+                ReturnDueAt = entity.ReturnDueAt,
+                ReturnedAt = entity.ReturnedAt
             };
         }
     }

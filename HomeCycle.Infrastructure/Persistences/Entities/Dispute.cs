@@ -37,6 +37,7 @@ public partial class Dispute
     public int? DisputeStatus { get; set; }
 
     public string? ModeratorNote { get; set; }
+    public int? ResolutionOutcome { get; set; }
 
     public DateTime CreatedAt { get; set; }
 

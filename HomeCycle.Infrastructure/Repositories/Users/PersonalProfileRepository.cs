@@ -99,5 +99,21 @@ namespace HomeCycle.Infrastructure.Repositories.Users
 
             return entities.Select(e => e.ToDomain()!).ToList();
         }
+
+        public async Task<personal_profile?> GetByUserIdForUpdateAsync(
+            Guid userId,
+            CancellationToken cancellationToken = default)
+        {
+            var entity = await _db.Personal_Profiles
+                .FromSqlInterpolated($@"
+            SELECT *
+            FROM public.""Personal_Profile""
+            WHERE ""UserId"" = {userId}
+            FOR UPDATE")
+                .AsNoTracking()
+                .FirstOrDefaultAsync(cancellationToken);
+
+            return entity?.ToDomain();
+        }
     }
 }

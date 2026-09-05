@@ -247,6 +247,12 @@ namespace HomeCycle.Application.Commons.Errors
 
         public static readonly Error NotAssignedModerator =
             new("DISPUTE_NOT_ASSIGNED_MODERATOR", "Bạn không phải Moderator đang phụ trách tranh chấp này.");
+
+        public static readonly Error ReturnVerificationNotAllowed =
+            new("DISPUTE_RETURN_VERIFICATION_NOT_ALLOWED", "Tranh chấp hiện không ở trạng thái chờ xác minh hoàn trả.");
+
+        public static Error ReturnVerificationNotDue(DateTime dueAt) =>
+            new("DISPUTE_RETURN_VERIFICATION_NOT_DUE", $"Moderator chỉ có thể xác minh hoàn trả sau thời hạn {dueAt:O}.");
     }
 
     public static class OrderErrors
@@ -287,6 +293,12 @@ namespace HomeCycle.Application.Commons.Errors
             new(
                 "Order.NotDisputing",
                 "Đơn hàng hiện không ở trạng thái tranh chấp.");
+
+        public static readonly Error ReturnConfirmationNotAllowed =
+            new("Order.ReturnConfirmationNotAllowed", "Đơn hàng hiện không ở trạng thái chờ hoàn trả.");
+
+        public static Error ReturnDeadlineExpired(DateTime dueAt) =>
+            new("Order.ReturnDeadlineExpired", $"Thời hạn xác nhận trả hàng đã kết thúc lúc {dueAt:O}.");
     }
 
     public static class PlatformPolicyErrors
@@ -475,6 +487,9 @@ namespace HomeCycle.Application.Commons.Errors
 
         public static readonly Error AlreadyRefunded =
             new("Payment.AlreadyRefunded", "Khoản thanh toán đã được hoàn toàn bộ.");
+
+        public static readonly Error OrderHeldAmountNotFound =
+            new("Payment.OrderHeldAmountNotFound", "Đơn hàng không còn khoản tiền tạm giữ có thể hoàn.");
     }
 
 }

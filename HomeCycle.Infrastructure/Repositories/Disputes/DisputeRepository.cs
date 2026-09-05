@@ -77,7 +77,8 @@ namespace HomeCycle.Infrastructure.Repositories.Disputes
                 .AsNoTracking()
                 .Where(x =>
                     x.DisputeStatus == (int)DisputeStatus.Pending ||
-                    x.DisputeStatus ==  (int)DisputeStatus.UnderReview);
+                    x.DisputeStatus ==  (int)DisputeStatus.UnderReview||
+                    x.DisputeStatus == (int)DisputeStatus.AwaitingReturn);
 
             query = targetType switch
             {
@@ -125,6 +126,23 @@ namespace HomeCycle.Infrastructure.Repositories.Disputes
             query = ApplyFilters(query, request);
 
             return await BuildPagedResultAsync(query, request, cancellationToken);
+        }
+
+        public async Task<dispute?> GetAwaitingReturnByOrderIdForUpdateAsync(
+            Guid orderId,
+            CancellationToken cancellationToken = default)
+        {
+            var entity = await _db.Disputes
+                .FromSqlInterpolated($@"
+            SELECT *
+            FROM public.""Dispute""
+            WHERE ""OrderId"" = {orderId}
+              AND ""DisputeStatus"" = {(int)DisputeStatus.AwaitingReturn}
+            FOR UPDATE")
+                .AsNoTracking()
+                .FirstOrDefaultAsync(cancellationToken);
+
+            return entity?.ToDomain();
         }
 
         private static IQueryable<Dispute> ApplyFilters(
@@ -203,6 +221,12 @@ namespace HomeCycle.Infrastructure.Repositories.Disputes
                     : null,
                 Status = entity.DisputeStatus.HasValue
                     ? (DisputeStatus?)entity.DisputeStatus.Value
+                    : null,
+                ResolutionOutcome = entity.ResolutionOutcome.HasValue
+                    ? (DisputeResolutionOutcome?)entity.ResolutionOutcome.Value
+                    : null,
+                ReturnDueAt = entity.DisputeStatus == (int)DisputeStatus.AwaitingReturn
+                    ? entity.Order?.ReturnDueAt
                     : null,
                 Description = entity.Description,
                 CreatedAt = entity.CreatedAt

@@ -207,6 +207,10 @@ namespace HomeCycle.Application.Services.Disputes
                 PaymentStatus = order.PaymentStatus.HasValue ? (PaymentStatus?)order.PaymentStatus.Value : null,
                 CompletedAt = order.CompletedAt,
                 DeliveredAt = shipment?.DeliveredAt,
+                BuyerReturnConfirmedAt = order.BuyerReturnConfirmedAt,
+                SellerReturnReceivedAt = order.SellerReturnReceivedAt,
+                ReturnDueAt = order.ReturnDueAt,
+                ReturnedAt = order.ReturnedAt,
                 DisputeDeadlineUtc = deadline,
                 DisputeWindowHours = windowHours
             };

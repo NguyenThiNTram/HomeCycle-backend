@@ -85,5 +85,21 @@ namespace HomeCycle.Infrastructure.Repositories.Profiles
 
             return entities.Select(e => e.ToDomain()!).ToList();
         }
+
+        public async Task<business_profile?> GetByUserIdForUpdateAsync(
+            Guid userId,
+            CancellationToken cancellationToken = default)
+        {
+            var entity = await _db.Business_Profiles
+                .FromSqlInterpolated($@"
+            SELECT *
+            FROM public.""Business_Profile""
+            WHERE ""UserId"" = {userId}
+            FOR UPDATE")
+                .AsNoTracking()
+                .FirstOrDefaultAsync(cancellationToken);
+
+            return entity?.ToDomain();
+        }
     }
 }

@@ -20,7 +20,7 @@ public class dispute
     public string? Description { get; set; }
     public int? DisputeStatus { get; set; }
     public string? ModeratorNote { get; set; }
-
+    public int? ResolutionOutcome { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? ResolvedAt { get; set; }
     public DateTime UpdatedAt { get; set; }

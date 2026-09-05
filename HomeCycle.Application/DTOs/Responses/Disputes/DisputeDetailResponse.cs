@@ -25,7 +25,7 @@ namespace HomeCycle.Application.DTOs.Responses.Disputes
         public DisputeStatus? Status { get; set; }
 
         public Guid? ModeratorId { get; set; }
-
+        public DisputeResolutionOutcome? ResolutionOutcome { get; set; }
         public string? ModeratorNote { get; set; }
 
         public DateTime CreatedAt { get; set; }
@@ -45,5 +45,6 @@ namespace HomeCycle.Application.DTOs.Responses.Disputes
         public bool CanClaimDispute { get; set; }
         public bool CanResolveDispute { get; set; }
         public bool CanRejectDispute { get; set; }
+        public bool CanVerifyReturn { get; set; }
     }
 }

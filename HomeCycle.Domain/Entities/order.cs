@@ -38,6 +38,11 @@ public class order
     public string? CancellationReason { get; set; }
 
     public DateTime? DisputeWindowEndsAt { get; set; }
+
+    public DateTime? BuyerReturnConfirmedAt { get; set; }
+    public DateTime? SellerReturnReceivedAt { get; set; }
+    public DateTime? ReturnDueAt { get; set; }
+    public DateTime? ReturnedAt { get; set; }
     public order()
     {
     }

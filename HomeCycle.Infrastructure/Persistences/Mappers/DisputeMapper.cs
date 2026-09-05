@@ -26,6 +26,7 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 Description = entity.Description,
                 DisputeStatus = entity.DisputeStatus,
                 ModeratorNote = entity.ModeratorNote,
+                ResolutionOutcome = entity.ResolutionOutcome,
                 CreatedAt = entity.CreatedAt,
                 ResolvedAt = entity.ResolvedAt,
                 UpdatedAt = entity.UpdatedAt
@@ -47,6 +48,7 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 Description = entity.Description,
                 DisputeStatus = entity.DisputeStatus,
                 ModeratorNote = entity.ModeratorNote,
+                ResolutionOutcome = entity.ResolutionOutcome,
                 CreatedAt = entity.CreatedAt,
                 ResolvedAt = entity.ResolvedAt,
                 UpdatedAt = entity.UpdatedAt

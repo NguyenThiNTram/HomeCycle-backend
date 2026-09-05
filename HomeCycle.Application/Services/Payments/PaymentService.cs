@@ -623,64 +623,249 @@ namespace HomeCycle.Application.Services.Payments
             return Result<PagedResult<PaymentHistoryResponseDto>>.Success(result);
         }
 
+        //public async Task<Result<bool>> RefundOrderHeldAmountAsync(
+        //    order order,
+        //    agreement_form agreement,
+        //    decimal amount,
+        //    CancellationToken ct = default)
+        //{
+        //    var currentOrderPaid = order.AmountPaid ?? 0;
+
+        //    if (amount <= AmountEpsilon ||
+        //        currentOrderPaid <= AmountEpsilon ||
+        //        amount > currentOrderPaid + AmountEpsilon)
+        //    {
+        //        return Result<bool>.Fail(PaymentErrors.InvalidRefundAmount);
+        //    }
+
+        //    var payment = await _paymentRepo.GetLatestPaidByOrderIdAsync(
+        //        order.OrderId,
+        //        ct);
+
+        //    if (payment == null)
+        //        return Result<bool>.Fail(PaymentErrors.RefundPaymentNotFound);
+
+        //    if (payment.PaymentStatus == (int)PaymentStatus.Refunded)
+        //        return Result<bool>.Fail(PaymentErrors.AlreadyRefunded);
+
+        //    wallet? buyerWallet;
+        //    wallet? sellerWallet;
+
+        //    // Giữ deterministic locking giống payment flow hiện tại.
+        //    if (string.Compare(
+        //            agreement.BuyerId.ToString(),
+        //            agreement.SellerId.ToString(),
+        //            StringComparison.Ordinal) < 0)
+        //    {
+        //        buyerWallet = await _walletRepo.GetUserWalletForUpdateAsync(
+        //            agreement.BuyerId,
+        //            ct);
+
+        //        sellerWallet = await _walletRepo.GetUserWalletForUpdateAsync(
+        //            agreement.SellerId,
+        //            ct);
+        //    }
+        //    else
+        //    {
+        //        sellerWallet = await _walletRepo.GetUserWalletForUpdateAsync(
+        //            agreement.SellerId,
+        //            ct);
+
+        //        buyerWallet = await _walletRepo.GetUserWalletForUpdateAsync(
+        //            agreement.BuyerId,
+        //            ct);
+        //    }
+
+        //    if (buyerWallet == null || sellerWallet == null)
+        //        return Result<bool>.Fail(PaymentErrors.RefundWalletNotFound);
+
+        //    if (sellerWallet.HoldBalance + AmountEpsilon < amount)
+        //        return Result<bool>.Fail(PaymentErrors.InsufficientHeldBalance);
+
+        //    var now = DateTime.UtcNow;
+        //    var walletTransactionId = Guid.NewGuid();
+
+        //    var walletTransaction = new wallet_transaction
+        //    {
+        //        WalletTransactionId = walletTransactionId,
+
+        //        FromWalletId = sellerWallet.WalletId,
+        //        ToWalletId = buyerWallet.WalletId,
+
+        //        PaymentId = payment.PaymentId,
+
+        //        ReferenceId = order.OrderId,
+        //        ReferenceType = (int)ReferenceType.Order,
+
+        //        TransactionType = (int)TransactionType.Order_Refund,
+
+        //        Amount = amount,
+
+        //        WalletTransactionStatus =
+        //            (int)WalletTransactionStatus.Completed,
+
+        //        CreatedAt = now
+        //    };
+
+        //    var sellerLedger = new wallet_ledger
+        //    {
+        //        LedgerId = Guid.NewGuid(),
+
+        //        WalletTransactionId = walletTransactionId,
+        //        WalletId = sellerWallet.WalletId,
+
+        //        Direction = (int)LedgerDirection.Out,
+        //        BalanceType = (int)BalanceType.Hold,
+
+        //        Amount = amount,
+
+        //        BalanceBefore = sellerWallet.HoldBalance,
+        //        BalanceAfter = sellerWallet.HoldBalance - amount,
+
+        //        ReferenceType = (int)ReferenceType.Order,
+        //        ReferenceId = order.OrderId,
+
+        //        Description =
+        //            $"Hoan tien tam giu cho Order {order.OrderId}",
+
+        //        CreatedAt = now
+        //    };
+
+        //    var buyerLedger = new wallet_ledger
+        //    {
+        //        LedgerId = Guid.NewGuid(),
+
+        //        WalletTransactionId = walletTransactionId,
+        //        WalletId = buyerWallet.WalletId,
+
+        //        Direction = (int)LedgerDirection.In,
+        //        BalanceType = (int)BalanceType.Available,
+
+        //        Amount = amount,
+
+        //        BalanceBefore = buyerWallet.AvailableBalance,
+        //        BalanceAfter = buyerWallet.AvailableBalance + amount,
+
+        //        ReferenceType = (int)ReferenceType.Order,
+        //        ReferenceId = order.OrderId,
+
+        //        Description =
+        //            $"Nhan hoan tien tu Order {order.OrderId}",
+
+        //        CreatedAt = now
+        //    };
+
+        //    sellerWallet.HoldBalance -= amount;
+        //    sellerWallet.UpdatedAt = now;
+
+        //    buyerWallet.AvailableBalance += amount;
+        //    buyerWallet.UpdatedAt = now;
+
+        //    // QUAN TRỌNG:
+        //    // So với AmountPaid hiện tại của Order,
+        //    // KHÔNG so với Payment.Amount ban đầu.
+        //    var isFullRefund =
+        //        amount >= currentOrderPaid - AmountEpsilon;
+
+        //    payment.PaymentStatus = isFullRefund
+        //        ? (int)PaymentStatus.Refunded
+        //        : (int)PaymentStatus.PartiallyRefunded;
+
+        //    await _walletRepo.UpdateAsync(sellerWallet, ct);
+        //    await _walletRepo.UpdateAsync(buyerWallet, ct);
+
+        //    await _walletTxRepo.AddAsync(walletTransaction, ct);
+
+        //    await _ledgerRepo.AddAsync(sellerLedger, ct);
+        //    await _ledgerRepo.AddAsync(buyerLedger, ct);
+
+        //    await _paymentRepo.UpdateAsync(payment, ct);
+
+        //    return Result<bool>.Success(true);
+        //}
         public async Task<Result<bool>> RefundOrderHeldAmountAsync(
             order order,
             agreement_form agreement,
             decimal amount,
             CancellationToken ct = default)
         {
+            var result = await RefundOrderHeldAmountCoreAsync(order, agreement, amount, ct);
+
+            if (!result.IsSuccess)
+                return Result<bool>.Fail(result.Error!);
+
+            return Result<bool>.Success(true);
+        }
+
+        public Task<Result<decimal>> RefundAllRemainingOrderHeldAmountAsync(
+            order order,
+            agreement_form agreement,
+            CancellationToken ct = default)
+        {
+            return RefundOrderHeldAmountCoreAsync(order, agreement, null, ct);
+        }
+
+
+        #region HELPER
+
+        private async Task<Result<decimal>> RefundOrderHeldAmountCoreAsync(
+            order order,
+            agreement_form agreement,
+            decimal? requestedAmount,
+            CancellationToken ct)
+        {
             var currentOrderPaid = order.AmountPaid ?? 0;
 
-            if (amount <= AmountEpsilon ||
-                currentOrderPaid <= AmountEpsilon ||
-                amount > currentOrderPaid + AmountEpsilon)
-            {
-                return Result<bool>.Fail(PaymentErrors.InvalidRefundAmount);
-            }
+            if (currentOrderPaid <= AmountEpsilon)
+                return Result<decimal>.Fail(PaymentErrors.InvalidRefundAmount);
 
-            var payment = await _paymentRepo.GetLatestPaidByOrderIdAsync(
-                order.OrderId,
-                ct);
+            var payment = await _paymentRepo.GetLatestPaidByOrderIdAsync(order.OrderId, ct);
 
             if (payment == null)
-                return Result<bool>.Fail(PaymentErrors.RefundPaymentNotFound);
+                return Result<decimal>.Fail(PaymentErrors.RefundPaymentNotFound);
 
             if (payment.PaymentStatus == (int)PaymentStatus.Refunded)
-                return Result<bool>.Fail(PaymentErrors.AlreadyRefunded);
+                return Result<decimal>.Fail(PaymentErrors.AlreadyRefunded);
 
             wallet? buyerWallet;
             wallet? sellerWallet;
 
-            // Giữ deterministic locking giống payment flow hiện tại.
             if (string.Compare(
                     agreement.BuyerId.ToString(),
                     agreement.SellerId.ToString(),
                     StringComparison.Ordinal) < 0)
             {
-                buyerWallet = await _walletRepo.GetUserWalletForUpdateAsync(
-                    agreement.BuyerId,
-                    ct);
-
-                sellerWallet = await _walletRepo.GetUserWalletForUpdateAsync(
-                    agreement.SellerId,
-                    ct);
+                buyerWallet = await _walletRepo.GetUserWalletForUpdateAsync(agreement.BuyerId, ct);
+                sellerWallet = await _walletRepo.GetUserWalletForUpdateAsync(agreement.SellerId, ct);
             }
             else
             {
-                sellerWallet = await _walletRepo.GetUserWalletForUpdateAsync(
-                    agreement.SellerId,
-                    ct);
-
-                buyerWallet = await _walletRepo.GetUserWalletForUpdateAsync(
-                    agreement.BuyerId,
-                    ct);
+                sellerWallet = await _walletRepo.GetUserWalletForUpdateAsync(agreement.SellerId, ct);
+                buyerWallet = await _walletRepo.GetUserWalletForUpdateAsync(agreement.BuyerId, ct);
             }
 
             if (buyerWallet == null || sellerWallet == null)
-                return Result<bool>.Fail(PaymentErrors.RefundWalletNotFound);
+                return Result<decimal>.Fail(PaymentErrors.RefundWalletNotFound);
+
+            var orderHeldAmount = await _ledgerRepo.GetNetOrderHeldAmountAsync(
+                sellerWallet.WalletId,
+                order.OrderId,
+                ct);
+
+            if (orderHeldAmount <= AmountEpsilon)
+                return Result<decimal>.Fail(PaymentErrors.OrderHeldAmountNotFound);
+
+            var amount = requestedAmount ?? orderHeldAmount;
+
+            if (amount <= AmountEpsilon ||
+                amount > currentOrderPaid + AmountEpsilon ||
+                amount > orderHeldAmount + AmountEpsilon)
+            {
+                return Result<decimal>.Fail(PaymentErrors.InvalidRefundAmount);
+            }
 
             if (sellerWallet.HoldBalance + AmountEpsilon < amount)
-                return Result<bool>.Fail(PaymentErrors.InsufficientHeldBalance);
+                return Result<decimal>.Fail(PaymentErrors.InsufficientHeldBalance);
 
             var now = DateTime.UtcNow;
             var walletTransactionId = Guid.NewGuid();
@@ -688,70 +873,46 @@ namespace HomeCycle.Application.Services.Payments
             var walletTransaction = new wallet_transaction
             {
                 WalletTransactionId = walletTransactionId,
-
                 FromWalletId = sellerWallet.WalletId,
                 ToWalletId = buyerWallet.WalletId,
-
                 PaymentId = payment.PaymentId,
-
                 ReferenceId = order.OrderId,
                 ReferenceType = (int)ReferenceType.Order,
-
                 TransactionType = (int)TransactionType.Order_Refund,
-
                 Amount = amount,
-
-                WalletTransactionStatus =
-                    (int)WalletTransactionStatus.Completed,
-
+                WalletTransactionStatus = (int)WalletTransactionStatus.Completed,
                 CreatedAt = now
             };
 
             var sellerLedger = new wallet_ledger
             {
                 LedgerId = Guid.NewGuid(),
-
                 WalletTransactionId = walletTransactionId,
                 WalletId = sellerWallet.WalletId,
-
                 Direction = (int)LedgerDirection.Out,
                 BalanceType = (int)BalanceType.Hold,
-
                 Amount = amount,
-
                 BalanceBefore = sellerWallet.HoldBalance,
                 BalanceAfter = sellerWallet.HoldBalance - amount,
-
                 ReferenceType = (int)ReferenceType.Order,
                 ReferenceId = order.OrderId,
-
-                Description =
-                    $"Hoan tien tam giu cho Order {order.OrderId}",
-
+                Description = $"Hoan tien tam giu cho Order {order.OrderId}",
                 CreatedAt = now
             };
 
             var buyerLedger = new wallet_ledger
             {
                 LedgerId = Guid.NewGuid(),
-
                 WalletTransactionId = walletTransactionId,
                 WalletId = buyerWallet.WalletId,
-
                 Direction = (int)LedgerDirection.In,
                 BalanceType = (int)BalanceType.Available,
-
                 Amount = amount,
-
                 BalanceBefore = buyerWallet.AvailableBalance,
                 BalanceAfter = buyerWallet.AvailableBalance + amount,
-
                 ReferenceType = (int)ReferenceType.Order,
                 ReferenceId = order.OrderId,
-
-                Description =
-                    $"Nhan hoan tien tu Order {order.OrderId}",
-
+                Description = $"Nhan hoan tien tu Order {order.OrderId}",
                 CreatedAt = now
             };
 
@@ -761,34 +922,20 @@ namespace HomeCycle.Application.Services.Payments
             buyerWallet.AvailableBalance += amount;
             buyerWallet.UpdatedAt = now;
 
-            // QUAN TRỌNG:
-            // So với AmountPaid hiện tại của Order,
-            // KHÔNG so với Payment.Amount ban đầu.
-            var isFullRefund =
-                amount >= currentOrderPaid - AmountEpsilon;
-
-            payment.PaymentStatus = isFullRefund
+            payment.PaymentStatus = amount >= currentOrderPaid - AmountEpsilon
                 ? (int)PaymentStatus.Refunded
                 : (int)PaymentStatus.PartiallyRefunded;
 
             await _walletRepo.UpdateAsync(sellerWallet, ct);
             await _walletRepo.UpdateAsync(buyerWallet, ct);
-
             await _walletTxRepo.AddAsync(walletTransaction, ct);
-
             await _ledgerRepo.AddAsync(sellerLedger, ct);
             await _ledgerRepo.AddAsync(buyerLedger, ct);
-
             await _paymentRepo.UpdateAsync(payment, ct);
 
-            return Result<bool>.Success(true);
+            return Result<decimal>.Success(amount);
         }
 
-
-
-        #region HELPER
-
-         
         private async Task ExecuteSuccessfulPaymentCoreAsync(string payOsOrderCode, string payOsTransactionId, CancellationToken ct)
         {
             var paymentTx = await _paymentTxRepo.GetByPayOSOrderCodeAsync(payOsOrderCode, ct);

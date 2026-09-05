@@ -16,6 +16,7 @@ using HomeCycle.Application.Interfaces.Repositories.Shipments;
 using HomeCycle.Application.Interfaces.Services.Disputes;
 using HomeCycle.Application.Interfaces.Services.Orders;
 using HomeCycle.Application.Interfaces.Services.Payments;
+using HomeCycle.Application.Interfaces.Services.PlatformPolicies;
 using HomeCycle.Application.Services.Disputes;
 using HomeCycle.Domain.Entities;
 using HomeCycle.Domain.Enums;
@@ -30,6 +31,7 @@ namespace HomeCycle.Application.Services.Orders
 {
     public class OrderService : IOrderService
     {
+        private const decimal AmountEpsilon = 0.01m;
         private readonly IOrderRepository _orderRepo;
         private readonly IAgreementFormRepository _agreementRepo;
         private readonly IAppointmentRepository _appointmentRepo;
@@ -42,6 +44,7 @@ namespace HomeCycle.Application.Services.Orders
         private readonly IInspectionAppointmentRepository _inspectionAppointmentRepo;
         private readonly IDisputeRepository _disputeRepo;
         private readonly IPaymentService _paymentService;
+        private readonly IPlatformPolicyProvider _platformPolicyProvider;
         private readonly IMapper _mapper;
 
         public OrderService(
@@ -57,6 +60,7 @@ namespace HomeCycle.Application.Services.Orders
             IInspectionAppointmentRepository inspectionAppointmentRepo,
             IDisputeRepository disputeRepo,
             IPaymentService paymentService,
+            IPlatformPolicyProvider platformPolicyProvider,
             IMapper mapper)
         {
             _orderRepo = orderRepo;
@@ -71,6 +75,7 @@ namespace HomeCycle.Application.Services.Orders
             _inspectionAppointmentRepo = inspectionAppointmentRepo;
             _disputeRepo = disputeRepo;
             _paymentService = paymentService;
+            _platformPolicyProvider = platformPolicyProvider;
             _mapper = mapper;
         }
 
@@ -855,6 +860,221 @@ namespace HomeCycle.Application.Services.Orders
             }
         }
 
+        public async Task<Result<OrderReturnConfirmationResponseDto>> ConfirmReturnByBuyerAsync(
+            Guid orderId,
+            Guid buyerId,
+            CancellationToken ct = default)
+        {
+            await _unitOfWork.BeginTransactionAsync(ct);
+
+            try
+            {
+                var dispute = await _disputeRepo.GetAwaitingReturnByOrderIdForUpdateAsync(orderId, ct);
+
+                if (dispute == null)
+                {
+                    var existingOrder = await _orderRepo.GetByIdAsync(orderId, ct);
+
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+
+                    return existingOrder == null
+                        ? Result<OrderReturnConfirmationResponseDto>.Fail(OrderErrors.NotFound)
+                        : Result<OrderReturnConfirmationResponseDto>.Fail(OrderErrors.ReturnConfirmationNotAllowed);
+                }
+
+                if (dispute.ResolutionOutcome != (int)DisputeResolutionOutcome.BuyerFavored)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    return Result<OrderReturnConfirmationResponseDto>.Fail(OrderErrors.ReturnConfirmationNotAllowed);
+                }
+
+                var order = await _orderRepo.GetByIdForUpdateAsync(orderId, ct);
+
+                if (order == null)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    return Result<OrderReturnConfirmationResponseDto>.Fail(OrderErrors.NotFound);
+                }
+
+                var agreement = await _agreementRepo.GetByIdAsync(order.AgreementId, ct);
+
+                if (agreement == null)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    return Result<OrderReturnConfirmationResponseDto>.Fail(AgreementErrors.NotFound);
+                }
+
+                if (agreement.BuyerId != buyerId)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    return Result<OrderReturnConfirmationResponseDto>.Fail(OrderErrors.Forbidden);
+                }
+
+                if (order.OrderStatus != (int)OrderStatus.Disputing)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    return Result<OrderReturnConfirmationResponseDto>.Fail(OrderErrors.ReturnConfirmationNotAllowed);
+                }
+
+                if (order.BuyerReturnConfirmedAt.HasValue)
+                {
+                    await _unitOfWork.CommitTransactionAsync(ct);
+
+                    var existingResponse = _mapper.Map<OrderReturnConfirmationResponseDto>(order);
+                    existingResponse.DisputeId = dispute.DisputeId;
+                    existingResponse.DisputeStatus = DisputeStatus.AwaitingReturn;
+
+                    return Result<OrderReturnConfirmationResponseDto>.Success(existingResponse);
+                }
+
+                if (!order.ReturnDueAt.HasValue)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    return Result<OrderReturnConfirmationResponseDto>.Fail(OrderErrors.ReturnConfirmationNotAllowed);
+                }
+
+                var now = DateTime.UtcNow;
+
+                if (now > order.ReturnDueAt.Value)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    return Result<OrderReturnConfirmationResponseDto>.Fail(
+                        OrderErrors.ReturnDeadlineExpired(order.ReturnDueAt.Value));
+                }
+
+                var policy = await _platformPolicyProvider.GetDisputeConfigAsync(ct);
+
+                order.BuyerReturnConfirmedAt = now;
+                order.ReturnDueAt = now.AddDays(policy.ReturnWindowDays);
+                order.UpdatedAt = now;
+
+                dispute.UpdatedAt = now;
+
+                await _orderRepo.UpdateAsync(order, ct);
+                await _disputeRepo.UpdateAsync(dispute, ct);
+                await _unitOfWork.SaveChangesAsync(ct);
+                await _unitOfWork.CommitTransactionAsync(ct);
+
+                var response = _mapper.Map<OrderReturnConfirmationResponseDto>(order);
+                response.DisputeId = dispute.DisputeId;
+                response.DisputeStatus = DisputeStatus.AwaitingReturn;
+                response.RefundedAmount = 0;
+
+                return Result<OrderReturnConfirmationResponseDto>.Success(response);
+            }
+            catch
+            {
+                await _unitOfWork.RollbackTransactionAsync(ct);
+                throw;
+            }
+        }
+
+
+        public async Task<Result<OrderReturnConfirmationResponseDto>> ConfirmReturnReceivedBySellerAsync(
+            Guid orderId,
+            Guid sellerId,
+            CancellationToken ct = default)
+        {
+            await _unitOfWork.BeginTransactionAsync(ct);
+
+            try
+            {
+                var dispute = await _disputeRepo.GetAwaitingReturnByOrderIdForUpdateAsync(orderId, ct);
+
+                if (dispute == null)
+                {
+                    var existingOrder = await _orderRepo.GetByIdAsync(orderId, ct);
+
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+
+                    return existingOrder == null
+                        ? Result<OrderReturnConfirmationResponseDto>.Fail(OrderErrors.NotFound)
+                        : Result<OrderReturnConfirmationResponseDto>.Fail(OrderErrors.ReturnConfirmationNotAllowed);
+                }
+
+                if (dispute.ResolutionOutcome != (int)DisputeResolutionOutcome.BuyerFavored)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    return Result<OrderReturnConfirmationResponseDto>.Fail(OrderErrors.ReturnConfirmationNotAllowed);
+                }
+
+                var order = await _orderRepo.GetByIdForUpdateAsync(orderId, ct);
+
+                if (order == null)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    return Result<OrderReturnConfirmationResponseDto>.Fail(OrderErrors.NotFound);
+                }
+
+                var agreement = await _agreementRepo.GetByIdAsync(order.AgreementId, ct);
+
+                if (agreement == null)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    return Result<OrderReturnConfirmationResponseDto>.Fail(AgreementErrors.NotFound);
+                }
+
+                if (agreement.SellerId != sellerId)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    return Result<OrderReturnConfirmationResponseDto>.Fail(OrderErrors.Forbidden);
+                }
+
+                if (order.OrderStatus != (int)OrderStatus.Disputing)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    return Result<OrderReturnConfirmationResponseDto>.Fail(OrderErrors.ReturnConfirmationNotAllowed);
+                }
+
+                var refundResult = await _paymentService.RefundAllRemainingOrderHeldAmountAsync(
+                    order,
+                    agreement,
+                    ct);
+
+                if (!refundResult.IsSuccess)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    return Result<OrderReturnConfirmationResponseDto>.Fail(refundResult.Error!);
+                }
+
+                var now = DateTime.UtcNow;
+                var refundedAmount = refundResult.Data;
+                var remainingPaid = Math.Max((order.AmountPaid ?? 0) - refundedAmount, 0);
+
+                order.AmountPaid = remainingPaid;
+                order.AmountRemaining = 0;
+                order.PaymentStatus = remainingPaid <= AmountEpsilon
+                    ? (int)PaymentStatus.Refunded
+                    : (int)PaymentStatus.PartiallyRefunded;
+                order.OrderStatus = (int)OrderStatus.Returned;
+                order.SellerReturnReceivedAt = now;
+                order.ReturnDueAt = null;
+                order.ReturnedAt = now;
+                order.UpdatedAt = now;
+
+                dispute.DisputeStatus = (int)DisputeStatus.Resolved;
+                dispute.ResolvedAt = now;
+                dispute.UpdatedAt = now;
+
+                await _orderRepo.UpdateAsync(order, ct);
+                await _disputeRepo.UpdateAsync(dispute, ct);
+                await _unitOfWork.SaveChangesAsync(ct);
+                await _unitOfWork.CommitTransactionAsync(ct);
+
+                var response = _mapper.Map<OrderReturnConfirmationResponseDto>(order);
+                response.DisputeId = dispute.DisputeId;
+                response.DisputeStatus = DisputeStatus.Resolved;
+                response.RefundedAmount = refundedAmount;
+
+                return Result<OrderReturnConfirmationResponseDto>.Success(response);
+            }
+            catch
+            {
+                await _unitOfWork.RollbackTransactionAsync(ct);
+                throw;
+            }
+        }
+
         //================ HELPER =======================
 
         private async Task<bool> IsInspectionCollectNowReadyAsync(
@@ -1020,6 +1240,22 @@ namespace HomeCycle.Application.Services.Orders
                 latestInspectionForm?.InspectionStatus ==
                     (int)InspectionStatus.Rejected;
 
+            var isAwaitingReturn =
+                detail.OrderStatus == OrderStatus.Disputing &&
+                detail.Dispute.LatestDisputeStatus == DisputeStatus.AwaitingReturn;
+
+            var canConfirmReturn =
+                isBuyer &&
+                isAwaitingReturn &&
+                !detail.BuyerReturnConfirmedAt.HasValue &&
+                detail.ReturnDueAt.HasValue &&
+                now <= detail.ReturnDueAt.Value;
+
+            var canConfirmReturnReceived =
+                isSeller &&
+                isAwaitingReturn &&
+                !detail.SellerReturnReceivedAt.HasValue;
+
             return new OrderActionDto
             {
                 CanConfirm = canConfirm,
@@ -1027,7 +1263,8 @@ namespace HomeCycle.Application.Services.Orders
                 CanCancel = canCancel,
                 CanReview = canReview,
                 CanDispute = canDispute,
-
+                CanConfirmReturn = canConfirmReturn,
+                CanConfirmReturnReceived = canConfirmReturnReceived,
                 AllowedDisputeCategories =
                     canDispute
                         ? BuildAllowedDisputeCategories(detail)

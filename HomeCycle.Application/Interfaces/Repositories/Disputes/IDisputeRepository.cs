@@ -36,5 +36,10 @@ namespace HomeCycle.Application.Interfaces.Repositories.Disputes
             Guid userId,
             DisputeSearchRequest request,
             CancellationToken cancellationToken = default);
+
+        Task<dispute?> GetAwaitingReturnByOrderIdForUpdateAsync(
+            Guid orderId,
+            CancellationToken cancellationToken = default);
+
     }
 }
