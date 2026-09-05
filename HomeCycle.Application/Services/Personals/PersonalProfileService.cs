@@ -98,8 +98,10 @@ namespace HomeCycle.Application.Services.Personals
             if (user is null)
                 return Result<string>.Fail(ProfileErrors.UserNotFound);
 
-            // 2. Đọc file stream và upload lên Firebase
+            var oldAvatarUrl = user.AvatarUrl;
+            // Đọc file stream và upload lên Firebase
             string storedFileName;
+
             using (var stream = file.AvatarUrl.OpenReadStream())
             {
                 storedFileName = await _fileStorageService.UploadFileAsync(
@@ -108,12 +110,47 @@ namespace HomeCycle.Application.Services.Personals
                     "avatars");
             }
 
-            user.AvatarUrl = storedFileName;
+            if (string.IsNullOrWhiteSpace(storedFileName))
+            {
+                return Result<string>.Fail(ProfileErrors.AvatarUploadFailed);
+            }
 
-            await _userRepository.UpdateAsync(user, cancellationToken);
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            try
+            {
+                user.AvatarUrl = storedFileName;
 
-            return Result<string>.Success(user.AvatarUrl);
+                await _userRepository.UpdateAsync(user, cancellationToken);
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+            }
+            catch
+            {
+                try
+                {
+                    await _fileStorageService.DeleteFileAsync(storedFileName);
+                }
+                catch
+                {
+                    // Không che mất exception gốc
+                }
+
+                throw;
+            }
+
+            // DB thành công thì xóa file cũ
+            if (!string.IsNullOrWhiteSpace(oldAvatarUrl) && !string.Equals(oldAvatarUrl, storedFileName, StringComparison.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    await _fileStorageService.DeleteFileAsync(oldAvatarUrl);
+                }
+                catch
+                {
+                    // DB đã thành công, lỗi xóa file cũ không nên làm request thất bại
+                }
+            }
+
+            return Result<string>.Success(storedFileName);
         }
 
         public async Task<Result> UpdateBankAsync(Guid userId, UpdateBankAccountRequest request, CancellationToken cancellationToken = default)

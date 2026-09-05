@@ -547,8 +547,10 @@ namespace HomeCycle.Application.Services.Profiles
             if (user is null)
                 return Result<string>.Fail(ProfileErrors.UserNotFound);
 
-            // 2. Đọc file stream và upload lên Firebase
+            var oldAvatarUrl = user.AvatarUrl;
+
             string storedFileName;
+
             using (var stream = request.AvatarUrl.OpenReadStream())
             {
                 storedFileName = await _fileStorageService.UploadFileAsync(
@@ -557,12 +559,24 @@ namespace HomeCycle.Application.Services.Profiles
                     "avatars");
             }
 
+            if (string.IsNullOrWhiteSpace(storedFileName))
+                return Result.Fail(ProfileErrors.AvatarUploadFailed);
+
             user.AvatarUrl = storedFileName;
+            try
+            {
+                await _userRepository.UpdateAsync(user, cancellationToken);
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-            await _userRepository.UpdateAsync(user, cancellationToken);
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
-
-            return Result<string>.Success(user.AvatarUrl);
+                return Result<string>.Success(user.AvatarUrl);
+            }
+            catch (Exception ex)
+            {
+                // Xóa file mới nếu cập nhật DB thất bại
+                await _fileStorageService.DeleteFileAsync(storedFileName);
+                _logger.LogError(ex, "Lỗi khi cập nhật avatar cho UserId: {UserId}", userId);
+                return Result.Fail(ProfileErrors.AvatarUpdateFailed);
+            }
         }
 
         public async Task<Result> UpdateBankAccountAsync(Guid userId, UpdateBankAccountRequest request, CancellationToken cancellationToken = default)
