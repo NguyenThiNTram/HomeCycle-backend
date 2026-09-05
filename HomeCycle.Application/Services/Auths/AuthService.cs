@@ -41,6 +41,7 @@ namespace HomeCycle.Application.Services.Auths
         private readonly IUnitOfWork _unitOfWork;
         private readonly IPasswordHasher _passwordHasher;
         private readonly IJwtService _jwtService;
+        private readonly IOtpProtectionService _otpProtectionService;
         private readonly IMapper _mapper;
         private readonly IConfiguration _configuration;
         private readonly IValidator<RegisterPersonalRequest> _validator;
@@ -59,6 +60,7 @@ namespace HomeCycle.Application.Services.Auths
             IUnitOfWork unitOfWork, IPasswordHasher passwordHasher, 
             IJwtService jwtService, 
             IMapper mapper, IConfiguration configuration,
+            IOtpProtectionService otpProtectionService,
             IValidator<RegisterPersonalRequest> validator,
             IValidator<LoginRequest> loginValidator,
             IPersonalProfileRepository personalProfileRepository, 
@@ -75,6 +77,7 @@ namespace HomeCycle.Application.Services.Auths
             _unitOfWork = unitOfWork;
             _passwordHasher = passwordHasher;
             _jwtService = jwtService;
+            _otpProtectionService = otpProtectionService;
             _mapper = mapper;
             _configuration = configuration;
             _validator = validator;
@@ -572,31 +575,78 @@ namespace HomeCycle.Application.Services.Auths
             if (emailExists)
                 return Result<string>.Fail(AuthErrors.EmailExists);
 
-            var otpCode =Random.Shared.Next(100000, 999999).ToString();
-
-            var otp = new otp
+            // Kiểm tra giới hạn gửi OTP 5 phút/lần
+            if (!_otpProtectionService.TryStartSend(
+                    normalizedEmail,
+                    out var remaining))
             {
-                OtpId = Guid.NewGuid(),
-                Email = normalizedEmail,
-                Code = otpCode,
-                Purpose = "Register",
-                IsUsed = false,
-                CreatedAt = DateTime.UtcNow,
-                ExpiredAt =DateTime.UtcNow.AddMinutes(5)
-            };
+                var minutes = Math.Max(
+                    1,
+                    (int)Math.Ceiling(remaining.TotalMinutes));
 
-            await _otpRepository.AddAsync(otp);
-            await _emailService.SendOtpEmailAsync(normalizedEmail, otpCode);
+                return Result<string>.Fail(AuthErrors.OtpRateLimited(minutes));
+            }
 
-            return Result<string>.Success("OTP has been sent successfully.");
+            try
+            {
+                var otpCode = Random.Shared.Next(100000, 999999).ToString();
+
+                var otp = new otp
+                {
+                    OtpId = Guid.NewGuid(),
+                    Email = normalizedEmail,
+                    Code = otpCode,
+                    Purpose = "Register",
+                    IsUsed = false,
+                    CreatedAt = DateTime.UtcNow,
+                    ExpiredAt = DateTime.UtcNow.AddMinutes(5)
+                };
+
+                await _otpRepository.AddAsync(otp);
+                await _emailService.SendOtpEmailAsync(normalizedEmail, otpCode);
+
+                return Result<string>.Success("OTP has been sent successfully.");
+            }
+            catch (Exception ex)
+            {
+                _otpProtectionService.SendFailed(normalizedEmail);
+                _logger.LogError(ex, "Failed to send OTP to email: {Email}", normalizedEmail);
+                return Result<string>.Fail(AuthErrors.OtpSendFailed);
+            }
         }
 
         public async Task<Result<string>> VerifyOtpAsync(string email, string code)
         {
-            var otp =await _otpRepository.GetValidOtpAsync(email,code);
+            var normalizedEmail = email.Trim().ToLowerInvariant();
+            var normalizedCode = code.Trim();
+
+            // Kiểm tra email có đang bị khóa tạm thời không
+            if (_otpProtectionService.IsLocked(
+                    normalizedEmail,
+                    out _))
+            {
+                return Result<string>.Fail(AuthErrors.InvalidOtp);
+            }
+
+            var otp =await _otpRepository.GetValidOtpAsync(normalizedEmail, normalizedCode);
 
             if (otp == null)
+            {
+                // Tăng số lần nhập sai
+                var isLocked =
+                    _otpProtectionService.RegisterFailedAttempt(
+                        normalizedEmail,
+                        out _,
+                        out _);
+
+                // Đã đủ số lần sai thì khóa tạm thời
+                if (isLocked)
+                {
+                    return Result<string>.Fail(AuthErrors.InvalidOtp);
+                }
+
                 return Result<string>.Fail(AuthErrors.InvalidOtp);
+            }
 
             otp.IsUsed = true;
             otp.UsedAt =DateTime.UtcNow;
@@ -604,7 +654,7 @@ namespace HomeCycle.Application.Services.Auths
             await _otpRepository.UpdateAsync(otp);
 
             // Registration Token sau khi OTP hợp lệ
-            string registrationToken = _jwtService.GenerateRegistrationToken(email);
+            string registrationToken = _jwtService.GenerateRegistrationToken(normalizedEmail);
 
             await _unitOfWork.SaveChangesAsync();
 
