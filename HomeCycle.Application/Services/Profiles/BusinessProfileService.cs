@@ -108,6 +108,13 @@ namespace HomeCycle.Application.Services.Profiles
             // 0. TRUY VẤN TRƯỚC KHI VALIDATE - vì validator cần biết IsResubmit + ExistingActiveDocTypes
             //    để quyết định document nào bắt buộc phải gửi lại (Hướng B).
             var existingProfile = await _businessProfileRepository.GetByUserIdAsync(userId, cancellationToken);
+
+            // chưa sumbit hoặc chỉ resubmit khi bị reject, KHÔNG được resubmit khi đang pending hoặc đã approved
+            if (existingProfile != null && existingProfile.Status != (int)BusinessProfileStatus.Rejected)
+            {
+                return Result<string>.Fail(ValidationErrors.InvalidRequest("The profile is pending approval or has already been approved."));
+            }
+
             bool isResubmit = existingProfile != null;
 
             var existingActiveDocTypes = new List<int>();
