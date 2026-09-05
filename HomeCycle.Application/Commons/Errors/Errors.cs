@@ -46,6 +46,10 @@ namespace HomeCycle.Application.Commons.Errors
 
         public static readonly Error InvalidOtp = new("AUTH_INVALID_OTP", "Invalid OTP.");
 
+        public static readonly Error OtpSendFailed = new("AUTH_OTP_SEND_FAILED", "Failed to send OTP. Please try again later.");
+
+        public static Error OtpRateLimited(int minutes) => new("AUTH_OTP_RATE_LIMITED", $"Bạn chỉ có thể yêu cầu OTP lại sau {minutes} phút.");
+
         // ACCOUNT STATUS
 
         public static readonly Error AccountSuspended = new("AUTH_ACCOUNT_SUSPENDED", "Account has been suspended.");
