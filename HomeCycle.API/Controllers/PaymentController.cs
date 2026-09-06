@@ -53,7 +53,7 @@ namespace HomeCycle.API.Controllers
                 return BadRequest(result.Error);
             }
 
-            return Ok(new { success = true, message = "Thanh toán bằng ví nội bộ thành công." });
+            return Ok(result.Data);
         }
 
         [HttpPost("payos/webhook")]
@@ -81,7 +81,9 @@ namespace HomeCycle.API.Controllers
             }
         }
 
+
         [HttpGet("{agreementId:guid}/status")]
+        [Authorize]
         public async Task<IActionResult> SyncPaymentStatus(Guid agreementId, CancellationToken ct)
         {
             var userId = GetUserIdFromToken();

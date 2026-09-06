@@ -13,5 +13,9 @@ namespace HomeCycle.Application.DTOs.Configs
         public int LowReputationDisputeWindowDays { get; set; }
 
         public int LowReputationThreshold { get; set; }
+
+        public int ReturnWindowDays { get; set; }
+
+        public int DisputeLossPenaltyPoints { get; set; }
     }
 }

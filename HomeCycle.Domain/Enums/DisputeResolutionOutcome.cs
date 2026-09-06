@@ -6,5 +6,9 @@ using System.Threading.Tasks;
 
 namespace HomeCycle.Domain.Enums
 {
-    public enum DisputeResolutionOutcome { RefundBuyer = 1, ReleaseToSeller = 2 }
+    public enum DisputeResolutionOutcome
+    {
+        BuyerFavored = 1,
+        SellerFavored = 2
+    }
 }

@@ -13,8 +13,7 @@ public partial class Platform_Policy
     [Key]
     public Guid PolicyId { get; set; }
 
-    public int PolicyType { get; set; }
-
+    public int PolicyType { get; set; } 
 
     [StringLength(255)]
     public string? Title { get; set; }

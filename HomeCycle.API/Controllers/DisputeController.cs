@@ -34,10 +34,42 @@ namespace HomeCycle.API.Controllers
                 result.Data);
         }
 
+        [HttpGet]
+        public async Task<IActionResult> GetForCurrentUser(
+            [FromQuery] DisputeSearchRequest request,
+            CancellationToken cancellationToken)
+        {
+            var result = await _disputeService.GetForUserAsync(
+                CurrentUserId,
+                request,
+                cancellationToken);
+
+            if (!result.IsSuccess)
+                return BadRequest(result.Error);
+
+            return Ok(result.Data);
+        }
+
         [HttpGet("{disputeId:guid}")]
         public async Task<IActionResult> GetDetail(Guid disputeId, CancellationToken cancellationToken)
         {
             var result = await _disputeService.GetDetailForUserAsync(disputeId, CurrentUserId, cancellationToken);
+
+            if (!result.IsSuccess)
+                return BadRequest(result.Error);
+
+            return Ok(result.Data);
+        }
+
+        [HttpPost("{disputeId:guid}/close")]
+        public async Task<IActionResult> CloseDispute(
+            Guid disputeId,
+            CancellationToken cancellationToken)
+        {
+            var result = await _disputeService.CloseDisputeAsync(
+                disputeId,
+                CurrentUserId,
+                cancellationToken);
 
             if (!result.IsSuccess)
                 return BadRequest(result.Error);

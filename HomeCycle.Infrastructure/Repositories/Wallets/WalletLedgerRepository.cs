@@ -79,5 +79,25 @@ namespace HomeCycle.Infrastructure.Repositories.Wallets
                 TotalCount = totalCount
             };
         }
+
+        public async Task<decimal> GetNetOrderHeldAmountAsync(
+            Guid walletId,
+            Guid orderId,
+            CancellationToken ct = default)
+        {
+            var amount = await _db.Wallet_Ledgers
+                .AsNoTracking()
+                .Where(x =>
+                    x.WalletId == walletId &&
+                    x.BalanceType == (int)BalanceType.Hold &&
+                    x.ReferenceType == (int)ReferenceType.Order &&
+                    x.ReferenceId == orderId)
+                .Select(x => (decimal?)(x.Direction == (int)LedgerDirection.In
+                    ? x.Amount
+                    : -x.Amount))
+                .SumAsync(ct);
+
+            return amount ?? 0;
+        }
     }
 }

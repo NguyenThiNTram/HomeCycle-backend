@@ -29,6 +29,13 @@ namespace HomeCycle.Application.DTOs.Responses.Disputes
 
         public DateTime? DeliveredAt { get; set; }
 
+        public DateTime? BuyerReturnConfirmedAt { get; set; }
+
+        public DateTime? SellerReturnReceivedAt { get; set; }
+
+        public DateTime? ReturnDueAt { get; set; }
+
+        public DateTime? ReturnedAt { get; set; }
         /// <summary>
         /// Mốc cuối cùng được phép tạo dispute.
         /// Null khi giao dịch vẫn đang diễn ra và chưa có mốc delivery/completion.

@@ -30,7 +30,8 @@ namespace HomeCycle.Application.DTOs.Responses.Disputes
         public DisputeStatus? Status { get; set; }
 
         public string? Description { get; set; }
-
+        public DisputeResolutionOutcome? ResolutionOutcome { get; set; }
+        public DateTime? ReturnDueAt { get; set; }
         public DateTime CreatedAt { get; set; }
     }
 }
