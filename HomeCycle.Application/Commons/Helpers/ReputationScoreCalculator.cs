@@ -52,7 +52,7 @@ namespace HomeCycle.Application.Commons.Helpers
 
         public static int ApplyDelta(int currentScore, int pointDelta)
         {
-            return Math.Clamp(currentScore + pointDelta, MinScore, MaxScore);
+            return Math.Clamp(currentScore + pointDelta, 0, 100);
         }
     }
 }
