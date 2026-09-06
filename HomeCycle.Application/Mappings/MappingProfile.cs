@@ -566,33 +566,27 @@ namespace HomeCycle.Application.Mappings
 
             // ==================== PLATFORM POLICY ====================
 
-            CreateMap<platform_policy, PlatformPolicySummaryResponseDto>()
-                .ForMember(dest => dest.PolicyType,
-                    opt => opt.MapFrom(src => Enum.Parse<PlatformPolicyType>(src.PolicyType, true)));
+            CreateMap<platform_policy, PlatformPolicySummaryResponseDto>();
 
             CreateMap<platform_policy, PlatformPolicyVersionListItemDto>()
                 .ForMember(dest => dest.CanRestore,
-                    opt => opt.MapFrom(src => !src.IsActive));
+                    opt => opt.MapFrom(src => !src.IsActive &&
+                        (src.PolicyType == PlatformPolicyType.Dispute || src.PolicyType == PlatformPolicyType.Appointment)));
 
             CreateMap<platform_policy, PlatformPolicyVersionDetailDto>()
-                .ForMember(dest => dest.PolicyType,
-                    opt => opt.MapFrom(src => Enum.Parse<PlatformPolicyType>(src.PolicyType, true)))
                 .ForMember(dest => dest.Config,
                     opt => opt.MapFrom(src =>
                         JsonSerializer.Deserialize<JsonElement>(
                             src.Content,
                             (JsonSerializerOptions?)null)))
                 .ForMember(dest => dest.CanRestore,
-                    opt => opt.MapFrom(src => !src.IsActive));
+                    opt => opt.MapFrom(src => !src.IsActive &&
+                        (src.PolicyType == PlatformPolicyType.Dispute || src.PolicyType == PlatformPolicyType.Appointment)));
 
             CreateMap<platform_policy, PlatformPolicyResponseDto<DisputePolicyConfigDto>>()
-                .ForMember(dest => dest.PolicyType,
-                    opt => opt.MapFrom(src => Enum.Parse<PlatformPolicyType>(src.PolicyType, true)))
                 .ForMember(dest => dest.Config, opt => opt.Ignore());
 
             CreateMap<platform_policy, PlatformPolicyResponseDto<AppointmentPolicyConfigDto>>()
-                .ForMember(dest => dest.PolicyType,
-                    opt => opt.MapFrom(src => Enum.Parse<PlatformPolicyType>(src.PolicyType, true)))
                 .ForMember(dest => dest.Config, opt => opt.Ignore());
 
             CreateMap<DisputePolicyConfigDto, DisputePolicyConfigDto>();
@@ -606,6 +600,47 @@ namespace HomeCycle.Application.Mappings
             CreateMap<UpdateAppointmentPolicyRequest, AppointmentPolicyConfigDto>()
                 .ForAllMembers(opt => opt.Condition(
                     (src, dest, srcMember) => srcMember != null));
+
+            //CreateMap<platform_policy, PlatformPolicySummaryResponseDto>()
+            //    .ForMember(dest => dest.PolicyType,
+            //        opt => opt.MapFrom(src => Enum.Parse<PlatformPolicyType>(src.PolicyType, true)));
+
+            //CreateMap<platform_policy, PlatformPolicyVersionListItemDto>()
+            //    .ForMember(dest => dest.CanRestore,
+            //        opt => opt.MapFrom(src => !src.IsActive));
+
+            //CreateMap<platform_policy, PlatformPolicyVersionDetailDto>()
+            //    .ForMember(dest => dest.PolicyType,
+            //        opt => opt.MapFrom(src => Enum.Parse<PlatformPolicyType>(src.PolicyType, true)))
+            //    .ForMember(dest => dest.Config,
+            //        opt => opt.MapFrom(src =>
+            //            JsonSerializer.Deserialize<JsonElement>(
+            //                src.Content,
+            //                (JsonSerializerOptions?)null)))
+            //    .ForMember(dest => dest.CanRestore,
+            //        opt => opt.MapFrom(src => !src.IsActive));
+
+            //CreateMap<platform_policy, PlatformPolicyResponseDto<DisputePolicyConfigDto>>()
+            //    .ForMember(dest => dest.PolicyType,
+            //        opt => opt.MapFrom(src => Enum.Parse<PlatformPolicyType>(src.PolicyType, true)))
+            //    .ForMember(dest => dest.Config, opt => opt.Ignore());
+
+            //CreateMap<platform_policy, PlatformPolicyResponseDto<AppointmentPolicyConfigDto>>()
+            //    .ForMember(dest => dest.PolicyType,
+            //        opt => opt.MapFrom(src => Enum.Parse<PlatformPolicyType>(src.PolicyType, true)))
+            //    .ForMember(dest => dest.Config, opt => opt.Ignore());
+
+            //CreateMap<DisputePolicyConfigDto, DisputePolicyConfigDto>();
+
+            //CreateMap<AppointmentPolicyConfigDto, AppointmentPolicyConfigDto>();
+
+            //CreateMap<UpdateDisputePolicyRequest, DisputePolicyConfigDto>()
+            //    .ForAllMembers(opt => opt.Condition(
+            //        (src, dest, srcMember) => srcMember != null));
+
+            //CreateMap<UpdateAppointmentPolicyRequest, AppointmentPolicyConfigDto>()
+            //    .ForAllMembers(opt => opt.Condition(
+            //        (src, dest, srcMember) => srcMember != null));
 
 
             // ==================== ORDER / APPOINTMENT READ MODEL ====================

@@ -180,7 +180,7 @@ namespace HomeCycle.Application.Services.PlatformPolicies
                 var newPolicy = new platform_policy
                 {
                     PolicyId = Guid.NewGuid(),
-                    PolicyType = PlatformPolicyType.Dispute.ToString(),
+                    PolicyType = PlatformPolicyType.Dispute,
                     Title = string.IsNullOrWhiteSpace(current.Title)
                         ? "Dispute Policy"
                         : current.Title,
@@ -290,7 +290,7 @@ namespace HomeCycle.Application.Services.PlatformPolicies
                 var newPolicy = new platform_policy
                 {
                     PolicyId = Guid.NewGuid(),
-                    PolicyType = PlatformPolicyType.Appointment.ToString(),
+                    PolicyType = PlatformPolicyType.Appointment,
                     Title = string.IsNullOrWhiteSpace(current.Title)
                         ? "Appointment Policy"
                         : current.Title,
@@ -364,6 +364,13 @@ namespace HomeCycle.Application.Services.PlatformPolicies
             int version,
             CancellationToken cancellationToken = default)
         {
+            // Block FileUpload restore until full validation is implemented
+            if (policyType == PlatformPolicyType.FileUpload)
+            {
+                return Result<PlatformPolicyVersionDetailDto>
+                    .Fail(PlatformPolicyErrors.UnsupportedType(policyType.ToString()));
+            }
+
             await _unitOfWork.BeginTransactionAsync(cancellationToken);
 
             try
@@ -424,7 +431,7 @@ namespace HomeCycle.Application.Services.PlatformPolicies
                 var restoredPolicy = new platform_policy
                 {
                     PolicyId = Guid.NewGuid(),
-                    PolicyType = policyType.ToString(),
+                    PolicyType = policyType,
                     Title = source.Title,
                     Content = source.Content,
                     Version = nextVersion,

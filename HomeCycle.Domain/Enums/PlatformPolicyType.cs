@@ -9,6 +9,7 @@ namespace HomeCycle.Domain.Enums
     public enum PlatformPolicyType
     {
         Dispute = 1,
-        Appointment = 2
+        Appointment = 2,
+        FileUpload = 3
     }
 }

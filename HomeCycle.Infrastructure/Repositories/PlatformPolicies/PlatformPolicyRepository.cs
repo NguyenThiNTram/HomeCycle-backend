@@ -27,7 +27,7 @@ namespace HomeCycle.Infrastructure.Repositories.PlatformPolicies
 
             var entity = await _db.Platform_Policies
                 .AsNoTracking()
-                .SingleOrDefaultAsync(x => x.PolicyType == type && x.IsActive, cancellationToken);
+                .SingleOrDefaultAsync(x => x.PolicyType == (int)policyType && x.IsActive, cancellationToken);
 
             return entity?.ToDomain();
         }
@@ -50,7 +50,7 @@ namespace HomeCycle.Infrastructure.Repositories.PlatformPolicies
 
             var maxVersion = await _db.Platform_Policies
                 .AsNoTracking()
-                .Where(x => x.PolicyType == type)
+                .Where(x => x.PolicyType == (int)policyType)
                 .MaxAsync(x => (int?)x.Version, cancellationToken);
 
             return (maxVersion ?? 0) + 1;
@@ -86,7 +86,7 @@ namespace HomeCycle.Infrastructure.Repositories.PlatformPolicies
 
             var entities = await _db.Platform_Policies
                 .AsNoTracking()
-                .Where(x => x.PolicyType == type)
+                .Where(x => x.PolicyType == (int)policyType)
                 .OrderByDescending(x => x.Version)
                 .ToListAsync(cancellationToken);
 
@@ -103,7 +103,7 @@ namespace HomeCycle.Infrastructure.Repositories.PlatformPolicies
             var entity = await _db.Platform_Policies
                 .AsNoTracking()
                 .SingleOrDefaultAsync(
-                    x => x.PolicyType == type && x.Version == version,
+                    x => x.PolicyType == (int)policyType && x.Version == version,
                     cancellationToken);
 
             return entity?.ToDomain();

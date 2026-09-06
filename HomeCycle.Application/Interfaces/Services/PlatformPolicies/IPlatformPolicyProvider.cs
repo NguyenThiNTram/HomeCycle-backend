@@ -12,5 +12,7 @@ namespace HomeCycle.Application.Interfaces.Services.PlatformPolicies
         Task<DisputePolicyConfigDto> GetDisputeConfigAsync(CancellationToken cancellationToken = default);
 
         Task<AppointmentPolicyConfigDto> GetAppointmentConfigAsync(CancellationToken cancellationToken = default);
+
+    
     }
 }
