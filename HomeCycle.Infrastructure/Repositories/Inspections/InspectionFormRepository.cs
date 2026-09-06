@@ -54,7 +54,7 @@ namespace HomeCycle.Infrastructure.Repositories.Inspections
 
         public async Task<inspection_form?> GetAcceptedCollectNowByOrderIdAsync(Guid orderId, CancellationToken ct = default)
         {
-            var action = InspectionCollectAction.CollectNow.ToString();
+            var action = (int)InspectionCollectAction.CollectNow;
 
             var entity = await _db.Inspection_Forms.AsNoTracking()
                 .Where(x => x.OrderId == orderId &&

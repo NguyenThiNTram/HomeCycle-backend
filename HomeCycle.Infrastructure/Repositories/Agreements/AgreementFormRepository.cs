@@ -103,5 +103,27 @@ namespace HomeCycle.Infrastructure.Repositories.Agreements
             };
         }
 
+
+        public async Task<agreement_form?> GetByIdForUpdateAsync(Guid agreementId, CancellationToken cancellationToken = default)
+        {
+            EnsureActiveTransaction();
+
+            var entity = await _db.Agreement_Forms
+                .FromSqlInterpolated($@"
+            SELECT *
+            FROM ""Agreement_Form""
+            WHERE ""AgreementId"" = {agreementId}
+            FOR UPDATE")
+                .AsNoTracking()
+                .SingleOrDefaultAsync(cancellationToken);
+
+            return entity?.ToDomain();
+        }
+
+        private void EnsureActiveTransaction()
+        {
+            if (_db.Database.CurrentTransaction is null)
+                throw new InvalidOperationException("FOR UPDATE requires an active database transaction.");
+        }
     }
 }

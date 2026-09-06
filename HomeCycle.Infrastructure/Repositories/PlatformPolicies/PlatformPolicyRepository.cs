@@ -23,7 +23,7 @@ namespace HomeCycle.Infrastructure.Repositories.PlatformPolicies
 
         public async Task<platform_policy?> GetActiveAsync(PlatformPolicyType policyType, CancellationToken cancellationToken = default)
         {
-            var type = policyType.ToString();
+            var type = (int)policyType;
 
             var entity = await _db.Platform_Policies
                 .AsNoTracking()
@@ -34,7 +34,7 @@ namespace HomeCycle.Infrastructure.Repositories.PlatformPolicies
 
         public async Task<platform_policy?> GetActiveForUpdateAsync(PlatformPolicyType policyType, CancellationToken cancellationToken = default)
         {
-            var type = policyType.ToString();
+            var type = (int)policyType;
 
             var entity = await _db.Platform_Policies
                 .FromSqlInterpolated($@"SELECT * FROM ""Platform_Policy"" WHERE ""PolicyType"" = {type} AND ""IsActive"" = TRUE FOR UPDATE")
@@ -46,7 +46,7 @@ namespace HomeCycle.Infrastructure.Repositories.PlatformPolicies
 
         public async Task<int> GetNextVersionAsync(PlatformPolicyType policyType, CancellationToken cancellationToken = default)
         {
-            var type = policyType.ToString();
+            var type = (int)policyType;
 
             var maxVersion = await _db.Platform_Policies
                 .AsNoTracking()
@@ -82,7 +82,7 @@ namespace HomeCycle.Infrastructure.Repositories.PlatformPolicies
             PlatformPolicyType policyType,
             CancellationToken cancellationToken = default)
         {
-            var type = policyType.ToString();
+            var type = (int)policyType;
 
             var entities = await _db.Platform_Policies
                 .AsNoTracking()
@@ -98,7 +98,7 @@ namespace HomeCycle.Infrastructure.Repositories.PlatformPolicies
             int version,
             CancellationToken cancellationToken = default)
         {
-            var type = policyType.ToString();
+            var type = (int)policyType;
 
             var entity = await _db.Platform_Policies
                 .AsNoTracking()

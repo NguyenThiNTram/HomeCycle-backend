@@ -180,7 +180,7 @@ namespace HomeCycle.Application.Services.PlatformPolicies
                 var newPolicy = new platform_policy
                 {
                     PolicyId = Guid.NewGuid(),
-                    PolicyType = PlatformPolicyType.Dispute.ToString(),
+                    PolicyType = (int)PlatformPolicyType.Dispute,
                     Title = string.IsNullOrWhiteSpace(current.Title)
                         ? "Dispute Policy"
                         : current.Title,
@@ -290,7 +290,7 @@ namespace HomeCycle.Application.Services.PlatformPolicies
                 var newPolicy = new platform_policy
                 {
                     PolicyId = Guid.NewGuid(),
-                    PolicyType = PlatformPolicyType.Appointment.ToString(),
+                    PolicyType = (int)PlatformPolicyType.Appointment,
                     Title = string.IsNullOrWhiteSpace(current.Title)
                         ? "Appointment Policy"
                         : current.Title,
@@ -424,7 +424,7 @@ namespace HomeCycle.Application.Services.PlatformPolicies
                 var restoredPolicy = new platform_policy
                 {
                     PolicyId = Guid.NewGuid(),
-                    PolicyType = policyType.ToString(),
+                    PolicyType = (int)policyType,
                     Title = source.Title,
                     Content = source.Content,
                     Version = nextVersion,
@@ -524,7 +524,9 @@ namespace HomeCycle.Application.Services.PlatformPolicies
             return config.NormalDisputeWindowDays is >= 1 and <= 365
                 && config.LowReputationDisputeWindowDays is >= 1 and <= 365
                 && config.LowReputationDisputeWindowDays >= config.NormalDisputeWindowDays
-                && config.LowReputationThreshold is >= 0 and <= 100;
+                && config.LowReputationThreshold is >= 0 and <= 100
+                && config.ReturnWindowDays is >= 1 and <= 30
+                && config.DisputeLossPenaltyPoints is >= 1 and <= 100;
         }
 
         private static bool IsValidAppointmentConfig(
@@ -543,7 +545,10 @@ namespace HomeCycle.Application.Services.PlatformPolicies
         {
             return current.NormalDisputeWindowDays == updated.NormalDisputeWindowDays
                 && current.LowReputationDisputeWindowDays == updated.LowReputationDisputeWindowDays
-                && current.LowReputationThreshold == updated.LowReputationThreshold;
+                && current.LowReputationThreshold == updated.LowReputationThreshold
+                && current.ReturnWindowDays == updated.ReturnWindowDays
+                && current.DisputeLossPenaltyPoints == updated.DisputeLossPenaltyPoints;
+
         }
 
         private static bool SameAppointmentConfig(

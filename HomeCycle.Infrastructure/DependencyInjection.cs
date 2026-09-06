@@ -162,6 +162,7 @@ namespace HomeCycle.Infrastructure
             // register External Services
             services.AddScoped<IFileStorageService, FirebaseStorageService>();
             services.AddScoped<IOtpRepository, OtpRepository>();
+            services.AddSingleton<IOtpProtectionService, OtpProtectionService>();
             services.AddScoped<IEmailService, EmailService>();
             services.AddScoped<IBrandRepository, BrandRepository>();
 

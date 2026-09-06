@@ -10,5 +10,6 @@ namespace HomeCycle.Application.Interfaces.Services.Externals
     {
         Task<string> UploadFileAsync(Stream fileStream, string originalFileName, string folderName, bool overwrite = false);
         string GetFileUrl(string storedFileName, string folderName);
+        Task DeleteFileAsync(string fileUrlOrPath);
     }
 }

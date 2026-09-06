@@ -124,5 +124,48 @@ namespace HomeCycle.Infrastructure.Externals
             return $"https://firebasestorage.googleapis.com/v0/b/{_bucketName}/o/{escapedPath}?alt=media";
         }
 
+        public async Task DeleteFileAsync(string fileUrlOrPath)
+        {
+            if (string.IsNullOrWhiteSpace(fileUrlOrPath)) return;
+
+            string objectName = ExtractObjectName(fileUrlOrPath);
+            if (string.IsNullOrEmpty(objectName)) return;
+
+            try
+            {
+                await _storageClient.DeleteObjectAsync(_bucketName, objectName);
+            }
+            catch (Google.GoogleApiException ex) when (ex.Error.Code == 404)
+            {
+            }
+        }
+
+        private static string ExtractObjectName(string fileUrlOrPath)
+        {
+            if (string.IsNullOrWhiteSpace(fileUrlOrPath)) return string.Empty;
+
+            if (fileUrlOrPath.StartsWith("http://", StringComparison.OrdinalIgnoreCase) || fileUrlOrPath.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    var uri = new Uri(fileUrlOrPath);
+                    string absolutePath = uri.AbsolutePath; // /v0/b/{bucket}/o/{escapedObjectName}
+                    int oIndex = absolutePath.IndexOf("/o/", StringComparison.Ordinal);
+
+                    if (oIndex != -1)
+                    {
+                        string encodedObjectName = absolutePath.Substring(oIndex + 3);
+                        return Uri.UnescapeDataString(encodedObjectName);
+                    }
+                }
+                catch
+                {
+                    return fileUrlOrPath;
+                }
+            }
+
+            // Nếu truyền vào relative path (VD: "avatars/abc.jpg")
+            return fileUrlOrPath.TrimStart('/');
+        }
     }
 }

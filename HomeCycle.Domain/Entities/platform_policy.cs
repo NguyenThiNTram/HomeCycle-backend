@@ -10,7 +10,7 @@ public class platform_policy
 {
     public Guid PolicyId { get; set; }
 
-    public string PolicyType { get; set; }
+    public int PolicyType { get; set; }
     public string? Title { get; set; }
     public string Content { get; set; }
     public int Version { get; set; }

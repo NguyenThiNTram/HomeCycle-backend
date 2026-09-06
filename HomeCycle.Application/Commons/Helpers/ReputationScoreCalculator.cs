@@ -49,5 +49,10 @@ namespace HomeCycle.Application.Commons.Helpers
             rating = Math.Clamp(rating, 1.0, 5.0);
             return Math.Round(rating, 2, MidpointRounding.AwayFromZero);
         }
+
+        public static int ApplyDelta(int currentScore, int pointDelta)
+        {
+            return Math.Clamp(currentScore + pointDelta, 0, 100);
+        }
     }
 }

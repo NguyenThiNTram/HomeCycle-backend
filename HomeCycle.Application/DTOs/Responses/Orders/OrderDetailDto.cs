@@ -34,6 +34,11 @@ namespace HomeCycle.Application.DTOs.Responses.Orders
         public DateTime UpdatedAt { get; set; }
         public DateTime? CompletedAt { get; set; }
 
+        public DateTime? BuyerReturnConfirmedAt { get; set; }
+        public DateTime? SellerReturnReceivedAt { get; set; }
+        public DateTime? ReturnDueAt { get; set; }
+        public DateTime? ReturnedAt { get; set; }
+
         public DateTime? SellerHandoverConfirmedAt { get; set; }
         public DateTime? BuyerReceivedConfirmedAt { get; set; }
         public OrderCompletionSource? CompletionSource { get; set; }

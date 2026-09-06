@@ -20,6 +20,7 @@ using HomeCycle.Domain.Entities;
 using HomeCycle.Domain.Enums;
 using MathNet.Numerics.Statistics.Mcmc;
 using Microsoft.AspNetCore.Http;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json.Linq;
@@ -40,6 +41,7 @@ namespace HomeCycle.Application.Services.Auths
         private readonly IUnitOfWork _unitOfWork;
         private readonly IPasswordHasher _passwordHasher;
         private readonly IJwtService _jwtService;
+        private readonly IOtpProtectionService _otpProtectionService;
         private readonly IMapper _mapper;
         private readonly IConfiguration _configuration;
         private readonly IValidator<RegisterPersonalRequest> _validator;
@@ -58,6 +60,7 @@ namespace HomeCycle.Application.Services.Auths
             IUnitOfWork unitOfWork, IPasswordHasher passwordHasher, 
             IJwtService jwtService, 
             IMapper mapper, IConfiguration configuration,
+            IOtpProtectionService otpProtectionService,
             IValidator<RegisterPersonalRequest> validator,
             IValidator<LoginRequest> loginValidator,
             IPersonalProfileRepository personalProfileRepository, 
@@ -74,6 +77,7 @@ namespace HomeCycle.Application.Services.Auths
             _unitOfWork = unitOfWork;
             _passwordHasher = passwordHasher;
             _jwtService = jwtService;
+            _otpProtectionService = otpProtectionService;
             _mapper = mapper;
             _configuration = configuration;
             _validator = validator;
@@ -88,52 +92,6 @@ namespace HomeCycle.Application.Services.Auths
             _fileStorageService = fileStorageService;
             _walletRepository = walletRepository;
         }
-
-        //public async Task<Result<LoginResponseDto>> LoginPersonalAsync(LoginPersonalRequest request, CancellationToken cancellationToken = default)
-        //{
-        //    var validationResult = await _loginPersonalValidator.ValidateAsync(request, cancellationToken);
-
-        //    if (!validationResult.IsValid)
-        //    {
-        //        var errors = string.Join(", ", validationResult.Errors.Select(x => x.ErrorMessage));
-        //        return Result<LoginResponseDto>.Fail(ValidationErrors.InvalidRequest(errors));
-        //    }
-
-        //    var user = await _userRepository.GetByEmailAsync(request.Email, cancellationToken);
-
-        //    if (user is null || user.Role != UserRole.Personal)
-        //        return Result<LoginResponseDto>.Fail(AuthErrors.InvalidCredential);
-
-        //    var isPasswordValid = _passwordHasher.VerifyPassword(request.Password, user.Password);
-
-        //    if (!isPasswordValid)
-        //        return Result<LoginResponseDto>.Fail(AuthErrors.InvalidCredential);
-
-        //    var accessToken = _jwtService.GenerateAccessToken(user);
-        //    var refreshToken = _jwtService.GenerateRefreshToken();
-        //    var now = DateTime.UtcNow;
-
-        //    await _userRepository.AddRefreshTokenAsync(
-        //        new refresh_token
-        //        {
-        //            RefreshTokenId = Guid.NewGuid(),
-        //            UserId = user.UserId,
-        //            Token = refreshToken,
-        //            ExpiredAt = now.AddDays(7),
-        //            CreatedAt = now
-        //        });
-
-        //    await _unitOfWork.SaveChangesAsync(cancellationToken);
-
-        //    var response = new LoginResponseDto
-        //    {
-        //        Message = "Login personal successful.",
-        //        AccessToken = accessToken,
-        //        RefreshToken = refreshToken
-        //    };
-        //    return Result<LoginResponseDto>.Success(response);
-
-        //}
 
         //login chung cho tất cả các loại user (Personal, Business, Moderator, Admin)
         public async Task<Result<LoginResponseDto>> LoginAsync(
@@ -214,43 +172,153 @@ namespace HomeCycle.Application.Services.Auths
             if (usernameExists)
                 return Result<AuthResponse>.Fail(AuthErrors.UsernameExists);
 
-            var googleAvatar = _jwtService.GetAvatarFromRegistrationToken(registrationToken);
-            string? finalAvatarUrl = googleAvatar;
+            //var googleAvatar = _jwtService.GetAvatarFromRegistrationToken(registrationToken);
+            //string? finalAvatarUrl = googleAvatar;
 
-            // xử lý avatar (Lưu vào thư mục "avatars")
-            if (request.AvatarUrl != null)
-            {
-                using var stream = request.AvatarUrl.OpenReadStream();
-                var uploadedAvatarUrl = await _fileStorageService.UploadFileAsync(stream, request.AvatarUrl.FileName, "avatars");
-                //finalAvatarUrl = _fileStorageService.GetFileUrl(storedFileName, "avatars");
-                finalAvatarUrl = uploadedAvatarUrl;
-            }
+            //// xử lý avatar (Lưu vào thư mục "avatars")
+            //if (request.AvatarUrl != null)
+            //{
+            //    using var stream = request.AvatarUrl.OpenReadStream();
+            //    var uploadedAvatarUrl = await _fileStorageService.UploadFileAsync(stream, request.AvatarUrl.FileName, "avatars");
+            //    //finalAvatarUrl = _fileStorageService.GetFileUrl(storedFileName, "avatars");
+            //    finalAvatarUrl = uploadedAvatarUrl;
+            //}
 
-            // xử lý CCCD/CMND (Lưu vào thư mục bảo mật "legal-documents")
-            //var frontIdCardUrl = await UploadFileHelperAsync(request.FrontIDCardImage, "legal-documents", cancellationToken);
-            //var backIdCardUrl = await UploadFileHelperAsync(request.BackIDCardImage, "legal-documents", cancellationToken);
+            //// xử lý CCCD/CMND (Lưu vào thư mục bảo mật "legal-documents")
+            ////var frontIdCardUrl = await UploadFileHelperAsync(request.FrontIDCardImage, "legal-documents", cancellationToken);
+            ////var backIdCardUrl = await UploadFileHelperAsync(request.BackIDCardImage, "legal-documents", cancellationToken);
 
-            await _unitOfWork.BeginTransactionAsync();
+            //await _unitOfWork.BeginTransactionAsync();
+            //try
+            //{
+            //    var now = DateTime.UtcNow;
+
+            //    var newUser = _mapper.Map<user>(request);
+
+            //    newUser.UserId = Guid.NewGuid();
+            //    newUser.Email = normalizedEmail;
+            //    newUser.Password = _passwordHasher.HashPassword(request.Password);
+            //    newUser.AvatarUrl = finalAvatarUrl?.Trim();
+            //    newUser.Role = UserRole.Personal;
+            //    newUser.Status = UserStatus.Active;
+            //    newUser.IsEmailVerified = true;
+            //    newUser.CreatedAt = now;
+
+            //    await _userRepository.AddAsync(newUser, cancellationToken);
+
+            //    string? frontIdCardUrl = null;
+            //    string? backIdCardUrl = null;
+
+            //    if (request.FrontIDCardImage != null)
+            //    {
+            //        using var stream = request.FrontIDCardImage.OpenReadStream();
+
+            //        frontIdCardUrl = await _fileStorageService.UploadFileAsync(
+            //            stream,
+            //            request.FrontIDCardImage.FileName,
+            //            $"identities/{newUser.UserId}/front_id_card");
+            //    }
+
+            //    if (request.BackIDCardImage != null)
+            //    {
+            //        using var stream = request.BackIDCardImage.OpenReadStream();
+
+            //        backIdCardUrl = await _fileStorageService.UploadFileAsync(
+            //            stream,
+            //            request.BackIDCardImage.FileName,
+            //            $"identities/{newUser.UserId}/back_id_card");
+            //    }
+
+            //    var personalProfile = _mapper.Map<personal_profile>(request);
+
+            //    personalProfile.PersonalProfileId = Guid.NewGuid();
+            //    personalProfile.UserId = newUser.UserId;
+            //    personalProfile.FrontIDCardImage = frontIdCardUrl;
+            //    personalProfile.BackIDCardImage = backIdCardUrl;
+            //    personalProfile.VerificationStatus = VerifyStatus.Pending;
+            //    personalProfile.CreatedAt = now;
+
+            //    await _personalProfileRepository.AddAsync(personalProfile, cancellationToken);
+
+            //    var personalWallet = new wallet
+            //    {
+            //        WalletId = Guid.NewGuid(),
+            //        UserId = newUser.UserId,
+            //        WalletType = (int)WalletTypeEnum.Personal,
+            //        AvailableBalance = 0,
+            //        HoldBalance = 0,
+            //        CreatedAt = now,
+            //        UpdatedAt = now
+            //    };
+            //    await _walletRepository.AddAsync(personalWallet, cancellationToken);
+
+            //    if (!string.IsNullOrWhiteSpace(request.AccountNumber))
+            //    {
+
+            //        var bankAccount = _mapper.Map<bank_account>(request);
+
+            //        bankAccount.UserBankId = Guid.NewGuid();
+            //        bankAccount.UserId = newUser.UserId;
+            //        bankAccount.VerifyStatus = VerifyStatus.Verified;
+            //        bankAccount.CreatedAt = now;
+
+            //        await _bankAccountRepository.AddAsync(bankAccount, cancellationToken);
+            //    }
+
+            //    await _otpRepository.UpdateUserIdAsync(normalizedEmail, newUser.UserId, cancellationToken);
+
+            //    var accessToken = _jwtService.GenerateAccessToken(newUser);
+            //    var refreshToken = _jwtService.GenerateRefreshToken();
+
+            //    var refreshTokenEntity = new refresh_token
+            //    {
+            //        RefreshTokenId = Guid.NewGuid(),
+            //        UserId = newUser.UserId,
+            //        Token = refreshToken,
+            //        ExpiredAt = now.AddDays(7),
+            //        CreatedAt = now
+            //    };
+
+            //    await _userRepository.AddRefreshTokenAsync(
+            //        refreshTokenEntity,
+            //        cancellationToken);
+
+            //    await _unitOfWork.SaveChangesAsync(cancellationToken);
+            //    await _unitOfWork.CommitTransactionAsync();
+
+            //    return Result<AuthResponse>.Success(new AuthResponse
+            //    {
+            //        User = _mapper.Map<AuthUserDto>(newUser),
+            //        AccessToken = accessToken,
+            //        RefreshToken = refreshToken,
+            //        Message = "Registration successful."
+            //    });
+            //}
+
+            var uploadedFileUrls = new List<string>();
+
             try
             {
+                // Upload mới hoặc lấy từ Google
+                var googleAvatar = _jwtService.GetAvatarFromRegistrationToken(registrationToken);
+                string? finalAvatarUrl = googleAvatar;
+
+                if (request.AvatarUrl != null)
+                {
+                    using var stream = request.AvatarUrl.OpenReadStream();
+                    finalAvatarUrl = await _fileStorageService.UploadFileAsync(stream, request.AvatarUrl.FileName, "avatars");
+                    if (!string.IsNullOrEmpty(finalAvatarUrl))
+                    {
+                        uploadedFileUrls.Add(finalAvatarUrl);
+                    }
+                }
+
+                await _unitOfWork.BeginTransactionAsync();
                 var now = DateTime.UtcNow;
-                //var newUser = new user
-                //{
-                //    UserId = Guid.NewGuid(),
-                //    Username = request.Username.Trim(),
-                //    Email = normalizedEmail,
-                //    IsEmailVerified = true,
-                //    Password = _passwordHasher.HashPassword(request.Password),
-                //    PhoneNumber = request.PhoneNumber?.Trim(),
-                //    AvatarUrl = finalAvatarUrl?.Trim(),
-                //    Role = UserRole.Personal,
-                //    Status = UserStatus.Active,
-                //    CreatedAt = now
-                //};
 
                 var newUser = _mapper.Map<user>(request);
-
                 newUser.UserId = Guid.NewGuid();
+                newUser.Username = normalizedUsername;
                 newUser.Email = normalizedEmail;
                 newUser.Password = _passwordHasher.HashPassword(request.Password);
                 newUser.AvatarUrl = finalAvatarUrl?.Trim();
@@ -261,46 +329,40 @@ namespace HomeCycle.Application.Services.Auths
 
                 await _userRepository.AddAsync(newUser, cancellationToken);
 
+                // Upload Ảnh CCCD/CMND
                 string? frontIdCardUrl = null;
                 string? backIdCardUrl = null;
 
                 if (request.FrontIDCardImage != null)
                 {
                     using var stream = request.FrontIDCardImage.OpenReadStream();
-
                     frontIdCardUrl = await _fileStorageService.UploadFileAsync(
                         stream,
                         request.FrontIDCardImage.FileName,
                         $"identities/{newUser.UserId}/front_id_card");
+
+                    if (!string.IsNullOrEmpty(frontIdCardUrl))
+                    {
+                        uploadedFileUrls.Add(frontIdCardUrl);
+                    }
                 }
 
                 if (request.BackIDCardImage != null)
                 {
                     using var stream = request.BackIDCardImage.OpenReadStream();
-
                     backIdCardUrl = await _fileStorageService.UploadFileAsync(
                         stream,
                         request.BackIDCardImage.FileName,
                         $"identities/{newUser.UserId}/back_id_card");
+
+                    if (!string.IsNullOrEmpty(backIdCardUrl))
+                    {
+                        uploadedFileUrls.Add(backIdCardUrl);
+                    }
                 }
 
-                //var personalProfile = new personal_profile
-                //{
-                //    PersonalProfileId = Guid.NewGuid(),
-                //    UserId = newUser.UserId,
-                //    FullName = request.FullName?.Trim(),
-                //    RepresentativeCode = request.RepresentativeCode?.Trim(),
-                //    RepresentativeName = request.RepresentativeName?.Trim(),
-                //    RepresentativeDob = request.RepresentativeDob,
-                //    RepresentativeAddress = request.RepresentativeAddress?.Trim(),
-                //    FrontIDCardImage = frontIdCardUrl,
-                //    BackIDCardImage = backIdCardUrl,
-                //    VerificationStatus = VerifyStatus.Pending,
-                //    CreatedAt = now
-                //};
-
+                // Tạo Personal Profile
                 var personalProfile = _mapper.Map<personal_profile>(request);
-
                 personalProfile.PersonalProfileId = Guid.NewGuid();
                 personalProfile.UserId = newUser.UserId;
                 personalProfile.FrontIDCardImage = frontIdCardUrl;
@@ -310,6 +372,7 @@ namespace HomeCycle.Application.Services.Auths
 
                 await _personalProfileRepository.AddAsync(personalProfile, cancellationToken);
 
+                // Tạo Ví Cá Nhân (Wallet)
                 var personalWallet = new wallet
                 {
                     WalletId = Guid.NewGuid(),
@@ -322,22 +385,10 @@ namespace HomeCycle.Application.Services.Auths
                 };
                 await _walletRepository.AddAsync(personalWallet, cancellationToken);
 
+                // Tạo Tài khoản ngân hàng - Nếu có
                 if (!string.IsNullOrWhiteSpace(request.AccountNumber))
                 {
-                    //var bankAccount = new bank_account
-                    //{
-                    //    UserBankId = Guid.NewGuid(),
-                    //    UserId = newUser.UserId,
-                    //    BankCode = request.BankCode?.Trim(),
-                    //    BankName = request.BankName?.Trim(),
-                    //    AccountNumber = request.AccountNumber.Trim(),
-                    //    AccountName = request.AccountName?.Trim(),
-                    //    VerifyStatus = VerifyStatus.Verified,
-                    //    CreatedAt = now
-                    //};
-
                     var bankAccount = _mapper.Map<bank_account>(request);
-
                     bankAccount.UserBankId = Guid.NewGuid();
                     bankAccount.UserId = newUser.UserId;
                     bankAccount.VerifyStatus = VerifyStatus.Verified;
@@ -346,8 +397,10 @@ namespace HomeCycle.Application.Services.Auths
                     await _bankAccountRepository.AddAsync(bankAccount, cancellationToken);
                 }
 
+                // Link UserId cho OTP
                 await _otpRepository.UpdateUserIdAsync(normalizedEmail, newUser.UserId, cancellationToken);
 
+                // Cấp Refresh Token & Access Token
                 var accessToken = _jwtService.GenerateAccessToken(newUser);
                 var refreshToken = _jwtService.GenerateRefreshToken();
 
@@ -360,37 +413,48 @@ namespace HomeCycle.Application.Services.Auths
                     CreatedAt = now
                 };
 
-                await _userRepository.AddRefreshTokenAsync(
-                    refreshTokenEntity,
-                    cancellationToken);
+                await _userRepository.AddRefreshTokenAsync(refreshTokenEntity, cancellationToken);
 
+                // Commit DB
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync();
 
                 return Result<AuthResponse>.Success(new AuthResponse
                 {
-                    //User = new AuthUserDto
-                    //{
-                    //    UserId = newUser.UserId,
-                    //    Username = newUser.Username,
-                    //    Email = newUser.Email,
-                    //    PhoneNumber = newUser.PhoneNumber,
-                    //    AvatarUrl = newUser.AvatarUrl,
-                    //    Role = newUser.Role,
-                    //    Status = newUser.Status,
-                    //    IsEmailVerified = newUser.IsEmailVerified
-                    //}
                     User = _mapper.Map<AuthUserDto>(newUser),
                     AccessToken = accessToken,
                     RefreshToken = refreshToken,
                     Message = "Registration successful."
                 });
             }
+            catch (DbUpdateException ex)
+            {
+                await _unitOfWork.RollbackTransactionAsync();
+                await CleanupUploadedFilesAsync(uploadedFileUrls);
+
+                // Xử lý Race Condition khi trùng Email hoặc Username cấp Database
+                if (IsUniqueConstraintViolation(ex, out var constraintName))
+                {
+                    if (!string.IsNullOrEmpty(constraintName) &&
+                        constraintName.Contains("username", StringComparison.OrdinalIgnoreCase))
+                    {
+                        return Result<AuthResponse>.Fail(AuthErrors.UsernameExists);
+                    }
+
+                    return Result<AuthResponse>.Fail(AuthErrors.EmailExists);
+                }
+
+                _logger.LogError(ex, "Database constraint error during registration for email: {Email}", normalizedEmail);
+                return Result<AuthResponse>.Fail(new Error("Auth.DatabaseError", "A database conflict occurred during registration."));
+            }
+
             catch (Exception ex)
             {
                 await _unitOfWork.RollbackTransactionAsync();
-                Console.WriteLine(ex.ToString());
-                throw;
+                await CleanupUploadedFilesAsync(uploadedFileUrls);
+
+                _logger.LogError(ex, "Unexpected error during personal registration for email: {Email}", normalizedEmail);
+                return Result<AuthResponse>.Fail(new Error("Auth.RegisterFailed", "An unexpected error occurred during registration. Please try again."));
             }
         }
 
@@ -511,31 +575,78 @@ namespace HomeCycle.Application.Services.Auths
             if (emailExists)
                 return Result<string>.Fail(AuthErrors.EmailExists);
 
-            var otpCode =Random.Shared.Next(100000, 999999).ToString();
-
-            var otp = new otp
+            // Kiểm tra giới hạn gửi OTP 5 phút/lần
+            if (!_otpProtectionService.TryStartSend(
+                    normalizedEmail,
+                    out var remaining))
             {
-                OtpId = Guid.NewGuid(),
-                Email = normalizedEmail,
-                Code = otpCode,
-                Purpose = "Register",
-                IsUsed = false,
-                CreatedAt = DateTime.UtcNow,
-                ExpiredAt =DateTime.UtcNow.AddMinutes(5)
-            };
+                var minutes = Math.Max(
+                    1,
+                    (int)Math.Ceiling(remaining.TotalMinutes));
 
-            await _otpRepository.AddAsync(otp);
-            await _emailService.SendOtpEmailAsync(normalizedEmail, otpCode);
+                return Result<string>.Fail(AuthErrors.OtpRateLimited(minutes));
+            }
 
-            return Result<string>.Success("OTP has been sent successfully.");
+            try
+            {
+                var otpCode = Random.Shared.Next(100000, 999999).ToString();
+
+                var otp = new otp
+                {
+                    OtpId = Guid.NewGuid(),
+                    Email = normalizedEmail,
+                    Code = otpCode,
+                    Purpose = "Register",
+                    IsUsed = false,
+                    CreatedAt = DateTime.UtcNow,
+                    ExpiredAt = DateTime.UtcNow.AddMinutes(5)
+                };
+
+                await _otpRepository.AddAsync(otp);
+                await _emailService.SendOtpEmailAsync(normalizedEmail, otpCode);
+
+                return Result<string>.Success("OTP has been sent successfully.");
+            }
+            catch (Exception ex)
+            {
+                _otpProtectionService.SendFailed(normalizedEmail);
+                _logger.LogError(ex, "Failed to send OTP to email: {Email}", normalizedEmail);
+                return Result<string>.Fail(AuthErrors.OtpSendFailed);
+            }
         }
 
         public async Task<Result<string>> VerifyOtpAsync(string email, string code)
         {
-            var otp =await _otpRepository.GetValidOtpAsync(email,code);
+            var normalizedEmail = email.Trim().ToLowerInvariant();
+            var normalizedCode = code.Trim();
+
+            // Kiểm tra email có đang bị khóa tạm thời không
+            if (_otpProtectionService.IsLocked(
+                    normalizedEmail,
+                    out _))
+            {
+                return Result<string>.Fail(AuthErrors.InvalidOtp);
+            }
+
+            var otp =await _otpRepository.GetValidOtpAsync(normalizedEmail, normalizedCode);
 
             if (otp == null)
+            {
+                // Tăng số lần nhập sai
+                var isLocked =
+                    _otpProtectionService.RegisterFailedAttempt(
+                        normalizedEmail,
+                        out _,
+                        out _);
+
+                // Đã đủ số lần sai thì khóa tạm thời
+                if (isLocked)
+                {
+                    return Result<string>.Fail(AuthErrors.InvalidOtp);
+                }
+
                 return Result<string>.Fail(AuthErrors.InvalidOtp);
+            }
 
             otp.IsUsed = true;
             otp.UsedAt =DateTime.UtcNow;
@@ -543,7 +654,7 @@ namespace HomeCycle.Application.Services.Auths
             await _otpRepository.UpdateAsync(otp);
 
             // Registration Token sau khi OTP hợp lệ
-            string registrationToken = _jwtService.GenerateRegistrationToken(email);
+            string registrationToken = _jwtService.GenerateRegistrationToken(normalizedEmail);
 
             await _unitOfWork.SaveChangesAsync();
 
@@ -797,18 +908,47 @@ namespace HomeCycle.Application.Services.Auths
             };
         }
 
-        private async Task<string?> UploadFileHelperAsync(IFormFile? file, string folderName, CancellationToken cancellationToken = default)
+        private static bool IsUniqueConstraintViolation(DbUpdateException ex, out string? constraintOrMessage)
         {
-            if (file == null || file.Length == 0) return null;
+            constraintOrMessage = null;
+            var inner = ex.InnerException;
+            if (inner == null) return false;
 
-            // Kích hoạt luồng đọc stream an toàn
-            using var stream = file.OpenReadStream();
+            var sqlStateProp = inner.GetType().GetProperty("SqlState");
+            if (sqlStateProp != null)
+            {
+                var sqlState = sqlStateProp.GetValue(inner)?.ToString();
+                if (sqlState == "23505") // Postgres UNIQUE VIOLATION code
+                {
+                    var constraintProp = inner.GetType().GetProperty("ConstraintName");
+                    constraintOrMessage = constraintProp?.GetValue(inner)?.ToString() ?? inner.Message;
+                    return true;
+                }
+            }
 
-            // Gọi Storage Service với folder tương ứng theo nghiệp vụ SRS
-            var storedFileName = await _fileStorageService.UploadFileAsync(stream, file.FileName, folderName);
+            string msg = inner.Message.ToLower();
+            if (msg.Contains("unique") || msg.Contains("duplicate") || msg.Contains("23505") || msg.Contains("2601") || msg.Contains("2627"))
+            {
+                constraintOrMessage = inner.Message;
+                return true;
+            }
 
-            // Trả về Full URL hiển thị trực tiếp
-            return _fileStorageService.GetFileUrl(storedFileName, folderName);
+            return false;
+        }
+
+        private async Task CleanupUploadedFilesAsync(IEnumerable<string> fileUrls)
+        {
+            foreach (var url in fileUrls)
+            {
+                try
+                {
+                    await _fileStorageService.DeleteFileAsync(url);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to delete orphaned file during cleanup: {FileUrl}", url);
+                }
+            }
         }
     }
 }

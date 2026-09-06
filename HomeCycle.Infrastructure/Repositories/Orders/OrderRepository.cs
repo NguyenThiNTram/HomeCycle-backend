@@ -96,9 +96,9 @@ namespace HomeCycle.Infrastructure.Repositories.Orders
             };
         }
         public async Task<OrderDetailDto?> GetDetailWithRelationsAsync(
-    Guid orderId,
-    Guid currentUserId,
-    CancellationToken ct = default)
+            Guid orderId,
+            Guid currentUserId,
+            CancellationToken ct = default)
         {
             var entity = await _db.Orders
                 .AsNoTracking()
@@ -246,8 +246,9 @@ namespace HomeCycle.Infrastructure.Repositories.Orders
                 new DisputeSummaryDto
                 {
                     HasActiveDispute =
-                        latestDispute?.DisputeStatus ==
-                        (int)DisputeStatus.Pending,
+                        latestDispute?.DisputeStatus == (int)DisputeStatus.Pending ||
+                        latestDispute?.DisputeStatus == (int)DisputeStatus.UnderReview ||
+                        latestDispute?.DisputeStatus == (int)DisputeStatus.AwaitingReturn,
 
                     LatestDisputeId =
                         latestDispute?.DisputeId,
@@ -328,6 +329,11 @@ namespace HomeCycle.Infrastructure.Repositories.Orders
                 CreatedAt = entity.CreatedAt,
                 UpdatedAt = entity.UpdatedAt,
                 CompletedAt = entity.CompletedAt,
+
+                BuyerReturnConfirmedAt = entity.BuyerReturnConfirmedAt,
+                SellerReturnReceivedAt = entity.SellerReturnReceivedAt,
+                ReturnDueAt = entity.ReturnDueAt,
+                ReturnedAt = entity.ReturnedAt,
 
                 SellerHandoverConfirmedAt =
                     entity.SellerHandoverConfirmedAt,

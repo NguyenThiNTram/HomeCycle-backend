@@ -1,4 +1,5 @@
 using FluentValidation;
+using HomeCycle.Application.Commons.Errors;
 using HomeCycle.Application.Commons.Helpers;
 using HomeCycle.Application.Commons.Paginations;
 using HomeCycle.Application.Commons.Results;
@@ -133,7 +134,7 @@ namespace HomeCycle.Application.Services.Reviews
                     }
                 }
 
-                await RecalculateReputationAsync(revieweeId, ct);
+                await RecalculateDisplayStarRatingAsync(revieweeId, ct);
 
                 await _unitOfWork.CommitTransactionAsync(ct);
             }
@@ -177,7 +178,7 @@ namespace HomeCycle.Application.Services.Reviews
                 await _reviewRepo.UpdateAsync(review, ct);
                 await _unitOfWork.SaveChangesAsync(ct);
 
-                await RecalculateReputationAsync(review.RevieweeId, ct);
+                await RecalculateDisplayStarRatingAsync(review.RevieweeId, ct);
 
                 await _unitOfWork.CommitTransactionAsync(ct);
             }
@@ -189,7 +190,7 @@ namespace HomeCycle.Application.Services.Reviews
 
             return Result<ReviewResponseDto>.Success(await BuildResponseAsync(review, ct));
         }
-
+        
         public async Task<Result<ReviewResponseDto>> GetByIdAsync(Guid reviewId, CancellationToken ct = default)
         {
             var review = await _reviewRepo.GetByIdAsync(reviewId, ct);
@@ -238,39 +239,74 @@ namespace HomeCycle.Application.Services.Reviews
             return Result<PagedResult<ReviewResponseDto>>.Success(paged);
         }
 
-        private async Task RecalculateReputationAsync(Guid userId, CancellationToken ct)
-        {
-            var validReviews = await _reviewRepo.GetValidReviewsByRevieweeAsync(userId, ct);
-            var newScore = ReputationScoreCalculator.CalculateReputationScore(ReputationScoreCalculator.DefaultBaseScore, 0);
-            var displayStar = ReputationScoreCalculator.CalculateDisplayStarRating(validReviews);
 
+        private async Task RecalculateDisplayStarRatingAsync(Guid userId, CancellationToken ct)
+        {
             var user = await _userRepo.GetByIdAsync(userId, ct);
+
             if (user == null)
                 return;
 
-            if (user.Role == UserRole.Business)
-            {
-                var business = await _businessProfileRepo.GetByUserIdAsync(userId, ct);
-                if (business == null)
-                    return;
+            personal_profile? personalProfile = null;
+            business_profile? businessProfile = null;
 
-                business.ReputationScore = (int)newScore;
-                business.DisplayStarRating = displayStar;
-                _businessProfileRepo.Update(business);
+            if (user.Role == UserRole.Business)
+                businessProfile = await _businessProfileRepo.GetByUserIdForUpdateAsync(userId, ct);
+            else
+                personalProfile = await _personalProfileRepo.GetByUserIdForUpdateAsync(userId, ct);
+
+            if (personalProfile == null && businessProfile == null)
+                return;
+
+            var validReviews = await _reviewRepo.GetValidReviewsByRevieweeAsync(userId, ct);
+            var displayStarRating = ReputationScoreCalculator.CalculateDisplayStarRating(validReviews);
+
+            if (businessProfile != null)
+            {
+                businessProfile.DisplayStarRating = displayStarRating;
+                _businessProfileRepo.Update(businessProfile);
             }
             else
             {
-                var personal = await _personalProfileRepo.GetByUserIdAsync(userId, ct);
-                if (personal == null)
-                    return;
-
-                personal.ReputationScore = (int)newScore;
-                personal.DisplayStarRating = displayStar;
-                await _personalProfileRepo.UpdateAsync(personal, ct);
+                personalProfile!.DisplayStarRating = displayStarRating;
+                await _personalProfileRepo.UpdateAsync(personalProfile, ct);
             }
 
             await _unitOfWork.SaveChangesAsync(ct);
         }
+        //private async Task RecalculateReputationAsync(Guid userId, CancellationToken ct)
+        //{
+        //    var validReviews = await _reviewRepo.GetValidReviewsByRevieweeAsync(userId, ct);
+        //    var newScore = ReputationScoreCalculator.CalculateReputationScore(ReputationScoreCalculator.DefaultBaseScore, 0);
+        //    var displayStar = ReputationScoreCalculator.CalculateDisplayStarRating(validReviews);
+
+        //    var user = await _userRepo.GetByIdAsync(userId, ct);
+        //    if (user == null)
+        //        return;
+
+        //    if (user.Role == UserRole.Business)
+        //    {
+        //        var business = await _businessProfileRepo.GetByUserIdAsync(userId, ct);
+        //        if (business == null)
+        //            return;
+
+        //        business.ReputationScore = (int)newScore;
+        //        business.DisplayStarRating = displayStar;
+        //        _businessProfileRepo.Update(business);
+        //    }
+        //    else
+        //    {
+        //        var personal = await _personalProfileRepo.GetByUserIdAsync(userId, ct);
+        //        if (personal == null)
+        //            return;
+
+        //        personal.ReputationScore = (int)newScore;
+        //        personal.DisplayStarRating = displayStar;
+        //        await _personalProfileRepo.UpdateAsync(personal, ct);
+        //    }
+
+        //    await _unitOfWork.SaveChangesAsync(ct);
+        //}
 
         private async Task<ReviewResponseDto> BuildResponseAsync(review review, CancellationToken ct)
         {
@@ -329,5 +365,64 @@ namespace HomeCycle.Application.Services.Reviews
             foreach (var item in items)
                 item.CanEdit = DateTime.UtcNow <= item.CreatedAt.Add(EditWindow);
         }
+
+        //private async Task<(personal_profile? Personal, business_profile? Business)> GetReputationProfileForUpdateAsync(
+        //    Guid userId,
+        //    CancellationToken ct)
+        //{
+        //    var user = await _userRepo.GetByIdAsync(userId, ct);
+
+        //    if (user == null)
+        //        return (null, null);
+
+        //    if (user.Role == UserRole.Business)
+        //    {
+        //        var business = await _businessProfileRepo
+        //            .GetByUserIdForUpdateAsync(userId, ct);
+
+        //        return (null, business);
+        //    }
+
+        //    if (user.Role == UserRole.Personal)
+        //    {
+        //        var personal = await _personalProfileRepo
+        //            .GetByUserIdForUpdateAsync(userId, ct);
+
+        //        return (personal, null);
+        //    }
+
+        //    return (null, null);
+        //}
+
+        //private async Task ApplyReviewScoreDeltaAsync(
+        //    personal_profile? personalProfile,
+        //    business_profile? businessProfile,
+        //    int pointDelta,
+        //    CancellationToken ct)
+        //{
+        //    if (pointDelta == 0)
+        //        return;
+
+        //    if (businessProfile != null)
+        //    {
+        //        businessProfile.ReputationScore =
+        //            ReputationScoreCalculator.ApplyDelta(
+        //                businessProfile.ReputationScore,
+        //                pointDelta);
+
+        //        _businessProfileRepo.Update(businessProfile);
+        //    }
+        //    else if (personalProfile != null)
+        //    {
+        //        personalProfile.ReputationScore =
+        //            ReputationScoreCalculator.ApplyDelta(
+        //                personalProfile.ReputationScore,
+        //                pointDelta);
+
+        //        await _personalProfileRepo.UpdateAsync(personalProfile, ct);
+        //    }
+
+        //    await _unitOfWork.SaveChangesAsync(ct);
+        //}
     }
 }

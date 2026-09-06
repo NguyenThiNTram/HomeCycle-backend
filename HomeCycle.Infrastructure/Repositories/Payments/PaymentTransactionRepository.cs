@@ -53,5 +53,30 @@ namespace HomeCycle.Infrastructure.Repositories.Payments
                 .AsNoTracking()
                 .AnyAsync(x => x.PayOSOrderCode == payOSOrderCode, ct);
         }
+
+        public async Task<payment_transaction?> GetByPayOSOrderCodeForUpdateAsync(
+            string payOSOrderCode,
+            CancellationToken ct = default)
+        {
+            EnsureActiveTransaction();
+
+            var entity = await _db.Payment_Transactions
+                .FromSqlInterpolated($@"
+            SELECT *
+            FROM ""Payment_Transaction""
+            WHERE ""PayOSOrderCode"" = {payOSOrderCode}
+            FOR UPDATE")
+                .AsNoTracking()
+                .SingleOrDefaultAsync(ct);
+
+            return entity?.ToDomain();
+        }
+
+        private void EnsureActiveTransaction()
+        {
+            if (_db.Database.CurrentTransaction is null)
+                throw new InvalidOperationException(
+                    "FOR UPDATE requires an active database transaction.");
+        }
     }
 }
