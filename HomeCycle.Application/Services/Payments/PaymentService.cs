@@ -7,6 +7,7 @@ using HomeCycle.Application.DTOs.Requests.Agreements;
 using HomeCycle.Application.DTOs.Requests.Payments;
 using HomeCycle.Application.DTOs.Responses.Conversations;
 using HomeCycle.Application.DTOs.Responses.Messages;
+using HomeCycle.Application.DTOs.Responses.Notifications;
 using HomeCycle.Application.DTOs.Responses.Payments;
 using HomeCycle.Application.Interfaces.Externals;
 using HomeCycle.Application.Interfaces.Generics;
@@ -21,6 +22,7 @@ using HomeCycle.Application.Interfaces.Repositories.Payments;
 using HomeCycle.Application.Interfaces.Repositories.Posts;
 using HomeCycle.Application.Interfaces.Repositories.Shipments;
 using HomeCycle.Application.Interfaces.Repositories.Wallets;
+using HomeCycle.Application.Interfaces.Services.Notifications;
 using HomeCycle.Application.Interfaces.Services.Payments;
 using HomeCycle.Application.Interfaces.Services.PlatformPolicies;
 using HomeCycle.Domain.Entities;
@@ -80,6 +82,7 @@ namespace HomeCycle.Application.Services.Payments
         private readonly IMessageRepository _messageRepo;
         private readonly IConversationRepository _conversationRepo;
         private readonly IChatRealtimePublisher _chatRealtimePublisher;
+        private readonly INotificationService _notificationService;
         private readonly IMapper _mapper;
         public PaymentService(
             IUnitOfWork unitOfWork,
@@ -106,6 +109,7 @@ namespace HomeCycle.Application.Services.Payments
             IMessageRepository messageRepo,
             IConversationRepository conversationRepo,
             IChatRealtimePublisher chatRealtimePublisher,
+            INotificationService notificationService,
             IMapper mapper)
         {
             _unitOfWork = unitOfWork;
@@ -132,6 +136,7 @@ namespace HomeCycle.Application.Services.Payments
             _messageRepo = messageRepo;
             _conversationRepo = conversationRepo;
             _chatRealtimePublisher = chatRealtimePublisher;
+            _notificationService = notificationService;
             _mapper = mapper;
         }
 
@@ -624,6 +629,13 @@ namespace HomeCycle.Application.Services.Payments
                 await PublishPaymentChatActivitySafelyAsync(
                     negotiation,
                     _mapper.Map<MessageResponse>(paymentMessage));
+
+                await SendPaymentNotificationSafelyAsync(
+                    agreement.SellerId,
+                    "Có đơn hàng mới",
+                    "Buyer đã thanh toán thành công. Vui lòng chuẩn bị hàng theo lịch hẹn.",
+                    fulfillment.Order.OrderId,
+                    ct);
 
                 return Result<PaymentStatusResponseDto>.Success(
                     new PaymentStatusResponseDto
@@ -1171,6 +1183,36 @@ namespace HomeCycle.Application.Services.Payments
             };
         }
 
+
+        private async Task SendPaymentNotificationSafelyAsync(
+            Guid recipientId,
+            string title,
+            string message,
+            Guid orderId,
+            CancellationToken cancellationToken)
+        {
+            try
+            {
+                var notification = await _notificationService.AddPendingAsync(
+                    new CreateNotificationCommand(
+                        recipientId,
+                        title,
+                        message,
+                        NotificationTargetType.Order,
+                        orderId),
+                    cancellationToken);
+
+                await _notificationService.PublishCreatedSafelyAsync(notification);
+            }
+            catch (Exception exception)
+            {
+                _logger.LogWarning(
+                    exception,
+                    "Không thể tạo/phát notification cho OrderId {OrderId}, UserId {RecipientId}.",
+                    orderId,
+                    recipientId);
+            }
+        }
         private async Task PublishPaymentChatActivitySafelyAsync(negotiation negotiation, MessageResponse response)
         {
             await PublishMessageCreatedSafelyAsync(negotiation.NegotiationId, response);
@@ -1563,6 +1605,21 @@ namespace HomeCycle.Application.Services.Payments
                 await PublishPaymentChatActivitySafelyAsync(
                     negotiation,
                     _mapper.Map<MessageResponse>(paymentMessage));
+
+                await SendPaymentNotificationSafelyAsync(
+                    agreement.SellerId,
+                    "Có đơn hàng mới",
+                    "Buyer đã thanh toán thành công. Vui lòng chuẩn bị hàng theo lịch hẹn.",
+                    fulfillment.Order.OrderId,
+                    ct);
+
+                await SendPaymentNotificationSafelyAsync(
+                    payment.PayerId,
+                    "Thanh toán thành công",
+                    "Đơn hàng của bạn đã được tạo. Vui lòng theo dõi lịch hẹn giao/nhận.",
+                    fulfillment.Order.OrderId,
+                    ct);
+
             }
             catch (Exception ex)
             {

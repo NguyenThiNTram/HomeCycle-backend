@@ -8,6 +8,7 @@ using HomeCycle.Application.DTOs.Responses.Agreements;
 using HomeCycle.Application.DTOs.Responses.Conversations;
 using HomeCycle.Application.DTOs.Responses.GHN;
 using HomeCycle.Application.DTOs.Responses.Messages;
+using HomeCycle.Application.DTOs.Responses.Notifications;
 using HomeCycle.Application.Interfaces.Externals;
 using HomeCycle.Application.Interfaces.Generics;
 using HomeCycle.Application.Interfaces.Repositories.Agreements;
@@ -15,6 +16,7 @@ using HomeCycle.Application.Interfaces.Repositories.Offers;
 using HomeCycle.Application.Interfaces.Repositories.Posts;
 using HomeCycle.Application.Interfaces.Repositories.Products;
 using HomeCycle.Application.Interfaces.Services.Agreements;
+using HomeCycle.Application.Interfaces.Services.Notifications;
 using HomeCycle.Application.Interfaces.Services.Posts;
 using HomeCycle.Domain.Entities;
 using HomeCycle.Domain.Enums;
@@ -43,6 +45,7 @@ namespace HomeCycle.Application.Services.Agreements
         private readonly IPostRepository _postRepo;
         private readonly IOfferRepository _offerRepo;
         private readonly IProductRepository _productRepo;
+        private readonly INotificationService _notificationService;
         private readonly IValidator<CreateAgreementFormRequest> _createValidator;
         private readonly IValidator<UpdateAgreementFormRequest> _updateValidator;
         private readonly IValidator<CalculateGhnFeeRequest> _shippingFeeValidator;
@@ -64,6 +67,7 @@ namespace HomeCycle.Application.Services.Agreements
             IPostRepository postRepo,
             IOfferRepository offerRepo,
             IProductRepository productRepo,
+            INotificationService notificationService,
             IValidator<CreateAgreementFormRequest> createValidator,
             IValidator<UpdateAgreementFormRequest> updateValidator,
             IValidator<CalculateGhnFeeRequest> shippingFeeValidator,
@@ -83,6 +87,7 @@ namespace HomeCycle.Application.Services.Agreements
             _postRepo = postRepo;
             _offerRepo = offerRepo;
             _productRepo = productRepo;
+            _notificationService = notificationService;
             _createValidator = createValidator;
             _updateValidator = updateValidator;
             _shippingFeeValidator = shippingFeeValidator;
@@ -239,6 +244,12 @@ namespace HomeCycle.Application.Services.Agreements
 
                 var response = _mapper.Map<MessageResponse>(agreementMessage);
                 await PublishChatActivitySafelyAsync(negotiation, response);
+                await SendAgreementNotificationSafelyAsync(
+                    negotiation.BuyerId,
+                    "Có thỏa thuận mới",
+                    "Người bán vừa tạo thỏa thuận mua bán. Vui lòng kiểm tra và xác nhận.",
+                    newAgreement.AgreementId,
+                    cancellationToken);
 
                 return Result<Guid>.Success(newAgreement.AgreementId);
             }
@@ -420,6 +431,14 @@ namespace HomeCycle.Application.Services.Agreements
                 await _unitOfWork.CommitTransactionAsync(cancellationToken);
 
                 await PublishChatActivitySafelyAsync(negotiation, _mapper.Map<MessageResponse>(agreementMessage));
+                var updateRecipientId = isSeller ? agreement.BuyerId : agreement.SellerId;
+                await SendAgreementNotificationSafelyAsync(
+                    updateRecipientId,
+                    "Thỏa thuận vừa được cập nhật",
+                    $"{actorRole} đã cập nhật thỏa thuận. Vui lòng kiểm tra và xác nhận lại nội dung mới.",
+                    agreement.AgreementId,
+                    cancellationToken);
+
 
                 return Result<AgreementActionResponse>.Success(new AgreementActionResponse
                 {
@@ -539,6 +558,22 @@ namespace HomeCycle.Application.Services.Agreements
                 await _unitOfWork.CommitTransactionAsync(cancellationToken);
 
                 await PublishChatActivitySafelyAsync(negotiation, _mapper.Map<MessageResponse>(agreementMessage));
+                // Bên còn lại (không phải người vừa xác nhận) là người cần được báo.
+                var acceptRecipientId = isSeller ? agreement.BuyerId : agreement.SellerId;
+                var acceptTitle = bothConfirmed ? "Thỏa thuận đã được chốt" : "Thỏa thuận vừa được xác nhận";
+                var acceptMessage = bothConfirmed
+                    ? (acceptRecipientId == agreement.BuyerId
+                        ? "Cả hai bên đã đồng ý thỏa thuận. Vui lòng tiến hành thanh toán."
+                        : "Cả hai bên đã đồng ý thỏa thuận.")
+                    : $"{actorRole} đã xác nhận thỏa thuận. Đang chờ bạn xác nhận.";
+
+                await SendAgreementNotificationSafelyAsync(
+                    acceptRecipientId,
+                    acceptTitle,
+                    acceptMessage,
+                    agreement.AgreementId,
+                    cancellationToken);
+
 
                 return Result<AgreementActionResponse>.Success(new AgreementActionResponse
                 {
@@ -633,6 +668,36 @@ namespace HomeCycle.Application.Services.Agreements
 
             negotiation.ConversationId = conversation.ConversationId;
             return conversation;
+        }
+
+        private async Task SendAgreementNotificationSafelyAsync(
+            Guid recipientId,
+            string title,
+            string message,
+            Guid agreementId,
+            CancellationToken cancellationToken)
+        {
+            try
+            {
+                var notification = await _notificationService.AddPendingAsync(
+                    new CreateNotificationCommand(
+                        recipientId,
+                        title,
+                        message,
+                        NotificationTargetType.Agreement,
+                        agreementId),
+                    cancellationToken);
+
+                await _notificationService.PublishCreatedSafelyAsync(notification);
+            }
+            catch (Exception exception)
+            {
+                _logger.LogWarning(
+                    exception,
+                    "Không thể tạo/phát notification cho AgreementId {AgreementId}, UserId {RecipientId}.",
+                    agreementId,
+                    recipientId);
+            }
         }
 
         private async Task PublishChatActivitySafelyAsync(
