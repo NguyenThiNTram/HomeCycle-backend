@@ -556,6 +556,11 @@ namespace HomeCycle.Application.Commons.Errors
 
         public static readonly Error ReleaseFailed =
             new("Payment.ReleaseFailed", "Không thể giải ngân khoản tiền tạm giữ của đơn hàng.");
+
+        public static readonly Error BankAccountNotVerified =
+            new(
+                "Payment.BankAccountNotVerified",
+                "Bạn cần có tài khoản ngân hàng đã xác minh trước khi thanh toán.");
     }
 
 
