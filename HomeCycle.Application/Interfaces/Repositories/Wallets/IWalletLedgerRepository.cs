@@ -14,5 +14,10 @@ namespace HomeCycle.Application.Interfaces.Repositories.Wallets
     {
         Task AddAsync(wallet_ledger ledger, CancellationToken ct = default);
         Task<PagedResult<WalletLedgerResponseDto>> GetPagedByWalletIdAsync(Guid walletId, WalletLedgerSearchRequest request, CancellationToken ct = default);
+
+        Task<decimal> GetNetOrderHeldAmountAsync(
+            Guid walletId,
+            Guid orderId,
+            CancellationToken ct = default);
     }
 }

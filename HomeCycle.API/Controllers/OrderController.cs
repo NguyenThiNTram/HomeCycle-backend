@@ -1,4 +1,5 @@
-﻿using HomeCycle.Application.Commons.Results;
+﻿using HomeCycle.Application.Commons.Errors;
+using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Requests.Orders;
 using HomeCycle.Application.DTOs.Responses.GHN;
 using HomeCycle.Application.Interfaces.Services.GHN;
@@ -141,6 +142,76 @@ namespace HomeCycle.API.Controllers
             return Ok(result.Data);
         }
 
+
+        [HttpPost("{orderId:guid}/confirm-return")]
+        [SwaggerOperation(
+            Summary = "Buyer xác nhận đã trả hàng",
+            Description = "Ghi nhận Buyer đã trả hàng và bắt đầu thời hạn phản hồi của Seller."
+        )]
+        public async Task<IActionResult> ConfirmReturnByBuyer(
+            Guid orderId,
+            CancellationToken cancellationToken)
+        {
+            var currentUserId = GetCurrentUserId();
+
+            var result = await _orderService.ConfirmReturnByBuyerAsync(
+                orderId,
+                currentUserId,
+                cancellationToken);
+
+            if (!result.IsSuccess)
+                return MapOrderReturnError(result.Error!);
+
+            return Ok(result.Data);
+        }
+
+        [HttpPost("{orderId:guid}/confirm-return-received")]
+        [SwaggerOperation(
+            Summary = "Seller xác nhận đã nhận lại hàng",
+            Description = "Hoàn tất trả hàng và refund toàn bộ số tiền còn được nền tảng giữ cho Order."
+        )]
+        public async Task<IActionResult> ConfirmReturnReceivedBySeller(
+            Guid orderId,
+            CancellationToken cancellationToken)
+        {
+            var currentUserId = GetCurrentUserId();
+
+            var result = await _orderService.ConfirmReturnReceivedBySellerAsync(
+                orderId,
+                currentUserId,
+                cancellationToken);
+
+            if (!result.IsSuccess)
+                return MapOrderReturnError(result.Error!);
+
+            return Ok(result.Data);
+        }
+
+
+        private IActionResult MapOrderReturnError(Error error)
+        {
+            if (error == OrderErrors.NotFound ||
+                error == AgreementErrors.NotFound ||
+                error == DisputeErrors.NotFound)
+            {
+                return NotFound(error);
+            }
+
+            if (error == OrderErrors.Forbidden ||
+                error == DisputeErrors.Forbidden)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, error);
+            }
+
+            if (error == OrderErrors.ReturnConfirmationNotAllowed ||
+                error.Code == "Order.ReturnDeadlineExpired" ||
+                error == OrderErrors.NotDisputing)
+            {
+                return Conflict(error);
+            }
+
+            return BadRequest(error);
+        }
         private IActionResult MapTrackingError(Error? error)
         {
             if (error is null)

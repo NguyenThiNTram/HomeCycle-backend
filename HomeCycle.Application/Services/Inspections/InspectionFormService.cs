@@ -28,8 +28,8 @@ namespace HomeCycle.Application.Services.Inspections
     public class InspectionFormService : IInspectionFormService
     {
         private const decimal AmountEpsilon = 0.01m;
-        private const string InspectionMediaTargetType = "InspectionForm";
-        private const string InspectionMediaFolder = "inspection-forms";
+        //private const string InspectionMediaTargetType = "InspectionForm";
+        //private const string InspectionMediaFolder = "inspection-forms";
 
         private readonly IInspectionFormRepository _inspectionFormRepo;
         private readonly IInspectionAppointmentRepository _inspectionAppointmentRepo;
@@ -157,13 +157,26 @@ namespace HomeCycle.Application.Services.Inspections
 
                     InspectionTime = now,
 
-                    OperatingStatus = request.OperatingStatus?.ToString(),
-                    AppearanceStatus = request.AppearanceStatus?.ToString(),
-                    PartsStatus = request.PartsStatus?.ToString(),
-                    MatchStatus = request.MatchStatus?.ToString(),
+                    OperatingStatus = request.OperatingStatus.HasValue
+                        ? (int?)request.OperatingStatus.Value
+                        : null,
+
+                    AppearanceStatus = request.AppearanceStatus.HasValue
+                        ? (int?)request.AppearanceStatus.Value
+                        : null,
+
+                    PartsStatus = request.PartsStatus.HasValue
+                        ? (int?)request.PartsStatus.Value
+                        : null,
+
+                    MatchStatus = request.MatchStatus.HasValue
+                        ? (int?)request.MatchStatus.Value
+                        : null,
                     InspectorNotes = string.IsNullOrWhiteSpace(request.InspectorNotes) ? null : request.InspectorNotes.Trim(),
 
-                    Conclusion = request.Conclusion?.ToString(),
+                    Conclusion = request.Conclusion.HasValue
+                        ? (int?)request.Conclusion.Value
+                        : null,
                     OriginalPrice = originalPrice.Value,
 
                     SuggestedPrice = request.Conclusion == InspectionConclusion.PriceAdjustment
@@ -181,7 +194,13 @@ namespace HomeCycle.Application.Services.Inspections
 
                 if (request.Images?.Any(x => x.Length > 0) == true)
                 {
-                    var mediaResult = await _mediaService.UploadAndSaveMediaAsync(form.InspectionFormId, InspectionMediaTargetType, InspectionMediaFolder, request.Images, ct);
+                    var mediaResult =
+                        await _mediaService.UploadAndSaveMediaAsync(
+                            targetId: form.InspectionFormId,
+                            targetType: MediaTargetTypes.Inspection.ToString(),
+                            folderName: $"inspection-forms/{form.InspectionFormId}",
+                            files: request.Images,
+                            cancellationToken: ct);
 
                     if (!mediaResult.IsSuccess)
                     {
@@ -240,12 +259,30 @@ namespace HomeCycle.Application.Services.Inspections
                     return Result<InspectionFormResponseDto>.Fail(InspectionErrors.RevisionMismatch);
                 }
 
-                form.OperatingStatus = request.OperatingStatus?.ToString();
-                form.AppearanceStatus = request.AppearanceStatus?.ToString();
-                form.PartsStatus = request.PartsStatus?.ToString();
-                form.MatchStatus = request.MatchStatus?.ToString();
-                form.InspectorNotes = string.IsNullOrWhiteSpace(request.InspectorNotes) ? null : request.InspectorNotes.Trim();
-                form.Conclusion = request.Conclusion?.ToString();
+                form.OperatingStatus = request.OperatingStatus.HasValue
+                    ? (int?)request.OperatingStatus.Value
+                    : null;
+
+                form.AppearanceStatus = request.AppearanceStatus.HasValue
+                    ? (int?)request.AppearanceStatus.Value
+                    : null;
+
+                form.PartsStatus = request.PartsStatus.HasValue
+                    ? (int?)request.PartsStatus.Value
+                    : null;
+
+                form.MatchStatus = request.MatchStatus.HasValue
+                    ? (int?)request.MatchStatus.Value
+                    : null;
+
+                form.InspectorNotes = string.IsNullOrWhiteSpace(request.InspectorNotes)
+                    ? null
+                    : request.InspectorNotes.Trim();
+
+                form.Conclusion = request.Conclusion.HasValue
+                    ? (int?)request.Conclusion.Value
+                    : null;
+
                 form.SuggestedPrice = request.Conclusion == InspectionConclusion.PriceAdjustment ? request.SuggestedPrice : null;
 
                 form.Revision++;
@@ -259,7 +296,13 @@ namespace HomeCycle.Application.Services.Inspections
 
                     if (request.Images?.Any(x => x.Length > 0) == true)
                     {
-                        var replaceResult = await _mediaService.ReplaceMediaAsync(form.InspectionFormId, InspectionMediaTargetType, InspectionMediaFolder, request.Images, ct);
+                        var replaceResult =
+                            await _mediaService.ReplaceMediaAsync(
+                                targetId: form.InspectionFormId,
+                                targetType: MediaTargetTypes.Inspection.ToString(),
+                                folderName: $"inspection-forms/{form.InspectionFormId}",
+                                files: request.Images,
+                                cancellationToken: ct);
 
                         if (!replaceResult.IsSuccess)
                         {
@@ -269,7 +312,11 @@ namespace HomeCycle.Application.Services.Inspections
                     }
                     else
                     {
-                        deleteResult = await _mediaService.DeleteByTargetAsync(form.InspectionFormId, InspectionMediaTargetType, ct);
+                        deleteResult =
+                            await _mediaService.DeleteByTargetAsync(
+                                form.InspectionFormId,
+                                MediaTargetTypes.Inspection.ToString(),
+                                ct);
 
                         if (!deleteResult.IsSuccess)
                         {
@@ -335,7 +382,9 @@ namespace HomeCycle.Application.Services.Inspections
                     return Result<InspectionFormResponseDto>.Fail(InspectionErrors.Incomplete);
                 }
 
-                var conclusion = ParseEnum<InspectionConclusion>(form.Conclusion);
+                var conclusion = form.Conclusion.HasValue
+                    ? (InspectionConclusion?)form.Conclusion.Value
+                    : null;
 
                 if (conclusion == InspectionConclusion.PriceAdjustment)
                 {
@@ -579,9 +628,9 @@ namespace HomeCycle.Application.Services.Inspections
                         InspectionErrors.AppointmentNotInProgress);
                 }
 
-                var conclusion =
-                    ParseEnum<InspectionConclusion>(
-                        form.Conclusion);
+                var conclusion = form.Conclusion.HasValue
+                    ? (InspectionConclusion?)form.Conclusion.Value
+                    : null;
 
                 if (!conclusion.HasValue)
                 {
@@ -768,13 +817,13 @@ namespace HomeCycle.Application.Services.Inspections
                     return Result<InspectionFormResponseDto>.Fail(InspectionErrors.AcceptedRequired);
                 }
 
-                if (ParseEnum<InspectionConclusion>(form.Conclusion) == InspectionConclusion.Failed)
+                if (form.Conclusion == (int)InspectionConclusion.Failed)
                 {
                     await _unitOfWork.RollbackTransactionAsync(ct);
                     return Result<InspectionFormResponseDto>.Fail(InspectionErrors.FailedCannotCollect);
                 }
 
-                if (!string.IsNullOrWhiteSpace(form.CollectAction))
+                if (form.CollectAction.HasValue)
                 {
                     await _unitOfWork.RollbackTransactionAsync(ct);
                     return Result<InspectionFormResponseDto>.Fail(InspectionErrors.CollectActionAlreadySelected);
@@ -808,7 +857,7 @@ namespace HomeCycle.Application.Services.Inspections
                     return Result<InspectionFormResponseDto>.Fail(OrderErrors.InvalidStatus);
                 }
 
-                form.CollectAction = InspectionCollectAction.CollectNow.ToString();
+                form.CollectAction = (int)InspectionCollectAction.CollectNow;
                 form.UpdatedAt = DateTime.UtcNow;
 
                 await _inspectionFormRepo.UpdateAsync(form, ct);
@@ -876,7 +925,11 @@ namespace HomeCycle.Application.Services.Inspections
             var isBuyer = agreement.BuyerId == currentUserId;
             var isSeller = agreement.SellerId == currentUserId;
 
-            var mediaResult = await _mediaService.GetByTargetsAsync(new[] { form.InspectionFormId }, InspectionMediaTargetType, ct);
+            var mediaResult =
+                await _mediaService.GetByTargetsAsync(
+                    new[] { form.InspectionFormId },
+                    MediaTargetTypes.Inspection.ToString(),
+                    ct);
 
             IReadOnlyList<MediaResponse> images = Array.Empty<MediaResponse>();
 
@@ -890,8 +943,13 @@ namespace HomeCycle.Application.Services.Inspections
             var hasActiveDispute = await _disputeRepo.ExistsActiveAsync(DisputeTargetType.Order, order.OrderId, ct);
 
             var status = (InspectionStatus)form.InspectionStatus;
-            var conclusion = ParseEnum<InspectionConclusion>(form.Conclusion);
-            var collectAction = ParseEnum<InspectionCollectAction>(form.CollectAction);
+            InspectionConclusion? conclusion = form.Conclusion.HasValue
+                ? (InspectionConclusion?)form.Conclusion.Value
+                : null;
+
+            InspectionCollectAction? collectAction = form.CollectAction.HasValue
+                ? (InspectionCollectAction?)form.CollectAction.Value
+                : null;
 
             return new InspectionFormResponseDto
             {
@@ -906,10 +964,21 @@ namespace HomeCycle.Application.Services.Inspections
 
                 InspectionTime = form.InspectionTime,
 
-                OperatingStatus = ParseEnum<InspectionOperatingStatus>(form.OperatingStatus),
-                AppearanceStatus = ParseEnum<InspectionAppearanceStatus>(form.AppearanceStatus),
-                PartsStatus = ParseEnum<InspectionPartsStatus>(form.PartsStatus),
-                MatchStatus = ParseEnum<InspectionMatchStatus>(form.MatchStatus),
+                OperatingStatus = form.OperatingStatus.HasValue
+                    ? (InspectionOperatingStatus?)form.OperatingStatus.Value
+                    : null,
+
+                AppearanceStatus = form.AppearanceStatus.HasValue
+                    ? (InspectionAppearanceStatus?)form.AppearanceStatus.Value
+                    : null,
+
+                PartsStatus = form.PartsStatus.HasValue
+                    ? (InspectionPartsStatus?)form.PartsStatus.Value
+                    : null,
+
+                MatchStatus = form.MatchStatus.HasValue
+                    ? (InspectionMatchStatus?)form.MatchStatus.Value
+                    : null,
 
                 InspectorNotes = form.InspectorNotes,
                 Conclusion = conclusion,
@@ -966,18 +1035,13 @@ namespace HomeCycle.Application.Services.Inspections
 
         private static bool IsComplete(inspection_form form)
         {
-            return !string.IsNullOrWhiteSpace(form.OperatingStatus) &&
-                   !string.IsNullOrWhiteSpace(form.AppearanceStatus) &&
-                   !string.IsNullOrWhiteSpace(form.PartsStatus) &&
-                   !string.IsNullOrWhiteSpace(form.MatchStatus) &&
-                   !string.IsNullOrWhiteSpace(form.Conclusion);
+            return form.OperatingStatus.HasValue &&
+                   form.AppearanceStatus.HasValue &&
+                   form.PartsStatus.HasValue &&
+                   form.MatchStatus.HasValue &&
+                   form.Conclusion.HasValue;
         }
 
-
-        private static TEnum? ParseEnum<TEnum>(string? value) where TEnum : struct, Enum
-        {
-            return Enum.TryParse<TEnum>(value, true, out var parsed) ? parsed : null;
-        }
 
         #endregion
 

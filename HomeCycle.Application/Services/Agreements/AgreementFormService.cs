@@ -5,8 +5,10 @@ using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Requests.Agreements;
 using HomeCycle.Application.DTOs.Requests.GHN;
 using HomeCycle.Application.DTOs.Responses.Agreements;
+using HomeCycle.Application.DTOs.Responses.Conversations;
 using HomeCycle.Application.DTOs.Responses.GHN;
 using HomeCycle.Application.DTOs.Responses.Messages;
+using HomeCycle.Application.DTOs.Responses.Notifications;
 using HomeCycle.Application.Interfaces.Externals;
 using HomeCycle.Application.Interfaces.Generics;
 using HomeCycle.Application.Interfaces.Repositories.Agreements;
@@ -14,6 +16,7 @@ using HomeCycle.Application.Interfaces.Repositories.Offers;
 using HomeCycle.Application.Interfaces.Repositories.Posts;
 using HomeCycle.Application.Interfaces.Repositories.Products;
 using HomeCycle.Application.Interfaces.Services.Agreements;
+using HomeCycle.Application.Interfaces.Services.Notifications;
 using HomeCycle.Application.Interfaces.Services.Posts;
 using HomeCycle.Domain.Entities;
 using HomeCycle.Domain.Enums;
@@ -33,6 +36,7 @@ namespace HomeCycle.Application.Services.Agreements
         private readonly IAgreementFormRepository _agreementRepo;
         private readonly INegotiationRepository _negotiationRepo;
         private readonly IMessageRepository _messageRepo;
+        private readonly IConversationRepository _conversationRepo;
         private readonly IChatRealtimePublisher _chatRealtimePublisher;
         private readonly IMediaService _mediaService;
         private readonly IGhnService _ghnService;
@@ -41,6 +45,7 @@ namespace HomeCycle.Application.Services.Agreements
         private readonly IPostRepository _postRepo;
         private readonly IOfferRepository _offerRepo;
         private readonly IProductRepository _productRepo;
+        private readonly INotificationService _notificationService;
         private readonly IValidator<CreateAgreementFormRequest> _createValidator;
         private readonly IValidator<UpdateAgreementFormRequest> _updateValidator;
         private readonly IValidator<CalculateGhnFeeRequest> _shippingFeeValidator;
@@ -53,6 +58,7 @@ namespace HomeCycle.Application.Services.Agreements
             IAgreementFormRepository agreementRepo,
             INegotiationRepository negotiationRepo,
             IMessageRepository messageRepo,
+            IConversationRepository conversationRepo,
             IChatRealtimePublisher chatRealtimePublisher,
             IMediaService mediaService,
             IGhnService ghnService,
@@ -61,6 +67,7 @@ namespace HomeCycle.Application.Services.Agreements
             IPostRepository postRepo,
             IOfferRepository offerRepo,
             IProductRepository productRepo,
+            INotificationService notificationService,
             IValidator<CreateAgreementFormRequest> createValidator,
             IValidator<UpdateAgreementFormRequest> updateValidator,
             IValidator<CalculateGhnFeeRequest> shippingFeeValidator,
@@ -71,6 +78,7 @@ namespace HomeCycle.Application.Services.Agreements
             _agreementRepo = agreementRepo;
             _negotiationRepo = negotiationRepo;
             _messageRepo = messageRepo;
+            _conversationRepo = conversationRepo;
             _chatRealtimePublisher = chatRealtimePublisher;
             _mediaService = mediaService;
             _ghnService = ghnService;
@@ -79,6 +87,7 @@ namespace HomeCycle.Application.Services.Agreements
             _postRepo = postRepo;
             _offerRepo = offerRepo;
             _productRepo = productRepo;
+            _notificationService = notificationService;
             _createValidator = createValidator;
             _updateValidator = updateValidator;
             _shippingFeeValidator = shippingFeeValidator;
@@ -152,11 +161,11 @@ namespace HomeCycle.Application.Services.Agreements
                     return Result<Guid>.Fail(feeResult.Error!);
             }
 
-            await _unitOfWork.BeginTransactionAsync();
+            await _unitOfWork.BeginTransactionAsync(cancellationToken);
 
             try
             {
-                var negotiation = await _negotiationRepo.GetByIdAsync(request.NegotiationId, cancellationToken);
+                var negotiation = await _negotiationRepo.GetByIdForUpdateAsync(request.NegotiationId, cancellationToken);
                 if (negotiation == null)
                     return Result<Guid>.Fail(new Error("Negotiation.NotFound", "Không tìm thấy cuộc thương lượng."));
 
@@ -179,6 +188,9 @@ namespace HomeCycle.Application.Services.Agreements
                 var snapshotResult = await BuildProductSnapshotAsync(post.PostId, cancellationToken);
                 if (!snapshotResult.IsSuccess)
                     return Result<Guid>.Fail(snapshotResult.Error!);
+
+                var now = DateTime.UtcNow;
+                var conversation = await GetOrCreateConversationAsync(negotiation, now, cancellationToken);
 
                 var newAgreement = new agreement_form
                 {
@@ -207,12 +219,10 @@ namespace HomeCycle.Application.Services.Agreements
 
                 //negotiation.NegotiationStatus = 1;
 
-                await _agreementRepo.AddAsync(newAgreement, cancellationToken);
-                await _negotiationRepo.UpdateAsync(negotiation, cancellationToken);
-
                 var agreementMessage = new message
                 {
                     MessageId = Guid.NewGuid(),
+                    ConversationId = conversation.ConversationId,
                     NegotiationId = request.NegotiationId,
                     SenderId = negotiation.SellerId,        // người tạo = seller -> hiện bên phải
                     MessageType = MessageType.Agreement,
@@ -221,20 +231,31 @@ namespace HomeCycle.Application.Services.Agreements
                     CreatedAt = DateTime.UtcNow,
                     UpdatedAt = DateTime.UtcNow
                 };
-                await _messageRepo.AddAsync(agreementMessage, cancellationToken);
 
+                negotiation.LastMessageAt = now;
+
+                await _agreementRepo.AddAsync(newAgreement, cancellationToken);
+                await _negotiationRepo.UpdateAsync(negotiation, cancellationToken);
+                await _messageRepo.AddAsync(agreementMessage, cancellationToken);
+                await _conversationRepo.UpdateLastActivityAsync(conversation.ConversationId, now, cancellationToken);
 
                 await _unitOfWork.SaveChangesAsync();
                 await _unitOfWork.CommitTransactionAsync();
 
                 var response = _mapper.Map<MessageResponse>(agreementMessage);
-                await PublishMessageCreatedSafelyAsync(request.NegotiationId, response);
+                await PublishChatActivitySafelyAsync(negotiation, response);
+                await SendAgreementNotificationSafelyAsync(
+                    negotiation.BuyerId,
+                    "Có thỏa thuận mới",
+                    "Người bán vừa tạo thỏa thuận mua bán. Vui lòng kiểm tra và xác nhận.",
+                    newAgreement.AgreementId,
+                    cancellationToken);
 
                 return Result<Guid>.Success(newAgreement.AgreementId);
             }
             catch (Exception)
             {
-                await _unitOfWork.RollbackTransactionAsync();
+                await _unitOfWork.RollbackTransactionAsync(cancellationToken);
                 throw;
             }
         }
@@ -289,160 +310,289 @@ namespace HomeCycle.Application.Services.Agreements
                 return Result<AgreementActionResponse>.Fail(new Error("Validation.InvalidRequest", errorMessage));
             }
 
-            var agreement = await _agreementRepo.GetByIdAsync(agreementId, cancellationToken);
-            if (agreement == null)
+            var agreementSnapshot = await _agreementRepo.GetByIdAsync(agreementId, cancellationToken);
+            if (agreementSnapshot == null)
                 return Result<AgreementActionResponse>.Fail(new Error("Agreement.NotFound", "Không tìm thấy thỏa thuận."));
 
-            bool isSeller = agreement.SellerId == currentUserId;
-            bool isBuyer = agreement.BuyerId == currentUserId;
+            bool isSeller = agreementSnapshot.SellerId == currentUserId;
+            bool isBuyer = agreementSnapshot.BuyerId == currentUserId;
             if (!isSeller && !isBuyer)
                 return Result<AgreementActionResponse>.Fail(new Error("Auth.Forbidden", "Bạn không có quyền cập nhật thỏa thuận này."));
 
-            if (agreement.AgreementStatus != (int)AgreementStatus.Pending)
+            if (agreementSnapshot.AgreementStatus != (int)AgreementStatus.Pending)
+            {
                 return Result<AgreementActionResponse>.Fail(new Error(
                     "Agreement.InvalidStatus",
                     "Thỏa thuận đã được cả hai bên chốt. Vui lòng yêu cầu mở lại (Request Edit) trước khi chỉnh sửa."));
+            }
 
-            // Giao hàng qua GHN: server tự gọi lại API tính phí để con số trong hợp đồng luôn chính xác
             if (request.AgreementDetails?.DeliveryMethod == DeliveryMethod.GhnDelivery)
             {
-                var feeResult = await ComputeShippingFeeAsync(request.AgreementDetails, agreement.PostId, cancellationToken);
+                var feeResult = await ComputeShippingFeeAsync(request.AgreementDetails, agreementSnapshot.PostId, cancellationToken);
                 if (!feeResult.IsSuccess)
                     return Result<AgreementActionResponse>.Fail(feeResult.Error!);
             }
 
-            //  Đọc Revision cũ từ JSONb và tự tăng
-            var currentRevision = 1;
-            if (!string.IsNullOrWhiteSpace(agreement.AgreementDetailsJsonb))
+            await _unitOfWork.BeginTransactionAsync(cancellationToken);
+
+            try
             {
-                var currentDetails = JsonSerializer.Deserialize<AgreementDetailsDto>(agreement.AgreementDetailsJsonb);
-                if (currentDetails != null)
+                var agreement = await _agreementRepo.GetByIdForUpdateAsync(agreementId, cancellationToken);
+                if (agreement == null)
                 {
-                    currentRevision = currentDetails.Revision;
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<AgreementActionResponse>.Fail(new Error("Agreement.NotFound", "Không tìm thấy thỏa thuận."));
                 }
-            }
 
-            if (request.AgreementDetails != null)
-            {
-                request.AgreementDetails = new AgreementDetailsDto
+                isSeller = agreement.SellerId == currentUserId;
+                isBuyer = agreement.BuyerId == currentUserId;
+                if (!isSeller && !isBuyer)
                 {
-                    Revision = currentRevision + 1,
-                    Notes = request.AgreementDetails.Notes,
-                    InspectionDate = request.AgreementDetails.InspectionDate,
-                    InspectionAddress = request.AgreementDetails.InspectionAddress,
-                    CollectionDate = request.AgreementDetails.CollectionDate,
-                    PickupAddress = request.AgreementDetails.PickupAddress,
-                    DeliveryAddress = request.AgreementDetails.DeliveryAddress,
-                    DeliveryMethod = request.AgreementDetails.DeliveryMethod,
-                    GhnInfo = request.AgreementDetails.GhnInfo,
-                    CodValue = request.AgreementDetails.CodValue,
-                    EstimatedShippingFee = request.AgreementDetails.EstimatedShippingFee
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<AgreementActionResponse>.Fail(new Error("Auth.Forbidden", "Bạn không có quyền cập nhật thỏa thuận này."));
+                }
+
+                if (agreement.AgreementStatus != (int)AgreementStatus.Pending)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<AgreementActionResponse>.Fail(new Error(
+                        "Agreement.InvalidStatus",
+                        "Thỏa thuận đã được cả hai bên chốt. Vui lòng yêu cầu mở lại (Request Edit) trước khi chỉnh sửa."));
+                }
+
+                var currentRevision = 1;
+                if (!string.IsNullOrWhiteSpace(agreement.AgreementDetailsJsonb))
+                {
+                    var currentDetails = JsonSerializer.Deserialize<AgreementDetailsDto>(agreement.AgreementDetailsJsonb);
+                    if (currentDetails != null)
+                        currentRevision = currentDetails.Revision;
+                }
+
+                if (request.AgreementDetails != null)
+                {
+                    request.AgreementDetails = new AgreementDetailsDto
+                    {
+                        Revision = currentRevision + 1,
+                        Notes = request.AgreementDetails.Notes,
+                        InspectionDate = request.AgreementDetails.InspectionDate,
+                        InspectionAddress = request.AgreementDetails.InspectionAddress,
+                        CollectionDate = request.AgreementDetails.CollectionDate,
+                        PickupAddress = request.AgreementDetails.PickupAddress,
+                        DeliveryAddress = request.AgreementDetails.DeliveryAddress,
+                        DeliveryMethod = request.AgreementDetails.DeliveryMethod,
+                        GhnInfo = request.AgreementDetails.GhnInfo,
+                        CodValue = request.AgreementDetails.CodValue,
+                        EstimatedShippingFee = request.AgreementDetails.EstimatedShippingFee
+                    };
+                }
+
+                agreement.AgreementType = (int)request.AgreementType;
+                agreement.PaymentType = (int)request.PaymentType;
+                agreement.AgreementDetailsJsonb = JsonSerializer.Serialize(request.AgreementDetails);
+
+                var now = DateTime.UtcNow;
+                if (isSeller)
+                {
+                    agreement.SellerConfirmedAt = now;
+                    agreement.BuyerConfirmedAt = null;
+                }
+                else
+                {
+                    agreement.BuyerConfirmedAt = now;
+                    agreement.SellerConfirmedAt = null;
+                }
+
+                var negotiation = await _negotiationRepo.GetByIdForUpdateAsync(agreement.NegotiationId, cancellationToken);
+                if (negotiation == null)
+                    throw new InvalidOperationException("Không tìm thấy cuộc thương lượng của thỏa thuận.");
+
+                var conversation = await GetOrCreateConversationAsync(negotiation, now, cancellationToken);
+                var actorRole = isSeller ? "Người bán" : "Người mua";
+                var agreementMessage = new message
+                {
+                    MessageId = Guid.NewGuid(),
+                    NegotiationId = negotiation.NegotiationId,
+                    ConversationId = conversation.ConversationId,
+                    SenderId = currentUserId,
+                    MessageType = MessageType.Agreement,
+                    MessageContent = $"{actorRole} đã cập nhật thỏa thuận. Bên còn lại cần kiểm tra và xác nhận lại.",
+                    IsRead = false,
+                    CreatedAt = now,
+                    UpdatedAt = now
                 };
+
+                negotiation.LastMessageAt = now;
+
+                await _agreementRepo.UpdateAsync(agreement, cancellationToken);
+                await _negotiationRepo.UpdateAsync(negotiation, cancellationToken);
+                await _messageRepo.AddAsync(agreementMessage, cancellationToken);
+                await _conversationRepo.UpdateLastActivityAsync(conversation.ConversationId, now, cancellationToken);
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+                await _unitOfWork.CommitTransactionAsync(cancellationToken);
+
+                await PublishChatActivitySafelyAsync(negotiation, _mapper.Map<MessageResponse>(agreementMessage));
+                var updateRecipientId = isSeller ? agreement.BuyerId : agreement.SellerId;
+                await SendAgreementNotificationSafelyAsync(
+                    updateRecipientId,
+                    "Thỏa thuận vừa được cập nhật",
+                    $"{actorRole} đã cập nhật thỏa thuận. Vui lòng kiểm tra và xác nhận lại nội dung mới.",
+                    agreement.AgreementId,
+                    cancellationToken);
+
+
+                return Result<AgreementActionResponse>.Success(new AgreementActionResponse
+                {
+                    Message = "Cập nhật thỏa thuận thành công. Bên còn lại cần xác nhận lại nội dung mới.",
+                    AgreementId = agreement.AgreementId,
+                    AgreementStatus = (AgreementStatus)agreement.AgreementStatus,
+                    SellerConfirmed = agreement.SellerConfirmedAt != null,
+                    BuyerConfirmed = agreement.BuyerConfirmedAt != null,
+                    SellerConfirmedAt = agreement.SellerConfirmedAt,
+                    BuyerConfirmedAt = agreement.BuyerConfirmedAt
+                });
             }
-
-            agreement.AgreementType = (int)request.AgreementType;
-            agreement.PaymentType = (int)request.PaymentType;
-            agreement.AgreementDetailsJsonb = JsonSerializer.Serialize(request.AgreementDetails);
-
-
-            var now = DateTime.UtcNow;
-            if (isSeller)
+            catch
             {
-                agreement.SellerConfirmedAt = now;
-                agreement.BuyerConfirmedAt = null;
+                await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                throw;
             }
-            else 
-            {
-                agreement.BuyerConfirmedAt = now;
-                agreement.SellerConfirmedAt = null;
-            }
-
-            await _agreementRepo.UpdateAsync(agreement, cancellationToken);
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
-
-            return Result<AgreementActionResponse>.Success(new AgreementActionResponse
-            {
-                Message = "Cập nhật thỏa thuận thành công. Bên còn lại cần xác nhận lại nội dung mới.",
-                AgreementId = agreement.AgreementId,
-                AgreementStatus = (AgreementStatus)agreement.AgreementStatus,
-                SellerConfirmed = agreement.SellerConfirmedAt != null,
-                BuyerConfirmed = agreement.BuyerConfirmedAt != null,
-                SellerConfirmedAt = agreement.SellerConfirmedAt,
-                BuyerConfirmedAt = agreement.BuyerConfirmedAt
-            });
         }
 
 
         public async Task<Result<AgreementActionResponse>> AcceptAgreementAsync(Guid agreementId, Guid currentUserId, int expectedRevision, CancellationToken cancellationToken = default)
         {
             var validationResult = await _acceptValidator.ValidateAsync(
-                new AcceptAgreementRequest { ExpectedRevision = expectedRevision }, cancellationToken);
+                new AcceptAgreementRequest { ExpectedRevision = expectedRevision },
+                cancellationToken);
+
             if (!validationResult.IsValid)
             {
                 var errorMessage = string.Join(" | ", validationResult.Errors.Select(e => e.ErrorMessage));
                 return Result<AgreementActionResponse>.Fail(new Error("Validation.InvalidRequest", errorMessage));
             }
-            // 1. Lấy dữ liệu
-            var agreement = await _agreementRepo.GetByIdAsync(agreementId, cancellationToken);
-            if (agreement == null)
-                return Result<AgreementActionResponse>.Fail(new Error("Agreement.NotFound", "Không tìm thấy thỏa thuận."));
 
-            // 2. Phân quyền: cả Seller và Buyer đều có thể tự accept phần của mình
-            bool isSeller = agreement.SellerId == currentUserId;
-            bool isBuyer = agreement.BuyerId == currentUserId;
-            if (!isSeller && !isBuyer)
-                return Result<AgreementActionResponse>.Fail(new Error("Auth.Forbidden", "Bạn không có quyền chấp nhận thỏa thuận này."));
+            await _unitOfWork.BeginTransactionAsync(cancellationToken);
 
-            // 3. State Machine: Chỉ được Accept khi đang Pending
-            if (agreement.AgreementStatus != (int)AgreementStatus.Pending)
-                return Result<AgreementActionResponse>.Fail(new Error("Agreement.InvalidStatus", "Thỏa thuận không ở trạng thái chờ xác nhận."));
-
-            // 4. Không cho accept lặp lại nếu bên đó đã confirm rồi (idempotent - tránh nhầm lẫn ở FE)
-            if (isSeller && agreement.SellerConfirmedAt != null)
-                return Result<AgreementActionResponse>.Fail(new Error("Agreement.AlreadyConfirmed", "Bạn đã xác nhận thỏa thuận này rồi."));
-            if (isBuyer && agreement.BuyerConfirmedAt != null)
-                return Result<AgreementActionResponse>.Fail(new Error("Agreement.AlreadyConfirmed", "Bạn đã xác nhận thỏa thuận này rồi."));
-
-            // 4.5. Chặn accept lệch phiên bản: bên kia có thể vừa sửa nội dung (UpdateAgreementAsync tăng Revision)
-            // ngay trước khi request Accept này tới server -> không cho accept "mù" vào nội dung họ chưa từng thấy.
-            var currentDetails = string.IsNullOrWhiteSpace(agreement.AgreementDetailsJsonb)
-                ? null
-                : JsonSerializer.Deserialize<AgreementDetailsDto>(agreement.AgreementDetailsJsonb);
-            var actualRevision = currentDetails?.Revision ?? 1;
-
-            if (actualRevision != expectedRevision)
-                return Result<AgreementActionResponse>.Fail(new Error(
-                    "Agreement.RevisionMismatch",
-                    "Nội dung thỏa thuận vừa được cập nhật. Vui lòng tải lại và xem nội dung mới nhất trước khi xác nhận."));
-
-            // 5. Set confirm cho đúng phần của người gọi (không đụng vào phần bên kia)
-            var now = DateTime.UtcNow;
-            if (isSeller)
-                agreement.SellerConfirmedAt = now;
-            else
-                agreement.BuyerConfirmedAt = now;
-
-            // 6. Nếu cả 2 đã confirm -> tự động chuyển sang chờ thanh toán
-            bool bothConfirmed = agreement.SellerConfirmedAt != null && agreement.BuyerConfirmedAt != null;
-            if (bothConfirmed)
-                agreement.AgreementStatus = (int)AgreementStatus.Awaiting_Payment;
-
-            // 7. Cập nhật DB (Không cần BeginTransaction vì chỉ tác động 1 bảng)
-            await _agreementRepo.UpdateAsync(agreement, cancellationToken);
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
-
-            return Result<AgreementActionResponse>.Success(new AgreementActionResponse
+            try
             {
-                Message = bothConfirmed
-                    ? "Cả hai bên đã đồng ý. Vui lòng tiến hành thanh toán."
-                    : "Bạn đã xác nhận thỏa thuận. Đang chờ bên còn lại xác nhận.",
-                AgreementId = agreement.AgreementId,
-                AgreementStatus = (AgreementStatus)agreement.AgreementStatus,
-                SellerConfirmed = agreement.SellerConfirmedAt != null,
-                BuyerConfirmed = agreement.BuyerConfirmedAt != null,
-                SellerConfirmedAt = agreement.SellerConfirmedAt,
-                BuyerConfirmedAt = agreement.BuyerConfirmedAt
-            });
+                var agreement = await _agreementRepo.GetByIdForUpdateAsync(agreementId, cancellationToken);
+                if (agreement == null)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<AgreementActionResponse>.Fail(new Error("Agreement.NotFound", "Không tìm thấy thỏa thuận."));
+                }
+
+                bool isSeller = agreement.SellerId == currentUserId;
+                bool isBuyer = agreement.BuyerId == currentUserId;
+                if (!isSeller && !isBuyer)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<AgreementActionResponse>.Fail(new Error("Auth.Forbidden", "Bạn không có quyền chấp nhận thỏa thuận này."));
+                }
+
+                if (agreement.AgreementStatus != (int)AgreementStatus.Pending)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<AgreementActionResponse>.Fail(new Error("Agreement.InvalidStatus", "Thỏa thuận không ở trạng thái chờ xác nhận."));
+                }
+
+                if ((isSeller && agreement.SellerConfirmedAt != null) || (isBuyer && agreement.BuyerConfirmedAt != null))
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<AgreementActionResponse>.Fail(new Error("Agreement.AlreadyConfirmed", "Bạn đã xác nhận thỏa thuận này rồi."));
+                }
+
+                var currentDetails = string.IsNullOrWhiteSpace(agreement.AgreementDetailsJsonb)
+                    ? null
+                    : JsonSerializer.Deserialize<AgreementDetailsDto>(agreement.AgreementDetailsJsonb);
+                var actualRevision = currentDetails?.Revision ?? 1;
+
+                if (actualRevision != expectedRevision)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<AgreementActionResponse>.Fail(new Error(
+                        "Agreement.RevisionMismatch",
+                        "Nội dung thỏa thuận vừa được cập nhật. Vui lòng tải lại và xem nội dung mới nhất trước khi xác nhận."));
+                }
+
+                var now = DateTime.UtcNow;
+                if (isSeller)
+                    agreement.SellerConfirmedAt = now;
+                else
+                    agreement.BuyerConfirmedAt = now;
+
+                bool bothConfirmed = agreement.SellerConfirmedAt != null && agreement.BuyerConfirmedAt != null;
+                if (bothConfirmed)
+                    agreement.AgreementStatus = (int)AgreementStatus.Awaiting_Payment;
+
+                var negotiation = await _negotiationRepo.GetByIdForUpdateAsync(agreement.NegotiationId, cancellationToken);
+                if (negotiation == null)
+                    throw new InvalidOperationException("Không tìm thấy cuộc thương lượng của thỏa thuận.");
+
+                var conversation = await GetOrCreateConversationAsync(negotiation, now, cancellationToken);
+                var actorRole = isSeller ? "Người bán" : "Người mua";
+                var messageContent = bothConfirmed
+                    ? "Cả hai bên đã xác nhận thỏa thuận. Người mua có thể tiến hành thanh toán."
+                    : $"{actorRole} đã xác nhận thỏa thuận. Đang chờ bên còn lại xác nhận.";
+
+                var agreementMessage = new message
+                {
+                    MessageId = Guid.NewGuid(),
+                    NegotiationId = negotiation.NegotiationId,
+                    ConversationId = conversation.ConversationId,
+                    SenderId = currentUserId,
+                    MessageType = MessageType.Agreement,
+                    MessageContent = messageContent,
+                    IsRead = false,
+                    CreatedAt = now,
+                    UpdatedAt = now
+                };
+
+                negotiation.LastMessageAt = now;
+
+                await _agreementRepo.UpdateAsync(agreement, cancellationToken);
+                await _negotiationRepo.UpdateAsync(negotiation, cancellationToken);
+                await _messageRepo.AddAsync(agreementMessage, cancellationToken);
+                await _conversationRepo.UpdateLastActivityAsync(conversation.ConversationId, now, cancellationToken);
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+                await _unitOfWork.CommitTransactionAsync(cancellationToken);
+
+                await PublishChatActivitySafelyAsync(negotiation, _mapper.Map<MessageResponse>(agreementMessage));
+                // Bên còn lại (không phải người vừa xác nhận) là người cần được báo.
+                var acceptRecipientId = isSeller ? agreement.BuyerId : agreement.SellerId;
+                var acceptTitle = bothConfirmed ? "Thỏa thuận đã được chốt" : "Thỏa thuận vừa được xác nhận";
+                var acceptMessage = bothConfirmed
+                    ? (acceptRecipientId == agreement.BuyerId
+                        ? "Cả hai bên đã đồng ý thỏa thuận. Vui lòng tiến hành thanh toán."
+                        : "Cả hai bên đã đồng ý thỏa thuận.")
+                    : $"{actorRole} đã xác nhận thỏa thuận. Đang chờ bạn xác nhận.";
+
+                await SendAgreementNotificationSafelyAsync(
+                    acceptRecipientId,
+                    acceptTitle,
+                    acceptMessage,
+                    agreement.AgreementId,
+                    cancellationToken);
+
+
+                return Result<AgreementActionResponse>.Success(new AgreementActionResponse
+                {
+                    Message = bothConfirmed
+                        ? "Cả hai bên đã đồng ý. Vui lòng tiến hành thanh toán."
+                        : "Bạn đã xác nhận thỏa thuận. Đang chờ bên còn lại xác nhận.",
+                    AgreementId = agreement.AgreementId,
+                    AgreementStatus = (AgreementStatus)agreement.AgreementStatus,
+                    SellerConfirmed = agreement.SellerConfirmedAt != null,
+                    BuyerConfirmed = agreement.BuyerConfirmedAt != null,
+                    SellerConfirmedAt = agreement.SellerConfirmedAt,
+                    BuyerConfirmedAt = agreement.BuyerConfirmedAt
+                });
+            }
+            catch
+            {
+                await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                throw;
+            }
         }
 
         public async Task<Result<AgreementActionResponse>> RequestEditAsync(Guid agreementId, Guid currentUserId, CancellationToken cancellationToken = default)
@@ -492,6 +642,158 @@ namespace HomeCycle.Application.Services.Agreements
             return Result<PagedResult<PendingAgreementListItemDto>>.Success(result);
         }
 
+
+        private async Task<conversation> GetOrCreateConversationAsync(
+            negotiation negotiation,
+            DateTime activityAt,
+            CancellationToken cancellationToken)
+        {
+            conversation? conversation = null;
+
+            if (negotiation.ConversationId.HasValue)
+            {
+                conversation = await _conversationRepo.GetByIdAsync(
+                    negotiation.ConversationId.Value,
+                    cancellationToken);
+            }
+
+            if (conversation != null)
+                return conversation;
+
+            conversation = await _conversationRepo.GetOrCreateAsync(
+                negotiation.SellerId,
+                negotiation.BuyerId,
+                activityAt,
+                cancellationToken);
+
+            negotiation.ConversationId = conversation.ConversationId;
+            return conversation;
+        }
+
+        private async Task SendAgreementNotificationSafelyAsync(
+            Guid recipientId,
+            string title,
+            string message,
+            Guid agreementId,
+            CancellationToken cancellationToken)
+        {
+            try
+            {
+                var notification = await _notificationService.AddPendingAsync(
+                    new CreateNotificationCommand(
+                        recipientId,
+                        title,
+                        message,
+                        NotificationTargetType.Agreement,
+                        agreementId),
+                    cancellationToken);
+
+                await _notificationService.PublishCreatedSafelyAsync(notification);
+            }
+            catch (Exception exception)
+            {
+                _logger.LogWarning(
+                    exception,
+                    "Không thể tạo/phát notification cho AgreementId {AgreementId}, UserId {RecipientId}.",
+                    agreementId,
+                    recipientId);
+            }
+        }
+
+        private async Task PublishChatActivitySafelyAsync(
+            negotiation negotiation,
+            MessageResponse response)
+        {
+            await PublishMessageCreatedSafelyAsync(
+                negotiation.NegotiationId,
+                response);
+
+            if (!negotiation.ConversationId.HasValue)
+                return;
+
+            await PublishConversationMessageCreatedSafelyAsync(
+                negotiation.ConversationId.Value,
+                response);
+
+            await PublishConversationUpdatedSafelyAsync(
+                negotiation,
+                response);
+        }
+
+        private async Task PublishConversationMessageCreatedSafelyAsync(
+            Guid conversationId,
+            MessageResponse response)
+        {
+            try
+            {
+                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+                await _chatRealtimePublisher.PublishConversationMessageCreatedAsync(
+                    conversationId,
+                    response,
+                    timeout.Token);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(
+                    ex,
+                    "Không thể phát ConversationMessageCreated cho MessageId {MessageId}.",
+                    response.MessageId);
+            }
+        }
+
+        private async Task PublishConversationUpdatedSafelyAsync(
+            negotiation negotiation,
+            MessageResponse lastMessage)
+        {
+            try
+            {
+                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                var conversationId = negotiation.ConversationId!.Value;
+
+                var unreadDetails = await _messageRepo.GetUnreadCountsDetailAsync(
+                    conversationId,
+                    negotiation.SellerId,
+                    negotiation.BuyerId,
+                    timeout.Token);
+
+                var conversationUnread = unreadDetails.ToDictionary(
+                    x => x.Key,
+                    x => x.Value.TotalConversationUnread);
+
+                var negotiationUnread = unreadDetails.ToDictionary(
+                    x => x.Key,
+                    x => x.Value.UnreadByNegotiation.ToDictionary(
+                        y => y.Key,
+                        y => (int?)y.Value));
+
+                await _chatRealtimePublisher.PublishConversationUpdatedAsync(
+                    new[] { negotiation.SellerId, negotiation.BuyerId },
+                    new ConversationUpdatedResponse
+                    {
+                        ConversationId = conversationId,
+                        NegotiationId = negotiation.NegotiationId,
+                        LastSenderId = lastMessage.SenderId,
+                        LastMessagePreview = lastMessage.MessageContent ?? "[Thỏa thuận]",
+                        LastMessageType = lastMessage.MessageType,
+                        LastMessageAt = lastMessage.CreatedAt,
+                        CurrentOfferPrice = negotiation.FinalPrice ?? negotiation.Offer?.OfferPrice,
+                        CurrentOfferQuantity = negotiation.FinalQuantity ?? negotiation.Offer?.OfferQuantity ?? 0,
+                        CurrentOfferVersion = negotiation.Offer?.Version,
+                        NegotiationStatus = negotiation.NegotiationStatus ?? NegotiationStatus.Open,
+                        ConversationUnreadByUser = conversationUnread,
+                        NegotiationUnreadByUser = negotiationUnread
+                    },
+                    timeout.Token);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(
+                    ex,
+                    "Không thể phát ConversationUpdated cho NegotiationId {NegotiationId}.",
+                    negotiation.NegotiationId);
+            }
+        }
         private async Task PublishMessageCreatedSafelyAsync(Guid negotiationId, MessageResponse response)
         {
             try

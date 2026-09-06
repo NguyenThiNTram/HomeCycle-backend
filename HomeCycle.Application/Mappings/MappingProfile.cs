@@ -17,6 +17,7 @@ using HomeCycle.Application.DTOs.Responses.Auths;
 using HomeCycle.Application.DTOs.Responses.Banks;
 using HomeCycle.Application.DTOs.Responses.Brands;
 using HomeCycle.Application.DTOs.Responses.Categories;
+using HomeCycle.Application.DTOs.Responses.Disputes;
 using HomeCycle.Application.DTOs.Responses.Media;
 using HomeCycle.Application.DTOs.Responses.Messages;
 using HomeCycle.Application.DTOs.Responses.Negotiations;
@@ -568,7 +569,7 @@ namespace HomeCycle.Application.Mappings
 
             CreateMap<platform_policy, PlatformPolicySummaryResponseDto>()
                 .ForMember(dest => dest.PolicyType,
-                    opt => opt.MapFrom(src => Enum.Parse<PlatformPolicyType>(src.PolicyType, true)));
+                    opt => opt.MapFrom(src => (PlatformPolicyType)src.PolicyType));
 
             CreateMap<platform_policy, PlatformPolicyVersionListItemDto>()
                 .ForMember(dest => dest.CanRestore,
@@ -576,7 +577,7 @@ namespace HomeCycle.Application.Mappings
 
             CreateMap<platform_policy, PlatformPolicyVersionDetailDto>()
                 .ForMember(dest => dest.PolicyType,
-                    opt => opt.MapFrom(src => Enum.Parse<PlatformPolicyType>(src.PolicyType, true)))
+                    opt => opt.MapFrom(src => (PlatformPolicyType)src.PolicyType))
                 .ForMember(dest => dest.Config,
                     opt => opt.MapFrom(src =>
                         JsonSerializer.Deserialize<JsonElement>(
@@ -587,12 +588,12 @@ namespace HomeCycle.Application.Mappings
 
             CreateMap<platform_policy, PlatformPolicyResponseDto<DisputePolicyConfigDto>>()
                 .ForMember(dest => dest.PolicyType,
-                    opt => opt.MapFrom(src => Enum.Parse<PlatformPolicyType>(src.PolicyType, true)))
+                    opt => opt.MapFrom(src => (PlatformPolicyType)src.PolicyType))
                 .ForMember(dest => dest.Config, opt => opt.Ignore());
 
             CreateMap<platform_policy, PlatformPolicyResponseDto<AppointmentPolicyConfigDto>>()
                 .ForMember(dest => dest.PolicyType,
-                    opt => opt.MapFrom(src => Enum.Parse<PlatformPolicyType>(src.PolicyType, true)))
+                    opt => opt.MapFrom(src => (PlatformPolicyType)src.PolicyType))
                 .ForMember(dest => dest.Config, opt => opt.Ignore());
 
             CreateMap<DisputePolicyConfigDto, DisputePolicyConfigDto>();
@@ -654,6 +655,31 @@ namespace HomeCycle.Application.Mappings
             CreateMap<collection_appointment, CollectionAppointmentDetailDto>()
                 .ForMember(dest => dest.DeliveryMethod, opt => opt.Ignore());
 
+            CreateMap<order, OrderReturnConfirmationResponseDto>()
+                .ForMember(dest => dest.OrderStatus,
+                    opt => opt.MapFrom(src => (OrderStatus)src.OrderStatus!.Value))
+                .ForMember(dest => dest.DisputeId, opt => opt.Ignore())
+                .ForMember(dest => dest.DisputeStatus, opt => opt.Ignore())
+                .ForMember(dest => dest.RefundedAmount, opt => opt.Ignore());
+
+
+            // ==================== DISPUTE ====================
+            CreateMap<user, DisputeUserSummaryDto>();
+
+            CreateMap<dispute, DisputeDecisionResponse>()
+                .ForMember(dest => dest.Status,
+                    opt => opt.MapFrom(src => (DisputeStatus)src.DisputeStatus!.Value))
+                .ForMember(dest => dest.ResolutionOutcome,
+                    opt => opt.MapFrom(src => src.ResolutionOutcome.HasValue
+                        ? (DisputeResolutionOutcome?)src.ResolutionOutcome.Value
+                        : null))
+                .ForMember(dest => dest.ModeratorId,
+                    opt => opt.MapFrom(src => src.ModeratorId.GetValueOrDefault()))
+                .ForMember(dest => dest.ModeratorNote,
+                    opt => opt.MapFrom(src => src.ModeratorNote ?? string.Empty))
+                .ForMember(dest => dest.OrderStatus, opt => opt.Ignore())
+                .ForMember(dest => dest.RefundedAmount, opt => opt.Ignore())
+                .ForMember(dest => dest.ReturnDueAt, opt => opt.Ignore());
         }
     }
 }

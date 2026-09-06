@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using HomeCycle.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 
 namespace HomeCycle.Domain.Entities;
@@ -16,17 +17,17 @@ public class inspection_form
 
     public DateTime? InspectionTime { get; set; }
 
-    public string? OperatingStatus { get; set; }
-    public string? AppearanceStatus { get; set; }
-    public string? PartsStatus { get; set; }
-    public string? MatchStatus { get; set; }
+    public int? OperatingStatus { get; set; }
+    public int? AppearanceStatus { get; set; }
+    public int? PartsStatus { get; set; }
+    public int? MatchStatus { get; set; }
     public string? InspectorNotes { get; set; }
 
-    public string? Conclusion { get; set; }
+    public int? Conclusion { get; set; }
     public decimal? OriginalPrice { get; set; }
     public decimal? SuggestedPrice { get; set; }
 
-    public string? CollectAction { get; set; }
+    public int? CollectAction { get; set; }
 
     public int? InspectionStatus { get; set; }
     public int Revision { get; set; }

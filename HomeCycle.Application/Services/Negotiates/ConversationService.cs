@@ -433,7 +433,7 @@ namespace HomeCycle.Application.Services.Negotiates
                 MessageType.Media => "[Hình ảnh]",
                 MessageType.Offer or MessageType.CounterOffer => $"Đề nghị {message.OfferPrice:N0}đ x {message.OfferQuantity}",
                 MessageType.System => message.MessageContent ?? "[Hệ thống]",
-
+                MessageType.Agreement => message.MessageContent ?? "[Thỏa thuận]",
                 _ => "[Tin nhắn]"
             };
         }

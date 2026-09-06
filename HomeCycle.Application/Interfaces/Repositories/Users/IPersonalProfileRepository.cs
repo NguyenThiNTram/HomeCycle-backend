@@ -19,5 +19,9 @@ namespace HomeCycle.Application.Interfaces.Repositories.Users
         Task<bool> ExistsByUserIdAsync(Guid userId, CancellationToken cancellationToken = default);
 
         Task<List<personal_profile>> GetPendingVerificationAsync(string? keyword, CancellationToken cancellationToken = default);
+
+        Task<personal_profile?> GetByUserIdForUpdateAsync(
+            Guid userId,
+            CancellationToken cancellationToken = default);
     }
 }

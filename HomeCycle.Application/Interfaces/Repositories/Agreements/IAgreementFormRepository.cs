@@ -20,6 +20,6 @@ namespace HomeCycle.Application.Interfaces.Repositories.Agreements
             Guid buyerId,
             PendingAgreementSearchRequest request,
             CancellationToken cancellationToken = default);
-
+        Task<agreement_form?> GetByIdForUpdateAsync(Guid agreementId, CancellationToken cancellationToken = default);
     }
 }

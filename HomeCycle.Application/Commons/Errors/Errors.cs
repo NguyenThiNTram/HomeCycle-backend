@@ -249,20 +249,11 @@ namespace HomeCycle.Application.Commons.Errors
         public static readonly Error NotFound =
             new("DISPUTE_NOT_FOUND", "Không tìm thấy tranh chấp.");
 
-        public static readonly Error OrderNotFound =
-            new("DISPUTE_ORDER_NOT_FOUND", "Không tìm thấy đơn hàng.");
-
         public static readonly Error Forbidden =
-            new("DISPUTE_FORBIDDEN", "Bạn không có quyền thực hiện thao tác này trên đơn hàng hoặc tranh chấp.");
+            new("DISPUTE_FORBIDDEN", "Bạn không có quyền thực hiện thao tác này đối với tranh chấp này.");
 
         public static readonly Error DuplicateActiveDispute =
             new("DISPUTE_ALREADY_ACTIVE", "Đơn hàng đang có một tranh chấp chưa được xử lý.");
-
-        public static readonly Error InvalidOrderStatus =
-            new("DISPUTE_INVALID_ORDER_STATUS", "Trạng thái hiện tại của đơn hàng không cho phép tạo tranh chấp.");
-
-        public static readonly Error InvalidCompletionState =
-            new("DISPUTE_INVALID_COMPLETION_STATE", "Không xác định được thời điểm hoàn tất hoặc giao hàng của đơn hàng.");
 
         public static readonly Error MissingTarget =
             new("DISPUTE_TARGET_MISSING", "Tranh chấp không xác định được đối tượng liên quan.");
@@ -278,6 +269,30 @@ namespace HomeCycle.Application.Commons.Errors
 
         public static Error InvalidCategory(DisputeCategory category) =>
             new("DISPUTE_INVALID_CATEGORY", $"Loại tranh chấp '{category}' không phù hợp với tranh chấp đơn hàng.");
+
+        public static readonly Error CloseNotAllowed =
+            new("DISPUTE_CLOSE_NOT_ALLOWED", "Chỉ có thể đóng tranh chấp đang ở trạng thái chờ xử lý.");
+
+        public static readonly Error AlreadyUnderReview =
+            new("DISPUTE_ALREADY_UNDER_REVIEW", "Tranh chấp đã được Moderator tiếp nhận và không thể tự đóng.");
+
+        public static readonly Error ClaimNotAllowed =
+            new("DISPUTE_CLAIM_NOT_ALLOWED", "Chỉ có thể tiếp nhận tranh chấp đang ở trạng thái chờ xử lý.");
+
+        public static readonly Error AlreadyClaimed =
+            new("DISPUTE_ALREADY_CLAIMED", "Tranh chấp đã được Moderator khác tiếp nhận.");
+
+        public static readonly Error DecisionNotAllowed =
+            new("DISPUTE_DECISION_NOT_ALLOWED", "Chỉ có thể đưa ra kết luận khi tranh chấp đang được Moderator xử lý.");
+
+        public static readonly Error NotAssignedModerator =
+            new("DISPUTE_NOT_ASSIGNED_MODERATOR", "Bạn không phải Moderator đang phụ trách tranh chấp này.");
+
+        public static readonly Error ReturnVerificationNotAllowed =
+            new("DISPUTE_RETURN_VERIFICATION_NOT_ALLOWED", "Tranh chấp hiện không ở trạng thái chờ xác minh hoàn trả.");
+
+        public static Error ReturnVerificationNotDue(DateTime dueAt) =>
+            new("DISPUTE_RETURN_VERIFICATION_NOT_DUE", $"Moderator chỉ có thể xác minh hoàn trả sau thời hạn {dueAt:O}.");
     }
 
     public static class OrderErrors
@@ -310,6 +325,20 @@ namespace HomeCycle.Application.Commons.Errors
 
         public static readonly Error ActiveDisputeBlocksCancellation =
             new("Order.ActiveDisputeBlocksCancellation", "Đơn hàng đang có tranh chấp nên không thể hủy trực tiếp.");
+
+        public static readonly Error InvalidCompletionState =
+            new("Order.InvalidCompletionState", "Đơn hàng đã hoàn tất nhưng không xác định được thời điểm hoàn tất hoặc giao hàng.");
+
+        public static readonly Error NotDisputing =
+            new(
+                "Order.NotDisputing",
+                "Đơn hàng hiện không ở trạng thái tranh chấp.");
+
+        public static readonly Error ReturnConfirmationNotAllowed =
+            new("Order.ReturnConfirmationNotAllowed", "Đơn hàng hiện không ở trạng thái chờ hoàn trả.");
+
+        public static Error ReturnDeadlineExpired(DateTime dueAt) =>
+            new("Order.ReturnDeadlineExpired", $"Thời hạn xác nhận trả hàng đã kết thúc lúc {dueAt:O}.");
     }
 
     public static class PlatformPolicyErrors
@@ -498,6 +527,44 @@ namespace HomeCycle.Application.Commons.Errors
 
         public static readonly Error AlreadyRefunded =
             new("Payment.AlreadyRefunded", "Khoản thanh toán đã được hoàn toàn bộ.");
+
+        public static readonly Error OrderHeldAmountNotFound =
+            new("Payment.OrderHeldAmountNotFound", "Đơn hàng không còn khoản tiền tạm giữ có thể hoàn.");
+
+        public static readonly Error InvalidReleaseAmount =
+            new("Payment.InvalidReleaseAmount", "Số tiền tạm giữ của đơn hàng không hợp lệ để giải ngân.");
+
+        public static readonly Error ReleaseOrderNotCompleted =
+            new("Payment.ReleaseOrderNotCompleted", "Chỉ có thể giải ngân đơn hàng đã hoàn tất.");
+
+        public static readonly Error ReleaseWindowMissing =
+            new("Payment.ReleaseWindowMissing", "Đơn hàng chưa xác định thời điểm kết thúc thời hạn tranh chấp.");
+
+        public static Error ReleaseWindowNotEnded(DateTime disputeWindowEndsAt) =>
+            new("Payment.ReleaseWindowNotEnded", $"Chưa thể giải ngân trước khi thời hạn tranh chấp kết thúc lúc {disputeWindowEndsAt:O}.");
+
+        public static readonly Error ActiveDisputeBlocksRelease =
+            new("Payment.ActiveDisputeBlocksRelease", "Đơn hàng đang có tranh chấp nên chưa thể giải ngân.");
+
+        public static readonly Error ReleasePaymentNotFound =
+            new("Payment.ReleasePaymentNotFound", "Không tìm thấy giao dịch thanh toán hợp lệ để giải ngân.");
+
+        public static readonly Error ReleaseWalletNotFound =
+            new("Payment.ReleaseWalletNotFound", "Không tìm thấy ví người bán để giải ngân.");
+
+        public static readonly Error ReleaseOrderHeldAmountNotFound =
+            new("Payment.ReleaseOrderHeldAmountNotFound", "Đơn hàng không còn khoản tiền tạm giữ có thể giải ngân.");
+
+        public static readonly Error InsufficientHeldBalanceForRelease =
+            new("Payment.InsufficientHeldBalanceForRelease", "Số dư tạm giữ của người bán không đủ để giải ngân cho đơn hàng.");
+
+        public static readonly Error ReleaseFailed =
+            new("Payment.ReleaseFailed", "Không thể giải ngân khoản tiền tạm giữ của đơn hàng.");
+
+        public static readonly Error BankAccountNotVerified =
+            new(
+                "Payment.BankAccountNotVerified",
+                "Bạn cần có tài khoản ngân hàng đã xác minh trước khi thanh toán.");
     }
 
 

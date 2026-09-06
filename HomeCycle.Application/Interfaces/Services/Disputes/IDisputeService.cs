@@ -17,6 +17,10 @@ namespace HomeCycle.Application.Interfaces.Services.Disputes
                 Guid senderId,
                 CreateDisputeRequest request,
                 CancellationToken cancellationToken = default);
+        Task<Result<PagedResult<DisputeListItemResponse>>> GetForUserAsync(
+            Guid currentUserId,
+            DisputeSearchRequest request,
+            CancellationToken cancellationToken = default);
 
         Task<Result<DisputeDetailResponse>>
             GetDetailForUserAsync(
@@ -32,6 +36,35 @@ namespace HomeCycle.Application.Interfaces.Services.Disputes
         Task<Result<DisputeDetailResponse>>
             GetDetailForModeratorAsync(
                 Guid disputeId,
+                Guid moderatorId,
                 CancellationToken cancellationToken = default);
+
+        Task<Result<ClaimDisputeResponse>> ClaimForModeratorAsync(
+            Guid disputeId,
+            Guid moderatorId,
+            CancellationToken cancellationToken = default);
+
+        Task<Result<DisputeDecisionResponse>> ResolveByModeratorAsync(
+            Guid disputeId,
+            Guid moderatorId,
+            ResolveDisputeRequest request,
+            CancellationToken cancellationToken = default);
+
+        Task<Result<DisputeDecisionResponse>> RejectByModeratorAsync(
+            Guid disputeId,
+            Guid moderatorId,
+            DisputeModeratorDecisionRequest request,
+            CancellationToken cancellationToken = default);
+
+        Task<Result<CloseDisputeResponse>> CloseDisputeAsync(
+            Guid disputeId,
+            Guid currentUserId,
+            CancellationToken cancellationToken = default);
+
+        Task<Result<DisputeDecisionResponse>> VerifyReturnByModeratorAsync(
+            Guid disputeId,
+            Guid moderatorId,
+            VerifyDisputeReturnRequest request,
+            CancellationToken cancellationToken = default);
     }
 }
