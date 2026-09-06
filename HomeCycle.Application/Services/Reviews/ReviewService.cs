@@ -134,7 +134,7 @@ namespace HomeCycle.Application.Services.Reviews
                     }
                 }
 
-                await RecalculateReputationAsync(revieweeId, ct);
+                await RecalculateDisplayStarRatingAsync(revieweeId, ct);
 
                 await _unitOfWork.CommitTransactionAsync(ct);
             }
@@ -178,7 +178,7 @@ namespace HomeCycle.Application.Services.Reviews
                 await _reviewRepo.UpdateAsync(review, ct);
                 await _unitOfWork.SaveChangesAsync(ct);
 
-                await RecalculateReputationAsync(review.RevieweeId, ct);
+                await RecalculateDisplayStarRatingAsync(review.RevieweeId, ct);
 
                 await _unitOfWork.CommitTransactionAsync(ct);
             }
@@ -190,226 +190,7 @@ namespace HomeCycle.Application.Services.Reviews
 
             return Result<ReviewResponseDto>.Success(await BuildResponseAsync(review, ct));
         }
-        //public async Task<Result<ReviewResponseDto>> CreateReviewAsync(
-        //    Guid orderId,
-        //    CreateReviewRequest request,
-        //    Guid currentUserId,
-        //    CancellationToken ct = default)
-        //{
-        //    var validationResult = await _createValidator.ValidateAsync(request, ct);
-
-        //    if (!validationResult.IsValid)
-        //    {
-        //        var errorMessage = string.Join(" | ", validationResult.Errors.Select(e => e.ErrorMessage));
-        //        return Result<ReviewResponseDto>.Fail(new Error("Validation.InvalidRequest", errorMessage));
-        //    }
-
-        //    var order = await _orderRepo.GetByIdAsync(orderId, ct);
-
-        //    if (order == null)
-        //        return Result<ReviewResponseDto>.Fail(new Error("Order.NotFound", "Không tìm thấy đơn hàng."));
-
-        //    var agreement = await _agreementRepo.GetByIdAsync(order.AgreementId, ct);
-
-        //    if (agreement == null)
-        //    {
-        //        return Result<ReviewResponseDto>.Fail(
-        //            new Error(
-        //                "Agreement.NotFound",
-        //                "Không tìm thấy thỏa thuận gắn với đơn hàng."));
-        //    }
-
-        //    var isBuyer = agreement.BuyerId == currentUserId;
-        //    var isSeller = agreement.SellerId == currentUserId;
-
-        //    if (!isBuyer && !isSeller)
-        //    {
-        //        return Result<ReviewResponseDto>.Fail(
-        //            new Error(
-        //                "Auth.Forbidden",
-        //                "Bạn không thuộc phiên giao dịch này nên không thể đánh giá."));
-        //    }
-
-        //    if (order.OrderStatus != (int)OrderStatus.Completed)
-        //    {
-        //        return Result<ReviewResponseDto>.Fail(
-        //            new Error(
-        //                "Order.NotCompleted",
-        //                "Chỉ có thể đánh giá sau khi đơn hàng hoàn thành."));
-        //    }
-
-        //    var revieweeId = isBuyer
-        //        ? agreement.SellerId
-        //        : agreement.BuyerId;
-
-        //    if (await _reviewRepo.ExistsAsync(orderId, currentUserId, ct))
-        //    {
-        //        return Result<ReviewResponseDto>.Fail(
-        //            new Error(
-        //                "Review.AlreadyExists",
-        //                "Bạn đã đánh giá đơn hàng này."));
-        //    }
-
-        //    var now = DateTime.UtcNow;
-
-        //    var review = new review
-        //    {
-        //        ReviewId = Guid.NewGuid(),
-        //        OrderId = orderId,
-        //        ReviewerId = currentUserId,
-        //        RevieweeId = revieweeId,
-        //        Rating = request.Rating,
-        //        Comment = string.IsNullOrWhiteSpace(request.Comment)
-        //            ? null
-        //            : request.Comment.Trim(),
-        //        ReviewStatus = (int)ReviewStatus.Active,
-        //        CreatedAt = now,
-        //        UpdatedAt = now
-        //    };
-
-        //    await _unitOfWork.BeginTransactionAsync(ct);
-
-        //    try
-        //    {
-        //        var (personalProfile, businessProfile) =
-        //            await GetReputationProfileForUpdateAsync(revieweeId, ct);
-
-        //        if (personalProfile == null && businessProfile == null)
-        //        {
-        //            await _unitOfWork.RollbackTransactionAsync(ct);
-        //            return Result<ReviewResponseDto>.Fail(ProfileErrors.ProfileNotFound);
-        //        }
-
-        //        var reviewScoreBefore = ReputationScoreCalculator.Calculate(
-        //            await _reviewRepo.GetValidReviewsByRevieweeAsync(revieweeId, ct));
-
-        //        await _reviewRepo.AddAsync(review, ct);
-        //        await _unitOfWork.SaveChangesAsync(ct);
-
-        //        if (request.Images != null &&
-        //            request.Images.Any(file => file != null && file.Length > 0))
-        //        {
-        //            var mediaResult = await _mediaService.UploadAndSaveMediaAsync(
-        //                targetId: review.ReviewId,
-        //                targetType: ReviewMediaTargetType,
-        //                folderName: ReviewMediaFolder,
-        //                files: request.Images,
-        //                cancellationToken: ct);
-
-        //            if (!mediaResult.IsSuccess)
-        //            {
-        //                await _unitOfWork.RollbackTransactionAsync(ct);
-        //                return Result<ReviewResponseDto>.Fail(mediaResult.Error!);
-        //            }
-        //        }
-
-        //        var reviewScoreAfter = ReputationScoreCalculator.Calculate(
-        //            await _reviewRepo.GetValidReviewsByRevieweeAsync(revieweeId, ct));
-
-        //        await ApplyReviewScoreDeltaAsync(
-        //            personalProfile,
-        //            businessProfile,
-        //            reviewScoreAfter - reviewScoreBefore,
-        //            ct);
-
-        //        await _unitOfWork.CommitTransactionAsync(ct);
-        //    }
-        //    catch
-        //    {
-        //        await _unitOfWork.RollbackTransactionAsync(ct);
-        //        throw;
-        //    }
-
-        //    return Result<ReviewResponseDto>.Success(
-        //        await BuildResponseAsync(review, ct));
-        //}
-
-        //public async Task<Result<ReviewResponseDto>> UpdateReviewAsync(
-        //    Guid reviewId,
-        //    UpdateReviewRequest request,
-        //    Guid currentUserId,
-        //    CancellationToken ct = default)
-        //{
-        //    var validationResult = await _updateValidator.ValidateAsync(request, ct);
-
-        //    if (!validationResult.IsValid)
-        //    {
-        //        var errorMessage = string.Join(" | ", validationResult.Errors.Select(e => e.ErrorMessage));
-        //        return Result<ReviewResponseDto>.Fail(new Error("Validation.InvalidRequest", errorMessage));
-        //    }
-
-        //    var review = await _reviewRepo.GetByIdAsync(reviewId, ct);
-
-        //    if (review == null)
-        //    {
-        //        return Result<ReviewResponseDto>.Fail(
-        //            new Error(
-        //                "Review.NotFound",
-        //                "Không tìm thấy đánh giá."));
-        //    }
-
-        //    if (review.ReviewerId != currentUserId)
-        //    {
-        //        return Result<ReviewResponseDto>.Fail(
-        //            new Error(
-        //                "Auth.Forbidden",
-        //                "Bạn chỉ có thể chỉnh sửa đánh giá của chính mình."));
-        //    }
-
-        //    if (DateTime.UtcNow > review.CreatedAt.Add(EditWindow))
-        //    {
-        //        return Result<ReviewResponseDto>.Fail(
-        //            new Error(
-        //                "Review.EditWindowExpired",
-        //                "Đánh giá chỉ có thể chỉnh sửa trong 3 ngày kể từ khi gửi."));
-        //    }
-
-        //    await _unitOfWork.BeginTransactionAsync(ct);
-
-        //    try
-        //    {
-        //        var (personalProfile, businessProfile) =
-        //            await GetReputationProfileForUpdateAsync(review.RevieweeId, ct);
-
-        //        if (personalProfile == null && businessProfile == null)
-        //        {
-        //            await _unitOfWork.RollbackTransactionAsync(ct);
-        //            return Result<ReviewResponseDto>.Fail(ProfileErrors.ProfileNotFound);
-        //        }
-
-        //        var reviewScoreBefore = ReputationScoreCalculator.Calculate(
-        //            await _reviewRepo.GetValidReviewsByRevieweeAsync(review.RevieweeId, ct));
-
-        //        review.Rating = request.Rating;
-        //        review.Comment = string.IsNullOrWhiteSpace(request.Comment)
-        //            ? null
-        //            : request.Comment.Trim();
-        //        review.ReviewStatus = (int)ReviewStatus.Edited;
-        //        review.UpdatedAt = DateTime.UtcNow;
-
-        //        await _reviewRepo.UpdateAsync(review, ct);
-        //        await _unitOfWork.SaveChangesAsync(ct);
-
-        //        var reviewScoreAfter = ReputationScoreCalculator.Calculate(
-        //            await _reviewRepo.GetValidReviewsByRevieweeAsync(review.RevieweeId, ct));
-
-        //        await ApplyReviewScoreDeltaAsync(
-        //            personalProfile,
-        //            businessProfile,
-        //            reviewScoreAfter - reviewScoreBefore,
-        //            ct);
-
-        //        await _unitOfWork.CommitTransactionAsync(ct);
-        //    }
-        //    catch
-        //    {
-        //        await _unitOfWork.RollbackTransactionAsync(ct);
-        //        throw;
-        //    }
-
-        //    return Result<ReviewResponseDto>.Success(
-        //        await BuildResponseAsync(review, ct));
-        //}
+        
         public async Task<Result<ReviewResponseDto>> GetByIdAsync(Guid reviewId, CancellationToken ct = default)
         {
             var review = await _reviewRepo.GetByIdAsync(reviewId, ct);
@@ -458,39 +239,74 @@ namespace HomeCycle.Application.Services.Reviews
             return Result<PagedResult<ReviewResponseDto>>.Success(paged);
         }
 
-        private async Task RecalculateReputationAsync(Guid userId, CancellationToken ct)
-        {
-            var validReviews = await _reviewRepo.GetValidReviewsByRevieweeAsync(userId, ct);
-            var newScore = ReputationScoreCalculator.CalculateReputationScore(ReputationScoreCalculator.DefaultBaseScore, 0);
-            var displayStar = ReputationScoreCalculator.CalculateDisplayStarRating(validReviews);
 
+        private async Task RecalculateDisplayStarRatingAsync(Guid userId, CancellationToken ct)
+        {
             var user = await _userRepo.GetByIdAsync(userId, ct);
+
             if (user == null)
                 return;
 
-            if (user.Role == UserRole.Business)
-            {
-                var business = await _businessProfileRepo.GetByUserIdAsync(userId, ct);
-                if (business == null)
-                    return;
+            personal_profile? personalProfile = null;
+            business_profile? businessProfile = null;
 
-                business.ReputationScore = (int)newScore;
-                business.DisplayStarRating = displayStar;
-                _businessProfileRepo.Update(business);
+            if (user.Role == UserRole.Business)
+                businessProfile = await _businessProfileRepo.GetByUserIdForUpdateAsync(userId, ct);
+            else
+                personalProfile = await _personalProfileRepo.GetByUserIdForUpdateAsync(userId, ct);
+
+            if (personalProfile == null && businessProfile == null)
+                return;
+
+            var validReviews = await _reviewRepo.GetValidReviewsByRevieweeAsync(userId, ct);
+            var displayStarRating = ReputationScoreCalculator.CalculateDisplayStarRating(validReviews);
+
+            if (businessProfile != null)
+            {
+                businessProfile.DisplayStarRating = displayStarRating;
+                _businessProfileRepo.Update(businessProfile);
             }
             else
             {
-                var personal = await _personalProfileRepo.GetByUserIdAsync(userId, ct);
-                if (personal == null)
-                    return;
-
-                personal.ReputationScore = (int)newScore;
-                personal.DisplayStarRating = displayStar;
-                await _personalProfileRepo.UpdateAsync(personal, ct);
+                personalProfile!.DisplayStarRating = displayStarRating;
+                await _personalProfileRepo.UpdateAsync(personalProfile, ct);
             }
 
             await _unitOfWork.SaveChangesAsync(ct);
         }
+        //private async Task RecalculateReputationAsync(Guid userId, CancellationToken ct)
+        //{
+        //    var validReviews = await _reviewRepo.GetValidReviewsByRevieweeAsync(userId, ct);
+        //    var newScore = ReputationScoreCalculator.CalculateReputationScore(ReputationScoreCalculator.DefaultBaseScore, 0);
+        //    var displayStar = ReputationScoreCalculator.CalculateDisplayStarRating(validReviews);
+
+        //    var user = await _userRepo.GetByIdAsync(userId, ct);
+        //    if (user == null)
+        //        return;
+
+        //    if (user.Role == UserRole.Business)
+        //    {
+        //        var business = await _businessProfileRepo.GetByUserIdAsync(userId, ct);
+        //        if (business == null)
+        //            return;
+
+        //        business.ReputationScore = (int)newScore;
+        //        business.DisplayStarRating = displayStar;
+        //        _businessProfileRepo.Update(business);
+        //    }
+        //    else
+        //    {
+        //        var personal = await _personalProfileRepo.GetByUserIdAsync(userId, ct);
+        //        if (personal == null)
+        //            return;
+
+        //        personal.ReputationScore = (int)newScore;
+        //        personal.DisplayStarRating = displayStar;
+        //        await _personalProfileRepo.UpdateAsync(personal, ct);
+        //    }
+
+        //    await _unitOfWork.SaveChangesAsync(ct);
+        //}
 
         private async Task<ReviewResponseDto> BuildResponseAsync(review review, CancellationToken ct)
         {
@@ -550,63 +366,63 @@ namespace HomeCycle.Application.Services.Reviews
                 item.CanEdit = DateTime.UtcNow <= item.CreatedAt.Add(EditWindow);
         }
 
-        private async Task<(personal_profile? Personal, business_profile? Business)> GetReputationProfileForUpdateAsync(
-            Guid userId,
-            CancellationToken ct)
-        {
-            var user = await _userRepo.GetByIdAsync(userId, ct);
+        //private async Task<(personal_profile? Personal, business_profile? Business)> GetReputationProfileForUpdateAsync(
+        //    Guid userId,
+        //    CancellationToken ct)
+        //{
+        //    var user = await _userRepo.GetByIdAsync(userId, ct);
 
-            if (user == null)
-                return (null, null);
+        //    if (user == null)
+        //        return (null, null);
 
-            if (user.Role == UserRole.Business)
-            {
-                var business = await _businessProfileRepo
-                    .GetByUserIdForUpdateAsync(userId, ct);
+        //    if (user.Role == UserRole.Business)
+        //    {
+        //        var business = await _businessProfileRepo
+        //            .GetByUserIdForUpdateAsync(userId, ct);
 
-                return (null, business);
-            }
+        //        return (null, business);
+        //    }
 
-            if (user.Role == UserRole.Personal)
-            {
-                var personal = await _personalProfileRepo
-                    .GetByUserIdForUpdateAsync(userId, ct);
+        //    if (user.Role == UserRole.Personal)
+        //    {
+        //        var personal = await _personalProfileRepo
+        //            .GetByUserIdForUpdateAsync(userId, ct);
 
-                return (personal, null);
-            }
+        //        return (personal, null);
+        //    }
 
-            return (null, null);
-        }
+        //    return (null, null);
+        //}
 
-        private async Task ApplyReviewScoreDeltaAsync(
-            personal_profile? personalProfile,
-            business_profile? businessProfile,
-            int pointDelta,
-            CancellationToken ct)
-        {
-            if (pointDelta == 0)
-                return;
+        //private async Task ApplyReviewScoreDeltaAsync(
+        //    personal_profile? personalProfile,
+        //    business_profile? businessProfile,
+        //    int pointDelta,
+        //    CancellationToken ct)
+        //{
+        //    if (pointDelta == 0)
+        //        return;
 
-            if (businessProfile != null)
-            {
-                businessProfile.ReputationScore =
-                    ReputationScoreCalculator.ApplyDelta(
-                        businessProfile.ReputationScore,
-                        pointDelta);
+        //    if (businessProfile != null)
+        //    {
+        //        businessProfile.ReputationScore =
+        //            ReputationScoreCalculator.ApplyDelta(
+        //                businessProfile.ReputationScore,
+        //                pointDelta);
 
-                _businessProfileRepo.Update(businessProfile);
-            }
-            else if (personalProfile != null)
-            {
-                personalProfile.ReputationScore =
-                    ReputationScoreCalculator.ApplyDelta(
-                        personalProfile.ReputationScore,
-                        pointDelta);
+        //        _businessProfileRepo.Update(businessProfile);
+        //    }
+        //    else if (personalProfile != null)
+        //    {
+        //        personalProfile.ReputationScore =
+        //            ReputationScoreCalculator.ApplyDelta(
+        //                personalProfile.ReputationScore,
+        //                pointDelta);
 
-                await _personalProfileRepo.UpdateAsync(personalProfile, ct);
-            }
+        //        await _personalProfileRepo.UpdateAsync(personalProfile, ct);
+        //    }
 
-            await _unitOfWork.SaveChangesAsync(ct);
-        }
+        //    await _unitOfWork.SaveChangesAsync(ct);
+        //}
     }
 }

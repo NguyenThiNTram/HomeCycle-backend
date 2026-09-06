@@ -526,6 +526,36 @@ namespace HomeCycle.Application.Commons.Errors
 
         public static readonly Error OrderHeldAmountNotFound =
             new("Payment.OrderHeldAmountNotFound", "Đơn hàng không còn khoản tiền tạm giữ có thể hoàn.");
+
+        public static readonly Error InvalidReleaseAmount =
+            new("Payment.InvalidReleaseAmount", "Số tiền tạm giữ của đơn hàng không hợp lệ để giải ngân.");
+
+        public static readonly Error ReleaseOrderNotCompleted =
+            new("Payment.ReleaseOrderNotCompleted", "Chỉ có thể giải ngân đơn hàng đã hoàn tất.");
+
+        public static readonly Error ReleaseWindowMissing =
+            new("Payment.ReleaseWindowMissing", "Đơn hàng chưa xác định thời điểm kết thúc thời hạn tranh chấp.");
+
+        public static Error ReleaseWindowNotEnded(DateTime disputeWindowEndsAt) =>
+            new("Payment.ReleaseWindowNotEnded", $"Chưa thể giải ngân trước khi thời hạn tranh chấp kết thúc lúc {disputeWindowEndsAt:O}.");
+
+        public static readonly Error ActiveDisputeBlocksRelease =
+            new("Payment.ActiveDisputeBlocksRelease", "Đơn hàng đang có tranh chấp nên chưa thể giải ngân.");
+
+        public static readonly Error ReleasePaymentNotFound =
+            new("Payment.ReleasePaymentNotFound", "Không tìm thấy giao dịch thanh toán hợp lệ để giải ngân.");
+
+        public static readonly Error ReleaseWalletNotFound =
+            new("Payment.ReleaseWalletNotFound", "Không tìm thấy ví người bán để giải ngân.");
+
+        public static readonly Error ReleaseOrderHeldAmountNotFound =
+            new("Payment.ReleaseOrderHeldAmountNotFound", "Đơn hàng không còn khoản tiền tạm giữ có thể giải ngân.");
+
+        public static readonly Error InsufficientHeldBalanceForRelease =
+            new("Payment.InsufficientHeldBalanceForRelease", "Số dư tạm giữ của người bán không đủ để giải ngân cho đơn hàng.");
+
+        public static readonly Error ReleaseFailed =
+            new("Payment.ReleaseFailed", "Không thể giải ngân khoản tiền tạm giữ của đơn hàng.");
     }
 
 

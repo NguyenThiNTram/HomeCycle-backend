@@ -23,5 +23,6 @@ namespace HomeCycle.Application.Interfaces.Services.Payments
             order order,
             agreement_form agreement,
             CancellationToken ct = default);
+        Task<Result<decimal>> ReleaseCompletedOrderHeldAmountAsync(Guid orderId, CancellationToken ct = default);
     }
 }

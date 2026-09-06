@@ -9,6 +9,7 @@ using HomeCycle.Application.Interfaces.Externals;
 using HomeCycle.Application.Interfaces.Generics;
 using HomeCycle.Application.Interfaces.Repositories.Agreements;
 using HomeCycle.Application.Interfaces.Repositories.Appointments;
+using HomeCycle.Application.Interfaces.Repositories.Disputes;
 using HomeCycle.Application.Interfaces.Repositories.GHN;
 using HomeCycle.Application.Interfaces.Repositories.Orders;
 using HomeCycle.Application.Interfaces.Repositories.Payments;
@@ -68,6 +69,7 @@ namespace HomeCycle.Application.Services.Payments
         private readonly IGhnShipmentRepository _ghnShipmentRepo;
         private readonly IValidator<PayOSCheckoutRequest> _payOSCheckoutValidator;
         private readonly IPlatformPolicyProvider _platformPolicyProvider;
+        private readonly IDisputeRepository _disputeRepo;
 
         public PaymentService(
             IUnitOfWork unitOfWork,
@@ -87,7 +89,8 @@ namespace HomeCycle.Application.Services.Payments
             IShipmentRepository shipmentRepository,
             IGhnShipmentRepository ghnShipmentRepository,
             IValidator<PayOSCheckoutRequest> payOSCheckoutValidator, 
-            IPlatformPolicyProvider platformPolicyProvider)
+            IPlatformPolicyProvider platformPolicyProvider,
+            IDisputeRepository disputeRepo)
         {
             _unitOfWork = unitOfWork;
             _gatewayService = gatewayService;
@@ -107,6 +110,7 @@ namespace HomeCycle.Application.Services.Payments
             _logger = logger;
             _payOSCheckoutValidator = payOSCheckoutValidator;
             _platformPolicyProvider = platformPolicyProvider;
+            _disputeRepo = disputeRepo;
         }
 
         public async Task<Result<string>> GeneratePayOSCheckoutUrlAsync(Guid agreementId, Guid payerId, string returnUrl, string cancelUrl, CancellationToken ct = default)
@@ -805,6 +809,170 @@ namespace HomeCycle.Application.Services.Payments
             return RefundOrderHeldAmountCoreAsync(order, agreement, null, ct);
         }
 
+        public async Task<Result<decimal>> ReleaseCompletedOrderHeldAmountAsync(Guid orderId, CancellationToken ct = default)
+        {
+            await _unitOfWork.BeginTransactionAsync(ct);
+
+            try
+            {
+                var order = await _orderRepo.GetByIdForUpdateAsync(orderId, ct);
+
+                if (order == null)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    return Result<decimal>.Fail(OrderErrors.NotFound);
+                }
+
+                if (order.OrderStatus != (int)OrderStatus.Completed || !order.CompletedAt.HasValue)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    return Result<decimal>.Fail(PaymentErrors.ReleaseOrderNotCompleted);
+                }
+
+                if (!order.DisputeWindowEndsAt.HasValue)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    return Result<decimal>.Fail(PaymentErrors.ReleaseWindowMissing);
+                }
+
+                var now = DateTime.UtcNow;
+
+                // Create dispute vẫn được phép tại đúng thời điểm deadline.
+                // Vì vậy chỉ release khi thời điểm hiện tại đã thực sự lớn hơn deadline.
+                if (now <= order.DisputeWindowEndsAt.Value)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    return Result<decimal>.Fail(PaymentErrors.ReleaseWindowNotEnded(order.DisputeWindowEndsAt.Value));
+                }
+
+                var hasActiveDispute = await _disputeRepo.ExistsActiveAsync(
+                    DisputeTargetType.Order,
+                    order.OrderId,
+                    ct);
+
+                if (hasActiveDispute)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    return Result<decimal>.Fail(PaymentErrors.ActiveDisputeBlocksRelease);
+                }
+
+                var agreement = await _agreementRepo.GetByIdAsync(order.AgreementId, ct);
+
+                if (agreement == null)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    return Result<decimal>.Fail(AgreementErrors.NotFound);
+                }
+
+                var payment = await _paymentRepo.GetLatestPaidByOrderIdAsync(order.OrderId, ct);
+
+                if (payment == null || payment.PaymentStatus == (int)PaymentStatus.Refunded)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    return Result<decimal>.Fail(PaymentErrors.ReleasePaymentNotFound);
+                }
+
+                var sellerWallet = await _walletRepo.GetUserWalletForUpdateAsync(agreement.SellerId, ct);
+
+                if (sellerWallet == null)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    return Result<decimal>.Fail(PaymentErrors.ReleaseWalletNotFound);
+                }
+
+                var orderHeldAmount = await _ledgerRepo.GetNetOrderHeldAmountAsync(
+                    sellerWallet.WalletId,
+                    order.OrderId,
+                    ct);
+
+                if (orderHeldAmount <= AmountEpsilon)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    return Result<decimal>.Fail(PaymentErrors.ReleaseOrderHeldAmountNotFound);
+                }
+
+                var currentOrderPaid = order.AmountPaid ?? 0;
+
+                if (currentOrderPaid <= AmountEpsilon || orderHeldAmount > currentOrderPaid + AmountEpsilon)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    return Result<decimal>.Fail(PaymentErrors.InvalidReleaseAmount);
+                }
+
+                if (sellerWallet.HoldBalance + AmountEpsilon < orderHeldAmount)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    return Result<decimal>.Fail(PaymentErrors.InsufficientHeldBalanceForRelease);
+                }
+
+                var walletTransactionId = Guid.NewGuid();
+
+                var walletTransaction = new wallet_transaction
+                {
+                    WalletTransactionId = walletTransactionId,
+                    FromWalletId = sellerWallet.WalletId,
+                    ToWalletId = sellerWallet.WalletId,
+                    PaymentId = payment.PaymentId,
+                    ReferenceId = order.OrderId,
+                    ReferenceType = (int)ReferenceType.Order,
+                    TransactionType = (int)TransactionType.Payout_Release,
+                    Amount = orderHeldAmount,
+                    WalletTransactionStatus = (int)WalletTransactionStatus.Completed,
+                    CreatedAt = now
+                };
+
+                var holdLedger = new wallet_ledger
+                {
+                    LedgerId = Guid.NewGuid(),
+                    WalletTransactionId = walletTransactionId,
+                    WalletId = sellerWallet.WalletId,
+                    Direction = (int)LedgerDirection.Out,
+                    BalanceType = (int)BalanceType.Hold,
+                    Amount = orderHeldAmount,
+                    BalanceBefore = sellerWallet.HoldBalance,
+                    BalanceAfter = sellerWallet.HoldBalance - orderHeldAmount,
+                    ReferenceType = (int)ReferenceType.Order,
+                    ReferenceId = order.OrderId,
+                    Description = $"Giai ngan tien tam giu cho Order {order.OrderId}",
+                    CreatedAt = now
+                };
+
+                var availableLedger = new wallet_ledger
+                {
+                    LedgerId = Guid.NewGuid(),
+                    WalletTransactionId = walletTransactionId,
+                    WalletId = sellerWallet.WalletId,
+                    Direction = (int)LedgerDirection.In,
+                    BalanceType = (int)BalanceType.Available,
+                    Amount = orderHeldAmount,
+                    BalanceBefore = sellerWallet.AvailableBalance,
+                    BalanceAfter = sellerWallet.AvailableBalance + orderHeldAmount,
+                    ReferenceType = (int)ReferenceType.Order,
+                    ReferenceId = order.OrderId,
+                    Description = $"Nhan tien giai ngan tu Order {order.OrderId}",
+                    CreatedAt = now
+                };
+
+                sellerWallet.HoldBalance -= orderHeldAmount;
+                sellerWallet.AvailableBalance += orderHeldAmount;
+                sellerWallet.UpdatedAt = now;
+
+                await _walletRepo.UpdateAsync(sellerWallet, ct);
+                await _walletTxRepo.AddAsync(walletTransaction, ct);
+                await _ledgerRepo.AddAsync(holdLedger, ct);
+                await _ledgerRepo.AddAsync(availableLedger, ct);
+                await _unitOfWork.SaveChangesAsync(ct);
+                await _unitOfWork.CommitTransactionAsync(ct);
+
+                return Result<decimal>.Success(orderHeldAmount);
+            }
+            catch (Exception ex)
+            {
+                await _unitOfWork.RollbackTransactionAsync(ct);
+                _logger.LogError(ex, "Lỗi giải ngân tiền tạm giữ cho Order {OrderId}", orderId);
+                return Result<decimal>.Fail(PaymentErrors.ReleaseFailed);
+            }
+        }
 
         #region HELPER
 
