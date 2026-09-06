@@ -936,7 +936,7 @@ namespace HomeCycle.Application.Services.Profiles
             if (activeDoc != null)
             {
                 activeDoc.ReplacedAt = now;
-                // Bắt buộc gọi Update vì chúng ta dùng pattern mapper tách biệt Domain/Infra
+                // Bắt buộc gọi Update vì dùng pattern mapper tách biệt Domain/Infra
                 _businessDocumentRepository.Update(activeDoc);
             }
 

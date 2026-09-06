@@ -444,7 +444,7 @@ namespace HomeCycle.Application.Services.Auths
                     return Result<AuthResponse>.Fail(AuthErrors.EmailExists);
                 }
 
-                _logger.LogError(ex, "Database constraint error during registration for email: {Email}", normalizedEmail);
+                _logger.LogError(ex, "Database constraint error during registration for email: {Email}", MaskEmail(normalizedEmail));
                 return Result<AuthResponse>.Fail(new Error("Auth.DatabaseError", "A database conflict occurred during registration."));
             }
 
@@ -453,7 +453,7 @@ namespace HomeCycle.Application.Services.Auths
                 await _unitOfWork.RollbackTransactionAsync();
                 await CleanupUploadedFilesAsync(uploadedFileUrls);
 
-                _logger.LogError(ex, "Unexpected error during personal registration for email: {Email}", normalizedEmail);
+                _logger.LogError(ex, "Unexpected error during personal registration for email: {Email}", MaskEmail(normalizedEmail));
                 return Result<AuthResponse>.Fail(new Error("Auth.RegisterFailed", "An unexpected error occurred during registration. Please try again."));
             }
         }
@@ -610,7 +610,7 @@ namespace HomeCycle.Application.Services.Auths
             catch (Exception ex)
             {
                 _otpProtectionService.SendFailed(normalizedEmail);
-                _logger.LogError(ex, "Failed to send OTP to email: {Email}", normalizedEmail);
+                _logger.LogError(ex, "Failed to send OTP to email: {Email}", MaskEmail(normalizedEmail));
                 return Result<string>.Fail(AuthErrors.OtpSendFailed);
             }
         }
@@ -949,6 +949,35 @@ namespace HomeCycle.Application.Services.Auths
                     _logger.LogWarning(ex, "Failed to delete orphaned file during cleanup: {FileUrl}", url);
                 }
             }
+        }
+
+        private static string MaskEmail(string? email)
+        {
+            if (string.IsNullOrWhiteSpace(email))
+                return "***";
+
+            var trimmedEmail = email.Trim();
+            var atIndex = trimmedEmail.IndexOf('@');
+
+            // Nếu không chứa kí tự '@' hợp lệ hoặc nằm ở đầu/cuối chuỗi
+            if (atIndex <= 0 || atIndex == trimmedEmail.Length - 1)
+                return "***";
+
+            var username = trimmedEmail[..atIndex];
+            var domain = trimmedEmail[atIndex..]; // Bao gồm cả kí tự '@' và domain
+
+            if (username.Length <= 1)
+            {
+                return $"{username}***{domain}";
+            }
+
+            if (username.Length == 2)
+            {
+                return $"{username[0]}***{domain}";
+            }
+
+            // Với username >= 3 ký tự: Giữ ký tự đầu và ký tự cuối (Ví dụ: tram -> t***m@gmail.com)
+            return $"{username[0]}***{username[^1]}{domain}";
         }
     }
 }
