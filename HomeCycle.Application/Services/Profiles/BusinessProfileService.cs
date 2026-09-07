@@ -11,6 +11,7 @@ using HomeCycle.Application.Interfaces.Generics;
 using HomeCycle.Application.Interfaces.Repositories.Banks;
 using HomeCycle.Application.Interfaces.Repositories.Profiles;
 using HomeCycle.Application.Interfaces.Repositories.Users;
+using HomeCycle.Application.Interfaces.Services.Configs;
 using HomeCycle.Application.Interfaces.Services.Externals;
 using HomeCycle.Application.Interfaces.Services.Profiles;
 using HomeCycle.Domain.Entities;
@@ -35,6 +36,7 @@ namespace HomeCycle.Application.Services.Profiles
         private readonly IBankAccountRepository _bankAccountRepository;
         private readonly IUserRepository _userRepository;
         private readonly IFileStorageService _fileStorageService;
+        private readonly IFileValidationService _fileValidationService;
         private readonly IUnitOfWork _unitOfWork;
         private readonly IMapper _mapper;
         private readonly ILogger<BusinessProfileService> _logger;
@@ -42,7 +44,7 @@ namespace HomeCycle.Application.Services.Profiles
         private readonly IValidator<SubmitBusinessSurveyRequest> _surveyValidator;
         private readonly IValidator<UpdateUsernameRequest> _updateUsernameValidator;
         private readonly IValidator<UpdatePhoneNumberRequest> _updatePhoneValidator;
-        private readonly IValidator<UpdateAvatarRequest> _updateAvatarValidator;
+        //private readonly IValidator<UpdateAvatarRequest> _updateAvatarValidator;
         private readonly IValidator<UpdateBankAccountRequest> _updateBankValidator;
         private readonly IValidator<UpdateBusinessDocumentsRequest> _updateDocumentsValidator;
         private readonly IValidator<UpdateBusinessServiceAreasRequest> _updateServiceAreasValidator;
@@ -58,6 +60,7 @@ namespace HomeCycle.Application.Services.Profiles
             IBusinessServiceAreaRepository businessServiceAreaRepository,
             IBankAccountRepository bankAccountRepository,
             IUserRepository userRepository,
+            IFileValidationService fileValidationService,
             IUnitOfWork unitOfWork,
             IMapper mapper,
             ILogger<BusinessProfileService> logger,
@@ -65,7 +68,7 @@ namespace HomeCycle.Application.Services.Profiles
             IValidator<SubmitBusinessSurveyRequest> surveyValidator,
             IValidator<UpdateUsernameRequest> updateUsernameValidator,
             IValidator<UpdatePhoneNumberRequest> updatePhoneValidator,
-            IValidator<UpdateAvatarRequest> updateAvatarValidator,
+            //IValidator<UpdateAvatarRequest> updateAvatarValidator,
             IValidator<UpdateBankAccountRequest> updateBankValidator,
             IValidator<UpdateBusinessDocumentsRequest> updateDocumentsValidator,
             IValidator<UpdateBusinessServiceAreasRequest> updateServiceAreasValidator,
@@ -81,6 +84,7 @@ namespace HomeCycle.Application.Services.Profiles
             _businessServiceAreaRepository = businessServiceAreaRepository;
             _bankAccountRepository = bankAccountRepository;
             _userRepository = userRepository;
+            _fileValidationService = fileValidationService;
             _unitOfWork = unitOfWork;
             _mapper = mapper;
             _logger = logger;
@@ -88,7 +92,7 @@ namespace HomeCycle.Application.Services.Profiles
             _surveyValidator = surveyValidator;
             _updateUsernameValidator = updateUsernameValidator;
             _updatePhoneValidator = updatePhoneValidator;
-            _updateAvatarValidator = updateAvatarValidator;
+            //_updateAvatarValidator = updateAvatarValidator;
             _updateBankValidator = updateBankValidator;
             _updateDocumentsValidator = updateDocumentsValidator;
             _updateServiceAreasValidator = updateServiceAreasValidator;
@@ -136,6 +140,16 @@ namespace HomeCycle.Application.Services.Profiles
                 var errorMessage = string.Join(" | ", validationResult.Errors.Select(e => e.ErrorMessage));
                 return Result<string>.Fail(ValidationErrors.InvalidRequest(errorMessage));
             }
+
+            var documentValidation = await ValidateDocumentFilesAsync(request.Documents
+                .Where(x => x.DocumentUrl != null)
+                .Select(x => (
+                    x.DocumentType,
+                    File: x.DocumentUrl!)),
+            cancellationToken);
+
+            if (!documentValidation.IsSuccess)
+                return Result<string>.Fail(documentValidation.Error!);
 
             await _unitOfWork.BeginTransactionAsync();
             try
@@ -543,12 +557,17 @@ namespace HomeCycle.Application.Services.Profiles
 
         public async Task<Result> UpdateAvatarAsync(Guid userId, UpdateAvatarRequest request, CancellationToken cancellationToken = default)
         {
-            var validationResult = await _updateAvatarValidator.ValidateAsync(request, cancellationToken);
-            if (!validationResult.IsValid)
-            {
-                var errors = string.Join(", ", validationResult.Errors.Select(x => x.ErrorMessage));
-                return Result<string>.Fail(ValidationErrors.InvalidRequest(errors));
-            }
+            //var validationResult = await _updateAvatarValidator.ValidateAsync(request, cancellationToken);
+            //if (!validationResult.IsValid)
+            //{
+            //    var errors = string.Join(", ", validationResult.Errors.Select(x => x.ErrorMessage));
+            //    return Result<string>.Fail(ValidationErrors.InvalidRequest(errors));
+            //}
+
+            var fileValidation = await _fileValidationService.ValidateAsync(request.AvatarUrl, FileUploadContext.Avatar, cancellationToken);
+
+            if (!fileValidation.IsSuccess)
+                return fileValidation;
 
             var user = await _userRepository.GetByIdAsync(userId, cancellationToken);
             if (user is null)
@@ -574,6 +593,19 @@ namespace HomeCycle.Application.Services.Profiles
             {
                 await _userRepository.UpdateAsync(user, cancellationToken);
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+                // xoá file cũ nếu có và khác với file mới
+                if (!string.IsNullOrWhiteSpace(oldAvatarUrl) && !string.Equals(oldAvatarUrl, storedFileName, StringComparison.OrdinalIgnoreCase))
+                {
+                    try
+                    {
+                        await _fileStorageService.DeleteFileAsync(oldAvatarUrl);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Không thể xóa avatar cũ ({OldAvatarUrl}) của UserId: {UserId}", oldAvatarUrl, userId);
+                    }
+                }
 
                 return Result<string>.Success(user.AvatarUrl);
             }
@@ -619,11 +651,18 @@ namespace HomeCycle.Application.Services.Profiles
         }
 
 
-        public async Task<Result>   UpdateBusinessDocumentsAsync(Guid userId, UpdateBusinessDocumentsRequest request, CancellationToken cancellationToken = default)
+        public async Task<Result> UpdateBusinessDocumentsAsync(Guid userId, UpdateBusinessDocumentsRequest request, CancellationToken cancellationToken = default)
         {
             var valResult = await _updateDocumentsValidator.ValidateAsync(request, cancellationToken);
             if (!valResult.IsValid)
                 return Result.Fail(ValidationErrors.InvalidRequest(string.Join(" | ", valResult.Errors.Select(e => e.ErrorMessage))));
+
+            var documentValidation = await ValidateDocumentFilesAsync(request.Documents
+                .Where(x => x.DocumentUrl != null)
+                .Select(x => (x.DocumentType, File: x.DocumentUrl!)), cancellationToken);
+
+            if (!documentValidation.IsSuccess)
+                return documentValidation;
 
             var profile = await _businessProfileRepository.GetByUserIdAsync(userId, cancellationToken);
             if (profile == null)
@@ -743,7 +782,6 @@ namespace HomeCycle.Application.Services.Profiles
 
         public async Task<Result> UpdateIdentityAsync(Guid userId, UpdateIdentityRequest request, CancellationToken cancellationToken = default)
         {
-
             var validationResult = await _updateIdentityValidator.ValidateAsync(request, cancellationToken);
             if (!validationResult.IsValid)
             {
@@ -751,13 +789,32 @@ namespace HomeCycle.Application.Services.Profiles
                 return Result.Fail(ValidationErrors.InvalidRequest(errorMessage));
             }
 
+            var identityFiles = new[]
+            {
+                request.CccdFront,
+                request.CccdBack
+            }
+            .Where(file => file != null)
+            .Select(file => file!)
+            .ToList();
+
+            var fileValidation =
+                await _fileValidationService.ValidateManyAsync(identityFiles, FileUploadContext.IdentityDocument, cancellationToken);
+
+            if (!fileValidation.IsSuccess)
+                return fileValidation;
+
+            var profile = await _businessProfileRepository.GetByUserIdAsync(userId, cancellationToken);
+
+            if (profile == null)
+                return Result.Fail(new Error("BusinessProfile.NotFound", "Không tìm thấy hồ sơ doanh nghiệp."));
 
             await _unitOfWork.BeginTransactionAsync();
             try
             {
-                var profile = await _businessProfileRepository.GetByUserIdAsync(userId, cancellationToken);
-                if (profile == null)
-                    return Result.Fail(new Error("BusinessProfile.NotFound", "Không tìm thấy hồ sơ doanh nghiệp."));
+                //var profile = await _businessProfileRepository.GetByUserIdAsync(userId, cancellationToken);
+                //if (profile == null)
+                //    return Result.Fail(new Error("BusinessProfile.NotFound", "Không tìm thấy hồ sơ doanh nghiệp."));
 
                 string oldIdentityName = profile.IdentityName;
 
@@ -796,12 +853,28 @@ namespace HomeCycle.Application.Services.Profiles
                 return Result.Fail(ValidationErrors.InvalidRequest(errorMessage));
             }
 
+            if (request.BusinessRegistrationCertificate != null)
+            {
+                var fileValidation =
+                    await _fileValidationService.ValidateAsync(
+                        request.BusinessRegistrationCertificate,
+                        FileUploadContext.BusinessDocument,
+                        cancellationToken);
+
+                if (!fileValidation.IsSuccess)
+                    return fileValidation;
+            }
+
+            var profile = await _businessProfileRepository.GetByUserIdAsync(userId, cancellationToken);
+            if (profile == null)
+                return Result.Fail(new Error("BusinessProfile.NotFound", "Không tìm thấy hồ sơ doanh nghiệp của user này."));
+
             await _unitOfWork.BeginTransactionAsync();
             try
             {
-                var profile = await _businessProfileRepository.GetByUserIdAsync(userId, cancellationToken);
-                if (profile == null)
-                    return Result.Fail(new Error("BusinessProfile.NotFound", "Không tìm thấy hồ sơ doanh nghiệp của user này."));
+                //var profile = await _businessProfileRepository.GetByUserIdAsync(userId, cancellationToken);
+                //if (profile == null)
+                //    return Result.Fail(new Error("BusinessProfile.NotFound", "Không tìm thấy hồ sơ doanh nghiệp của user này."));
 
                 _mapper.Map(request, profile);
                 profile.UpdatedAt = DateTime.UtcNow;
@@ -951,6 +1024,34 @@ namespace HomeCycle.Application.Services.Profiles
             };
 
             await _businessDocumentRepository.AddAsync(newDoc, cancellationToken);
+        }
+
+        private async Task<Result> ValidateDocumentFilesAsync(IEnumerable<(int DocumentType, IFormFile File)> documents, CancellationToken cancellationToken)
+        {
+            var groups = documents.GroupBy(item => GetDocumentUploadContext(item.DocumentType));
+
+            foreach (var group in groups)
+            {
+                var validation = await _fileValidationService.ValidateManyAsync(group.Select(x => x.File), group.Key, cancellationToken);
+
+                if (!validation.IsSuccess)
+                    return validation;
+            }
+
+            return Result.Success();
+        }
+
+        private static FileUploadContext GetDocumentUploadContext(int documentType)
+        {
+            return documentType switch
+            {
+                0 or 1 => FileUploadContext.IdentityDocument,
+                2 => FileUploadContext.BusinessDocument,
+
+                // chặn DocumentType không tồn tại
+                // Default này tránh đưa validation DocumentType vào file service
+                _ => FileUploadContext.BusinessDocument
+            };
         }
 
     }

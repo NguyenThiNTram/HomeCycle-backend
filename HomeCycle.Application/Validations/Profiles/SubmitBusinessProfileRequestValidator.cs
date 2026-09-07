@@ -61,6 +61,30 @@ namespace HomeCycle.Application.Validations.Profiles
             RuleFor(x => x.AccountName).NotEmpty().WithMessage("Bank account holder name is required.");
 
             // 6. Chốt chặn tài liệu chứng thực upload bắt buộc (CCCD trước/sau + Giấy phép)
+            When(x => x.Documents != null, () =>
+            {
+                RuleForEach(x => x.Documents!).ChildRules(document =>
+                {
+                    document.RuleFor(x => x.DocumentType)
+                        .InclusiveBetween(0, 3)
+                        .WithMessage("Document type is invalid.");
+
+                    document.RuleFor(x => x.DocumentUrl)
+                        .NotNull()
+                        .WithMessage(
+                            "Each document must have an attached file.");
+                });
+
+                //RuleFor(x => x.Documents!)
+                //    .Must(documents =>
+                //        documents
+                //            .Select(x => x.DocumentType)
+                //            .Distinct()
+                //            .Count() == documents.Count)
+                //    .WithMessage(
+                //        "Each document type can only be submitted once.");
+            });
+
             RuleFor(x => x)
             .Custom((request, context) =>
             {
@@ -72,8 +96,13 @@ namespace HomeCycle.Application.Validations.Profiles
                     ? (List<int>)context.RootContextData["ExistingActiveDocTypes"]
                     : new List<int>();
 
-                var uploadedTypes = request.Documents?.Where(d => d.DocumentUrl != null && d.DocumentUrl.Length > 0)
-                                                     .Select(d => d.DocumentType).ToList() ?? new List<int>();
+                //var uploadedTypes = request.Documents?.Where(d => d.DocumentUrl != null && d.DocumentUrl.Length > 0)
+                //                                     .Select(d => d.DocumentType).ToList() ?? new List<int>();
+
+                var uploadedTypes = request.Documents?
+                    .Where(d => d.DocumentUrl != null)
+                    .Select(d => d.DocumentType)
+                    .ToList() ?? new List<int>();
 
                 // Các document type bắt buộc phải có (0: CccdFront, 1: CccdBack, 2: BusinessReg)
                 int[] requiredTypes = { 0, 1, 2 };

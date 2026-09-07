@@ -742,23 +742,23 @@ namespace HomeCycle.Application.Services.PlatformPolicies
             }
         }
 
-        private static bool IsValidPolicyContent(
-            PlatformPolicyType policyType,
-            string content)
-        {
-            return policyType switch
-            {
-                PlatformPolicyType.Dispute =>
-                    TryDeserialize(content, out DisputePolicyConfigDto? disputeConfig)
-                    && IsValidDisputeConfig(disputeConfig!),
+        //private static bool IsValidPolicyContent(
+        //    PlatformPolicyType policyType,
+        //    string content)
+        //{
+        //    return policyType switch
+        //    {
+        //        PlatformPolicyType.Dispute =>
+        //            TryDeserialize(content, out DisputePolicyConfigDto? disputeConfig)
+        //            && IsValidDisputeConfig(disputeConfig!),
 
-                PlatformPolicyType.Appointment =>
-                    TryDeserialize(content, out AppointmentPolicyConfigDto? appointmentConfig)
-                    && IsValidAppointmentConfig(appointmentConfig!),
+        //        PlatformPolicyType.Appointment =>
+        //            TryDeserialize(content, out AppointmentPolicyConfigDto? appointmentConfig)
+        //            && IsValidAppointmentConfig(appointmentConfig!),
 
-                _ => false
-            };
-        }
+        //        _ => false
+        //    };
+        //}
 
         private static bool IsValidDisputeConfig(
             DisputePolicyConfigDto config)
