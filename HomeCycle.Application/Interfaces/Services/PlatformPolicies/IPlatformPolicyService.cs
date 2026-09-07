@@ -28,5 +28,9 @@ namespace HomeCycle.Application.Interfaces.Services.PlatformPolicies
         Task<Result<PlatformPolicyVersionDetailDto>> GetVersionAsync(PlatformPolicyType policyType, int version, CancellationToken cancellationToken = default);
 
         Task<Result<PlatformPolicyVersionDetailDto>> RestoreVersionAsync(Guid adminId, PlatformPolicyType policyType, int version, CancellationToken cancellationToken = default);
+
+        Task<Result<PlatformPolicyResponseDto<FileUploadPolicyConfigDto>>> GetFileUploadPolicyAsync(CancellationToken cancellationToken = default);
+
+        Task<Result<PlatformPolicyResponseDto<FileUploadPolicyConfigDto>>> UpdateFileUploadPolicyAsync(Guid adminId, UpdateFileUploadPolicyRequest request, CancellationToken cancellationToken = default);
     }
 }

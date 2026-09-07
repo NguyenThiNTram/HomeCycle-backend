@@ -13,6 +13,7 @@ namespace HomeCycle.Application.Interfaces.Services.PlatformPolicies
 
         Task<AppointmentPolicyConfigDto> GetAppointmentConfigAsync(CancellationToken cancellationToken = default);
 
-    
+        Task<FileUploadPolicyConfigDto> GetFileUploadConfigAsync(CancellationToken cancellationToken = default);
+
     }
 }

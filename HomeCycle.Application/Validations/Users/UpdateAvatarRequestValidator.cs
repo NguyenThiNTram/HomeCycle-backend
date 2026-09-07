@@ -12,9 +12,9 @@ namespace HomeCycle.Application.Validations.Users
     public class UpdateAvatarRequestValidator : AbstractValidator<UpdateAvatarRequest>
     {
         private static readonly string[] AllowedExtensions =
-          [
-              ".jpg", ".jpeg", ".png", ".webp"
-          ];
+        [
+            ".jpg", ".jpeg", ".png", ".webp"
+        ];
 
         private static readonly string[] AllowedContentTypes =
         [
