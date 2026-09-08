@@ -6,12 +6,14 @@ using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Requests.Agreements;
 using HomeCycle.Application.DTOs.Requests.Appointments;
 using HomeCycle.Application.DTOs.Responses.Appointments;
+using HomeCycle.Application.DTOs.Responses.Notifications;
 using HomeCycle.Application.Interfaces.Generics;
 using HomeCycle.Application.Interfaces.Repositories.Agreements;
 using HomeCycle.Application.Interfaces.Repositories.Appointments;
 using HomeCycle.Application.Interfaces.Repositories.Inspections;
 using HomeCycle.Application.Interfaces.Repositories.Orders;
 using HomeCycle.Application.Interfaces.Services.Appointments;
+using HomeCycle.Application.Interfaces.Services.Notifications;
 using HomeCycle.Application.Interfaces.Services.PlatformPolicies;
 using HomeCycle.Domain.Entities;
 using HomeCycle.Domain.Enums;
@@ -33,6 +35,7 @@ namespace HomeCycle.Application.Services.Appointments
         private readonly IUnitOfWork _unitOfWork;
         private readonly IOrderRepository _orderRepo;
         private readonly IPlatformPolicyProvider _platformPolicyProvider;
+        private readonly INotificationService _notificationService;
         private readonly IMapper _mapper;
 
         private readonly IValidator<RescheduleAppointmentRequest> _rescheduleValidator;
@@ -47,6 +50,7 @@ namespace HomeCycle.Application.Services.Appointments
             IAgreementFormRepository agreementRepo,
             IOrderRepository orderRepo,
             IPlatformPolicyProvider platformPolicyProvider,
+            INotificationService notificationService,
             IUnitOfWork unitOfWork,
             IMapper mapper,
             IValidator<RescheduleAppointmentRequest> rescheduleValidator,
@@ -60,6 +64,7 @@ namespace HomeCycle.Application.Services.Appointments
             _agreementRepo = agreementRepo;
             _orderRepo = orderRepo;
             _platformPolicyProvider = platformPolicyProvider;
+            _notificationService = notificationService;
             _unitOfWork = unitOfWork;
             _mapper = mapper;
             _rescheduleValidator = rescheduleValidator;
@@ -415,11 +420,28 @@ namespace HomeCycle.Application.Services.Appointments
 
                 appointment.UpdatedAt = now;
 
+                var isFullyCheckedIn = appointment.BuyerCheckAt.HasValue && appointment.SellerCheckAt.HasValue;
+                var checkInRecipientId = isBuyer ? agreement.SellerId : agreement.BuyerId;
+                var checkInMessage = isFullyCheckedIn
+                    ? "Cả hai bên đã check-in. Buổi kiểm định có thể bắt đầu."
+                    : isBuyer
+                        ? "Người mua đã check-in tại lịch hẹn kiểm định."
+                        : "Người bán đã check-in tại lịch hẹn kiểm định.";
+
                 await _appointmentRepo.UpdateAsync(appointment, ct);
+
+                var checkInNotification = await _notificationService.AddPendingAsync(
+                    new CreateNotificationCommand(
+                        checkInRecipientId,
+                        "Cập nhật check-in",
+                        checkInMessage,
+                        NotificationTargetType.Appointment,
+                        appointment.AppointmentId),
+                    ct);
+
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
-
-                var isFullyCheckedIn = appointment.BuyerCheckAt.HasValue && appointment.SellerCheckAt.HasValue;
+                await _notificationService.PublishCreatedSafelyAsync(checkInNotification);
 
                 return Result<AppointmentCheckInResponseDto>.Success(new AppointmentCheckInResponseDto
                 {
@@ -616,8 +638,22 @@ namespace HomeCycle.Application.Services.Appointments
                         ct);
                 }
 
+                var rescheduleRecipientId = userId == agreement.BuyerId
+                    ? agreement.SellerId
+                    : agreement.BuyerId;
+
+                var rescheduleNotification = await _notificationService.AddPendingAsync(
+                    new CreateNotificationCommand(
+                        rescheduleRecipientId,
+                        "Có đề nghị đổi lịch",
+                        "Đối phương vừa gửi một đề nghị đổi lịch hẹn. Vui lòng kiểm tra và phản hồi.",
+                        NotificationTargetType.Appointment,
+                        original.AppointmentId),
+                    ct);
+
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
+                await _notificationService.PublishCreatedSafelyAsync(rescheduleNotification);
 
                 return Result<AppointmentRescheduleResponseDto>.Success(
                     new AppointmentRescheduleResponseDto
@@ -741,8 +777,18 @@ namespace HomeCycle.Application.Services.Appointments
 
                 await _appointmentRepo.UpdateAsync(proposal, ct);
 
+                var rescheduleNotification = await _notificationService.AddPendingAsync(
+                    new CreateNotificationCommand(
+                        proposal.RescheduleRequestedByUserId!.Value,
+                        "Đề nghị đổi lịch đã được chấp nhận",
+                        "Đối phương đã chấp nhận lịch hẹn mới.",
+                        NotificationTargetType.Appointment,
+                        proposal.AppointmentId),
+                    ct);
+
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
+                await _notificationService.PublishCreatedSafelyAsync(rescheduleNotification);
 
                 return Result<AppointmentRescheduleResponseDto>.Success(
                     new AppointmentRescheduleResponseDto
@@ -851,8 +897,18 @@ namespace HomeCycle.Application.Services.Appointments
 
                 await _appointmentRepo.UpdateAsync(proposal, ct);
 
+                var rescheduleNotification = await _notificationService.AddPendingAsync(
+                    new CreateNotificationCommand(
+                        proposal.RescheduleRequestedByUserId!.Value,
+                        "Đề nghị đổi lịch bị từ chối",
+                        $"Đối phương đã từ chối đề nghị đổi lịch. Lý do: {proposal.CancellationReason}",
+                        NotificationTargetType.Appointment,
+                        original.AppointmentId),
+                    ct);
+
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
+                await _notificationService.PublishCreatedSafelyAsync(rescheduleNotification);
 
                 return Result<AppointmentRescheduleResponseDto>.Success(
                     new AppointmentRescheduleResponseDto
@@ -987,8 +1043,22 @@ namespace HomeCycle.Application.Services.Appointments
 
                 await _appointmentRepo.UpdateAsync(appointment, ct);
 
+                var cancelRecipientId = userId == agreement.BuyerId
+                    ? agreement.SellerId
+                    : agreement.BuyerId;
+
+                var cancelNotification = await _notificationService.AddPendingAsync(
+                    new CreateNotificationCommand(
+                        cancelRecipientId,
+                        "Lịch hẹn đã bị hủy",
+                        $"Đối phương đã hủy lịch hẹn. Lý do: {appointment.CancellationReason}",
+                        NotificationTargetType.Appointment,
+                        appointment.AppointmentId),
+                    ct);
+
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
+                await _notificationService.PublishCreatedSafelyAsync(cancelNotification);
 
                 return Result<AppointmentActionResponseDto>.Success(
                     new AppointmentActionResponseDto

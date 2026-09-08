@@ -110,5 +110,18 @@ namespace HomeCycle.Infrastructure.Repositories.Payments
 
             return entity?.ToDomain();
         }
+
+        public async Task<payment?> GetLatestByAgreementAsync(
+            Guid agreementId,
+            CancellationToken ct = default)
+        {
+            var entity = await _db.Payments
+                .AsNoTracking()
+                .Where(x => x.AgreementId == agreementId)
+                .OrderByDescending(x => x.CreatedAt)
+                .FirstOrDefaultAsync(ct);
+
+            return entity?.ToDomain();
+        }
     }
 }

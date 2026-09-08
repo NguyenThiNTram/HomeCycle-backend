@@ -59,5 +59,18 @@ namespace HomeCycle.Infrastructure.Repositories.Banks
             var entity = bankAccount.ToInfrastructure();
             _db.Bank_Accounts.Update(entity);
         }
+
+        public async Task<bank_account?> GetByIdAsync(
+            Guid userBankId,
+            CancellationToken cancellationToken = default)
+        {
+            var entity = await _db.Bank_Accounts
+                .AsNoTracking()
+                .FirstOrDefaultAsync(
+                    x => x.UserBankId == userBankId,
+                    cancellationToken);
+
+            return entity?.ToDomain();
+        }
     }
 }

@@ -12,5 +12,8 @@ namespace HomeCycle.Application.Interfaces.Repositories.Wallets
         Task AddAsync(withdrawal withdrawal, CancellationToken ct = default);
         Task<withdrawal?> GetByIdAsync(Guid withdrawalId, CancellationToken ct = default);
         Task UpdateAsync(withdrawal withdrawal, CancellationToken ct = default);
+        Task<withdrawal?> GetByIdForUpdateAsync(
+            Guid withdrawalId,
+            CancellationToken ct = default);
     }
 }
