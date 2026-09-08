@@ -2,6 +2,7 @@
 using HomeCycle.Application.DTOs.Requests.Media;
 using HomeCycle.Application.DTOs.Responses.Media;
 using HomeCycle.Domain.Entities;
+using HomeCycle.Domain.Enums;
 using Microsoft.AspNetCore.Http;
 using System;
 using System.Collections.Generic;
@@ -22,12 +23,30 @@ namespace HomeCycle.Application.Interfaces.Services.Posts
             IEnumerable<IFormFile> files,
             CancellationToken cancellationToken = default);
 
+        // Policy-aware overload.
+        Task<Result<IReadOnlyList<MediaResponse>>> UploadAndSaveMediaAsync(
+            Guid targetId,
+            string targetType,
+            string folderName,
+            IEnumerable<IFormFile> files,
+            FileUploadContext uploadContext,
+            CancellationToken cancellationToken = default);
+
         // Xóa media cũ và thay thế bằng danh sách media mới
         Task<Result<IReadOnlyList<MediaResponse>>> ReplaceMediaAsync(
             Guid targetId,
             string targetType,
             string folderName,
              IEnumerable<IFormFile> files,
+            CancellationToken cancellationToken = default);
+
+        // Policy-aware overload.
+        Task<Result<IReadOnlyList<MediaResponse>>> ReplaceMediaAsync(
+            Guid targetId,
+            string targetType,
+            string folderName,
+            IEnumerable<IFormFile> files,
+            FileUploadContext uploadContext,
             CancellationToken cancellationToken = default);
 
         // Lấy danh sách Media theo TargetId và TargetType

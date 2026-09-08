@@ -372,6 +372,12 @@ namespace HomeCycle.Application.Services.PlatformPolicies
                     .Fail(PlatformPolicyErrors.VersionNotFound(policyType, version));
             }
 
+            if (!IsValidJsonObject(policy.Content))
+            {
+                return Result<PlatformPolicyVersionDetailDto>
+                    .Fail(PlatformPolicyErrors.InvalidContent(policyType));
+            }
+
             var response =
                 _mapper.Map<PlatformPolicyVersionDetailDto>(policy);
 
@@ -890,6 +896,24 @@ namespace HomeCycle.Application.Services.PlatformPolicies
                 PlatformPolicyType.Dispute or
                 PlatformPolicyType.Appointment or
                 PlatformPolicyType.FileUpload;
+        }
+
+        private static bool IsValidJsonObject(string? content)
+        {
+            if (string.IsNullOrWhiteSpace(content))
+                return false;
+
+            try
+            {
+                using var document = JsonDocument.Parse(content);
+
+                return document.RootElement.ValueKind ==
+                       JsonValueKind.Object;
+            }
+            catch (JsonException)
+            {
+                return false;
+            }
         }
     }
 }

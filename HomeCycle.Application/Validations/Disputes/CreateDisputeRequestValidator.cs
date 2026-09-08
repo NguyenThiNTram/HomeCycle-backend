@@ -36,14 +36,15 @@ namespace HomeCycle.Application.Validations.Disputes
 
             RuleFor(x => x.EvidenceImages)
                 .NotNull()
+                .WithMessage("Bằng chứng tranh chấp không được để trống.")
                 .Must(files =>
                     files != null &&
                     files.Count >= 2 &&
                     files.Count <= 5)
                 .WithMessage("Phải cung cấp từ 2 đến 5 ảnh bằng chứng.");
 
-            RuleForEach(x => x.EvidenceImages)
-                .SetValidator(new FormFileValidator());
+            //RuleForEach(x => x.EvidenceImages)
+            //    .SetValidator(new FormFileValidator());
         }
     }
 }

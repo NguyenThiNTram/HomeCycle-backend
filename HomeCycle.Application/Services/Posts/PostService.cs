@@ -135,6 +135,7 @@ namespace HomeCycle.Application.Services.Posts
                     targetType: PostMediaTargetType,
                     folderName: PostMediaFolder,
                     files: request.Medias,
+                    uploadContext: FileUploadContext.PostMedia,
                     cancellationToken: cancellationToken);
 
                 if (!mediaResult.IsSuccess)
@@ -210,9 +211,10 @@ namespace HomeCycle.Application.Services.Posts
 
                 var mediaResult = await _mediaService.UploadAndSaveMediaAsync(
                     targetId: post.PostId,
-                    targetType: PostMediaTargetType,
+                    targetType: "Post",
                     folderName: PostMediaFolder,
-                    files: request.Medias,
+                    files: request.Medias ?? [],
+                    uploadContext: FileUploadContext.PostMedia,
                     cancellationToken: cancellationToken);
 
                 if (!mediaResult.IsSuccess)
@@ -278,8 +280,15 @@ namespace HomeCycle.Application.Services.Posts
                 // Kiểm tra xem request có chứa danh sách ảnh mới không
                 if (request.Medias != null && request.Medias.Any())
                 {
+                    //var mediaResult = await _mediaService.ReplaceMediaAsync(
+                    //    postId, PostMediaTargetType, PostMediaFolder, request.Medias, cancellationToken);
                     var mediaResult = await _mediaService.ReplaceMediaAsync(
-                        postId, PostMediaTargetType, PostMediaFolder, request.Medias, cancellationToken);
+                        targetId: postId,
+                        targetType: PostMediaTargetType,
+                        folderName: PostMediaFolder,
+                        files: request.Medias,
+                        uploadContext: FileUploadContext.PostMedia,
+                        cancellationToken: cancellationToken);
 
                     if (!mediaResult.IsSuccess)
                     {
@@ -314,8 +323,15 @@ namespace HomeCycle.Application.Services.Posts
 
             var existing = await _postRepository.GetByIdAsync(postId, cancellationToken);
 
+            //var checkError = ValidateOwnershipAndComputeRemaining(
+            //    existing, ownerId, PostType.Buy, (int)request.Quantity, out int newRemainingQuantity);
             var checkError = ValidateOwnershipAndComputeRemaining(
-                existing, ownerId, PostType.Buy, (int)request.Quantity, out int newRemainingQuantity);
+                existing,
+                ownerId,
+                PostType.Buy,
+                request.Quantity ?? existing!.Quantity,
+                out int newRemainingQuantity);
+
             if (checkError is not null)
                 return Result<PostResponse>.Fail(checkError);
 
@@ -340,8 +356,15 @@ namespace HomeCycle.Application.Services.Posts
                 // Kiểm tra xem request có chứa danh sách ảnh mới không
                 if (request.Medias != null && request.Medias.Any())
                 {
+                    //var mediaResult = await _mediaService.ReplaceMediaAsync(
+                    //    postId, PostMediaTargetType, PostMediaFolder, request.Medias, cancellationToken);
                     var mediaResult = await _mediaService.ReplaceMediaAsync(
-                        postId, PostMediaTargetType, PostMediaFolder, request.Medias, cancellationToken);
+                        targetId: postId,
+                        targetType: PostMediaTargetType,
+                        folderName: PostMediaFolder,
+                        files: request.Medias,
+                        uploadContext: FileUploadContext.PostMedia,
+                        cancellationToken: cancellationToken);
 
                     if (!mediaResult.IsSuccess)
                     {

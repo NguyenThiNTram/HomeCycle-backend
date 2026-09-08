@@ -192,7 +192,8 @@ namespace HomeCycle.Application.Services.Inspections
 
                 await _inspectionFormRepo.AddAsync(form, ct);
 
-                if (request.Images?.Any(x => x.Length > 0) == true)
+                //if (request.Images?.Any(x => x.Length > 0) == true)
+                if (request.Images is { Count: > 0 })
                 {
                     var mediaResult =
                         await _mediaService.UploadAndSaveMediaAsync(
@@ -200,6 +201,7 @@ namespace HomeCycle.Application.Services.Inspections
                             targetType: MediaTargetTypes.Inspection.ToString(),
                             folderName: $"inspection-forms/{form.InspectionFormId}",
                             files: request.Images,
+                            uploadContext: FileUploadContext.InspectionEvidence,
                             cancellationToken: ct);
 
                     if (!mediaResult.IsSuccess)
@@ -294,7 +296,8 @@ namespace HomeCycle.Application.Services.Inspections
                 {
                     Result<bool>? deleteResult = null;
 
-                    if (request.Images?.Any(x => x.Length > 0) == true)
+                    //if (request.Images?.Any(x => x.Length > 0) == true)
+                    if (request.Images is { Count: > 0 })
                     {
                         var replaceResult =
                             await _mediaService.ReplaceMediaAsync(
@@ -302,6 +305,7 @@ namespace HomeCycle.Application.Services.Inspections
                                 targetType: MediaTargetTypes.Inspection.ToString(),
                                 folderName: $"inspection-forms/{form.InspectionFormId}",
                                 files: request.Images,
+                                uploadContext: FileUploadContext.InspectionEvidence,
                                 cancellationToken: ct);
 
                         if (!replaceResult.IsSuccess)

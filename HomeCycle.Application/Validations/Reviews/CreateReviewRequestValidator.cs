@@ -20,8 +20,12 @@ namespace HomeCycle.Application.Validations.Reviews
             RuleFor(x => x.Comment)
                 .MaximumLength(2000).WithMessage("Comment không được vượt quá 2000 ký tự.");
 
+            //RuleFor(x => x.Images)
+            //    .Must(images => images == null || images.Count(f => f != null && f.Length > 0) <= MaxImages)
+            //    .WithMessage($"Tối đa {MaxImages} ảnh cho một đánh giá.");
+
             RuleFor(x => x.Images)
-                .Must(images => images == null || images.Count(f => f != null && f.Length > 0) <= MaxImages)
+                .Must(images => images == null || images.Count <= MaxImages)
                 .WithMessage($"Tối đa {MaxImages} ảnh cho một đánh giá.");
         }
     }
