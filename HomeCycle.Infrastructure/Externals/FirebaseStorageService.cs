@@ -1,16 +1,17 @@
 ﻿using Firebase.Storage;
 using Google.Apis.Auth.OAuth2;
-using Google.Cloud.Storage.V1;
-using Google.Apis.Auth.OAuth2.Responses;
 using Google.Apis.Auth.OAuth2.Flows;
-using Google.Apis.Util;
+using Google.Apis.Auth.OAuth2.Responses;
 using Google.Apis.Json;
-using System.IO;
+using Google.Apis.Util;
+using Google.Cloud.Storage.V1;
+using HomeCycle.Application.DTOs.Configs;
 using HomeCycle.Application.Interfaces.Services.Externals;
 using Microsoft.Extensions.Configuration;
 using Supabase.Storage.Interfaces;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -72,27 +73,22 @@ namespace HomeCycle.Infrastructure.Externals
 
         public async Task<string> UploadFileAsync(Stream fileStream, string originalFileName, string folderName, bool overwrite = false)
         {
-            string extension = Path.GetExtension(originalFileName);
+            var extension = Path.GetExtension(originalFileName).ToLowerInvariant();
             //string objectName = $"{folderName}/{Guid.NewGuid()}{extension}";
             string objectName = overwrite
                 ? $"{folderName}/{Path.GetFileNameWithoutExtension(originalFileName)}{extension}"
                 : $"{folderName}/{Guid.NewGuid()}{extension}";
 
+            //string contentType = extension switch
+            //{
+            //    ".png" => "image/png",
+            //    ".webp" => "image/webp",
+            //    ".gif" => "image/gif",
+            //    ".pdf" => "application/pdf",
+            //    _ => "image/jpeg"
+            //};
 
-            //var storageObject = await _storageClient.UploadObjectAsync(
-            //    bucket: _bucketName,
-            //    objectName: objectName,
-            //    contentType: "image/jpeg", // Hoặc dựa vào extension để map mime-type
-            //    source: fileStream
-            //);
-            string contentType = extension switch
-            {
-                ".png" => "image/png",
-                ".webp" => "image/webp",
-                ".gif" => "image/gif",
-                ".pdf" => "application/pdf",
-                _ => "image/jpeg"
-            };
+            var contentType = FileTypeCatalog.TryGetMimeType(extension, out var mappedMimeType) ? mappedMimeType : "application/octet-stream";
 
             await _storageClient.UploadObjectAsync(
                 bucket: _bucketName,

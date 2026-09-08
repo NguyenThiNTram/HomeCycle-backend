@@ -77,6 +77,8 @@ namespace HomeCycle.Application.Commons.Errors
     {
         public static readonly Error UserNotFound = new("AUTH_USER_NOT_FOUND", "User not found! Please try again.");
         public static readonly Error ProfileNotFound = new("AUTH_PROFILE_NOT_FOUND", "Profile not found! Please try again.");
+        public static readonly Error AvatarUploadFailed = new("PROFILE_AVATAR_UPLOAD_FAILED", "Failed to upload avatar or logo image to storage.");
+        public static readonly Error AvatarUpdateFailed = new("PROFILE_AVATAR_UPDATE_FAILED", "Failed to update avatar or logo image.");
     }
 
     public static class CategoryErrors

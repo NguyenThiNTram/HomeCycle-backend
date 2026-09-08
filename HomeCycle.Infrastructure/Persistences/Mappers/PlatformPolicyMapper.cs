@@ -1,4 +1,5 @@
 ﻿using HomeCycle.Domain.Entities;
+using HomeCycle.Domain.Enums;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -15,7 +16,7 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
             return new platform_policy
             {
                 PolicyId = entity.PolicyId,
-                PolicyType = entity.PolicyType,
+                PolicyType = (PlatformPolicyType)entity.PolicyType,
                 Title = entity.Title,
                 Content = entity.Content,
                 Version = entity.Version,
@@ -31,7 +32,7 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
             return new Platform_Policy
             {
                 PolicyId = entity.PolicyId,
-                PolicyType = entity.PolicyType,
+                PolicyType = (int)entity.PolicyType,
                 Title = entity.Title,
                 Content = entity.Content,
                 Version = entity.Version,
