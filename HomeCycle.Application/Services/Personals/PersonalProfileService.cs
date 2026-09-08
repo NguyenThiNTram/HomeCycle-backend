@@ -9,6 +9,7 @@ using HomeCycle.Application.DTOs.Responses.Users;
 using HomeCycle.Application.Interfaces.Generics;
 using HomeCycle.Application.Interfaces.Repositories.Banks;
 using HomeCycle.Application.Interfaces.Repositories.Users;
+using HomeCycle.Application.Interfaces.Services.Configs;
 using HomeCycle.Application.Interfaces.Services.Externals;
 using HomeCycle.Application.Interfaces.Services.Users;
 using HomeCycle.Domain.Entities;
@@ -32,6 +33,7 @@ namespace HomeCycle.Application.Services.Personals
         private readonly IMapper _mapper;
         private readonly ILogger<PersonalProfileService> _logger;
         private readonly IFileStorageService _fileStorageService;
+        private readonly IFileValidationService _fileValidationService;
 
         private readonly IValidator<UpdatePersonalProfileRequest> _updateProfileValidator;
         private readonly IValidator<UpdateAvatarRequest> _updateAvatarValidator;
@@ -46,6 +48,7 @@ namespace HomeCycle.Application.Services.Personals
             IMapper mapper,
             ILogger<PersonalProfileService> logger,
             IFileStorageService fileStorageService,
+            IFileValidationService fileValidationService,
             IValidator<UpdatePersonalProfileRequest> updateProfileValidator,
             IValidator<UpdateAvatarRequest> updateAvatarValidator,
             IValidator<UpdateIdCardRequest> updateIdCardValidator,
@@ -62,6 +65,7 @@ namespace HomeCycle.Application.Services.Personals
             _updateIdCardValidator = updateIdCardValidator;
             _updateBankAccountValidator = updateBankAccountValidator;
             _fileStorageService = fileStorageService;
+            _fileValidationService = fileValidationService;
         }
 
         public async Task<Result<PersonalProfileResponse>> GetMyProfileAsync(Guid userId, CancellationToken cancellationToken = default)
@@ -87,11 +91,18 @@ namespace HomeCycle.Application.Services.Personals
 
         public async Task<Result<string>> UpdateAvatarAsync(Guid userId, UpdateAvatarRequest file, CancellationToken cancellationToken = default)
         {
-            var validationResult = await _updateAvatarValidator.ValidateAsync(file, cancellationToken);
-            if (!validationResult.IsValid)
+            //var validationResult = await _updateAvatarValidator.ValidateAsync(file, cancellationToken);
+            //if (!validationResult.IsValid)
+            //{
+            //    var errors = string.Join(", ", validationResult.Errors.Select(x => x.ErrorMessage));
+            //    return Result<string>.Fail(ValidationErrors.InvalidRequest(errors));
+            //}
+
+            var fileValidation = await _fileValidationService.ValidateAsync(file.AvatarUrl, FileUploadContext.Avatar, cancellationToken);
+
+            if (!fileValidation.IsSuccess)
             {
-                var errors = string.Join(", ", validationResult.Errors.Select(x => x.ErrorMessage));
-                return Result<string>.Fail(ValidationErrors.InvalidRequest(errors));
+                return Result<string>.Fail(fileValidation.Error!);
             }
 
             var user = await _userRepository.GetByIdAsync(userId, cancellationToken);
@@ -194,12 +205,26 @@ namespace HomeCycle.Application.Services.Personals
 
         public async Task<Result> UpdateIdentityAsync(Guid userId, UpdateIdCardRequest request, CancellationToken cancellationToken = default)
         {
-            var validationResult = await _updateIdCardValidator.ValidateAsync(request, cancellationToken);
-            if (!validationResult.IsValid)
+            //var validationResult = await _updateIdCardValidator.ValidateAsync(request, cancellationToken);
+            //if (!validationResult.IsValid)
+            //{
+            //    var errors = string.Join(", ", validationResult.Errors.Select(x => x.ErrorMessage));
+            //    return Result.Fail(ValidationErrors.InvalidRequest(errors));
+            //}
+
+            var identityFiles = new[]
             {
-                var errors = string.Join(", ", validationResult.Errors.Select(x => x.ErrorMessage));
-                return Result.Fail(ValidationErrors.InvalidRequest(errors));
+                request.FrontIDCardImage,
+                request.BackIDCardImage
             }
+            .Where(file => file != null)
+            .Select(file => file!)
+            .ToList();
+
+            var fileValidation = await _fileValidationService.ValidateManyAsync(identityFiles, FileUploadContext.IdentityDocument, cancellationToken);
+
+            if (!fileValidation.IsSuccess)
+                return Result.Fail(fileValidation.Error!);
 
             var user = await _userRepository.GetByIdAsync(userId, cancellationToken);
             if (user is null)
@@ -212,7 +237,7 @@ namespace HomeCycle.Application.Services.Personals
             string? frontUploadedUrl = null;
             string? backUploadedUrl = null;
 
-            if (request.FrontIDCardImage != null && request.FrontIDCardImage.Length > 0)
+            if (request.FrontIDCardImage != null)
             {
                 using (var stream = request.FrontIDCardImage.OpenReadStream())
                 {
@@ -223,7 +248,7 @@ namespace HomeCycle.Application.Services.Personals
                 }
             }
 
-            if (request.BackIDCardImage != null && request.BackIDCardImage.Length > 0)
+            if (request.BackIDCardImage != null)
             {
                 using (var stream = request.BackIDCardImage.OpenReadStream())
                 {
@@ -250,7 +275,7 @@ namespace HomeCycle.Application.Services.Personals
             await _personalProfileRepository.UpdateAsync(profile, cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-            var bankAccount = await _bankAccountRepository.GetByUserIdAsync(userId, cancellationToken);
+            //var bankAccount = await _bankAccountRepository.GetByUserIdAsync(userId, cancellationToken);
             return Result.Success();
         }
 
