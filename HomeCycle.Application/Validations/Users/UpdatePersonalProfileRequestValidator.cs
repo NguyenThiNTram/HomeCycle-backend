@@ -36,8 +36,8 @@ namespace HomeCycle.Application.Validations.Users
             !string.IsNullOrWhiteSpace(x.RepresentativeName) ||
             x.RepresentativeDob.HasValue ||
             !string.IsNullOrWhiteSpace(x.RepresentativeAddress) ||
-            (x.FrontIDCardImage != null && x.FrontIDCardImage.Length > 0) || // ĐÃ SỬA: Kiểm tra file hợp lệ
-            (x.BackIDCardImage != null && x.BackIDCardImage.Length > 0),    // ĐÃ SỬA: Kiểm tra file hợp lệ
+            (x.FrontIDCardImage != null) || // ĐÃ SỬA: Kiểm tra file hợp lệ
+            (x.BackIDCardImage != null),    // ĐÃ SỬA: Kiểm tra file hợp lệ
             () =>
             {
                 RuleFor(x => x.RepresentativeCode)

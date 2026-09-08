@@ -70,6 +70,7 @@ namespace HomeCycle.Infrastructure.Repositories.Offers
                 .Include(o => o.Sender)
                 .Include(o => o.Receiver)
                 .Include(x => x.Post)
+                    .ThenInclude(x => x!.Product)
                 .Where(x => x.SenderId == senderId);
 
             var totalCount = await query.CountAsync(cancellationToken);
@@ -96,6 +97,7 @@ namespace HomeCycle.Infrastructure.Repositories.Offers
                 .Include(o => o.Sender)
                 .Include(o => o.Receiver)
                 .Include(x => x.Post)
+                    .ThenInclude(x => x!.Product)
                 .Where(x => x.ReceiverId == receiverId);
 
             var totalCount = await query.CountAsync(cancellationToken);

@@ -1,8 +1,9 @@
-﻿using System;
+﻿using HomeCycle.Domain.Enums;
+using Microsoft.EntityFrameworkCore;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
-using Microsoft.EntityFrameworkCore;
 
 namespace HomeCycle.Domain.Entities;
 
@@ -10,7 +11,7 @@ public class platform_policy
 {
     public Guid PolicyId { get; set; }
 
-    public int PolicyType { get; set; }
+    public PlatformPolicyType PolicyType { get; set; }
     public string? Title { get; set; }
     public string Content { get; set; }
     public int Version { get; set; }

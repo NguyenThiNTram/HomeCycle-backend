@@ -728,6 +728,21 @@ public partial class HomeCycleDbContext : DbContext
             entity.Property(e => e.UpdatedAt).HasDefaultValueSql("now()");
             entity.Property(e => e.Content).HasColumnType("jsonb");
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()");
+            
+            // PolicyType as integer (enum backing)
+            entity.Property(e => e.PolicyType).HasConversion<int>().IsRequired();
+            
+            // Unique: only one active policy per type
+            entity.HasIndex(e => new { e.PolicyType, e.IsActive })
+                .IsUnique()
+                .HasFilter("\"IsActive\" = true")
+                .HasDatabaseName("uq_platform_policy_type_active");
+            
+            // Unique: version per policy type
+            entity.HasIndex(e => new { e.PolicyType, e.Version })
+                .IsUnique()
+                .HasDatabaseName("uq_platform_policy_type_version");
+
             entity.HasOne<User>()
              .WithMany()
              .HasForeignKey(e => e.CreatedBy)

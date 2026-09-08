@@ -28,19 +28,25 @@ namespace HomeCycle.Application.Services.PlatformPolicies
         private readonly IMapper _mapper;
         private readonly IValidator<UpdateDisputePolicyRequest> _disputeValidator;
         private readonly IValidator<UpdateAppointmentPolicyRequest> _appointmentValidator;
+        private readonly IValidator<UpdateFileUploadPolicyRequest> _fileUploadRequestValidator;
+        private readonly IValidator<FileUploadPolicyConfigDto> _fileUploadPolicyValidator;
 
         public PlatformPolicyService(
             IPlatformPolicyRepository policyRepository,
             IUnitOfWork unitOfWork,
             IMapper mapper,
             IValidator<UpdateDisputePolicyRequest> disputeValidator,
-            IValidator<UpdateAppointmentPolicyRequest> appointmentValidator)
+            IValidator<UpdateAppointmentPolicyRequest> appointmentValidator,
+            IValidator<UpdateFileUploadPolicyRequest> fileUploadRequestValidator,
+            IValidator<FileUploadPolicyConfigDto> fileUploadPolicyValidator)
         {
             _policyRepository = policyRepository;
             _unitOfWork = unitOfWork;
             _mapper = mapper;
             _disputeValidator = disputeValidator;
             _appointmentValidator = appointmentValidator;
+            _fileUploadRequestValidator = fileUploadRequestValidator;
+            _fileUploadPolicyValidator = fileUploadPolicyValidator;
         }
 
         public async Task<Result<IReadOnlyList<PlatformPolicySummaryResponseDto>>> GetAllActiveAsync(
@@ -180,7 +186,7 @@ namespace HomeCycle.Application.Services.PlatformPolicies
                 var newPolicy = new platform_policy
                 {
                     PolicyId = Guid.NewGuid(),
-                    PolicyType = (int)PlatformPolicyType.Dispute,
+                    PolicyType = PlatformPolicyType.Dispute,
                     Title = string.IsNullOrWhiteSpace(current.Title)
                         ? "Dispute Policy"
                         : current.Title,
@@ -290,7 +296,7 @@ namespace HomeCycle.Application.Services.PlatformPolicies
                 var newPolicy = new platform_policy
                 {
                     PolicyId = Guid.NewGuid(),
-                    PolicyType = (int)PlatformPolicyType.Appointment,
+                    PolicyType = PlatformPolicyType.Appointment,
                     Title = string.IsNullOrWhiteSpace(current.Title)
                         ? "Appointment Policy"
                         : current.Title,
@@ -325,6 +331,13 @@ namespace HomeCycle.Application.Services.PlatformPolicies
             PlatformPolicyType policyType,
             CancellationToken cancellationToken = default)
         {
+            if (!IsSupportedPolicyType(policyType))
+            {
+                return Result<IReadOnlyList<PlatformPolicyVersionListItemDto>>.Fail(
+                    PlatformPolicyErrors.UnsupportedType(
+                        policyType.ToString()));
+            }
+
             var policies = await _policyRepository.GetVersionsAsync(
                 policyType,
                 cancellationToken);
@@ -341,6 +354,13 @@ namespace HomeCycle.Application.Services.PlatformPolicies
             int version,
             CancellationToken cancellationToken = default)
         {
+            if (!IsSupportedPolicyType(policyType))
+            {
+                return Result<PlatformPolicyVersionDetailDto>.Fail(
+                    PlatformPolicyErrors.UnsupportedType(
+                        policyType.ToString()));
+            }
+
             var policy = await _policyRepository.GetByVersionAsync(
                 policyType,
                 version,
@@ -364,6 +384,20 @@ namespace HomeCycle.Application.Services.PlatformPolicies
             int version,
             CancellationToken cancellationToken = default)
         {
+            //// Block FileUpload restore until full validation is implemented
+            //if (policyType == PlatformPolicyType.FileUpload)
+            //{
+            //    return Result<PlatformPolicyVersionDetailDto>
+            //        .Fail(PlatformPolicyErrors.UnsupportedType(policyType.ToString()));
+            //}
+
+            if (!IsSupportedPolicyType(policyType))
+            {
+                return Result<PlatformPolicyVersionDetailDto>.Fail(
+                    PlatformPolicyErrors.UnsupportedType(
+                        policyType.ToString()));
+            }
+
             await _unitOfWork.BeginTransactionAsync(cancellationToken);
 
             try
@@ -401,7 +435,8 @@ namespace HomeCycle.Application.Services.PlatformPolicies
                         .Fail(PlatformPolicyErrors.VersionAlreadyActive);
                 }
 
-                if (!IsValidPolicyContent(policyType, source.Content))
+                //if (!IsValidPolicyContent(policyType, source.Content))
+                if (!await IsValidPolicyContentAsync(policyType, source.Content, cancellationToken))
                 {
                     await _unitOfWork.RollbackTransactionAsync(cancellationToken);
 
@@ -424,7 +459,7 @@ namespace HomeCycle.Application.Services.PlatformPolicies
                 var restoredPolicy = new platform_policy
                 {
                     PolicyId = Guid.NewGuid(),
-                    PolicyType = (int)policyType,
+                    PolicyType = policyType,
                     Title = source.Title,
                     Content = source.Content,
                     Version = nextVersion,
@@ -480,6 +515,213 @@ namespace HomeCycle.Application.Services.PlatformPolicies
             return result.Data.Config;
         }
 
+        public async Task< Result<PlatformPolicyResponseDto<FileUploadPolicyConfigDto>>> GetFileUploadPolicyAsync(
+        CancellationToken cancellationToken = default)
+        {
+            var policy = await _policyRepository.GetActiveAsync(PlatformPolicyType.FileUpload, cancellationToken);
+
+            if (policy == null)
+            {
+                return Result<PlatformPolicyResponseDto<FileUploadPolicyConfigDto>>
+                    .Fail(PlatformPolicyErrors.ActiveNotFound(PlatformPolicyType.FileUpload));
+            }
+
+            if (!TryDeserialize(policy.Content, out FileUploadPolicyConfigDto? config))
+            {
+                return Result<PlatformPolicyResponseDto<FileUploadPolicyConfigDto>>
+                    .Fail(PlatformPolicyErrors.InvalidContent(PlatformPolicyType.FileUpload));
+            }
+
+            var validation = await _fileUploadPolicyValidator.ValidateAsync(config!, cancellationToken);
+
+            if (!validation.IsValid)
+            {
+                return Result<PlatformPolicyResponseDto<FileUploadPolicyConfigDto>>
+                    .Fail(PlatformPolicyErrors.InvalidContent(PlatformPolicyType.FileUpload));
+            }
+
+            var response = _mapper.Map<PlatformPolicyResponseDto<FileUploadPolicyConfigDto>>(policy);
+
+            response.Config = config!;
+
+            return Result<PlatformPolicyResponseDto<FileUploadPolicyConfigDto>>
+                .Success(response);
+        }
+
+        public async Task<Result<PlatformPolicyResponseDto<FileUploadPolicyConfigDto>>> UpdateFileUploadPolicyAsync(Guid adminId, UpdateFileUploadPolicyRequest request, CancellationToken cancellationToken = default)
+        {
+            var requestValidation = await _fileUploadRequestValidator.ValidateAsync(request, cancellationToken);
+
+            if (!requestValidation.IsValid)
+            {
+                var message = string.Join("\n", requestValidation.Errors.Select(x => x.ErrorMessage));
+
+                return Result<PlatformPolicyResponseDto<FileUploadPolicyConfigDto>>
+                    .Fail(ValidationErrors.InvalidRequest(message));
+            }
+
+            await _unitOfWork.BeginTransactionAsync(cancellationToken);
+
+            try
+            {
+                var current = await _policyRepository.GetActiveForUpdateAsync(PlatformPolicyType.FileUpload, cancellationToken);
+
+                if (current == null)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+
+                    return Result<PlatformPolicyResponseDto<FileUploadPolicyConfigDto>>
+                        .Fail(PlatformPolicyErrors.ActiveNotFound(PlatformPolicyType.FileUpload));
+                }
+
+                if (!TryDeserialize(current.Content, out FileUploadPolicyConfigDto? currentConfig))
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+
+                    return Result<PlatformPolicyResponseDto<FileUploadPolicyConfigDto>>
+                        .Fail(PlatformPolicyErrors.InvalidContent(PlatformPolicyType.FileUpload));
+                }
+
+                var currentValidation =
+                    await _fileUploadPolicyValidator.ValidateAsync(currentConfig!, cancellationToken);
+
+                if (!currentValidation.IsValid)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<PlatformPolicyResponseDto<FileUploadPolicyConfigDto>>
+                        .Fail(PlatformPolicyErrors.InvalidContent(PlatformPolicyType.FileUpload));
+                }
+
+                var updatedConfig = CloneFileUploadConfig(currentConfig!);
+
+                var rule = updatedConfig.Rules.SingleOrDefault(
+                    x => x.Context == request.Context);
+
+                if (rule == null)
+                {
+                    // Muốn tạo context mới phải cung cấp đủ cấu hình.
+                    if (!request.MaxFileSizeBytes.HasValue || request.AllowedExtensions == null)
+                    {
+                        await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+
+                        return Result<PlatformPolicyResponseDto<FileUploadPolicyConfigDto>>
+                            .Fail(
+                                ValidationErrors.InvalidRequest(
+                                    "Context chưa có rule. " +
+                                    "Phải cung cấp MaxFileSizeBytes và " +
+                                    "AllowedExtensions để tạo rule mới."));
+                    }
+
+                    rule = new FileUploadRuleConfigDto
+                    {
+                        Context = request.Context,
+                        MaxFileSizeBytes = request.MaxFileSizeBytes.Value,
+                        AllowedExtensions = FileTypeCatalog.NormalizeExtensions(request.AllowedExtensions)
+                    };
+
+                    updatedConfig.Rules.Add(rule);
+                }
+                else
+                {
+                    if (request.MaxFileSizeBytes.HasValue)
+                    {
+                        rule.MaxFileSizeBytes = request.MaxFileSizeBytes.Value;
+                    }
+
+                    if (request.AllowedExtensions != null)
+                    {
+                        rule.AllowedExtensions = FileTypeCatalog.NormalizeExtensions(request.AllowedExtensions);
+                    }
+                }
+
+                NormalizeFileUploadConfig(updatedConfig);
+
+                var updatedValidation = await _fileUploadPolicyValidator.ValidateAsync(updatedConfig, cancellationToken);
+
+                if (!updatedValidation.IsValid)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+
+                    var message = string.Join("\n", updatedValidation.Errors.Select(x => x.ErrorMessage));
+
+                    return Result<PlatformPolicyResponseDto<FileUploadPolicyConfigDto>>
+                        .Fail(ValidationErrors.InvalidRequest(message));
+                }
+
+                if (SameFileUploadConfig(currentConfig!, updatedConfig))
+                {
+                    await _unitOfWork.RollbackTransactionAsync(
+                        cancellationToken);
+
+                    var currentResponse = _mapper.Map<PlatformPolicyResponseDto<FileUploadPolicyConfigDto>>(current);
+
+                    currentResponse.Config = currentConfig!;
+
+                    return Result<PlatformPolicyResponseDto<FileUploadPolicyConfigDto>>
+                        .Success(currentResponse);
+                }
+
+                var now = DateTime.UtcNow;
+
+                var nextVersion = await _policyRepository.GetNextVersionAsync(PlatformPolicyType.FileUpload, cancellationToken);
+
+                current.IsActive = false;
+                current.UpdatedAt = now;
+
+                await _policyRepository.UpdateAsync(current, cancellationToken);
+
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+                var newPolicy = new platform_policy
+                {
+                    PolicyId = Guid.NewGuid(),
+                    PolicyType = PlatformPolicyType.FileUpload,
+                    Title = string.IsNullOrWhiteSpace(current.Title)
+                        ? "File Upload Policy"
+                        : current.Title,
+                    Content = JsonSerializer.Serialize(
+                        updatedConfig,
+                        JsonOptions),
+                    Version = nextVersion,
+                    IsActive = true,
+                    CreatedAt = now,
+                    CreatedBy = adminId,
+                    UpdatedAt = now
+                };
+
+                await _policyRepository.AddAsync(newPolicy, cancellationToken);
+
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+                await _unitOfWork.CommitTransactionAsync(cancellationToken);
+
+                var response = _mapper.Map<PlatformPolicyResponseDto<FileUploadPolicyConfigDto>>(newPolicy);
+
+                response.Config = updatedConfig;
+
+                return Result<PlatformPolicyResponseDto<FileUploadPolicyConfigDto>>
+                    .Success(response);
+            }
+            catch
+            {
+                await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                throw;
+            }
+        }
+
+        public async Task<FileUploadPolicyConfigDto> GetFileUploadConfigAsync(CancellationToken cancellationToken = default)
+        {
+            var result = await GetFileUploadPolicyAsync(cancellationToken);
+
+            if (!result.IsSuccess || result.Data == null)
+            {
+                throw new InvalidOperationException(
+                    result.Error?.Message ??
+                    "File upload policy configuration is unavailable.");
+            }
+
+            return result.Data.Config;
+        }
+
         private static bool TryDeserialize<T>(
             string? content,
             out T? config) where T : class
@@ -500,23 +742,23 @@ namespace HomeCycle.Application.Services.PlatformPolicies
             }
         }
 
-        private static bool IsValidPolicyContent(
-            PlatformPolicyType policyType,
-            string content)
-        {
-            return policyType switch
-            {
-                PlatformPolicyType.Dispute =>
-                    TryDeserialize(content, out DisputePolicyConfigDto? disputeConfig)
-                    && IsValidDisputeConfig(disputeConfig!),
+        //private static bool IsValidPolicyContent(
+        //    PlatformPolicyType policyType,
+        //    string content)
+        //{
+        //    return policyType switch
+        //    {
+        //        PlatformPolicyType.Dispute =>
+        //            TryDeserialize(content, out DisputePolicyConfigDto? disputeConfig)
+        //            && IsValidDisputeConfig(disputeConfig!),
 
-                PlatformPolicyType.Appointment =>
-                    TryDeserialize(content, out AppointmentPolicyConfigDto? appointmentConfig)
-                    && IsValidAppointmentConfig(appointmentConfig!),
+        //        PlatformPolicyType.Appointment =>
+        //            TryDeserialize(content, out AppointmentPolicyConfigDto? appointmentConfig)
+        //            && IsValidAppointmentConfig(appointmentConfig!),
 
-                _ => false
-            };
-        }
+        //        _ => false
+        //    };
+        //}
 
         private static bool IsValidDisputeConfig(
             DisputePolicyConfigDto config)
@@ -559,6 +801,95 @@ namespace HomeCycle.Application.Services.PlatformPolicies
                 && current.LateThresholdMinutes == updated.LateThresholdMinutes
                 && current.RescheduleCutoffHours == updated.RescheduleCutoffHours
                 && current.CancellationCutoffHours == updated.CancellationCutoffHours;
+        }
+
+        private static FileUploadPolicyConfigDto CloneFileUploadConfig(FileUploadPolicyConfigDto source)
+        {
+            return new FileUploadPolicyConfigDto
+            {
+                Rules = source.Rules
+                    .Select(rule => new FileUploadRuleConfigDto
+                    {
+                        Context = rule.Context,
+                        MaxFileSizeBytes = rule.MaxFileSizeBytes,
+                        AllowedExtensions =
+                            rule.AllowedExtensions.ToList()
+                    })
+                    .ToList()
+            };
+        }
+
+        private static void NormalizeFileUploadConfig(FileUploadPolicyConfigDto config)
+        {
+            foreach (var rule in config.Rules)
+            {
+                rule.AllowedExtensions = FileTypeCatalog.NormalizeExtensions(rule.AllowedExtensions);
+            }
+
+            config.Rules = config.Rules
+                .OrderBy(x => (int)x.Context)
+                .ToList();
+        }
+
+        private static bool SameFileUploadConfig(FileUploadPolicyConfigDto current, FileUploadPolicyConfigDto updated)
+        {
+            if (current.Rules.Count != updated.Rules.Count)
+                return false;
+
+            foreach (var currentRule in current.Rules)
+            {
+                var updatedRule = updated.Rules.SingleOrDefault(
+                    x => x.Context == currentRule.Context);
+
+                if (updatedRule == null)
+                    return false;
+
+                if (currentRule.MaxFileSizeBytes != updatedRule.MaxFileSizeBytes)
+                    return false;
+
+                var currentExtensions = FileTypeCatalog.NormalizeExtensions(currentRule.AllowedExtensions);
+
+                var updatedExtensions = FileTypeCatalog.NormalizeExtensions(updatedRule.AllowedExtensions);
+                if (!currentExtensions.SequenceEqual(updatedExtensions, StringComparer.OrdinalIgnoreCase))
+                    return false;
+            }
+
+            return true;
+        }
+
+        private async Task<bool> IsValidPolicyContentAsync(PlatformPolicyType policyType, string content, CancellationToken cancellationToken)
+        {
+            switch (policyType)
+            {
+                case PlatformPolicyType.Dispute:
+                    return TryDeserialize(content, out DisputePolicyConfigDto? disputeConfig)
+                           && IsValidDisputeConfig(disputeConfig!);
+
+                case PlatformPolicyType.Appointment:
+                    return TryDeserialize(content, out AppointmentPolicyConfigDto? appointmentConfig)
+                           && IsValidAppointmentConfig(appointmentConfig!);
+
+                case PlatformPolicyType.FileUpload:
+                    if (!TryDeserialize(content, out FileUploadPolicyConfigDto? fileUploadConfig))
+                    {
+                        return false;
+                    }
+                    var validation = await _fileUploadPolicyValidator.ValidateAsync(fileUploadConfig!, cancellationToken);
+
+                    return validation.IsValid;
+
+                default:
+                    return false;
+            }
+        }
+
+        //Chặn PlatformPolicyType không hỗ trợ trong service
+        private static bool IsSupportedPolicyType(PlatformPolicyType policyType)
+        {
+            return policyType is
+                PlatformPolicyType.Dispute or
+                PlatformPolicyType.Appointment or
+                PlatformPolicyType.FileUpload;
         }
     }
 }
