@@ -1,4 +1,4 @@
-using HomeCycle.Domain.Enums;
+﻿using HomeCycle.Domain.Enums;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -31,6 +31,9 @@ namespace HomeCycle.Application.DTOs.Responses.Offers
     {
         public Guid OfferId { get; set; }
         public Guid PostId { get; set; }
+
+        public string ProductName { get; set; } = string.Empty;
+        public string? PostThumbnailUrl { get; set; }
 
         public Guid SenderId { get; set; }
         public string SenderName { get; set; } = string.Empty;

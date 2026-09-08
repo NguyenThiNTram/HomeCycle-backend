@@ -5,6 +5,7 @@ using HomeCycle.Application.Commons.Paginations;
 using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Requests.Offers;
 using HomeCycle.Application.DTOs.Responses.Conversations;
+using HomeCycle.Application.DTOs.Responses.Media;
 using HomeCycle.Application.DTOs.Responses.Messages;
 using HomeCycle.Application.DTOs.Responses.Negotiations;
 using HomeCycle.Application.DTOs.Responses.Notifications;
@@ -15,6 +16,7 @@ using HomeCycle.Application.Interfaces.Repositories.Posts;
 using HomeCycle.Application.Interfaces.Repositories.Users;
 using HomeCycle.Application.Interfaces.Services.Notifications;
 using HomeCycle.Application.Interfaces.Services.Offers;
+using HomeCycle.Application.Interfaces.Services.Posts;
 using HomeCycle.Domain.Entities;
 using HomeCycle.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
@@ -37,6 +39,7 @@ namespace HomeCycle.Application.Services.Offers
         private readonly IConversationRepository _conversationRepository;
         private readonly IPostRepository _postRepository;
         private readonly IUserRepository _userRepository;
+        private readonly IMediaService _mediaService;
         private readonly ILogger<OfferService> _logger;
         private readonly IValidator<CreateOfferRequest> _createValidator;
         private readonly IValidator<UpdateOfferRequest> _updateValidator;
@@ -57,6 +60,7 @@ namespace HomeCycle.Application.Services.Offers
             IConversationRepository conversationRepository,
             IPostRepository postRepository,
             IUserRepository userRepository,
+            IMediaService mediaService,
             ILogger<OfferService> logger,
             IValidator<CreateOfferRequest> createValidator,
             IValidator<UpdateOfferRequest> updateValidator,
@@ -73,6 +77,7 @@ namespace HomeCycle.Application.Services.Offers
             _conversationRepository = conversationRepository;
             _postRepository = postRepository;
             _userRepository = userRepository;
+            _mediaService = mediaService;
             _logger = logger;
             _createValidator = createValidator;
             _updateValidator = updateValidator;
@@ -778,7 +783,8 @@ namespace HomeCycle.Application.Services.Offers
                 request,
                 cancellationToken);
 
-            return Result<PagedResult<OfferListItem>>.Success(MapPaged<offer, OfferListItem>(paged));
+            //return Result<PagedResult<OfferListItem>>.Success(MapPaged<offer, OfferListItem>(paged));
+            return await MapOfferPagedAsync(paged, cancellationToken);
         }
 
         public async Task<Result<PagedResult<OfferListItem>>> GetReceivedAsync(Guid userId, PaginationRequest request, CancellationToken cancellationToken = default)
@@ -788,7 +794,8 @@ namespace HomeCycle.Application.Services.Offers
                 request,
                 cancellationToken);
 
-            return Result<PagedResult<OfferListItem>>.Success(MapPaged<offer, OfferListItem>(paged));
+            //return Result<PagedResult<OfferListItem>>.Success(MapPaged<offer, OfferListItem>(paged));
+            return await MapOfferPagedAsync(paged, cancellationToken);
         }
 
         // ================== PRIVATE HELPERS ==================
@@ -1124,6 +1131,71 @@ namespace HomeCycle.Application.Services.Offers
                     NotificationTargetType.Offer,
                     offer.OfferId),
                 cancellationToken);
+        }
+
+        private async Task<Result<PagedResult<OfferListItem>>> MapOfferPagedAsync(
+    PagedResult<offer> paged,
+    CancellationToken cancellationToken)
+        {
+            var items = _mapper
+                .Map<IReadOnlyList<OfferListItem>>(paged.Items)
+                .ToList();
+
+            if (items.Count == 0)
+            {
+                return Result<PagedResult<OfferListItem>>.Success(
+                    new PagedResult<OfferListItem>
+                    {
+                        Items = items,
+                        PageNumber = paged.PageNumber,
+                        PageSize = paged.PageSize,
+                        TotalCount = paged.TotalCount
+                    });
+            }
+
+            var postIds = paged.Items
+                .Select(x => x.PostId)
+                .Distinct()
+                .ToArray();
+
+            var mediaResult = await _mediaService.GetByTargetsAsync(
+                postIds,
+                "Post",
+                cancellationToken);
+
+            if (!mediaResult.IsSuccess)
+            {
+                return Result<PagedResult<OfferListItem>>.Fail(
+                    mediaResult.Error!);
+            }
+
+            var offersById = paged.Items.ToDictionary(x => x.OfferId);
+
+            var mediasByPost = mediaResult.Data
+                ?? new Dictionary<Guid, IReadOnlyList<MediaResponse>>();
+
+            foreach (var item in items)
+            {
+                if (!offersById.TryGetValue(item.OfferId, out var offer))
+                    continue;
+
+                item.ProductName =
+                    offer.Post?.Product?.ProductName ?? string.Empty;
+
+                if (mediasByPost.TryGetValue(item.PostId, out var medias))
+                {
+                    item.PostThumbnailUrl = medias.FirstOrDefault()?.Url;
+                }
+            }
+
+            return Result<PagedResult<OfferListItem>>.Success(
+                new PagedResult<OfferListItem>
+                {
+                    Items = items,
+                    PageNumber = paged.PageNumber,
+                    PageSize = paged.PageSize,
+                    TotalCount = paged.TotalCount
+                });
         }
     }
 }
