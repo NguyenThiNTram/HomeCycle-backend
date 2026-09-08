@@ -248,8 +248,29 @@ namespace HomeCycle.API.Controllers
 
         private static bool TryParsePolicyType(string policyType, out PlatformPolicyType type)
         {
-            return Enum.TryParse(policyType, true, out type)
-                   && Enum.IsDefined(typeof(PlatformPolicyType), type);
+            type = default;
+
+            if (string.IsNullOrWhiteSpace(policyType))
+                return false;
+
+            switch (policyType.Trim().ToLowerInvariant())
+            {
+                case "dispute":
+                    type = PlatformPolicyType.Dispute;
+                    return true;
+
+                case "appointment":
+                    type = PlatformPolicyType.Appointment;
+                    return true;
+
+                case "file-upload":
+                case "fileupload":
+                    type = PlatformPolicyType.FileUpload;
+                    return true;
+
+                default:
+                    return false;
+            }
         }
     }
 }

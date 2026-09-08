@@ -602,40 +602,9 @@ namespace HomeCycle.Application.Mappings
             CreateMap<platform_policy, PlatformPolicyResponseDto<FileUploadPolicyConfigDto>>()
                 .ForMember(dest => dest.Config, opt => opt.Ignore());
 
-            //CreateMap<platform_policy, PlatformPolicySummaryResponseDto>()
-            //    .ForMember(dest => dest.PolicyType,
-            //        opt => opt.MapFrom(src => (PlatformPolicyType)src.PolicyType));
+            CreateMap<DisputePolicyConfigDto, DisputePolicyConfigDto>();
 
-            //CreateMap<platform_policy, PlatformPolicyVersionListItemDto>()
-            //    .ForMember(dest => dest.CanRestore,
-            //        opt => opt.MapFrom(src => !src.IsActive &&
-            //            (src.PolicyType == PlatformPolicyType.Dispute || src.PolicyType == PlatformPolicyType.Appointment)));
-
-            //CreateMap<platform_policy, PlatformPolicyVersionDetailDto>()
-            //    .ForMember(dest => dest.PolicyType,
-            //        opt => opt.MapFrom(src => (PlatformPolicyType)src.PolicyType))
-            //    .ForMember(dest => dest.Config,
-            //        opt => opt.MapFrom(src =>
-            //            JsonSerializer.Deserialize<JsonElement>(
-            //                src.Content,
-            //                (JsonSerializerOptions?)null)))
-            //    .ForMember(dest => dest.CanRestore,
-            //        opt => opt.MapFrom(src => !src.IsActive &&
-            //            (src.PolicyType == PlatformPolicyType.Dispute || src.PolicyType == PlatformPolicyType.Appointment)));
-
-            //CreateMap<platform_policy, PlatformPolicyResponseDto<DisputePolicyConfigDto>>()
-            //    .ForMember(dest => dest.PolicyType,
-            //        opt => opt.MapFrom(src => (PlatformPolicyType)src.PolicyType))
-            //    .ForMember(dest => dest.Config, opt => opt.Ignore());
-
-            //CreateMap<platform_policy, PlatformPolicyResponseDto<AppointmentPolicyConfigDto>>()
-            //    .ForMember(dest => dest.PolicyType,
-            //        opt => opt.MapFrom(src => (PlatformPolicyType)src.PolicyType))
-            //    .ForMember(dest => dest.Config, opt => opt.Ignore());
-
-            //CreateMap<DisputePolicyConfigDto, DisputePolicyConfigDto>();
-
-            //CreateMap<AppointmentPolicyConfigDto, AppointmentPolicyConfigDto>();
+            CreateMap<AppointmentPolicyConfigDto, AppointmentPolicyConfigDto>();
 
             CreateMap<UpdateDisputePolicyRequest, DisputePolicyConfigDto>()
                 .ForAllMembers(opt => opt.Condition(

@@ -18,6 +18,10 @@ namespace HomeCycle.Application.Interfaces.Generics
         Task CommitTransactionAsync(CancellationToken cancellationToken = default);
         Task RollbackTransactionAsync(CancellationToken cancellationToken = default);
 
+        void RegisterAfterCommit(Func<Task> action);
+
+        void RegisterAfterRollback(Func<Task> action);
+
     }
 
     //IDisposable: Là một khuôn mẫu có sẵn trong C#. Nó yêu cầu viết hàm Dispose() để tự động giải phóng tài nguyên hệ thống

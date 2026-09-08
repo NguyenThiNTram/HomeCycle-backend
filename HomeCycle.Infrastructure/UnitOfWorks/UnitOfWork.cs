@@ -2,6 +2,7 @@
 using HomeCycle.Infrastructure.DbContexts;
 using HomeCycle.Infrastructure.Repositories.Generics;
 using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.Logging;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -17,11 +18,16 @@ namespace HomeCycle.Infrastructure.UnitOfWorks
         private readonly Hashtable _repositories;
         private IDbContextTransaction? _currentTransaction;
         private int _transactionCount = 0;
+        private readonly ILogger<UnitOfWork> _logger;
 
-        public UnitOfWork(HomeCycleDbContext db)
+        private readonly List<Func<Task>> _afterCommitActions = [];
+        private readonly List<Func<Task>> _afterRollbackActions = [];
+
+        public UnitOfWork(HomeCycleDbContext db, ILogger<UnitOfWork> logger)
         {
             _db = db;
             _repositories = new Hashtable();
+            _logger = logger;
         }
 
         // Tự động khởi tạo và cache Repository
@@ -39,9 +45,41 @@ namespace HomeCycle.Infrastructure.UnitOfWorks
             return (IGenericRepository<T>)_repositories[type]!;
         }
 
-        public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+        public async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
         {
-            return _db.SaveChangesAsync(cancellationToken);
+            //return _db.SaveChangesAsync(cancellationToken);
+            var hasExplicitTransaction = _currentTransaction is not null;
+
+            try
+            {
+                var affectedRows = await _db.SaveChangesAsync(cancellationToken);
+
+                // SaveChanges tự tạo implicit transaction khi bên ngoài
+                // không có explicit transaction.
+                if (!hasExplicitTransaction)
+                {
+                    await ExecuteCallbacksSafelyAsync( _afterCommitActions, "after commit");
+
+                    ClearTransactionCallbacks();
+                }
+
+                return affectedRows;
+            }
+            catch
+            {
+                // implicit transaction khi SaveChanges thất bại.
+                if (!hasExplicitTransaction)
+                {
+                    await ExecuteCallbacksSafelyAsync(
+                        _afterRollbackActions,
+                        "after rollback");
+
+                    ClearTransactionCallbacks();
+                }
+
+                // Nếu có explicit transaction, giữ callback lại -> Caller sẽ gọi RollbackTransactionAsync
+                throw;
+            }
         }
 
         // Quản lý Transaction thủ công khi gọi nhiều API/Service phức tạp
@@ -109,6 +147,45 @@ namespace HomeCycle.Infrastructure.UnitOfWorks
             try
             {
                 await _currentTransaction.CommitAsync(cancellationToken);
+                // Database đã commit success
+                await ExecuteCallbacksSafelyAsync( _afterCommitActions, "after commit");
+                ClearTransactionCallbacks();
+            }
+            catch (Exception commitException)
+            {
+                _logger.LogError(
+                    commitException,
+                    "Không thể commit database transaction.");
+
+                var rollbackSucceeded = false;
+
+                try
+                {
+                    // Không dùng request token vì token có thể đã bị hủy.
+                    await _currentTransaction.RollbackAsync(
+                        CancellationToken.None);
+
+                    rollbackSucceeded = true;
+                }
+                catch (Exception rollbackException)
+                {
+                    // Có thể commit đã được database xử lý nhưng client
+                    // không nhận được phản hồi. Không được xóa file mới
+                    // khi trạng thái transaction chưa chắc chắn.
+                    _logger.LogCritical(
+                        rollbackException,
+                        "Commit thất bại và không thể xác nhận rollback transaction.");
+                }
+
+                if (rollbackSucceeded)
+                {
+                    await ExecuteCallbacksSafelyAsync(
+                        _afterRollbackActions,
+                        "after rollback");
+                }
+
+                ClearTransactionCallbacks();
+                throw;
             }
             finally
             {
@@ -121,14 +198,39 @@ namespace HomeCycle.Infrastructure.UnitOfWorks
             if (_currentTransaction is null)
                 return;
 
+            var rollbackSucceeded = false;
+
             try
             {
                 await _currentTransaction.RollbackAsync(cancellationToken);
+                rollbackSucceeded = true;
+
+                await ExecuteCallbacksSafelyAsync( _afterRollbackActions, "after rollback");
             }
             finally
             {
+                if (!rollbackSucceeded)
+                {
+                    _logger.LogCritical(
+                        "Không thể xác nhận database transaction đã rollback. " +
+                        "Các callback rollback không được thực thi.");
+                }
+
+                ClearTransactionCallbacks();
                 await DisposeCurrentTransactionAsync();
             }
+        }
+
+        public void RegisterAfterCommit(Func<Task> action)
+        {
+            ArgumentNullException.ThrowIfNull(action);
+            _afterCommitActions.Add(action);
+        }
+
+        public void RegisterAfterRollback(Func<Task> action)
+        {
+            ArgumentNullException.ThrowIfNull(action);
+            _afterRollbackActions.Add(action);
         }
 
         private async Task DisposeCurrentTransactionAsync()
@@ -142,8 +244,35 @@ namespace HomeCycle.Infrastructure.UnitOfWorks
 
         public void Dispose()
         {
+            ClearTransactionCallbacks();
+            _currentTransaction?.Dispose();
+
             _db.Dispose();
             GC.SuppressFinalize(this);
+        }
+
+        private async Task ExecuteCallbacksSafelyAsync(IReadOnlyList<Func<Task>> callbacks, string callbackType)
+        {
+            foreach (var callback in callbacks)
+            {
+                try
+                {
+                    await callback();
+                }
+                catch (Exception exception)
+                {
+                    _logger.LogWarning(
+                        exception,
+                        "Không thể thực thi callback {CallbackType} của UnitOfWork.",
+                        callbackType);
+                }
+            }
+        }
+
+        private void ClearTransactionCallbacks()
+        {
+            _afterCommitActions.Clear();
+            _afterRollbackActions.Clear();
         }
     }
 }

@@ -149,6 +149,7 @@ namespace HomeCycle.Application.Services.Disputes
                     targetType: MediaTargetTypes.Dispute.ToString(),
                     folderName: $"disputes/{dispute.DisputeId}",
                     files: request.EvidenceImages,
+                     uploadContext: FileUploadContext.DisputeEvidence,
                     cancellationToken: cancellationToken);
 
                 if (!mediaResult.IsSuccess)

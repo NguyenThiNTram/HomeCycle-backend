@@ -118,13 +118,15 @@ namespace HomeCycle.Application.Services.Reviews
                 await _reviewRepo.AddAsync(review, ct);
                 await _unitOfWork.SaveChangesAsync(ct);
 
-                if (request.Images != null && request.Images.Any(f => f != null && f.Length > 0))
+                //if (request.Images != null && request.Images.Any(f => f != null && f.Length > 0))
+                if (request.Images is { Count: > 0 })
                 {
                     var mediaResult = await _mediaService.UploadAndSaveMediaAsync(
                         targetId: review.ReviewId,
                         targetType: ReviewMediaTargetType,
                         folderName: ReviewMediaFolder,
                         files: request.Images,
+                        uploadContext: FileUploadContext.ReviewMedia,
                         cancellationToken: ct);
 
                     if (!mediaResult.IsSuccess)
@@ -141,6 +143,7 @@ namespace HomeCycle.Application.Services.Reviews
             catch
             {
                 await _unitOfWork.RollbackTransactionAsync(ct);
+
                 throw;
             }
 
