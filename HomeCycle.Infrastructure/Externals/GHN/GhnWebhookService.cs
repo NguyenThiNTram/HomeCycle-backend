@@ -147,6 +147,20 @@ namespace HomeCycle.Infrastructure.Externals.GHN
                 shipment.ShipmentStatus = mappedStatus.Value;
                 shipment.UpdatedAt = now;
 
+                var carrierHasPickedUp =
+                    mappedStatus.Value == ShipmentStatus.Delivering ||
+                    mappedStatus.Value == ShipmentStatus.Delivered ||
+                    mappedStatus.Value == ShipmentStatus.Returning ||
+                    mappedStatus.Value == ShipmentStatus.Returned ||
+                    mappedStatus.Value == ShipmentStatus.Damage_Lost;
+
+                if (carrierHasPickedUp &&
+                    (!shipment.PickedUpAt.HasValue ||
+                     eventTime < shipment.PickedUpAt.Value))
+                {
+                    shipment.PickedUpAt = eventTime;
+                }
+
                 if (mappedStatus.Value == ShipmentStatus.Delivered &&
                     shipment.DeliveredAt is null)
                 {

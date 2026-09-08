@@ -213,6 +213,15 @@ namespace HomeCycle.Application.Services.Orders
                         order.OrderId,
                         ct);
 
+                var shipment = await _shipmentRepo.GetByOrderIdAsync(order.OrderId, ct);
+
+                if (shipment == null)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    return Result<OrderConfirmationResponseDto>.Fail(
+                        OrderErrors.ShipmentNotFound);
+                }
+
                 appointment? lockedCollection = null;
 
                 if (!inspectionCollectNow)
@@ -236,6 +245,13 @@ namespace HomeCycle.Application.Services.Orders
                         await _unitOfWork.RollbackTransactionAsync(ct);
                         return Result<OrderConfirmationResponseDto>.Fail(
                             OrderErrors.DirectHandoverOnly);
+                    }
+
+                    if (!shipment.SellerReadyAt.HasValue)
+                    {
+                        await _unitOfWork.RollbackTransactionAsync(ct);
+                        return Result<OrderConfirmationResponseDto>.Fail(
+                            OrderErrors.SellerReadyRequired);
                     }
 
                     var collectionAppointment =
@@ -310,6 +326,16 @@ namespace HomeCycle.Application.Services.Orders
                 var confirmedAt = DateTime.UtcNow;
                 var changed = false;
                 notification? handoverNotification = null;
+
+                if (inspectionCollectNow && !shipment.SellerReadyAt.HasValue)
+                {
+                    shipment.SellerReadyAt = confirmedAt;
+                    shipment.UpdatedAt = confirmedAt;
+
+                    await _shipmentRepo.UpdateAsync(shipment, ct);
+
+                    changed = true;
+                }
 
                 if (!order.SellerHandoverConfirmedAt.HasValue)
                 {
@@ -1175,6 +1201,23 @@ namespace HomeCycle.Application.Services.Orders
                     detail.OrderId,
                     ct);
 
+            var shipment = await _shipmentRepo.GetByOrderIdAsync(detail.OrderId, ct);
+
+            var supportsSellerReady =
+                shipment != null &&
+                (shipment.DeliveryMethod == DeliveryMethod.GhnDelivery ||
+                 shipment.DeliveryMethod == DeliveryMethod.SellerDelivers ||
+                 shipment.DeliveryMethod == DeliveryMethod.BuyerPickUp);
+
+            var canConfirmSellerReady =
+                isSeller &&
+                !inspectionCollectNow &&
+                detail.OrderStatus == OrderStatus.Processing &&
+                supportsSellerReady &&
+                shipment!.ShipmentStatus == ShipmentStatus.ReadyToPick &&
+                !shipment.SellerReadyAt.HasValue;
+
+
             var latestCollection =
                 detail.Appointments
                     .Where(x =>
@@ -1216,7 +1259,8 @@ namespace HomeCycle.Application.Services.Orders
                         inspectionCollectNow ||
                         (
                             isDirect &&
-                            collectionConfirmationOpen
+                            collectionConfirmationOpen &&
+                            shipment?.SellerReadyAt.HasValue == true
                         )
                     ) &&
                     !detail.SellerHandoverConfirmedAt.HasValue)
@@ -1320,6 +1364,7 @@ namespace HomeCycle.Application.Services.Orders
 
             return new OrderActionDto
             {
+                CanConfirmSellerReady = canConfirmSellerReady,
                 CanConfirm = canConfirm,
                 ConfirmAction = confirmAction,
                 CanCancel = canCancel,

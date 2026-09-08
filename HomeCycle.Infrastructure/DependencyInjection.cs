@@ -118,6 +118,8 @@ using HomeCycle.Application.Interfaces.Repositories.Inspections;
 using HomeCycle.Infrastructure.Repositories.Inspections;
 using HomeCycle.Application.Interfaces.Services.Inspections;
 using HomeCycle.Application.Services.Inspections;
+using HomeCycle.Application.Interfaces.Services.Shipments;
+using HomeCycle.Application.Services.Shipments;
 
 namespace HomeCycle.Infrastructure
 {
@@ -242,6 +244,7 @@ namespace HomeCycle.Infrastructure
             services.AddScoped<IPaymentService, PaymentService>();
             services.AddScoped<IAppointmentService, AppointmentService>();
             services.AddScoped<IOrderService, OrderService>();
+            services.AddScoped<IShipmentService, ShipmentService>();
             services.AddScoped<IReviewService, ReviewService>();
             services.AddScoped<IWithdrawalService, WithdrawalService>();
             services.AddScoped<IWalletService, WalletService>();
