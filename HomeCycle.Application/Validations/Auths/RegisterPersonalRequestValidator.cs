@@ -42,6 +42,46 @@ namespace HomeCycle.Application.Validations.Auths
                     .WithMessage("Phone number is required.")
                 .Must(IsValidPhoneNumber)
                     .WithMessage("Phone number must contain 10 or 11 digits and start with 0.");
+
+            When(HasAnyIdentityInformation, () =>
+            {
+                RuleFor(x => x.RepresentativeCode)
+                    .NotEmpty()
+                    .WithMessage("Số CCCD không được để trống.")
+                    .MaximumLength(50)
+                    .WithMessage("Số CCCD không được vượt quá 50 ký tự.");
+
+                RuleFor(x => x.RepresentativeName)
+                    .NotEmpty()
+                    .WithMessage("Tên trên CCCD không được để trống.")
+                    .MaximumLength(255)
+                    .WithMessage(
+                        "Tên trên CCCD không được vượt quá 255 ký tự.");
+
+                RuleFor(x => x.RepresentativeDob)
+                    .NotNull()
+                    .WithMessage("Ngày sinh trên CCCD không được để trống.")
+                    .Must(value =>
+                        !value.HasValue ||
+                        value.Value <= DateOnly.FromDateTime(DateTime.UtcNow))
+                    .WithMessage(
+                        "Ngày sinh trên CCCD không được lớn hơn ngày hiện tại.");
+
+                RuleFor(x => x.RepresentativeAddress)
+                    .NotEmpty()
+                    .WithMessage("Địa chỉ trên CCCD không được để trống.")
+                    .MaximumLength(500)
+                    .WithMessage(
+                        "Địa chỉ trên CCCD không được vượt quá 500 ký tự.");
+
+                RuleFor(x => x.FrontIDCardImage)
+                    .NotNull()
+                    .WithMessage("Ảnh mặt trước CCCD không được để trống.");
+
+                RuleFor(x => x.BackIDCardImage)
+                    .NotNull()
+                    .WithMessage("Ảnh mặt sau CCCD không được để trống.");
+            });
         }
         private static bool IsValidFullName(string? fullName)
         {
@@ -74,6 +114,18 @@ namespace HomeCycle.Application.Validations.Auths
             string pattern = @"^(?:\+84|84|0)(?:[35789]\d{8}|2\d{9})$";
 
             return Regex.IsMatch(cleanNumber, pattern);
+        }
+
+        private static bool HasAnyIdentityInformation(RegisterPersonalRequest request)
+        {
+            return
+                !string.IsNullOrWhiteSpace(request.RepresentativeCode) ||
+                !string.IsNullOrWhiteSpace(request.RepresentativeName) ||
+                request.RepresentativeDob.HasValue ||
+                !string.IsNullOrWhiteSpace(
+                    request.RepresentativeAddress) ||
+                request.FrontIDCardImage != null ||
+                request.BackIDCardImage != null;
         }
     }
 }

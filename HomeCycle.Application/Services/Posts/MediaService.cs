@@ -5,9 +5,11 @@ using HomeCycle.Application.DTOs.Requests.Media;
 using HomeCycle.Application.DTOs.Responses.Media;
 using HomeCycle.Application.Interfaces.Generics;
 using HomeCycle.Application.Interfaces.Repositories.Media;
+using HomeCycle.Application.Interfaces.Services.Configs;
 using HomeCycle.Application.Interfaces.Services.Externals;
 using HomeCycle.Application.Interfaces.Services.Posts;
 using HomeCycle.Domain.Entities;
+using HomeCycle.Domain.Enums;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using System;
@@ -22,6 +24,7 @@ namespace HomeCycle.Application.Services.Posts
     {
         private readonly IMediaRepository _mediaRepository;
         private readonly IFileStorageService _fileStorageService;
+        private readonly IFileValidationService _fileValidationService;
         private readonly IUnitOfWork _unitOfWork;
         private readonly IMapper _mapper;
         private readonly ILogger<MediaService> _logger;
@@ -29,86 +32,122 @@ namespace HomeCycle.Application.Services.Posts
         public MediaService(
             IMediaRepository mediaRepository,
             IFileStorageService fileStorageService,
+            IFileValidationService fileValidationService,
             IUnitOfWork unitOfWork,
             IMapper mapper,
             ILogger<MediaService> logger)
         {
             _mediaRepository = mediaRepository;
             _fileStorageService = fileStorageService;
+            _fileValidationService = fileValidationService;
             _unitOfWork = unitOfWork;
             _mapper = mapper;
             _logger = logger;
         }
-        public async Task<Result<IReadOnlyList<MediaResponse>>> UploadAndSaveMediaAsync(
-            Guid targetId,
-            string targetType,
-            string folderName,
-             IEnumerable<IFormFile> files,
-            CancellationToken cancellationToken = default)
+        //public async Task<Result<IReadOnlyList<MediaResponse>>> UploadAndSaveMediaAsync(
+        //    Guid targetId,
+        //    string targetType,
+        //    string folderName,
+        //     IEnumerable<IFormFile> files,
+        //    CancellationToken cancellationToken = default)
+        //{
+        //    if (files.Count() == 0)
+        //    {
+        //        return Result<IReadOnlyList<MediaResponse>>.Success(
+        //            Array.Empty<MediaResponse>());
+        //    }
+
+        //    var items = files?.Where(x => x != null && x.Length > 0).ToList();
+        //    if (items == null || items.Count == 0)
+        //    {
+        //        return Result<IReadOnlyList<MediaResponse>>.Success(new List<MediaResponse>());
+        //    }
+
+        //    var entities = new List<media>();
+        //    var now = DateTime.UtcNow;
+
+        //    try
+        //    {
+        //        for (int i = 0; i < items.Count; i++)
+        //        {
+        //            var file = items[i];
+
+        //            // 1. Tải file lên Firebase Storage theo folderName được chỉ định
+        //            await using var stream = file.OpenReadStream();
+        //            var firebaseUrl = await _fileStorageService.UploadFileAsync(
+        //                stream,
+        //                file.FileName,
+        //                folderName,
+        //                overwrite: false);
+
+        //            entities.Add(new media
+        //            {
+        //                MediaId = Guid.NewGuid(),
+        //                TargetId = targetId,
+        //                TargetType = targetType,
+        //                FileName = file.FileName,
+        //                FileSize = file.Length,
+        //                DisplayOrder = i + 1, // Tự động đánh số thứ tự hiển thị
+        //                Url = firebaseUrl,
+        //                CreatedAt = now,
+        //                UpdatedAt = now
+        //            });
+        //        }
+
+        //        await _mediaRepository.AddRangeAsync(entities, cancellationToken);
+
+        //        var response = _mapper.Map<List<MediaResponse>>(entities).AsReadOnly();
+        //        return Result<IReadOnlyList<MediaResponse>>.Success(response);
+        //    }
+        //    catch (Exception ex)
+        //    {
+        //        _logger.LogError(ex, "Lỗi khi upload media cho TargetId {TargetId} ({TargetType})", targetId, targetType);
+        //        return Result<IReadOnlyList<MediaResponse>>.Fail(
+        //            ValidationErrors.InvalidRequest("Tải hình ảnh/tệp tin lên thất bại."));
+        //    }
+        //}
+
+        public async Task<Result<IReadOnlyList<MediaResponse>>> UploadAndSaveMediaAsync(Guid targetId, string targetType, string folderName, IEnumerable<IFormFile> files, CancellationToken cancellationToken = default)
         {
-            var items = files?.Where(x => x != null && x.Length > 0).ToList();
-            if (items == null || items.Count == 0)
-            {
-                return Result<IReadOnlyList<MediaResponse>>.Success(new List<MediaResponse>());
-            }
+            var validFiles = files?
+                .Where(file => file != null && file.Length > 0)
+                .ToList() ?? [];
 
-            var entities = new List<media>();
-            var now = DateTime.UtcNow;
-
-            try
-            {
-                for (int i = 0; i < items.Count; i++)
-                {
-                    var file = items[i];
-
-                    // 1. Tải file lên Firebase Storage theo folderName được chỉ định
-                    await using var stream = file.OpenReadStream();
-                    var firebaseUrl = await _fileStorageService.UploadFileAsync(
-                        stream,
-                        file.FileName,
-                        folderName,
-                        overwrite: false);
-
-                    entities.Add(new media
-                    {
-                        MediaId = Guid.NewGuid(),
-                        TargetId = targetId,
-                        TargetType = targetType,
-                        FileName = file.FileName,
-                        FileSize = file.Length,
-                        DisplayOrder = i + 1, // Tự động đánh số thứ tự hiển thị
-                        Url = firebaseUrl,
-                        CreatedAt = now,
-                        UpdatedAt = now
-                    });
-                }
-
-                await _mediaRepository.AddRangeAsync(entities, cancellationToken);
-
-                var response = _mapper.Map<List<MediaResponse>>(entities).AsReadOnly();
-                return Result<IReadOnlyList<MediaResponse>>.Success(response);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Lỗi khi upload media cho TargetId {TargetId} ({TargetType})", targetId, targetType);
-                return Result<IReadOnlyList<MediaResponse>>.Fail(
-                    ValidationErrors.InvalidRequest("Tải hình ảnh/tệp tin lên thất bại."));
-            }
+            return await UploadAndSaveMediaInternalAsync(
+                targetId,
+                targetType,
+                folderName,
+                validFiles,
+                cancellationToken);
         }
 
-        public async Task<Result<IReadOnlyList<MediaResponse>>> ReplaceMediaAsync(
-            Guid targetId,
-            string targetType,
-            string folderName,
-            IEnumerable<IFormFile> files,
-            CancellationToken cancellationToken = default)
+        public async Task<Result<IReadOnlyList<MediaResponse>>> UploadAndSaveMediaAsync(Guid targetId, string targetType, string folderName, IEnumerable<IFormFile> files, FileUploadContext uploadContext, CancellationToken cancellationToken = default)
         {
+            var fileList = files?.ToList() ?? [];
+
+            if (fileList.Count == 0)
+                return Result<IReadOnlyList<MediaResponse>>.Success(Array.Empty<MediaResponse>());
+
+            var validationResult = await _fileValidationService.ValidateManyAsync(fileList, uploadContext, cancellationToken);
+
+            if (!validationResult.IsSuccess)
+                return Result<IReadOnlyList<MediaResponse>>.Fail(validationResult.Error!);
+
+            return await UploadAndSaveMediaInternalAsync(targetId, targetType, folderName, fileList, cancellationToken);
+        }
+
+        public async Task<Result<IReadOnlyList<MediaResponse>>> ReplaceMediaAsync(Guid targetId, string targetType, string folderName, IEnumerable<IFormFile> files, CancellationToken cancellationToken = default)
+        {
+            var validFiles = files?
+                .Where(file => file != null && file.Length > 0)
+                .ToList() ?? [];    
+
             try
             {
-                // 1. Xóa các bản ghi Media cũ trong DB
+                // Xóa bản cũ trong DB
                 await _mediaRepository.RemoveByTargetAsync(targetId, targetType, cancellationToken);
 
-                // 2. Upload và chèn danh sách Media mới
+                // Upload + add list mới
                 return await UploadAndSaveMediaAsync(targetId, targetType, folderName, files, cancellationToken);
             }
             catch (Exception ex)
@@ -116,6 +155,73 @@ namespace HomeCycle.Application.Services.Posts
                 _logger.LogError(ex, "Lỗi khi thay thế (Replace) media cho TargetId {TargetId} ({TargetType})", targetId, targetType);
                 return Result<IReadOnlyList<MediaResponse>>.Fail(
                     ValidationErrors.InvalidRequest("Cập nhật hình ảnh/tệp tin thất bại."));
+            }
+        }
+
+        public async Task<Result<IReadOnlyList<MediaResponse>>> ReplaceMediaAsync(Guid targetId, string targetType, string folderName, IEnumerable<IFormFile> files, FileUploadContext uploadContext, CancellationToken cancellationToken = default)
+        {
+            var fileList = files?.ToList() ?? [];
+
+            if (fileList.Count > 0)
+            {
+                var validationResult = await _fileValidationService.ValidateManyAsync(fileList, uploadContext, cancellationToken);
+
+                if (!validationResult.IsSuccess)
+                {
+                    return Result<IReadOnlyList<MediaResponse>>.Fail(validationResult.Error!);
+                }
+            }
+
+            try
+            {
+                //await _mediaRepository.RemoveByTargetAsync(
+                //    targetId,
+                //    targetType,
+                //    cancellationToken);
+
+                //return await UploadAndSaveMediaInternalAsync(
+                //    targetId,
+                //    targetType,
+                //    folderName,
+                //    fileList,
+                //    cancellationToken);
+                var oldMedias = await _mediaRepository.RemoveByTargetAsync(
+                    targetId,
+                    targetType,
+                    cancellationToken);
+
+                var uploadResult = await UploadAndSaveMediaInternalAsync(
+                    targetId,
+                    targetType,
+                    folderName,
+                    files.ToList(),
+                    cancellationToken);
+
+                if (!uploadResult.IsSuccess)
+                    return uploadResult;
+
+                var oldUrls = oldMedias
+                    .Select(x => x.Url)
+                    .Where(x => !string.IsNullOrWhiteSpace(x))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
+
+                _unitOfWork.RegisterAfterCommit(
+                    () => DeleteFilesSafelyAsync(oldUrls));
+
+                return uploadResult;
+            }
+            catch (Exception exception)
+            {
+                _logger.LogError(
+                    exception,
+                    "Failed to replace media for target {TargetId}, target type {TargetType}",
+                    targetId,
+                    targetType);
+
+                return Result<IReadOnlyList<MediaResponse>>.Fail(
+                    ValidationErrors.InvalidRequest(
+                        "Không thể thay thế tệp trên hệ thống."));
             }
         }
 
@@ -171,7 +277,23 @@ namespace HomeCycle.Application.Services.Posts
         {
             try
             {
-                await _mediaRepository.RemoveByTargetAsync(targetId, targetType, cancellationToken);
+                //await _mediaRepository.RemoveByTargetAsync(targetId, targetType, cancellationToken);
+                //return Result<bool>.Success(true);
+
+                var removedMedias = await _mediaRepository.RemoveByTargetAsync(
+                    targetId,
+                    targetType,
+                    cancellationToken);
+
+                var removedUrls = removedMedias
+                    .Select(x => x.Url)
+                    .Where(x => !string.IsNullOrWhiteSpace(x))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
+
+                _unitOfWork.RegisterAfterCommit(
+                    () => DeleteFilesSafelyAsync(removedUrls));
+
                 return Result<bool>.Success(true);
             }
             catch (Exception ex)
@@ -179,6 +301,88 @@ namespace HomeCycle.Application.Services.Posts
                 _logger.LogError(ex, "Lỗi khi xóa media cho TargetId {TargetId} ({TargetType})", targetId, targetType);
                 return Result<bool>.Fail(
                     ValidationErrors.InvalidRequest("Xóa hình ảnh/tệp tin thất bại."));
+            }
+        }
+
+        private async Task<Result<IReadOnlyList<MediaResponse>>> UploadAndSaveMediaInternalAsync(Guid targetId, string targetType, string folderName, IReadOnlyList<IFormFile> files, CancellationToken cancellationToken)
+        {
+            var uploadedUrls = new List<string>();
+
+            if (files.Count == 0)
+            {
+                return Result<IReadOnlyList<MediaResponse>>.Success(Array.Empty<MediaResponse>());
+            }
+
+            try
+            {
+                var uploadedMedia = new List<media>();
+
+                for (var index = 0; index < files.Count; index++)
+                {
+                    var file = files[index];
+
+                    await using var stream = file.OpenReadStream();
+
+                    var fileUrl = await _fileStorageService.UploadFileAsync(stream, file.FileName, folderName);
+                    var mediaEntity = new media
+                    {
+                        MediaId = Guid.NewGuid(),
+                        TargetId = targetId,
+                        TargetType = targetType,
+                        Url = fileUrl,
+                        DisplayOrder = index + 1,
+                        CreatedAt = DateTime.UtcNow
+                    };
+
+                    uploadedUrls.Add(fileUrl);
+
+                    var rollbackUrls = uploadedUrls.ToArray();
+
+                    _unitOfWork.RegisterAfterRollback(
+                        () => DeleteFilesSafelyAsync(rollbackUrls));
+
+                    await _mediaRepository.AddRangeAsync(uploadedMedia, cancellationToken);
+
+                    uploadedMedia.Add(mediaEntity);
+                }
+
+                var response = _mapper.Map<IReadOnlyList<MediaResponse>>(uploadedMedia);
+
+                return Result<IReadOnlyList<MediaResponse>>.Success(response);
+            }
+            catch (Exception exception)
+            {
+                _logger.LogError(
+                    exception,
+                    "Failed to upload media for target {TargetId}, target type {TargetType}",
+                    targetId,
+                    targetType);
+
+                await DeleteFilesSafelyAsync(uploadedUrls);
+
+                return Result<IReadOnlyList<MediaResponse>>.Fail(
+                    ValidationErrors.InvalidRequest(
+                        "Không thể tải tệp lên hệ thống."));
+            }
+        }
+
+        private async Task DeleteFilesSafelyAsync(IEnumerable<string> urls)
+        {
+            foreach (var url in urls
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    await _fileStorageService.DeleteFileAsync(url);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(
+                        ex,
+                        "Không thể dọn file Firebase: {FileUrl}",
+                        url);
+                }
             }
         }
 

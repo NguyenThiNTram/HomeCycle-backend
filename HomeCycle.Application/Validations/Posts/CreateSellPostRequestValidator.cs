@@ -37,8 +37,8 @@ namespace HomeCycle.Application.Validations.Posts
                 .Must(m => m != null && m.Count > 0)
                 .WithMessage("Bài đăng bán bắt buộc phải có ít nhất 1 hình ảnh sản phẩm.");
 
-            RuleForEach(x => x.Medias)
-                .SetValidator(new FormFileValidator());
+            //RuleForEach(x => x.Medias)
+            //    .SetValidator(new FormFileValidator());
 
             RuleFor(x => x.Product)
                 .NotNull().WithMessage("Thông tin sản phẩm không được để trống.")
@@ -192,8 +192,8 @@ namespace HomeCycle.Application.Validations.Posts
                 .NotNull().WithMessage("Thông tin sản phẩm không được để trống.")
                 .SetValidator(new ProductRequestValidator());
 
-            RuleForEach(x => x.Medias)
-                .SetValidator(new FormFileValidator());
+            //RuleForEach(x => x.Medias)
+            //    .SetValidator(new FormFileValidator());
         }
     }
 }

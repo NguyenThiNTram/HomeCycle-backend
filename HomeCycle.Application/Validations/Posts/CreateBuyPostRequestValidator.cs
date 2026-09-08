@@ -26,8 +26,8 @@ namespace HomeCycle.Application.Validations.Posts
                 .SetValidator(new ProductRequirementRequestValidator());
 
             // Ảnh là không bắt buộc đối với tin thu mua
-            RuleForEach(x => x.Medias)
-                .SetValidator(new FormFileValidator());
+            //RuleForEach(x => x.Medias)
+            //    .SetValidator(new FormFileValidator());
         }
     }
 
@@ -54,8 +54,8 @@ namespace HomeCycle.Application.Validations.Posts
             RuleFor(x => x.Requirement)
                 .NotNull().WithMessage("Yêu cầu sản phẩm thu mua không được để trống.");
 
-            RuleForEach(x => x.Medias)
-                .SetValidator(new FormFileValidator());
+            //RuleForEach(x => x.Medias)
+            //    .SetValidator(new FormFileValidator());
         }
     }
 }

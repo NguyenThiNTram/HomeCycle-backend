@@ -15,6 +15,7 @@ using HomeCycle.Application.Interfaces.Repositories.Users;
 using HomeCycle.Application.Interfaces.Repositories.Wallets;
 using HomeCycle.Application.Interfaces.Security;
 using HomeCycle.Application.Interfaces.Services.Auths;
+using HomeCycle.Application.Interfaces.Services.Configs;
 using HomeCycle.Application.Interfaces.Services.Externals;
 using HomeCycle.Domain.Entities;
 using HomeCycle.Domain.Enums;
@@ -42,6 +43,7 @@ namespace HomeCycle.Application.Services.Auths
         private readonly IPasswordHasher _passwordHasher;
         private readonly IJwtService _jwtService;
         private readonly IOtpProtectionService _otpProtectionService;
+        private readonly IFileValidationService _fileValidationService;
         private readonly IMapper _mapper;
         private readonly IConfiguration _configuration;
         private readonly IValidator<RegisterPersonalRequest> _validator;
@@ -61,6 +63,7 @@ namespace HomeCycle.Application.Services.Auths
             IJwtService jwtService, 
             IMapper mapper, IConfiguration configuration,
             IOtpProtectionService otpProtectionService,
+            IFileValidationService fileValidationService,
             IValidator<RegisterPersonalRequest> validator,
             IValidator<LoginRequest> loginValidator,
             IPersonalProfileRepository personalProfileRepository, 
@@ -78,6 +81,7 @@ namespace HomeCycle.Application.Services.Auths
             _passwordHasher = passwordHasher;
             _jwtService = jwtService;
             _otpProtectionService = otpProtectionService;
+            _fileValidationService = fileValidationService;
             _mapper = mapper;
             _configuration = configuration;
             _validator = validator;
@@ -295,7 +299,35 @@ namespace HomeCycle.Application.Services.Auths
             //    });
             //}
 
+            if (request.AvatarUrl != null)
+            {
+                var avatarValidation = await _fileValidationService.ValidateAsync(request.AvatarUrl, FileUploadContext.Avatar, cancellationToken);
+
+                if (!avatarValidation.IsSuccess)
+                {
+                    return Result<AuthResponse>.Fail(avatarValidation.Error!);
+                }
+            }
+
+            var identityFiles = new[]
+            {
+                request.FrontIDCardImage,
+                request.BackIDCardImage
+            }
+            .Where(file => file != null)
+            .Select(file => file!)
+            .ToList();
+
+            var identityValidation = await _fileValidationService.ValidateManyAsync(identityFiles, FileUploadContext.IdentityDocument, cancellationToken);
+
+            if (!identityValidation.IsSuccess)
+            {
+                return Result<AuthResponse>.Fail(identityValidation.Error!);
+            }
+
             var uploadedFileUrls = new List<string>();
+
+            await _unitOfWork.BeginTransactionAsync(cancellationToken);
 
             try
             {
