@@ -47,6 +47,72 @@ public sealed class DashboardService(IDashboardRepository repository, TimeProvid
         ];
     }
 
+    private static decimal AmountPercent(decimal amount, decimal total)
+    => total == 0
+        ? 0
+        : Math.Round(amount * 100m / total, 2);
+
+    private static IReadOnlyList<FinanceCashFlowPoint> FinanceSeries(
+        FinanceCashFlowData data,
+        DashboardPeriod period)
+    {
+        var inflow = data.InflowDaily
+            .Select(x => (
+                Date: DateOnly.FromDateTime(x.Date),
+                x.Amount))
+            .ToArray();
+
+        var outflow = data.OutflowDaily
+            .Select(x => (
+                Date: DateOnly.FromDateTime(x.Date),
+                x.Amount))
+            .ToArray();
+
+        return Buckets(period)
+            .Select(bucket =>
+            {
+                var amountIn = inflow
+                    .Where(x =>
+                        x.Date >= bucket.From &&
+                        x.Date < bucket.To)
+                    .Sum(x => x.Amount);
+
+                var amountOut = outflow
+                    .Where(x =>
+                        x.Date >= bucket.From &&
+                        x.Date < bucket.To)
+                    .Sum(x => x.Amount);
+
+                return new FinanceCashFlowPoint(
+                    bucket.From,
+                    bucket.To,
+                    amountIn,
+                    amountOut,
+                    amountIn - amountOut);
+            })
+            .ToArray();
+    }
+
+    private static string FinanceTransactionLabel(
+        TransactionType transactionType)
+    {
+        return transactionType switch
+        {
+            TransactionType.Escrow_Deposit => "Escrow Deposit",
+            TransactionType.Wallet_Payment => "Wallet Payment",
+            TransactionType.Payout_Release => "Payout Release",
+            TransactionType.Order_Refund => "Order Refund",
+            TransactionType.Withdrawal_Lock => "Withdrawal Lock",
+            TransactionType.Withdrawal_Success => "Withdrawal Success",
+            TransactionType.Withdrawal_Revert => "Withdrawal Revert",
+            TransactionType.Commission_Fee => "Commission Fee",
+            TransactionType.Subscription_Fee => "Subscription Fee",
+            TransactionType.Shipping_Fee_Collected => "GHN Shipping Collected",
+            _ => transactionType.ToString()
+        };
+    }
+    private static decimal Percent(decimal count, decimal total) => total == 0 ? 0 : Math.Round(count * 100m / total, 2);
+
     private static IReadOnlyList<DistributionItem> Distribution<T>(IEnumerable<DashboardCodeCount> counts) where T : struct, Enum
     {
         var values = Enum.GetValues<T>();
@@ -337,5 +403,373 @@ public sealed class DashboardService(IDashboardRepository repository, TimeProvid
         var endUtc = new DateTimeOffset(today.ToDateTime(TimeOnly.MinValue), TimeSpan.FromHours(7)).UtcDateTime;
         var registrations = await repository.GetRegistrationsAsync(request.Role, endUtc.AddDays(-2 * request.Days), endUtc, ct);
         return UserRegistrationTrendCalculator.Calculate(registrations, today, request.Days, request.ForecastDays, request.Role, now.UtcDateTime);
+    }
+
+    public async Task<FinanceOverviewResponse> GetFinanceOverviewAsync(
+        DashboardPeriodRequest request,
+        CancellationToken ct)
+    {
+        var period = ResolvePeriod(request);
+
+        var data = await repository.GetFinanceOverviewAsync(
+            period,
+            ct);
+
+        var systemWalletBalance =
+            data.SystemWalletAvailableBalance +
+            data.SystemWalletHoldBalance;
+
+        return new FinanceOverviewResponse
+        {
+            GeneratedAtUtc = clock.GetUtcNow().UtcDateTime,
+            Period = period,
+
+            Position = new FinancePositionMetrics(
+                data.TotalRecordedWalletBalance,
+                systemWalletBalance,
+                data.SystemWalletAvailableBalance,
+                data.SystemWalletHoldBalance,
+                data.UserAvailableFunds,
+                data.UserFundsHeld,
+                data.OrderEscrowHeld,
+                data.WithdrawalLocked,
+                data.ShippingEscrowBalance,
+                data.CurrentPendingPaymentAmount),
+
+            Activity = new FinancePeriodActivityMetrics(
+                data.ExternalInflow,
+                data.ExternalOutflow,
+                data.ExternalInflow - data.ExternalOutflow,
+                data.ProcessedPaymentAmount,
+                data.RefundedAmount,
+                data.CreatedFailedPaymentAmount)
+        };
+    }
+
+    public async Task<FinanceCashFlowResponse> GetFinanceCashFlowAsync(
+        DashboardPeriodRequest request,
+        CancellationToken ct)
+    {
+        var period = ResolvePeriod(request);
+
+        var data = await repository.GetFinanceCashFlowAsync(
+            period,
+            ct);
+
+        var fullPaymentExcludingGhn =
+            Math.Max(
+                data.FullPayOsAmount -
+                data.PayOsGhnShippingCollectedAmount,
+                0);
+
+        var knownPayOsAmount =
+            data.DepositPayOsAmount +
+            data.FullPayOsAmount +
+            data.SubscriptionPayOsAmount;
+
+        var otherPayOsAmount =
+            Math.Max(
+                data.ExternalInflow - knownPayOsAmount,
+                0);
+
+        var inflowSources =
+            new FinanceAmountBreakdownItem[]
+            {
+            new(
+                "DepositPayment",
+                "Deposit Payment",
+                data.DepositPayOsAmount,
+                AmountPercent(
+                    data.DepositPayOsAmount,
+                    data.ExternalInflow)),
+
+            new(
+                "FullPaymentExcludingGhn",
+                "Full Payment (excluding GHN shipping)",
+                fullPaymentExcludingGhn,
+                AmountPercent(
+                    fullPaymentExcludingGhn,
+                    data.ExternalInflow)),
+
+            new(
+                "GhnShippingCollected",
+                "GHN Shipping Collected",
+                data.PayOsGhnShippingCollectedAmount,
+                AmountPercent(
+                    data.PayOsGhnShippingCollectedAmount,
+                    data.ExternalInflow)),
+
+            new(
+                "SubscriptionPayment",
+                "Subscription Payment",
+                data.SubscriptionPayOsAmount,
+                AmountPercent(
+                    data.SubscriptionPayOsAmount,
+                    data.ExternalInflow)),
+
+            new(
+                "OtherPayOs",
+                "Other PayOS",
+                otherPayOsAmount,
+                AmountPercent(
+                    otherPayOsAmount,
+                    data.ExternalInflow))
+            };
+
+        var internalTotal =
+            data.InternalMovements.Sum(x => x.Amount);
+
+        var internalMovements =
+            data.InternalMovements
+                .Where(x =>
+                    x.TransactionType.HasValue &&
+                    Enum.IsDefined(
+                        typeof(TransactionType),
+                        x.TransactionType.Value))
+                .Select(x =>
+                {
+                    var type =
+                        (TransactionType)x.TransactionType!.Value;
+
+                    return new FinanceAmountBreakdownItem(
+                        type.ToString(),
+                        FinanceTransactionLabel(type),
+                        x.Amount,
+                        AmountPercent(
+                            x.Amount,
+                            internalTotal));
+                })
+                .OrderByDescending(x => x.Amount)
+                .ToArray();
+
+        return new FinanceCashFlowResponse
+        {
+            GeneratedAtUtc = clock.GetUtcNow().UtcDateTime,
+            Period = period,
+
+            Totals = new FinanceCashFlowTotals(
+                data.ExternalInflow,
+                data.ExternalOutflow,
+                data.ExternalInflow - data.ExternalOutflow),
+
+            Series = FinanceSeries(
+                data,
+                period),
+
+            InflowSources = inflowSources,
+
+            InternalMovements = internalMovements
+        };
+    }
+
+    public async Task<FinancePaymentStatusResponse> GetFinancePaymentStatusAsync(
+        DashboardPeriodRequest request,
+        CancellationToken ct)
+    {
+        var period = ResolvePeriod(request);
+
+        var data =
+            await repository.GetFinancePaymentStatusAsync(
+                period,
+                ct);
+
+        var totalCount =
+            data.Statuses.Sum(x => x.Count);
+
+        var totalAmount =
+            data.Statuses.Sum(x => x.Amount);
+
+        var statuses =
+            Enum.GetValues<PaymentStatus>()
+                .Select(status =>
+                {
+                    var row = data.Statuses
+                        .Where(x =>
+                            x.Code ==
+                            (int)status)
+                        .ToArray();
+
+                    var count =
+                        row.Sum(x => x.Count);
+
+                    var amount =
+                        row.Sum(x => x.Amount);
+
+                    return new FinancePaymentStatusItem(
+                        status,
+                        status.ToString(),
+                        count,
+                        amount,
+                        totalCount == 0
+                            ? 0
+                            : Math.Round(
+                                count * 100m /
+                                totalCount,
+                                2));
+                })
+                .ToList();
+
+        var knownCodes =
+            Enum.GetValues<PaymentStatus>()
+                .Select(x => (int)x)
+                .ToHashSet();
+
+        var unknownCount =
+            data.Statuses
+                .Where(x =>
+                    !x.Code.HasValue ||
+                    !knownCodes.Contains(
+                        x.Code.Value))
+                .Sum(x => x.Count);
+
+        var unknownAmount =
+            data.Statuses
+                .Where(x =>
+                    !x.Code.HasValue ||
+                    !knownCodes.Contains(
+                        x.Code.Value))
+                .Sum(x => x.Amount);
+
+        if (unknownCount > 0)
+        {
+            statuses.Add(
+                new FinancePaymentStatusItem(
+                    null,
+                    "Unspecified",
+                    unknownCount,
+                    unknownAmount,
+                    totalCount == 0
+                        ? 0
+                        : Math.Round(
+                            unknownCount * 100m /
+                            totalCount,
+                            2)));
+        }
+
+        var paidCount =
+            data.Statuses
+                .Where(x =>
+                    x.Code ==
+                        (int)PaymentStatus.Completed ||
+                    x.Code ==
+                        (int)PaymentStatus.Refunded ||
+                    x.Code ==
+                        (int)PaymentStatus.PartiallyRefunded)
+                .Sum(x => x.Count);
+
+        var failedCount =
+            data.Statuses
+                .Where(x =>
+                    x.Code ==
+                    (int)PaymentStatus.Failed)
+                .Sum(x => x.Count);
+
+        var refundedCount =
+            data.Statuses
+                .Where(x =>
+                    x.Code ==
+                        (int)PaymentStatus.Refunded ||
+                    x.Code ==
+                        (int)PaymentStatus.PartiallyRefunded)
+                .Sum(x => x.Count);
+
+        return new FinancePaymentStatusResponse
+        {
+            GeneratedAtUtc =
+                clock.GetUtcNow().UtcDateTime,
+
+            Period = period,
+
+            TotalCreatedCount = totalCount,
+
+            TotalCreatedAmount = totalAmount,
+
+            Statuses = statuses,
+
+            PaidRatePercent =
+                totalCount == 0
+                    ? 0
+                    : Math.Round(
+                        paidCount * 100m /
+                        totalCount,
+                        2),
+
+            FailureRatePercent =
+                totalCount == 0
+                    ? 0
+                    : Math.Round(
+                        failedCount * 100m /
+                        totalCount,
+                        2),
+
+            RefundedPaymentRatePercent =
+                paidCount == 0
+                    ? 0
+                    : Math.Round(
+                        refundedCount * 100m /
+                        paidCount,
+                        2)
+        };
+    }
+
+    public async Task<PagedResult<FinanceTransactionItem>> GetFinanceTransactionsAsync(
+        FinanceTransactionRequest request,
+        CancellationToken ct)
+    {
+        var period = ResolvePeriod(request);
+
+        return await repository.GetFinanceTransactionsAsync(
+            request,
+            period,
+            ct);
+    }
+
+    public async Task<FinanceHealthResponse> GetFinanceHealthAsync(
+        DashboardPeriodRequest request,
+        CancellationToken ct)
+    {
+        var period = ResolvePeriod(request);
+
+        var nowUtc =
+            clock.GetUtcNow().UtcDateTime;
+
+        var data =
+            await repository.GetFinanceHealthAsync(
+                period,
+                nowUtc,
+                ct);
+
+        return new FinanceHealthResponse
+        {
+            GeneratedAtUtc = nowUtc,
+            Period = period,
+
+            StalePendingPayments =
+                data.StalePendingPayments,
+
+            PendingPaymentsWithoutExpiry =
+                data.PendingPaymentsWithoutExpiry,
+
+            PendingWithdrawals =
+                data.PendingWithdrawals,
+
+            ProcessingWithdrawals =
+                data.ProcessingWithdrawals,
+
+            OverdueReleaseOrders =
+                data.OverdueReleaseOrders,
+
+            CompletedOrdersMissingReleaseDeadline =
+                data.CompletedOrdersMissingReleaseDeadline,
+
+            ActiveDisputeHeldFunds =
+                data.ActiveDisputeHeldFunds,
+
+            NegativeWalletCount =
+                data.NegativeWalletCount,
+
+            UnclassifiedTransactionsInPeriod =
+                data.UnclassifiedTransactionsInPeriod
+        };
     }
 }

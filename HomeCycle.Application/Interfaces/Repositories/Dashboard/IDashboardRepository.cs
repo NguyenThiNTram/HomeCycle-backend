@@ -19,4 +19,21 @@ public interface IDashboardRepository
     Task<BusinessOverviewResponse> GetBusinessOverviewAsync(BusinessOverviewRequest request, CancellationToken ct);
     Task<BusinessDemandResponse> GetBusinessDemandAsync(BusinessDemandRequest request, CancellationToken ct);
     Task<BusinessPerformanceData> GetBusinessPerformanceAsync(DashboardPeriod period, CancellationToken ct);
+    Task<FinanceOverviewData> GetFinanceOverviewAsync(
+        DashboardPeriod period,
+        CancellationToken ct);
+    Task<FinanceCashFlowData> GetFinanceCashFlowAsync(
+        DashboardPeriod period,
+        CancellationToken ct);
+    Task<FinancePaymentStatusData> GetFinancePaymentStatusAsync(
+        DashboardPeriod period,
+        CancellationToken ct);
+    Task<PagedResult<FinanceTransactionItem>> GetFinanceTransactionsAsync(
+        FinanceTransactionRequest request,
+        DashboardPeriod period,
+        CancellationToken ct);
+    Task<FinanceHealthData> GetFinanceHealthAsync(
+        DashboardPeriod period,
+        DateTime nowUtc,
+        CancellationToken ct);
 }
