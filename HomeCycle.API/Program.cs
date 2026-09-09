@@ -2,6 +2,7 @@
 using HomeCycle.API.Middlewares;
 using HomeCycle.Application.Interfaces.Repositories.Notifications;
 using HomeCycle.Application.Interfaces.Repositories.Offers;
+using HomeCycle.Application.Interfaces.Repositories.Orders;
 using HomeCycle.Application.Interfaces.Services.Negotiates;
 using HomeCycle.Application.Services.Negotiates;
 using HomeCycle.Infrastructure;
@@ -32,6 +33,7 @@ namespace HomeCycle.API
             builder.Services.AddScoped<IMessageService, MessageService>();
             builder.Services.AddSingleton<IChatRealtimePublisher, SignalRChatRealtimePublisher>();
             builder.Services.AddSingleton<INotificationRealtimePublisher, SignalRNotificationRealtimePublisher>();
+            builder.Services.AddSingleton<IOrderTrackingRealtimePublisher, SignalROrderTrackingRealtimePublisher>();
 
             builder.Services.AddScoped<IAuthorizationHandler, ActiveUserHandler>();
 

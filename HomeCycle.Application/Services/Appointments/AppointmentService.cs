@@ -14,6 +14,7 @@ using HomeCycle.Application.Interfaces.Repositories.Inspections;
 using HomeCycle.Application.Interfaces.Repositories.Orders;
 using HomeCycle.Application.Interfaces.Services.Appointments;
 using HomeCycle.Application.Interfaces.Services.Notifications;
+using HomeCycle.Application.Interfaces.Services.Orders;
 using HomeCycle.Application.Interfaces.Services.PlatformPolicies;
 using HomeCycle.Domain.Entities;
 using HomeCycle.Domain.Enums;
@@ -36,6 +37,7 @@ namespace HomeCycle.Application.Services.Appointments
         private readonly IOrderRepository _orderRepo;
         private readonly IPlatformPolicyProvider _platformPolicyProvider;
         private readonly INotificationService _notificationService;
+        private readonly IOrderTrackingRealtimeService _orderTrackingRealtimeService;
         private readonly IMapper _mapper;
 
         private readonly IValidator<RescheduleAppointmentRequest> _rescheduleValidator;
@@ -51,6 +53,7 @@ namespace HomeCycle.Application.Services.Appointments
             IOrderRepository orderRepo,
             IPlatformPolicyProvider platformPolicyProvider,
             INotificationService notificationService,
+            IOrderTrackingRealtimeService orderTrackingRealtimeService,
             IUnitOfWork unitOfWork,
             IMapper mapper,
             IValidator<RescheduleAppointmentRequest> rescheduleValidator,
@@ -65,6 +68,7 @@ namespace HomeCycle.Application.Services.Appointments
             _orderRepo = orderRepo;
             _platformPolicyProvider = platformPolicyProvider;
             _notificationService = notificationService;
+            _orderTrackingRealtimeService = orderTrackingRealtimeService;
             _unitOfWork = unitOfWork;
             _mapper = mapper;
             _rescheduleValidator = rescheduleValidator;
@@ -442,6 +446,9 @@ namespace HomeCycle.Application.Services.Appointments
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
                 await _notificationService.PublishCreatedSafelyAsync(checkInNotification);
+                await _orderTrackingRealtimeService.PublishByAgreementIdSafelyAsync(
+                    appointment.AgreementId,
+                    appointment.UpdatedAt);
 
                 return Result<AppointmentCheckInResponseDto>.Success(new AppointmentCheckInResponseDto
                 {
@@ -789,6 +796,9 @@ namespace HomeCycle.Application.Services.Appointments
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
                 await _notificationService.PublishCreatedSafelyAsync(rescheduleNotification);
+                await _orderTrackingRealtimeService.PublishByAgreementIdSafelyAsync(
+                    agreement.AgreementId,
+                    now);
 
                 return Result<AppointmentRescheduleResponseDto>.Success(
                     new AppointmentRescheduleResponseDto
@@ -1059,6 +1069,9 @@ namespace HomeCycle.Application.Services.Appointments
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
                 await _notificationService.PublishCreatedSafelyAsync(cancelNotification);
+                await _orderTrackingRealtimeService.PublishByAgreementIdSafelyAsync(
+                    agreement.AgreementId,
+                    appointment.UpdatedAt);
 
                 return Result<AppointmentActionResponseDto>.Success(
                     new AppointmentActionResponseDto

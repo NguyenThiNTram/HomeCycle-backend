@@ -48,6 +48,8 @@ namespace HomeCycle.Application.Services.Orders
         private readonly IPaymentService _paymentService;
         private readonly IPlatformPolicyProvider _platformPolicyProvider;
         private readonly INotificationService _notificationService;
+        private readonly IOrderTimelineBuilder _orderTimelineBuilder;
+        private readonly IOrderTrackingRealtimeService _orderTrackingRealtimeService;
         private readonly IMapper _mapper;
 
         public OrderService(
@@ -65,6 +67,8 @@ namespace HomeCycle.Application.Services.Orders
             IPaymentService paymentService,
             IPlatformPolicyProvider platformPolicyProvider,
             INotificationService notificationService,
+            IOrderTimelineBuilder orderTimelineBuilder,
+            IOrderTrackingRealtimeService orderTrackingRealtimeService,
             IMapper mapper)
         {
             _orderRepo = orderRepo;
@@ -81,6 +85,8 @@ namespace HomeCycle.Application.Services.Orders
             _paymentService = paymentService;
             _platformPolicyProvider = platformPolicyProvider;
             _notificationService = notificationService;
+            _orderTimelineBuilder = orderTimelineBuilder;
+            _orderTrackingRealtimeService = orderTrackingRealtimeService;
             _mapper = mapper;
         }
 
@@ -129,11 +135,24 @@ namespace HomeCycle.Application.Services.Orders
                 Rating = myReview?.Rating
             };
 
+            var inspectionCollectNow =
+                await IsInspectionCollectNowReadyAsync(
+                    detail.OrderId,
+                    ct);
+
+            detail.Timeline =
+                _orderTimelineBuilder.Build(
+                    detail,
+                    inspectionCollectNow);
+
+
+
             detail.Actions = await BuildOrderActionsAsync(
                 detail,
                 agreement,
                 isBuyer,
                 isSeller,
+                inspectionCollectNow,
                 ct);
 
             return Result<OrderDetailDto>.Success(detail);
@@ -377,8 +396,16 @@ namespace HomeCycle.Application.Services.Orders
                     await _unitOfWork.SaveChangesAsync(ct);
 
                 await _unitOfWork.CommitTransactionAsync(ct);
+
                 if (handoverNotification != null)
                     await _notificationService.PublishCreatedSafelyAsync(handoverNotification);
+
+                if (changed)
+                {
+                    await _orderTrackingRealtimeService.PublishByOrderIdSafelyAsync(
+                        order.OrderId,
+                        order.UpdatedAt);
+                }
 
                 return Result<OrderConfirmationResponseDto>.Success(
                     new OrderConfirmationResponseDto
@@ -646,7 +673,12 @@ namespace HomeCycle.Application.Services.Orders
 
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
+
                 await _notificationService.PublishCreatedSafelyAsync(receivedNotification);
+
+                await _orderTrackingRealtimeService.PublishByOrderIdSafelyAsync(
+                    order.OrderId,
+                    order.UpdatedAt);
 
                 return Result<OrderConfirmationResponseDto>.Success(
                     new OrderConfirmationResponseDto
@@ -901,6 +933,9 @@ namespace HomeCycle.Application.Services.Orders
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
                 await _notificationService.PublishCreatedSafelyAsync(cancellationNotification);
+                await _orderTrackingRealtimeService.PublishByOrderIdSafelyAsync(
+                    order.OrderId,
+                    order.UpdatedAt);
 
                 return Result<OrderCancellationResponseDto>.Success(
                     new OrderCancellationResponseDto
@@ -1031,6 +1066,9 @@ namespace HomeCycle.Application.Services.Orders
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
                 await _notificationService.PublishCreatedSafelyAsync(returnNotification);
+                await _orderTrackingRealtimeService.PublishByOrderIdSafelyAsync(
+                    order.OrderId,
+                    order.UpdatedAt);
 
                 var response = _mapper.Map<OrderReturnConfirmationResponseDto>(order);
                 response.DisputeId = dispute.DisputeId;
@@ -1148,6 +1186,9 @@ namespace HomeCycle.Application.Services.Orders
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
                 await _notificationService.PublishCreatedSafelyAsync(returnNotification);
+                await _orderTrackingRealtimeService.PublishByOrderIdSafelyAsync(
+                    order.OrderId,
+                    order.UpdatedAt);
 
                 var response = _mapper.Map<OrderReturnConfirmationResponseDto>(order);
                 response.DisputeId = dispute.DisputeId;
@@ -1189,17 +1230,13 @@ namespace HomeCycle.Application.Services.Orders
             agreement_form agreement,
             bool isBuyer,
             bool isSeller,
+            bool inspectionCollectNow,
             CancellationToken ct)
         {
             var canConfirm = false;
             OrderConfirmAction? confirmAction = null;
 
             var now = DateTime.UtcNow;
-
-            var inspectionCollectNow =
-                await IsInspectionCollectNowReadyAsync(
-                    detail.OrderId,
-                    ct);
 
             var shipment = await _shipmentRepo.GetByOrderIdAsync(detail.OrderId, ct);
 

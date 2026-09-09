@@ -15,6 +15,7 @@ using HomeCycle.Application.Interfaces.Repositories.Payments;
 using HomeCycle.Application.Interfaces.Repositories.Wallets;
 using HomeCycle.Application.Interfaces.Services.Inspections;
 using HomeCycle.Application.Interfaces.Services.Notifications;
+using HomeCycle.Application.Interfaces.Services.Orders;
 using HomeCycle.Application.Interfaces.Services.Payments;
 using HomeCycle.Application.Interfaces.Services.Posts;
 using HomeCycle.Domain.Entities;
@@ -42,6 +43,7 @@ namespace HomeCycle.Application.Services.Inspections
         private readonly IMediaService _mediaService;
         private readonly IPaymentService _paymentService;
         private readonly INotificationService _notificationService;
+        private readonly IOrderTrackingRealtimeService _orderTrackingRealtimeService;
         private readonly IUnitOfWork _unitOfWork;
 
         private readonly IValidator<CreateInspectionFormRequest> _createValidator;
@@ -49,7 +51,7 @@ namespace HomeCycle.Application.Services.Inspections
         private readonly IValidator<InspectionRevisionRequest> _revisionValidator;
         private readonly IValidator<RejectInspectionFormRequest> _rejectValidator;
 
-        public InspectionFormService(IInspectionFormRepository inspectionFormRepo, IInspectionAppointmentRepository inspectionAppointmentRepo, IAppointmentRepository appointmentRepo, IAgreementFormRepository agreementRepo, IOrderRepository orderRepo, IDisputeRepository disputeRepo, IMediaService mediaService, IPaymentService paymentService, INotificationService notificationService, IUnitOfWork unitOfWork, IValidator<CreateInspectionFormRequest> createValidator, IValidator<UpdateInspectionFormRequest> updateValidator, IValidator<InspectionRevisionRequest> revisionValidator, IValidator<RejectInspectionFormRequest> rejectValidator)
+        public InspectionFormService(IInspectionFormRepository inspectionFormRepo, IInspectionAppointmentRepository inspectionAppointmentRepo, IAppointmentRepository appointmentRepo, IAgreementFormRepository agreementRepo, IOrderRepository orderRepo, IDisputeRepository disputeRepo, IMediaService mediaService, IPaymentService paymentService, INotificationService notificationService, IOrderTrackingRealtimeService orderTrackingRealtimeService, IUnitOfWork unitOfWork, IValidator<CreateInspectionFormRequest> createValidator, IValidator<UpdateInspectionFormRequest> updateValidator, IValidator<InspectionRevisionRequest> revisionValidator, IValidator<RejectInspectionFormRequest> rejectValidator)
         {
             _inspectionFormRepo = inspectionFormRepo;
             _inspectionAppointmentRepo = inspectionAppointmentRepo;
@@ -60,6 +62,7 @@ namespace HomeCycle.Application.Services.Inspections
             _mediaService = mediaService;
             _paymentService = paymentService;
             _notificationService = notificationService;
+            _orderTrackingRealtimeService = orderTrackingRealtimeService;
             _unitOfWork = unitOfWork;
             _createValidator = createValidator;
             _updateValidator = updateValidator;
@@ -839,6 +842,10 @@ namespace HomeCycle.Application.Services.Inspections
                 await _unitOfWork.CommitTransactionAsync(ct);
                 await _notificationService.PublishCreatedSafelyAsync(inspectionNotification);
 
+                await _orderTrackingRealtimeService.PublishByOrderIdSafelyAsync(
+                    order.OrderId,
+                    order.UpdatedAt);
+
                 return Result<InspectionFormResponseDto>.Success(
                     await BuildResponseAsync(
                         form,
@@ -946,6 +953,10 @@ namespace HomeCycle.Application.Services.Inspections
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
                 await _notificationService.PublishCreatedSafelyAsync(collectNotification);
+
+                await _orderTrackingRealtimeService.PublishByAgreementIdSafelyAsync(
+                    agreement.AgreementId,
+                    form.UpdatedAt);
 
                 return Result<InspectionFormResponseDto>.Success(await BuildResponseAsync(form, buyerId, ct));
             }

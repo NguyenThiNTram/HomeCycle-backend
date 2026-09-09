@@ -8,6 +8,7 @@ using HomeCycle.Application.Interfaces.Repositories.Agreements;
 using HomeCycle.Application.Interfaces.Repositories.Orders;
 using HomeCycle.Application.Interfaces.Repositories.Shipments;
 using HomeCycle.Application.Interfaces.Services.Notifications;
+using HomeCycle.Application.Interfaces.Services.Orders;
 using HomeCycle.Application.Interfaces.Services.Shipments;
 using HomeCycle.Domain.Enums;
 using System;
@@ -24,6 +25,7 @@ namespace HomeCycle.Application.Services.Shipments
         private readonly IOrderRepository _orderRepo;
         private readonly IAgreementFormRepository _agreementRepo;
         private readonly INotificationService _notificationService;
+        private readonly IOrderTrackingRealtimeService _orderTrackingRealtimeService;
         private readonly IUnitOfWork _unitOfWork;
         private readonly IMapper _mapper;
 
@@ -32,6 +34,7 @@ namespace HomeCycle.Application.Services.Shipments
             IOrderRepository orderRepo,
             IAgreementFormRepository agreementRepo,
             INotificationService notificationService,
+            IOrderTrackingRealtimeService orderTrackingRealtimeService,
             IUnitOfWork unitOfWork,
             IMapper mapper)
         {
@@ -39,6 +42,7 @@ namespace HomeCycle.Application.Services.Shipments
             _orderRepo = orderRepo;
             _agreementRepo = agreementRepo;
             _notificationService = notificationService;
+            _orderTrackingRealtimeService = orderTrackingRealtimeService;
             _unitOfWork = unitOfWork;
             _mapper = mapper;
         }
@@ -149,6 +153,9 @@ namespace HomeCycle.Application.Services.Shipments
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
                 await _notificationService.PublishCreatedSafelyAsync(notification);
+                await _orderTrackingRealtimeService.PublishByOrderIdSafelyAsync(
+                    shipment.OrderId,
+                    shipment.UpdatedAt);
 
                 return Result<ShipmentSellerReadyResponseDto>.Success(
                     _mapper.Map<ShipmentSellerReadyResponseDto>(shipment));

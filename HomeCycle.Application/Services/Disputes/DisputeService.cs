@@ -16,6 +16,7 @@ using HomeCycle.Application.Interfaces.Repositories.Profiles;
 using HomeCycle.Application.Interfaces.Repositories.Users;
 using HomeCycle.Application.Interfaces.Services.Disputes;
 using HomeCycle.Application.Interfaces.Services.Notifications;
+using HomeCycle.Application.Interfaces.Services.Orders;
 using HomeCycle.Application.Interfaces.Services.Payments;
 using HomeCycle.Application.Interfaces.Services.PlatformPolicies;
 using HomeCycle.Application.Interfaces.Services.Posts;
@@ -43,6 +44,7 @@ namespace HomeCycle.Application.Services.Disputes
         private readonly IPaymentService _paymentService;
         private readonly IPlatformPolicyProvider _platformPolicyProvider;
         private readonly INotificationService _notificationService;
+        private readonly IOrderTrackingRealtimeService _orderTrackingRealtimeService;
         private readonly IUnitOfWork _unitOfWork;
         private readonly IMapper _mapper;
         private readonly IValidator<CreateDisputeRequest> _createValidator;
@@ -62,6 +64,7 @@ namespace HomeCycle.Application.Services.Disputes
             IPaymentService paymentService,
             IPlatformPolicyProvider platformPolicyProvider,
             INotificationService notificationService,
+            IOrderTrackingRealtimeService orderTrackingRealtimeService,
             IUnitOfWork unitOfWork,
             IMapper mapper,
             IValidator<CreateDisputeRequest> createValidator,
@@ -80,6 +83,7 @@ namespace HomeCycle.Application.Services.Disputes
             _paymentService = paymentService;
             _platformPolicyProvider = platformPolicyProvider;
             _notificationService = notificationService;
+            _orderTrackingRealtimeService = orderTrackingRealtimeService;
             _unitOfWork = unitOfWork;
             _mapper = mapper;
             _createValidator = createValidator;
@@ -181,6 +185,13 @@ namespace HomeCycle.Application.Services.Disputes
                 await _unitOfWork.CommitTransactionAsync(cancellationToken);
                 if (disputeNotification != null)
                     await _notificationService.PublishCreatedSafelyAsync(disputeNotification);
+
+                if (dispute.OrderId.HasValue)
+                {
+                    await _orderTrackingRealtimeService.PublishByOrderIdSafelyAsync(
+                        dispute.OrderId.Value,
+                        dispute.UpdatedAt);
+                }
 
                 return Result<CreateDisputeResponse>.Success(new CreateDisputeResponse
                 {
@@ -333,6 +344,13 @@ namespace HomeCycle.Application.Services.Disputes
                 await _unitOfWork.CommitTransactionAsync(cancellationToken);
                 if (closedNotification != null)
                     await _notificationService.PublishCreatedSafelyAsync(closedNotification);
+
+                if (dispute.OrderId.HasValue)
+                {
+                    await _orderTrackingRealtimeService.PublishByOrderIdSafelyAsync(
+                        dispute.OrderId.Value,
+                        dispute.UpdatedAt);
+                }
 
                 return Result<CloseDisputeResponse>.Success(new CloseDisputeResponse
                 {
@@ -671,6 +689,13 @@ namespace HomeCycle.Application.Services.Disputes
                 foreach (var notification in decisionNotifications)
                     await _notificationService.PublishCreatedSafelyAsync(notification);
 
+                if (dispute.OrderId.HasValue)
+                {
+                    await _orderTrackingRealtimeService.PublishByOrderIdSafelyAsync(
+                        dispute.OrderId.Value,
+                        dispute.UpdatedAt);
+                }
+
                 var response = _mapper.Map<DisputeDecisionResponse>(dispute);
                 response.OrderStatus = (OrderStatus)order.OrderStatus!.Value;
                 response.RefundedAmount = refundedAmount;
@@ -799,6 +824,13 @@ namespace HomeCycle.Application.Services.Disputes
                 await _unitOfWork.CommitTransactionAsync(cancellationToken);
                 foreach (var notification in rejectionNotifications)
                     await _notificationService.PublishCreatedSafelyAsync(notification);
+
+                if (dispute.OrderId.HasValue)
+                {
+                    await _orderTrackingRealtimeService.PublishByOrderIdSafelyAsync(
+                        dispute.OrderId.Value,
+                        dispute.UpdatedAt);
+                }
 
                 var response = _mapper.Map<DisputeDecisionResponse>(dispute);
                 response.OrderStatus = restoredOrderStatus;
@@ -990,6 +1022,13 @@ namespace HomeCycle.Application.Services.Disputes
                 await _unitOfWork.CommitTransactionAsync(cancellationToken);
                 foreach (var notification in verificationNotifications)
                     await _notificationService.PublishCreatedSafelyAsync(notification);
+
+                if (dispute.OrderId.HasValue)
+                {
+                    await _orderTrackingRealtimeService.PublishByOrderIdSafelyAsync(
+                        dispute.OrderId.Value,
+                        dispute.UpdatedAt);
+                }
 
                 var response = _mapper.Map<DisputeDecisionResponse>(dispute);
                 response.OrderStatus = (OrderStatus)order.OrderStatus!.Value;

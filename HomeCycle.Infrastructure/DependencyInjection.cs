@@ -244,6 +244,8 @@ namespace HomeCycle.Infrastructure
             services.AddScoped<IPaymentService, PaymentService>();
             services.AddScoped<IAppointmentService, AppointmentService>();
             services.AddScoped<IOrderService, OrderService>();
+            services.AddSingleton<IOrderTimelineBuilder, OrderTimelineBuilder>();
+            services.AddScoped<IOrderTrackingRealtimeService, OrderTrackingRealtimeService>();
             services.AddScoped<IShipmentService, ShipmentService>();
             services.AddScoped<IReviewService, ReviewService>();
             services.AddScoped<IWithdrawalService, WithdrawalService>();
