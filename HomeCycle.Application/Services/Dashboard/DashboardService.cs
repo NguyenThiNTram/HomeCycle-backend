@@ -111,7 +111,7 @@ public sealed class DashboardService(IDashboardRepository repository, TimeProvid
             _ => transactionType.ToString()
         };
     }
-    private static decimal Percent(decimal count, decimal total) => total == 0 ? 0 : Math.Round(count * 100m / total, 2);
+    //private static decimal Percent(decimal count, decimal total) => total == 0 ? 0 : Math.Round(count * 100m / total, 2);
 
     private static IReadOnlyList<DistributionItem> Distribution<T>(IEnumerable<DashboardCodeCount> counts) where T : struct, Enum
     {
