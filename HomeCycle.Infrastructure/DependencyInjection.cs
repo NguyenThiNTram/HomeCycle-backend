@@ -130,10 +130,10 @@ namespace HomeCycle.Infrastructure
         public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
         {
             services.TryAddSingleton<TimeProvider>(TimeProvider.System);
-            services.AddScoped<HomeCycle.Application.Interfaces.Repositories.Dashboard.IUserDashboardRepository,
-                HomeCycle.Infrastructure.Repositories.Dashboard.UserDashboardRepository>();
-            services.AddScoped<HomeCycle.Application.Interfaces.Services.Dashboard.IUserDashboardService,
-                HomeCycle.Application.Services.Dashboard.UserDashboardService>();
+            services.AddScoped<HomeCycle.Application.Interfaces.Repositories.Dashboard.IDashboardRepository,
+                HomeCycle.Infrastructure.Repositories.Dashboard.DashboardRepository>();
+            services.AddScoped<HomeCycle.Application.Interfaces.Services.Dashboard.IDashboardService,
+                HomeCycle.Application.Services.Dashboard.DashboardService>();
             //register DB
             services.AddDbContext<HomeCycleDbContext>(options =>
             {
