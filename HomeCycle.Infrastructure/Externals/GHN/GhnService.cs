@@ -705,8 +705,8 @@ namespace HomeCycle.Infrastructure.Externals.GHN
             if (request.ServiceTypeId is not (2 or 5))
                 throw new ArgumentException("ServiceTypeId chỉ nhận 2 hoặc 5.", nameof(request));
 
-            if (request.PaymentTypeId != 1 || request.CodAmount != 0)
-                throw new ArgumentException("Đơn HomeCycle phải có PaymentTypeId = 1 và CodAmount = 0.", nameof(request));
+            if (request.PaymentTypeId is not (1 or 2) || request.CodAmount != 0)
+                throw new ArgumentException("Đơn HomeCycle phải có PaymentTypeId bằng 1 hoặc 2 và CodAmount bằng 0.", nameof(request));
 
             if (request.ToDistrictId <= 0 || string.IsNullOrWhiteSpace(request.ToWardCode))
                 throw new ArgumentException("Địa chỉ người nhận không hợp lệ: thiếu ToDistrictId hoặc ToWardCode.", nameof(request));
@@ -800,7 +800,7 @@ namespace HomeCycle.Infrastructure.Externals.GHN
                 ToWardCode = request.ToWardCode.Trim(),
 
                 ServiceTypeId = request.ServiceTypeId,
-                PaymentTypeId = 1, // Luôn là shop trả phí
+                PaymentTypeId = request.PaymentTypeId, // Luôn là shop trả phí
                 CodAmount = 0,     // Luôn không thu hộ qua GHN
                 InsuranceValue = request.InsuranceValue,
                 RequiredNote = request.RequiredNote,
