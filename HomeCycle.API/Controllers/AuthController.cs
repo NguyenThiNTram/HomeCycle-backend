@@ -1,5 +1,6 @@
 ﻿using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Requests.Auths;
+using HomeCycle.Application.Commons.Errors;
 using HomeCycle.Application.DTOs.Requests.Users;
 using HomeCycle.Application.DTOs.Responses.Auths;
 using HomeCycle.Application.Interfaces.Services.Auths;
@@ -255,6 +256,50 @@ namespace HomeCycle.API.Controllers
                 message = "Tài khoản đã được mở khoá.",
                 data = result.Data
             });
+        }
+
+        [HttpPost("admin/moderators")]
+        [Authorize(Roles = "Admin")]
+        public async Task<IActionResult> CreateModerator([FromBody] CreateModeratorRequest request, CancellationToken cancellationToken)
+        {
+            var adminId = GetCurrentUserId();
+            if (adminId == Guid.Empty)
+                return Unauthorized();
+            var result = await _authService.CreateModeratorAsync(adminId, request, cancellationToken);
+            if (!result.IsSuccess)
+                return ModeratorFailure(result.Error!);
+            return StatusCode(StatusCodes.Status201Created, new { success = true, message = "Moderator created. Confirmation email sent.", data = result.Data });
+        }
+
+        [HttpPost("moderators/verify-email")]
+        [AllowAnonymous]
+        public async Task<IActionResult> VerifyModeratorEmail([FromBody] VerifyModeratorEmailRequest request, CancellationToken cancellationToken)
+        {
+            Response.Headers["Cache-Control"] = "no-store";
+            var result = await _authService.VerifyModeratorEmailAsync(request, cancellationToken);
+            if (!result.IsSuccess)
+                return ModeratorFailure(result.Error!);
+            return Ok(new { success = true, data = result.Data });
+        }
+
+        [HttpPost("moderators/set-password")]
+        [AllowAnonymous]
+        public async Task<IActionResult> SetModeratorPassword([FromBody] SetModeratorPasswordRequest request, CancellationToken cancellationToken)
+        {
+            var result = await _authService.SetModeratorPasswordAsync(request, cancellationToken);
+            if (!result.IsSuccess)
+                return ModeratorFailure(result.Error!);
+            return Ok(new { success = true, message = "Moderator account activated. Please log in.", data = result.Data });
+        }
+
+        private IActionResult ModeratorFailure(Error error)
+        {
+            var statusCode = error == AuthErrors.ModeratorCreationForbidden ? StatusCodes.Status403Forbidden
+                : error == AuthErrors.EmailExists || error == AuthErrors.UsernameExists ? StatusCodes.Status409Conflict
+                : error == AuthErrors.ModeratorEmailFailed ? StatusCodes.Status502BadGateway
+                : error == AuthErrors.ModeratorConfigurationInvalid ? StatusCodes.Status500InternalServerError
+                : StatusCodes.Status400BadRequest;
+            return StatusCode(statusCode, new { success = false, code = error.Code, message = error.Message });
         }
 
         private Guid GetCurrentUserId()

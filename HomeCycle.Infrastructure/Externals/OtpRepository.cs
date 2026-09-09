@@ -20,6 +20,42 @@ namespace HomeCycle.Infrastructure.Externals
             _db = dbContext;
         }
 
+        public async Task AddModeratorTokenAsync(otp token, CancellationToken cancellationToken = default)
+        {
+            await _db.OTPs.AddAsync(token.ToInfrastructure(), cancellationToken);
+        }
+
+        public async Task<otp?> GetModeratorTokenAsync(string hash, string purpose, CancellationToken cancellationToken = default)
+        {
+            var entity = await _db.OTPs.AsNoTracking().FirstOrDefaultAsync(x =>
+                x.Code == hash && x.Purpose == purpose && !x.IsUsed &&
+                x.ExpiredAt > DateTime.UtcNow, cancellationToken);
+            return entity == null ? null : entity.ToDomain();
+        }
+
+        public async Task<bool> ConsumeModeratorTokenAsync(Guid tokenId, string purpose, CancellationToken cancellationToken = default)
+        {
+            var now = DateTime.UtcNow;
+            return await _db.OTPs.Where(x => x.OtpId == tokenId && x.Purpose == purpose &&
+                    !x.IsUsed && x.ExpiredAt > now)
+                .ExecuteUpdateAsync(update => update.SetProperty(x => x.IsUsed, true)
+                    .SetProperty(x => x.UsedAt, (DateTime?)now), cancellationToken) == 1;
+        }
+
+        public async Task<bool> UpdateModeratorActivationAsync(Guid userId, string? passwordHash, CancellationToken cancellationToken = default)
+        {
+            var query = _db.Users.Where(x => x.UserId == userId &&
+                x.Role == (int)HomeCycle.Domain.Enums.UserRole.Moderator &&
+                x.Status == (int)HomeCycle.Domain.Enums.UserStatus.Pending);
+            if (passwordHash == null)
+                return await query.Where(x => !x.IsEmailVerified)
+                    .ExecuteUpdateAsync(update => update.SetProperty(x => x.IsEmailVerified, true), cancellationToken) == 1;
+
+            return await query.Where(x => x.IsEmailVerified)
+                .ExecuteUpdateAsync(update => update.SetProperty(x => x.Password, passwordHash)
+                    .SetProperty(x => x.Status, (int)HomeCycle.Domain.Enums.UserStatus.Active), cancellationToken) == 1;
+        }
+
         public async Task AddAsync(otp otp)
         {
             var entity = otp.ToInfrastructure();
@@ -33,6 +69,7 @@ namespace HomeCycle.Infrastructure.Externals
             var entity = await _db.OTPs
                 .FirstOrDefaultAsync(x =>
                     x.Email == email &&
+                    x.Purpose == "Register" &&
                     x.Code == code &&
                     !x.IsUsed &&
                     x.ExpiredAt > DateTime.UtcNow);
@@ -57,7 +94,7 @@ namespace HomeCycle.Infrastructure.Externals
         public async Task UpdateUserIdAsync(string email, Guid userId, CancellationToken cancellationToken)
         {
             var otp = await _db.OTPs
-                .Where(x => x.Email == email)
+                .Where(x => x.Email == email && x.Purpose == "Register")
                 .OrderByDescending(x => x.CreatedAt)
                 .FirstOrDefaultAsync(cancellationToken);
 

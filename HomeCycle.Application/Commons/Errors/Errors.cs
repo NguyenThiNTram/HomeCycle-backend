@@ -10,6 +10,11 @@ namespace HomeCycle.Application.Commons.Errors
 {
     public static class AuthErrors
     {
+        public static readonly Error ModeratorCreationForbidden = new("AUTH_MODERATOR_CREATION_FORBIDDEN", "Only an active admin can create moderators.");
+        public static readonly Error InvalidModeratorToken = new("AUTH_MODERATOR_TOKEN_INVALID", "The activation link or password setup session is invalid, expired, or already used.");
+        public static readonly Error ModeratorActivationUnavailable = new("AUTH_MODERATOR_ACTIVATION_UNAVAILABLE", "This moderator account cannot be activated.");
+        public static readonly Error ModeratorEmailFailed = new("AUTH_MODERATOR_EMAIL_FAILED", "The pending account was created, but the confirmation email could not be sent.");
+        public static readonly Error ModeratorConfigurationInvalid = new("AUTH_MODERATOR_CONFIGURATION_INVALID", "Moderator activation settings are invalid.");
         public static readonly Error EmailRequired = new("AUTH_EMAIL_REQUIRED", "Email is required.");
 
         public static readonly Error InvalidEmail = new("AUTH_EMAIL_INVALID", "Email format is invalid.");

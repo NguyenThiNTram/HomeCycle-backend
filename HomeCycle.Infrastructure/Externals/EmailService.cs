@@ -20,6 +20,84 @@ namespace HomeCycle.Infrastructure.Externals
             _config = config;
         }
 
+        public async Task SendModeratorConfirmationEmailAsync(string toEmail, string username, string activationUrl, DateTime expiresAt, CancellationToken cancellationToken = default)
+        {
+            var settings = _config.GetSection("EmailSettings");
+            var email = new MimeMessage();
+            email.From.Add(new MailboxAddress(settings["SenderName"], settings["SenderEmail"]));
+            email.To.Add(new MailboxAddress(username, toEmail));
+            email.Subject = "Xác nhận tài khoản kiểm duyệt viên HomeCycle";
+            var safeUsername = System.Net.WebUtility.HtmlEncode(username);
+            var safeUrl = System.Net.WebUtility.HtmlEncode(activationUrl);
+            var formattedExpiry = expiresAt.ToString("yyyy-MM-dd HH:mm");
+
+            //email.Body = new BodyBuilder
+            //{
+            //    TextBody = $"Xin chào {username}, mở liên kết để xác nhận email và tạo mật khẩu: {activationUrl}\nLiên kết hết hạn lúc {expiresAt:yyyy-MM-dd HH:mm} UTC.",
+            //    HtmlBody = $"<p>Xin chào {safeUsername},</p><p>Admin đã tạo tài khoản kiểm duyệt viên HomeCycle cho bạn. Bấm Active để xác nhận email và tạo mật khẩu.</p><p><a href=\"{safeUrl}\">Active</a></p><p>Liên kết hết hạn lúc {expiresAt:yyyy-MM-dd HH:mm} UTC.</p>"
+            //}.ToMessageBody();
+
+            var builder = new BodyBuilder
+            {
+                TextBody = $"Xin chào {username},\n\nAdmin đã tạo tài khoản kiểm duyệt viên HomeCycle cho bạn. Mở liên kết sau để xác nhận email và tạo mật khẩu: {activationUrl}\n\nLiên kết hết hạn lúc {formattedExpiry} UTC.",
+                HtmlBody = $@"
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset='UTF-8'>
+                <meta name='viewport' content='width=device-width, initial-scale=1.0'>
+            </head>
+            <body style='margin: 0; padding: 0; background-color: #f4f6f8; font-family: ""Segoe UI"", Tahoma, Geneva, Verdana, sans-serif;'>
+                <table role='presentation' width='100%' cellspacing='0' cellpadding='0' style='background-color: #f4f6f8; padding: 40px 10px;'>
+                    <tr>
+                        <td align='center'>
+                            <table role='presentation' width='100%' style='max-width: 500px; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 10px rgba(0,0,0,0.05); border: 1px solid #e5e7eb;'>
+                                <!-- Header -->
+                                <tr>
+                                    <td style='background-color: #588b8b; padding: 22px; text-align: center;'>
+                                        <h2 style='color: #ffffff; margin: 0; font-size: 22px; font-weight: 600; letter-spacing: 0.5px;'>HomeCycle Moderator</h2>
+                                    </td>
+                                </tr>
+                                <!-- Body Content -->
+                                <tr>
+                                    <td style='padding: 30px 25px; color: #374151; font-size: 15px; line-height: 1.6;'>
+                                        <p style='margin-top: 0; margin-bottom: 16px;'>Xin chào <strong>{safeUsername}</strong>,</p>
+                                        <p style='margin-top: 0; margin-bottom: 20px;'>Admin đã tạo tài khoản kiểm duyệt viên HomeCycle cho bạn. Bấm vào nút bên dưới để xác nhận email và thiết lập mật khẩu:</p>
+                            
+                                        <!-- Action Button -->
+                                        <div style='text-align: center; margin: 30px 0;'>
+                                            <a href='{safeUrl}' style='background-color: #23b0b0; color: #ffffff; text-decoration: none; padding: 14px 28px; font-size: 16px; font-weight: 600; border-radius: 6px; display: inline-block; letter-spacing: 0.5px;'>Kích hoạt tài khoản</a>
+                                        </div>
+                            
+                                        <p style='margin-bottom: 16px; font-size: 14px; color: #6b7280;'>Liên kết này sẽ hết hạn lúc <strong>{formattedExpiry} UTC</strong>.</p>
+                                        <p style='margin-bottom: 12px; font-size: 13px; color: #6b7280;'>Nếu nút trên không hoạt động, bạn có thể truy cập trực tiếp bằng đường dẫn sau:</p>
+                                        <p style='margin-bottom: 24px; word-break: break-all; font-size: 13px; color: #588b8b;'>{safeUrl}</p>
+                                        <p style='margin-bottom: 0;'>Cảm ơn bạn đã gia nhập đội ngũ kiểm duyệt của HomeCycle!</p>
+                                    </td>
+                                </tr>
+                                <!-- Footer -->
+                                <tr>
+                                    <td style='background-color: #f9fafb; padding: 16px; text-align: center; font-size: 13px; color: #6b7280; border-top: 1px solid #f3f4f6;'>
+                                        © {DateTime.UtcNow.Year} HomeCycle. All rights reserved.
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                </table>
+            </body>
+            </html>"
+            };
+
+            email.Body = builder.ToMessageBody();
+
+            using var smtp = new MailKit.Net.Smtp.SmtpClient();
+            await smtp.ConnectAsync(settings["MailServer"], int.Parse(settings["MailPort"]!), SecureSocketOptions.StartTls, cancellationToken);
+            await smtp.AuthenticateAsync(settings["SenderEmail"], settings["SenderPassword"], cancellationToken);
+            await smtp.SendAsync(email, cancellationToken);
+            await smtp.DisconnectAsync(true, cancellationToken);
+        }
+
         public async Task SendOtpEmailAsync(string toEmail, string otpCode)
         {
             var settings = _config.GetSection("EmailSettings");

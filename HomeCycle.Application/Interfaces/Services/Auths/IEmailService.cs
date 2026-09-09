@@ -8,6 +8,7 @@ namespace HomeCycle.Application.Interfaces.Services.Auths
 {
     public interface IEmailService
     {
+        Task SendModeratorConfirmationEmailAsync(string toEmail, string username, string activationUrl, DateTime expiresAt, CancellationToken cancellationToken = default);
         Task SendOtpEmailAsync(string toEmail, string otpCode);
 
         Task SendBusinessApprovalEmailAsync(string toEmail, string businessName);

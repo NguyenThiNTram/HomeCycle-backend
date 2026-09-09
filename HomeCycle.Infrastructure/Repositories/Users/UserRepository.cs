@@ -105,7 +105,7 @@ namespace HomeCycle.Infrastructure.Repositories.Users
             var searchUsername = username.Trim().ToLower();
 
             return await _db.Users
-               .AnyAsync(x => x.Username == searchUsername, cancellationToken);
+               .AnyAsync(x => x.Username.ToLower() == searchUsername, cancellationToken);
         }
 
         //Hàm thứ hai (Có excludeUserId): Dùng cho chức năng Cập nhật hồ sơ (Update Profile). Kiểm tra xem tên đăng nhập mới có bị trùng với người khác hay không (phải loại trừ chính bản thân người đang sửa)
@@ -114,7 +114,7 @@ namespace HomeCycle.Infrastructure.Repositories.Users
             var searchUsername = username.Trim().ToLower();
 
             return await _db.Users
-               .AnyAsync(x => x.Username == searchUsername && x.UserId != excludeUserId, cancellationToken);
+               .AnyAsync(x => x.Username.ToLower() == searchUsername && x.UserId != excludeUserId, cancellationToken);
         }
 
         public async Task<user?> GetByEmailAsync(string email, CancellationToken cancellationToken = default)
