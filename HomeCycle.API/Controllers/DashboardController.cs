@@ -91,4 +91,82 @@ public sealed class DashboardController(IDashboardService service) : ControllerB
     public async Task<ActionResult<BusinessPerformanceResponse>> GetBusinessPerformance(
         [FromQuery] DashboardPeriodRequest request, CancellationToken ct)
         => Ok(await service.GetBusinessPerformanceAsync(request, ct));
+
+
+    [HttpGet("finance/overview")]
+    [SwaggerOperation(
+        Summary = "Tổng quan vị thế và hoạt động tài chính",
+        Description =
+            "Position là snapshot số dư hiện tại. Activity là dòng tiền trong khoảng From/To. " +
+            "ExternalInflow chỉ tính PayOS đã thanh toán; ExternalOutflow hiện chỉ tính Withdrawal_Success. " +
+            "Refund và release là dịch chuyển nội bộ, không phải external outflow.")]
+    public async Task<ActionResult<FinanceOverviewResponse>> GetFinanceOverview(
+        [FromQuery] DashboardPeriodRequest request,
+        CancellationToken ct)
+    {
+        var result = await service.GetFinanceOverviewAsync(request, ct);
+        return Ok(result);
+    }
+
+
+    [HttpGet("finance/cash-flow")]
+    [SwaggerOperation(
+        Summary = "Dòng tiền vào/ra và phân loại nguồn tiền",
+        Description =
+            "Trả External Inflow, External Outflow, Net Cash Flow, time series và breakdown. " +
+            "GHN Shipping Collected chỉ là phần shipping thực sự được HomeCycle collect; " +
+            "không bao gồm khoản HomeCycle thanh toán cho GHN.")]
+    public async Task<ActionResult<FinanceCashFlowResponse>> GetFinanceCashFlow(
+        [FromQuery] DashboardPeriodRequest request,
+        CancellationToken ct)
+    {
+        var result = await service.GetFinanceCashFlowAsync(request, ct);
+        return Ok(result);
+    }
+
+
+    [HttpGet("finance/payment-status")]
+    [SwaggerOperation(
+        Summary = "Tổng quan trạng thái và giá trị Payment",
+        Description =
+            "Phân loại các Payment được tạo trong kỳ theo trạng thái hiện tại. " +
+            "Trả cả Count, Amount, Paid Rate, Failure Rate và Refunded Payment Rate.")]
+    public async Task<ActionResult<FinancePaymentStatusResponse>> GetFinancePaymentStatus(
+        [FromQuery] DashboardPeriodRequest request,
+        CancellationToken ct)
+    {
+        var result = await service.GetFinancePaymentStatusAsync(request, ct);
+        return Ok(result);
+    }
+
+
+    [HttpGet("finance/transactions")]
+    [SwaggerOperation(
+        Summary = "Sổ giao dịch tài chính gần đây",
+        Description =
+            "Phân trang WalletTransaction theo thời gian, loại giao dịch, trạng thái, reference và FinanceFlowScope. " +
+            "Một WalletTransaction là một financial event; không trả từng WalletLedger row thành giao dịch riêng.")]
+    public async Task<ActionResult<PagedResult<FinanceTransactionItem>>> GetFinanceTransactions(
+        [FromQuery] FinanceTransactionRequest request,
+        CancellationToken ct)
+    {
+        var result = await service.GetFinanceTransactionsAsync(request, ct);
+        return Ok(result);
+    }
+
+
+    [HttpGet("finance/health")]
+    [SwaggerOperation(
+        Summary = "Theo dõi sức khỏe vận hành tài chính",
+        Description =
+            "Phát hiện payment Pending quá hạn, Pending thiếu expiry, withdrawal đang chờ/xử lý, " +
+            "order quá hạn release vẫn còn Hold, order Completed thiếu dispute deadline, " +
+            "tiền Hold do active dispute, wallet âm và financial transaction chưa phân loại.")]
+    public async Task<ActionResult<FinanceHealthResponse>> GetFinanceHealth(
+        [FromQuery] DashboardPeriodRequest request,
+        CancellationToken ct)
+    {
+        var result = await service.GetFinanceHealthAsync(request, ct);
+        return Ok(result);
+    }
 }

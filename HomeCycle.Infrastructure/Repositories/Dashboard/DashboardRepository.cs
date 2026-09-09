@@ -6,6 +6,7 @@ using HomeCycle.Application.Interfaces.Repositories.Dashboard;
 using HomeCycle.Domain.Enums;
 using HomeCycle.Infrastructure.DbContexts;
 using Microsoft.EntityFrameworkCore;
+using System.Linq;
 
 namespace HomeCycle.Infrastructure.Repositories.Dashboard;
 
@@ -455,4 +456,752 @@ public sealed class DashboardRepository(HomeCycleDbContext db) : IDashboardRepos
             .OrderBy(x => x.Date).ToListAsync(ct);
         return rows.Select(x => new RegistrationDay(DateOnly.FromDateTime(x.Date), x.Count)).ToArray();
     }
+
+
+    public async Task<FinanceOverviewData> GetFinanceOverviewAsync(
+        DashboardPeriod period,
+        CancellationToken ct)
+    {
+        var from = period.FromUtc;
+        var to = period.EndUtc;
+
+        var wallets = db.Wallets.AsNoTracking();
+
+        var userWallets = wallets.Where(x =>
+            x.WalletType == (int)WalletTypeEnum.Personal ||
+            x.WalletType == (int)WalletTypeEnum.Business);
+
+        var systemWallets = wallets.Where(x =>
+            x.WalletType == (int)WalletTypeEnum.System);
+
+        var totalRecordedWalletBalance = await wallets
+            .Select(x => (decimal?)(x.AvailableBalance + x.HoldBalance))
+            .SumAsync(ct) ?? 0;
+
+        var systemWalletAvailableBalance = await systemWallets
+            .Select(x => (decimal?)x.AvailableBalance)
+            .SumAsync(ct) ?? 0;
+
+        var systemWalletHoldBalance = await systemWallets
+            .Select(x => (decimal?)x.HoldBalance)
+            .SumAsync(ct) ?? 0;
+
+        var userAvailableFunds = await userWallets
+            .Select(x => (decimal?)x.AvailableBalance)
+            .SumAsync(ct) ?? 0;
+
+        var userFundsHeld = await userWallets
+            .Select(x => (decimal?)x.HoldBalance)
+            .SumAsync(ct) ?? 0;
+
+        var orderEscrowHeld = await db.Wallet_Ledgers
+            .AsNoTracking()
+            .Where(x =>
+                x.BalanceType == (int)BalanceType.Hold &&
+                x.ReferenceType == (int)ReferenceType.Order &&
+                x.ReferenceId != null)
+            .Select(x => (decimal?)(
+                x.Direction == (int)LedgerDirection.In
+                    ? x.Amount
+                    : -x.Amount))
+            .SumAsync(ct) ?? 0;
+
+        var withdrawalLocked = await db.Wallet_Ledgers
+            .AsNoTracking()
+            .Where(x =>
+                x.BalanceType == (int)BalanceType.Hold &&
+                x.ReferenceType == (int)ReferenceType.Withdrawal &&
+                x.ReferenceId != null)
+            .Select(x => (decimal?)(
+                x.Direction == (int)LedgerDirection.In
+                    ? x.Amount
+                    : -x.Amount))
+            .SumAsync(ct) ?? 0;
+
+        var shippingEscrowBalance = await systemWallets
+            .Where(x => x.Purpose == (int)SystemWalletPurpose.Shipping_Escrow)
+            .Select(x => (decimal?)(x.AvailableBalance + x.HoldBalance))
+            .SumAsync(ct) ?? 0;
+
+        var currentPendingPaymentAmount = await db.Payments
+            .AsNoTracking()
+            .Where(x => x.PaymentStatus == (int)PaymentStatus.Pending)
+            .Select(x => (decimal?)(x.Amount ?? 0))
+            .SumAsync(ct) ?? 0;
+
+        var paidStatuses = new[]
+        {
+        (int)PaymentStatus.Completed,
+        (int)PaymentStatus.Refunded,
+        (int)PaymentStatus.PartiallyRefunded
+    };
+
+        var externalInflow = await db.Payments
+            .AsNoTracking()
+            .Where(x =>
+                x.PaymentMethod == (int)PaymentMethod.PayOS &&
+                x.PaidAt >= from &&
+                x.PaidAt < to &&
+                x.PaymentStatus.HasValue &&
+                paidStatuses.Contains(x.PaymentStatus.Value))
+            .Select(x => (decimal?)(x.Amount ?? 0))
+            .SumAsync(ct) ?? 0;
+
+        var externalOutflow = await db.Wallet_Transactions
+            .AsNoTracking()
+            .Where(x =>
+                x.TransactionType == (int)TransactionType.Withdrawal_Success &&
+                x.WalletTransactionStatus == (int)WalletTransactionStatus.Completed &&
+                x.CreatedAt >= from &&
+                x.CreatedAt < to)
+            .Select(x => (decimal?)Math.Abs(x.Amount ?? 0))
+            .SumAsync(ct) ?? 0;
+
+        var processedPaymentAmount = await db.Payments
+            .AsNoTracking()
+            .Where(x =>
+                x.PaidAt >= from &&
+                x.PaidAt < to &&
+                x.PaymentStatus.HasValue &&
+                paidStatuses.Contains(x.PaymentStatus.Value))
+            .Select(x => (decimal?)(x.Amount ?? 0))
+            .SumAsync(ct) ?? 0;
+
+        var refundedAmount = await db.Wallet_Transactions
+            .AsNoTracking()
+            .Where(x =>
+                x.TransactionType == (int)TransactionType.Order_Refund &&
+                x.WalletTransactionStatus == (int)WalletTransactionStatus.Completed &&
+                x.CreatedAt >= from &&
+                x.CreatedAt < to)
+            .Select(x => (decimal?)Math.Abs(x.Amount ?? 0))
+            .SumAsync(ct) ?? 0;
+
+        var createdFailedPaymentAmount = await db.Payments
+            .AsNoTracking()
+            .Where(x =>
+                x.CreatedAt >= from &&
+                x.CreatedAt < to &&
+                x.PaymentStatus == (int)PaymentStatus.Failed)
+            .Select(x => (decimal?)(x.Amount ?? 0))
+            .SumAsync(ct) ?? 0;
+
+        return new FinanceOverviewData
+        {
+            TotalRecordedWalletBalance = totalRecordedWalletBalance,
+            SystemWalletAvailableBalance = systemWalletAvailableBalance,
+            SystemWalletHoldBalance = systemWalletHoldBalance,
+            UserAvailableFunds = userAvailableFunds,
+            UserFundsHeld = userFundsHeld,
+            OrderEscrowHeld = orderEscrowHeld,
+            WithdrawalLocked = withdrawalLocked,
+            ShippingEscrowBalance = shippingEscrowBalance,
+            CurrentPendingPaymentAmount = currentPendingPaymentAmount,
+            ExternalInflow = externalInflow,
+            ExternalOutflow = externalOutflow,
+            ProcessedPaymentAmount = processedPaymentAmount,
+            RefundedAmount = refundedAmount,
+            CreatedFailedPaymentAmount = createdFailedPaymentAmount
+        };
+    }
+
+
+    public async Task<FinanceCashFlowData> GetFinanceCashFlowAsync(
+        DashboardPeriod period,
+        CancellationToken ct)
+    {
+        var from = period.FromUtc;
+        var to = period.EndUtc;
+
+        var paidStatuses = new[]
+        {
+        (int)PaymentStatus.Completed,
+        (int)PaymentStatus.Refunded,
+        (int)PaymentStatus.PartiallyRefunded
+    };
+
+        var payOsPayments = db.Payments
+            .AsNoTracking()
+            .Where(x =>
+                x.PaymentMethod == (int)PaymentMethod.PayOS &&
+                x.PaidAt >= from &&
+                x.PaidAt < to &&
+                x.PaymentStatus.HasValue &&
+                paidStatuses.Contains(x.PaymentStatus.Value));
+
+        var externalInflow = await payOsPayments
+            .Select(x => (decimal?)(x.Amount ?? 0))
+            .SumAsync(ct) ?? 0;
+
+        var externalOutflowQuery = db.Wallet_Transactions
+            .AsNoTracking()
+            .Where(x =>
+                x.TransactionType == (int)TransactionType.Withdrawal_Success &&
+                x.WalletTransactionStatus == (int)WalletTransactionStatus.Completed &&
+                x.CreatedAt >= from &&
+                x.CreatedAt < to);
+
+        var externalOutflow = await externalOutflowQuery
+            .Select(x => (decimal?)Math.Abs(x.Amount ?? 0))
+            .SumAsync(ct) ?? 0;
+
+        var depositPayOsAmount = await payOsPayments
+            .Where(x => x.PaymentType == (int)PaymentType.Deposit)
+            .Select(x => (decimal?)(x.Amount ?? 0))
+            .SumAsync(ct) ?? 0;
+
+        var fullPayOsAmount = await payOsPayments
+            .Where(x => x.PaymentType == (int)PaymentType.Full_Payment)
+            .Select(x => (decimal?)(x.Amount ?? 0))
+            .SumAsync(ct) ?? 0;
+
+        var subscriptionPayOsAmount = await payOsPayments
+            .Where(x => x.PaymentType == (int)PaymentType.Subscription)
+            .Select(x => (decimal?)(x.Amount ?? 0))
+            .SumAsync(ct) ?? 0;
+
+        var payOsGhnShippingCollectedAmount = await db.Wallet_Transactions
+            .AsNoTracking()
+            .Where(x =>
+                x.TransactionType == (int)TransactionType.Shipping_Fee_Collected &&
+                x.WalletTransactionStatus == (int)WalletTransactionStatus.Completed &&
+                x.Payment != null &&
+                x.Payment.PaymentMethod == (int)PaymentMethod.PayOS &&
+                x.Payment.PaymentType == (int)PaymentType.Full_Payment &&
+                x.Payment.PaidAt >= from &&
+                x.Payment.PaidAt < to)
+            .Select(x => (decimal?)Math.Abs(x.Amount ?? 0))
+            .SumAsync(ct) ?? 0;
+
+        var inflowDaily = await payOsPayments
+            .Where(x => x.PaidAt.HasValue)
+            .GroupBy(x => x.PaidAt!.Value.AddHours(7).Date)
+            .Select(g => new FinanceDailyAmount(
+                g.Key,
+                g.Sum(x => x.Amount ?? 0)))
+            .ToListAsync(ct);
+
+        var outflowDaily = await externalOutflowQuery
+            .GroupBy(x => x.CreatedAt.AddHours(7).Date)
+            .Select(g => new FinanceDailyAmount(
+                g.Key,
+                g.Sum(x => Math.Abs(x.Amount ?? 0))))
+            .ToListAsync(ct);
+
+        var internalMovements = await db.Wallet_Transactions
+            .AsNoTracking()
+            .Where(x =>
+                x.WalletTransactionStatus == (int)WalletTransactionStatus.Completed &&
+                x.CreatedAt >= from &&
+                x.CreatedAt < to &&
+                (
+                    x.TransactionType == (int)TransactionType.Wallet_Payment ||
+                    x.TransactionType == (int)TransactionType.Payout_Release ||
+                    x.TransactionType == (int)TransactionType.Order_Refund ||
+                    x.TransactionType == (int)TransactionType.Withdrawal_Lock ||
+                    x.TransactionType == (int)TransactionType.Withdrawal_Revert ||
+                    (
+                        x.TransactionType == (int)TransactionType.Shipping_Fee_Collected &&
+                        x.Payment != null &&
+                        x.Payment.PaymentMethod == (int)PaymentMethod.Internal_Wallet
+                    )
+                ))
+            .GroupBy(x => x.TransactionType)
+            .Select(g => new FinanceTypeAmountRow(
+                g.Key,
+                g.Sum(x => Math.Abs(x.Amount ?? 0))))
+            .ToListAsync(ct);
+
+        return new FinanceCashFlowData
+        {
+            ExternalInflow = externalInflow,
+            ExternalOutflow = externalOutflow,
+            DepositPayOsAmount = depositPayOsAmount,
+            FullPayOsAmount = fullPayOsAmount,
+            SubscriptionPayOsAmount = subscriptionPayOsAmount,
+            PayOsGhnShippingCollectedAmount = payOsGhnShippingCollectedAmount,
+            InflowDaily = inflowDaily,
+            OutflowDaily = outflowDaily,
+            InternalMovements = internalMovements
+        };
+    }
+
+
+    public async Task<FinancePaymentStatusData> GetFinancePaymentStatusAsync(
+        DashboardPeriod period,
+        CancellationToken ct)
+    {
+        var from = period.FromUtc;
+        var to = period.EndUtc;
+
+        var statuses = await db.Payments
+            .AsNoTracking()
+            .Where(x =>
+                x.CreatedAt >= from &&
+                x.CreatedAt < to)
+            .GroupBy(x => x.PaymentStatus)
+            .Select(g => new FinanceCodeAmountRow(
+                g.Key,
+                g.Count(),
+                g.Sum(x => x.Amount ?? 0)))
+            .ToListAsync(ct);
+
+        return new FinancePaymentStatusData
+        {
+            Statuses = statuses
+        };
+    }
+
+    public async Task<PagedResult<FinanceTransactionItem>> GetFinanceTransactionsAsync(
+        FinanceTransactionRequest request,
+        DashboardPeriod period,
+        CancellationToken ct)
+    {
+        var from = period.FromUtc;
+        var to = period.EndUtc;
+
+        var query = db.Wallet_Transactions
+            .AsNoTracking()
+            .Where(x =>
+                x.CreatedAt >= from &&
+                x.CreatedAt < to);
+
+        if (request.TransactionType.HasValue)
+        {
+            query = query.Where(x =>
+                x.TransactionType == (int)request.TransactionType.Value);
+        }
+
+        if (request.Status.HasValue)
+        {
+            query = query.Where(x =>
+                x.WalletTransactionStatus == (int)request.Status.Value);
+        }
+
+        if (request.ReferenceType.HasValue)
+        {
+            query = query.Where(x =>
+                x.ReferenceType == (int)request.ReferenceType.Value);
+        }
+
+        if (request.FlowScope.HasValue)
+        {
+            query = ApplyFinanceFlowScope(query, request.FlowScope.Value);
+        }
+
+        var totalCount = await query.CountAsync(ct);
+
+        var rows = await query
+            .OrderByDescending(x => x.CreatedAt)
+            .ThenBy(x => x.WalletTransactionId)
+            .Skip((request.PageNumber - 1) * request.PageSize)
+            .Take(request.PageSize)
+            .Select(x => new
+            {
+                x.WalletTransactionId,
+                x.CreatedAt,
+                x.TransactionType,
+                x.ReferenceType,
+                x.ReferenceId,
+                x.PaymentId,
+                x.Amount,
+                x.WalletTransactionStatus,
+
+                PaymentMethod = x.Payment != null
+                    ? x.Payment.PaymentMethod
+                    : null,
+
+                UserId = x.Payment != null
+                    ? (Guid?)x.Payment.PayerId
+                    : x.FromWallet != null && x.FromWallet.UserId.HasValue
+                        ? x.FromWallet.UserId
+                        : x.ToWallet != null
+                            ? x.ToWallet.UserId
+                            : null,
+
+                Username = x.Payment != null
+                    ? x.Payment.Payer.Username
+                    : x.FromWallet != null && x.FromWallet.UserId.HasValue
+                        ? x.FromWallet.User.Username
+                        : x.ToWallet != null && x.ToWallet.UserId.HasValue
+                            ? x.ToWallet.User.Username
+                            : null,
+
+                ReferenceCode =
+                    x.ReferenceType == (int)ReferenceType.Order &&
+                    x.ReferenceId.HasValue
+                        ? db.Orders
+                            .Where(o => o.OrderId == x.ReferenceId.Value)
+                            .Select(o => o.OrderCode)
+                            .FirstOrDefault()
+                        : null
+            })
+            .ToListAsync(ct);
+
+        var items = rows.Select(row =>
+        {
+            TransactionType? transactionType =
+                row.TransactionType.HasValue &&
+                Enum.IsDefined(typeof(TransactionType), row.TransactionType.Value)
+                    ? (TransactionType)row.TransactionType.Value
+                    : null;
+
+            ReferenceType? referenceType =
+                row.ReferenceType.HasValue &&
+                Enum.IsDefined(typeof(ReferenceType), row.ReferenceType.Value)
+                    ? (ReferenceType)row.ReferenceType.Value
+                    : null;
+
+            WalletTransactionStatus? status =
+                row.WalletTransactionStatus.HasValue &&
+                Enum.IsDefined(typeof(WalletTransactionStatus), row.WalletTransactionStatus.Value)
+                    ? (WalletTransactionStatus)row.WalletTransactionStatus.Value
+                    : null;
+
+            PaymentMethod? paymentMethod =
+                row.PaymentMethod.HasValue &&
+                Enum.IsDefined(typeof(PaymentMethod), row.PaymentMethod.Value)
+                    ? (PaymentMethod)row.PaymentMethod.Value
+                    : null;
+
+            return new FinanceTransactionItem
+            {
+                WalletTransactionId = row.WalletTransactionId,
+                CreatedAt = row.CreatedAt,
+                TransactionType = transactionType,
+                TransactionLabel = transactionType.HasValue
+                    ? transactionType.Value.ToString().Replace('_', ' ')
+                    : "Unclassified",
+                ReferenceType = referenceType,
+                ReferenceId = row.ReferenceId,
+                ReferenceCode = row.ReferenceCode,
+                PaymentId = row.PaymentId,
+                PaymentMethod = paymentMethod,
+                UserId = row.UserId,
+                Username = row.Username,
+                Amount = Math.Abs(row.Amount ?? 0),
+                FlowScope = ClassifyFinanceFlow(row.TransactionType, row.PaymentMethod),
+                Status = status
+            };
+        }).ToArray();
+
+        return new PagedResult<FinanceTransactionItem>
+        {
+            Items = items,
+            TotalCount = totalCount,
+            PageNumber = request.PageNumber,
+            PageSize = request.PageSize
+        };
+    }
+
+
+    public async Task<FinanceHealthData> GetFinanceHealthAsync(
+        DashboardPeriod period,
+        DateTime nowUtc,
+        CancellationToken ct)
+    {
+        var from = period.FromUtc;
+        var to = period.EndUtc;
+
+        var stalePendingPayments = await SummarizeAmountsAsync(
+            db.Payments
+                .AsNoTracking()
+                .Where(x =>
+                    x.PaymentStatus == (int)PaymentStatus.Pending &&
+                    x.ExpiredAt.HasValue &&
+                    x.ExpiredAt.Value <= nowUtc)
+                .Select(x => x.Amount ?? 0),
+            ct);
+
+        var pendingPaymentsWithoutExpiry = await SummarizeAmountsAsync(
+            db.Payments
+                .AsNoTracking()
+                .Where(x =>
+                    x.PaymentStatus == (int)PaymentStatus.Pending &&
+                    !x.ExpiredAt.HasValue)
+                .Select(x => x.Amount ?? 0),
+            ct);
+
+        var pendingWithdrawals = await SummarizeAmountsAsync(
+            db.Withdrawals
+                .AsNoTracking()
+                .Where(x =>
+                    x.WithdrawalStatus == (int)WithdrawalStatus.Pending)
+                .Select(x => x.Amount ?? 0),
+            ct);
+
+        var processingWithdrawals = await SummarizeAmountsAsync(
+            db.Withdrawals
+                .AsNoTracking()
+                .Where(x =>
+                    x.WithdrawalStatus == (int)WithdrawalStatus.Processing)
+                .Select(x => x.Amount ?? 0),
+            ct);
+
+        var orderHeldAmounts = db.Wallet_Ledgers
+            .AsNoTracking()
+            .Where(x =>
+                x.BalanceType == (int)BalanceType.Hold &&
+                x.ReferenceType == (int)ReferenceType.Order &&
+                x.ReferenceId.HasValue)
+            .GroupBy(x => x.ReferenceId!.Value)
+            .Select(g => new
+            {
+                OrderId = g.Key,
+                Amount = g.Sum(x =>
+                    x.Direction == (int)LedgerDirection.In
+                        ? x.Amount
+                        : -x.Amount)
+            })
+            .Where(x => x.Amount > 0);
+
+        var activeDisputeStatuses = new[]
+        {
+        (int)DisputeStatus.Pending,
+        (int)DisputeStatus.UnderReview,
+        (int)DisputeStatus.AwaitingReturn
+    };
+
+        var overdueReleaseAmounts =
+            from held in orderHeldAmounts
+            join order in db.Orders.AsNoTracking()
+                on held.OrderId equals order.OrderId
+            where
+                order.OrderStatus == (int)OrderStatus.Completed &&
+                order.DisputeWindowEndsAt.HasValue &&
+                order.DisputeWindowEndsAt.Value <= nowUtc &&
+                !order.Disputes.Any(d =>
+                    d.DisputeStatus.HasValue &&
+                    activeDisputeStatuses.Contains(d.DisputeStatus.Value))
+            select held.Amount;
+
+        var overdueReleaseOrders = await SummarizeAmountsAsync(
+            overdueReleaseAmounts,
+            ct);
+
+        var missingReleaseDeadlineAmounts =
+            from held in orderHeldAmounts
+            join order in db.Orders.AsNoTracking()
+                on held.OrderId equals order.OrderId
+            where
+                order.OrderStatus == (int)OrderStatus.Completed &&
+                !order.DisputeWindowEndsAt.HasValue
+            select held.Amount;
+
+        var completedOrdersMissingReleaseDeadline = await SummarizeAmountsAsync(
+            missingReleaseDeadlineAmounts,
+            ct);
+
+        var activeDisputeHeldAmounts =
+            from held in orderHeldAmounts
+            join order in db.Orders.AsNoTracking()
+                on held.OrderId equals order.OrderId
+            where order.Disputes.Any(d =>
+                d.DisputeStatus.HasValue &&
+                activeDisputeStatuses.Contains(d.DisputeStatus.Value))
+            select held.Amount;
+
+        var activeDisputeHeldFunds = await SummarizeAmountsAsync(
+            activeDisputeHeldAmounts,
+            ct);
+
+        var negativeWalletCount = await db.Wallets
+            .AsNoTracking()
+            .CountAsync(x =>
+                x.AvailableBalance < 0 ||
+                x.HoldBalance < 0,
+                ct);
+
+        var periodTransactions = db.Wallet_Transactions
+            .AsNoTracking()
+            .Where(x =>
+                x.CreatedAt >= from &&
+                x.CreatedAt < to);
+
+        var unclassifiedTransactions = ApplyFinanceFlowScope(
+            periodTransactions,
+            FinanceFlowScope.Unclassified);
+
+        var unclassifiedTransactionsInPeriod = await SummarizeAmountsAsync(
+            unclassifiedTransactions.Select(x =>
+                Math.Abs(x.Amount ?? 0)),
+            ct);
+
+        return new FinanceHealthData
+        {
+            StalePendingPayments = stalePendingPayments,
+            PendingPaymentsWithoutExpiry = pendingPaymentsWithoutExpiry,
+            PendingWithdrawals = pendingWithdrawals,
+            ProcessingWithdrawals = processingWithdrawals,
+            OverdueReleaseOrders = overdueReleaseOrders,
+            CompletedOrdersMissingReleaseDeadline = completedOrdersMissingReleaseDeadline,
+            ActiveDisputeHeldFunds = activeDisputeHeldFunds,
+            NegativeWalletCount = negativeWalletCount,
+            UnclassifiedTransactionsInPeriod = unclassifiedTransactionsInPeriod
+        };
+    }
+
+    private static IQueryable<Wallet_Transaction> ApplyFinanceFlowScope(
+        IQueryable<Wallet_Transaction> query,
+        FinanceFlowScope scope)
+    {
+        return scope switch
+        {
+            FinanceFlowScope.ExternalIn =>
+                query.Where(x =>
+                    (
+                        x.TransactionType ==
+                            (int)TransactionType.Escrow_Deposit ||
+                        x.TransactionType ==
+                            (int)TransactionType.Shipping_Fee_Collected ||
+                        x.TransactionType ==
+                            (int)TransactionType.Commission_Fee ||
+                        x.TransactionType ==
+                            (int)TransactionType.Subscription_Fee
+                    )
+                    && x.Payment != null
+                    && x.Payment.PaymentMethod ==
+                        (int)PaymentMethod.PayOS),
+
+            FinanceFlowScope.ExternalOut =>
+                query.Where(x =>
+                    x.TransactionType ==
+                    (int)TransactionType.Withdrawal_Success),
+
+            FinanceFlowScope.Internal =>
+                query.Where(x =>
+                    x.TransactionType ==
+                        (int)TransactionType.Wallet_Payment ||
+                    x.TransactionType ==
+                        (int)TransactionType.Payout_Release ||
+                    x.TransactionType ==
+                        (int)TransactionType.Order_Refund ||
+                    x.TransactionType ==
+                        (int)TransactionType.Withdrawal_Lock ||
+                    x.TransactionType ==
+                        (int)TransactionType.Withdrawal_Revert ||
+                    (
+                        x.TransactionType ==
+                            (int)TransactionType.Shipping_Fee_Collected
+                        && x.Payment != null
+                        && x.Payment.PaymentMethod ==
+                            (int)PaymentMethod.Internal_Wallet
+                    )),
+
+            FinanceFlowScope.Unclassified =>
+                query.Where(x =>
+                    !(
+                        (
+                            (
+                                x.TransactionType ==
+                                    (int)TransactionType.Escrow_Deposit ||
+                                x.TransactionType ==
+                                    (int)TransactionType.Shipping_Fee_Collected ||
+                                x.TransactionType ==
+                                    (int)TransactionType.Commission_Fee ||
+                                x.TransactionType ==
+                                    (int)TransactionType.Subscription_Fee
+                            )
+                            && x.Payment != null
+                            && x.Payment.PaymentMethod ==
+                                (int)PaymentMethod.PayOS
+                        )
+                        ||
+                        x.TransactionType ==
+                            (int)TransactionType.Withdrawal_Success
+                        ||
+                        x.TransactionType ==
+                            (int)TransactionType.Wallet_Payment
+                        ||
+                        x.TransactionType ==
+                            (int)TransactionType.Payout_Release
+                        ||
+                        x.TransactionType ==
+                            (int)TransactionType.Order_Refund
+                        ||
+                        x.TransactionType ==
+                            (int)TransactionType.Withdrawal_Lock
+                        ||
+                        x.TransactionType ==
+                            (int)TransactionType.Withdrawal_Revert
+                        ||
+                        (
+                            x.TransactionType ==
+                                (int)TransactionType.Shipping_Fee_Collected
+                            && x.Payment != null
+                            && x.Payment.PaymentMethod ==
+                                (int)PaymentMethod.Internal_Wallet
+                        )
+                    )),
+
+            _ => query
+        };
+    }
+
+    private static FinanceFlowScope ClassifyFinanceFlow(
+        int? transactionType,
+        int? paymentMethod)
+    {
+        if (transactionType ==
+            (int)TransactionType.Withdrawal_Success)
+        {
+            return FinanceFlowScope.ExternalOut;
+        }
+
+        if (paymentMethod == (int)PaymentMethod.PayOS &&
+            (
+                transactionType ==
+                    (int)TransactionType.Escrow_Deposit ||
+                transactionType ==
+                    (int)TransactionType.Shipping_Fee_Collected ||
+                transactionType ==
+                    (int)TransactionType.Commission_Fee ||
+                transactionType ==
+                    (int)TransactionType.Subscription_Fee
+            ))
+        {
+            return FinanceFlowScope.ExternalIn;
+        }
+
+        if (
+            transactionType ==
+                (int)TransactionType.Wallet_Payment ||
+            transactionType ==
+                (int)TransactionType.Payout_Release ||
+            transactionType ==
+                (int)TransactionType.Order_Refund ||
+            transactionType ==
+                (int)TransactionType.Withdrawal_Lock ||
+            transactionType ==
+                (int)TransactionType.Withdrawal_Revert ||
+            (
+                transactionType ==
+                    (int)TransactionType.Shipping_Fee_Collected &&
+                paymentMethod ==
+                    (int)PaymentMethod.Internal_Wallet
+            ))
+        {
+            return FinanceFlowScope.Internal;
+        }
+
+        return FinanceFlowScope.Unclassified;
+    }
+
+    private static async Task<FinanceCountAmountMetric>
+        SummarizeAmountsAsync(
+            IQueryable<decimal> amounts,
+            CancellationToken ct)
+    {
+        var result = await amounts
+            .GroupBy(_ => 1)
+            .Select(g =>
+                new FinanceCountAmountMetric(
+                    g.Count(),
+                    g.Sum()))
+            .FirstOrDefaultAsync(ct);
+
+        return result ?? new FinanceCountAmountMetric(0, 0);
+    }
+
+
 }
