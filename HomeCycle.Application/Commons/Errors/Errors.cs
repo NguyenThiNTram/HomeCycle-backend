@@ -515,6 +515,15 @@ namespace HomeCycle.Application.Commons.Errors
 
         public static readonly Error DepositMissing =
             new("Inspection.DepositMissing", "Không xác định được khoản tiền cọc cần hoàn.");
+
+        public static readonly Error CollectionAddressRequired =
+            new("Inspection.CollectionAddressRequired", "Cần đầy đủ địa chỉ lấy và giao hàng.");
+
+        public static readonly Error CollectionScheduleFailed =
+            new("Inspection.CollectionScheduleFailed", "Không thể tạo lịch thu gom.");
+
+        public static readonly Error GhnFullPaymentRequired =
+            new("Inspection.GhnFullPaymentRequired", "Vận chuyển GHN yêu cầu thanh toán toàn bộ phần còn thiếu.");
     }
 
     public static class PaymentErrors
@@ -571,6 +580,15 @@ namespace HomeCycle.Application.Commons.Errors
             new(
                 "Payment.BankAccountNotVerified",
                 "Bạn cần có tài khoản ngân hàng đã xác minh trước khi thanh toán.");
+
+        public static readonly Error OrderSettlementNotFound =
+            new("Payment.OrderSettlementNotFound", "Không tìm thấy khoản thanh toán bổ sung.");
+
+        public static readonly Error OrderSettlementInvalidStatus =
+            new("Payment.OrderSettlementInvalidStatus", "Khoản thanh toán bổ sung không còn ở trạng thái hợp lệ.");
+
+        public static readonly Error OrderSettlementAmountMismatch =
+            new("Payment.OrderSettlementAmountMismatch", "Số tiền thanh toán không còn khớp với số tiền còn lại của đơn hàng.");
     }
 
 
@@ -595,5 +613,8 @@ namespace HomeCycle.Application.Commons.Errors
 
         public static readonly Error OrderMismatch =
             new("Shipment.OrderMismatch", "Thông tin giao nhận không còn thuộc đơn hàng hiện tại.");
+
+        public static readonly Error AlreadyExists =
+            new("Shipment.AlreadyExists", "Đơn hàng đã có thông tin giao nhận.");
     }
 }
