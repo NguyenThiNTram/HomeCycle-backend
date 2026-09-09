@@ -12,6 +12,7 @@ using HomeCycle.Application.Interfaces.Repositories.Disputes;
 using HomeCycle.Application.Interfaces.Repositories.Inspections;
 using HomeCycle.Application.Interfaces.Repositories.Orders;
 using HomeCycle.Application.Interfaces.Repositories.Payments;
+using HomeCycle.Application.Interfaces.Repositories.Shipments;
 using HomeCycle.Application.Interfaces.Repositories.Wallets;
 using HomeCycle.Application.Interfaces.Services.Inspections;
 using HomeCycle.Application.Interfaces.Services.Notifications;
@@ -43,6 +44,7 @@ namespace HomeCycle.Application.Services.Inspections
         private readonly IMediaService _mediaService;
         private readonly IPaymentService _paymentService;
         private readonly INotificationService _notificationService;
+        private readonly IShipmentRepository _shipmentRepo;
         private readonly IOrderTrackingRealtimeService _orderTrackingRealtimeService;
         private readonly IUnitOfWork _unitOfWork;
 
@@ -51,7 +53,7 @@ namespace HomeCycle.Application.Services.Inspections
         private readonly IValidator<InspectionRevisionRequest> _revisionValidator;
         private readonly IValidator<RejectInspectionFormRequest> _rejectValidator;
 
-        public InspectionFormService(IInspectionFormRepository inspectionFormRepo, IInspectionAppointmentRepository inspectionAppointmentRepo, IAppointmentRepository appointmentRepo, IAgreementFormRepository agreementRepo, IOrderRepository orderRepo, IDisputeRepository disputeRepo, IMediaService mediaService, IPaymentService paymentService, INotificationService notificationService, IOrderTrackingRealtimeService orderTrackingRealtimeService, IUnitOfWork unitOfWork, IValidator<CreateInspectionFormRequest> createValidator, IValidator<UpdateInspectionFormRequest> updateValidator, IValidator<InspectionRevisionRequest> revisionValidator, IValidator<RejectInspectionFormRequest> rejectValidator)
+        public InspectionFormService(IInspectionFormRepository inspectionFormRepo, IInspectionAppointmentRepository inspectionAppointmentRepo, IAppointmentRepository appointmentRepo, IAgreementFormRepository agreementRepo, IOrderRepository orderRepo, IDisputeRepository disputeRepo, IMediaService mediaService, IPaymentService paymentService, INotificationService notificationService, IShipmentRepository shipmentRepo, IOrderTrackingRealtimeService orderTrackingRealtimeService, IUnitOfWork unitOfWork, IValidator<CreateInspectionFormRequest> createValidator, IValidator<UpdateInspectionFormRequest> updateValidator, IValidator<InspectionRevisionRequest> revisionValidator, IValidator<RejectInspectionFormRequest> rejectValidator)
         {
             _inspectionFormRepo = inspectionFormRepo;
             _inspectionAppointmentRepo = inspectionAppointmentRepo;
@@ -62,6 +64,7 @@ namespace HomeCycle.Application.Services.Inspections
             _mediaService = mediaService;
             _paymentService = paymentService;
             _notificationService = notificationService;
+            _shipmentRepo = shipmentRepo;
             _orderTrackingRealtimeService = orderTrackingRealtimeService;
             _unitOfWork = unitOfWork;
             _createValidator = createValidator;
@@ -936,8 +939,33 @@ namespace HomeCycle.Application.Services.Inspections
                     return Result<InspectionFormResponseDto>.Fail(OrderErrors.InvalidStatus);
                 }
 
+                if (await _shipmentRepo.GetByOrderIdAsync(order.OrderId, ct) != null)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    return Result<InspectionFormResponseDto>.Fail(ShipmentErrors.AlreadyExists);
+                }
+
+                var now = DateTime.UtcNow;
+
+                var shipment = new shipment
+                {
+                    ShipmentId = Guid.NewGuid(),
+                    OrderId = order.OrderId,
+                    CollectionAppointmentId = null,
+                    DeliveryMethod = DeliveryMethod.BuyerPickUp,
+                    ShipmentStatus = ShipmentStatus.ReadyToPick,
+                    PickupAddress = inspection.InspectionAddress,
+                    DeliveryAddress = inspection.InspectionAddress,
+                    SellerReadyAt = now,
+                    CreatedAt = now,
+                    UpdatedAt = now
+                };
+
                 form.CollectAction = (int)InspectionCollectAction.CollectNow;
-                form.UpdatedAt = DateTime.UtcNow;
+                form.Revision++;
+                form.UpdatedAt = now;
+
+                await _shipmentRepo.AddAsync(shipment, ct);
 
                 await _inspectionFormRepo.UpdateAsync(form, ct);
 
@@ -1110,6 +1138,13 @@ namespace HomeCycle.Application.Services.Inspections
                     CanSellerReject = isSeller && status == InspectionStatus.PendingSellerConfirmation,
 
                     CanCollectNow =
+                        isBuyer &&
+                        status == InspectionStatus.Accepted &&
+                        conclusion != InspectionConclusion.Failed &&
+                        !collectAction.HasValue &&
+                        order.OrderStatus == (int)OrderStatus.Processing,
+
+                    CanScheduleCollection =
                         isBuyer &&
                         status == InspectionStatus.Accepted &&
                         conclusion != InspectionConclusion.Failed &&

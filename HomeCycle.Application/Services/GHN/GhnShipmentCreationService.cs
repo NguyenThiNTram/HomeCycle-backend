@@ -4,6 +4,7 @@ using HomeCycle.Application.DTOs.Responses.GHN;
 using HomeCycle.Application.Interfaces.Externals;
 using HomeCycle.Application.Interfaces.Generics;
 using HomeCycle.Application.Interfaces.Repositories.Agreements;
+using HomeCycle.Application.Interfaces.Repositories.Appointments;
 using HomeCycle.Application.Interfaces.Repositories.GHN;
 using HomeCycle.Application.Interfaces.Repositories.Orders;
 using HomeCycle.Application.Interfaces.Repositories.Shipments;
@@ -24,6 +25,7 @@ namespace HomeCycle.Application.Services.GHN
         private readonly IShipmentRepository _shipmentRepo;
         private readonly IOrderRepository _orderRepo;
         private readonly IAgreementFormRepository _agreementRepo;
+        private readonly ICollectionAppointmentRepository _collectionRepo;
         private readonly IGhnService _ghnService;
         private readonly IUnitOfWork _unitOfWork;
         private readonly ILogger<GhnShipmentCreationService> _logger;
@@ -33,6 +35,7 @@ namespace HomeCycle.Application.Services.GHN
             IShipmentRepository shipmentRepo,
             IOrderRepository orderRepo,
             IAgreementFormRepository agreementRepo,
+            ICollectionAppointmentRepository collectionRepo,
             IGhnService ghnService,
             IUnitOfWork unitOfWork,
             ILogger<GhnShipmentCreationService> logger)
@@ -41,6 +44,7 @@ namespace HomeCycle.Application.Services.GHN
             _shipmentRepo = shipmentRepo;
             _orderRepo = orderRepo;
             _agreementRepo = agreementRepo;
+            _collectionRepo = collectionRepo;
             _ghnService = ghnService;
             _unitOfWork = unitOfWork;
             _logger = logger;
@@ -100,7 +104,35 @@ namespace HomeCycle.Application.Services.GHN
                 }
             }
 
-            var info = details?.GhnInfo;
+            GhnShippingInfo? info = null;
+
+            if (shipment?.CollectionAppointmentId.HasValue == true)
+            {
+                var collectionAppointment = await _collectionRepo.GetByIdAsync(
+                    shipment.CollectionAppointmentId.Value,
+                    ct);
+
+                if (!string.IsNullOrWhiteSpace(collectionAppointment?.GhnShippingInfoJsonb))
+                {
+                    try
+                    {
+                        info = JsonSerializer.Deserialize<GhnShippingInfo>(
+                            collectionAppointment.GhnShippingInfoJsonb,
+                            JsonOptions);
+                    }
+                    catch (JsonException exception)
+                    {
+                        _logger.LogWarning(
+                            exception,
+                            "GhnShipmentCreationService: lỗi parse GhnShippingInfoJsonb của CollectionAppointment {CollectionAppointmentId}.",
+                            shipment.CollectionAppointmentId);
+                    }
+                }
+            }
+
+            info ??= details?.GhnInfo;
+
+
             if (info is null || info.Sender?.Address is null || info.Receiver?.Address is null)
             {
                 _logger.LogWarning(

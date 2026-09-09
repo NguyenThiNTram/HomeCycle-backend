@@ -25,6 +25,12 @@ public partial class Collection_Appointment
     [StringLength(50)]
     public string? DeliveryMethod { get; set; }
 
+    [Column(TypeName = "numeric(18, 2)")]
+    public decimal? EstimatedShippingFee { get; set; }
+
+    [Column(TypeName = "jsonb")]
+    public string? GhnShippingInfoJsonb { get; set; }
+
     [ForeignKey("AppointmentId")]
     [InverseProperty("Collection_Appointment")]
     public virtual Appointment Appointment { get; set; } = null!;

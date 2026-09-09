@@ -83,6 +83,7 @@ namespace HomeCycle.Application.Services.Payments
         private readonly IConversationRepository _conversationRepo;
         private readonly IChatRealtimePublisher _chatRealtimePublisher;
         private readonly INotificationService _notificationService;
+        private readonly IOrderSettlementService _orderSettlementService;
         private readonly IMapper _mapper;
         public PaymentService(
             IUnitOfWork unitOfWork,
@@ -110,6 +111,7 @@ namespace HomeCycle.Application.Services.Payments
             IConversationRepository conversationRepo,
             IChatRealtimePublisher chatRealtimePublisher,
             INotificationService notificationService,
+            IOrderSettlementService orderSettlementService,
             IMapper mapper)
         {
             _unitOfWork = unitOfWork;
@@ -137,6 +139,7 @@ namespace HomeCycle.Application.Services.Payments
             _conversationRepo = conversationRepo;
             _chatRealtimePublisher = chatRealtimePublisher;
             _notificationService = notificationService;
+            _orderSettlementService = orderSettlementService;
             _mapper = mapper;
         }
 
@@ -364,15 +367,21 @@ namespace HomeCycle.Application.Services.Payments
             decimal amountToPay = calc.AmountToPay;
             decimal shippingFee = calc.ShippingFee;
             // ✅ THÊM
-            decimal holdAmount = details?.DeliveryMethod == DeliveryMethod.GhnDelivery
-                ? basePrice
-                : amountToPay;
+            decimal holdAmount = agreement.AgreementType == (int)AgreementType.Inspection
+                ? amountToPay
+                : details?.DeliveryMethod == DeliveryMethod.GhnDelivery
+                    ? basePrice
+                    : amountToPay;
 
             if (basePrice <= 0 || amountToPay <= 0)
                 return Result<PaymentStatusResponseDto>.Fail(new Error("Payment.InvalidAmount", "Số tiền thanh toán không hợp lệ."));
 
             agreement.PaymentType = calc.PaymentType;
-            bool needsSystemLedger = details?.DeliveryMethod == DeliveryMethod.GhnDelivery && shippingFee > 0;
+
+            bool needsSystemLedger =
+                agreement.AgreementType != (int)AgreementType.Inspection &&
+                details?.DeliveryMethod == DeliveryMethod.GhnDelivery &&
+                shippingFee > 0;
 
             // TRANSACTION CORE LÕI
             await _unitOfWork.BeginTransactionAsync(ct);
@@ -403,8 +412,15 @@ namespace HomeCycle.Application.Services.Payments
                 basePrice = calc.BasePrice;
                 amountToPay = calc.AmountToPay;
                 shippingFee = calc.ShippingFee;
-                holdAmount = details?.DeliveryMethod == DeliveryMethod.GhnDelivery ? basePrice : amountToPay;
-                needsSystemLedger = details?.DeliveryMethod == DeliveryMethod.GhnDelivery && shippingFee > 0;
+                holdAmount = agreement.AgreementType == (int)AgreementType.Inspection
+                    ? amountToPay
+                    : details?.DeliveryMethod == DeliveryMethod.GhnDelivery
+                        ? basePrice
+                        : amountToPay;
+                needsSystemLedger =
+                    agreement.AgreementType != (int)AgreementType.Inspection &&
+                    details?.DeliveryMethod == DeliveryMethod.GhnDelivery &&
+                    shippingFee > 0;
                 agreement.PaymentType = calc.PaymentType;
 
                 wallet buyerWallet = null!;
@@ -1699,7 +1715,28 @@ namespace HomeCycle.Application.Services.Payments
             if (paymentTxSnapshot == null)
                 throw new InvalidOperationException("Không tìm thấy giao dịch PayOS tương ứng.");
 
+            if (paymentTxSnapshot.PaymentTransactionStatus == (int)PaymentTransactionStatus.Success)
+                return;
+
             var paymentSnapshot = await _paymentRepo.GetByIdAsync(paymentTxSnapshot.PaymentId, ct);
+
+            if (paymentSnapshot == null)
+    throw new InvalidOperationException("Không tìm thấy payment của giao dịch PayOS.");
+
+if (paymentSnapshot.OrderId.HasValue)
+{
+    var settlementResult = await _orderSettlementService.CompletePayOsAsync(
+        payOsOrderCode,
+        payOsTransactionId,
+        ct);
+
+    if (!settlementResult.IsSuccess)
+        throw new InvalidOperationException(settlementResult.Error?.Message);
+
+    return;
+}
+
+
             if (paymentSnapshot?.AgreementId == null)
                 throw new InvalidOperationException("Giao dịch PayOS không có thỏa thuận hợp lệ.");
 
@@ -1741,11 +1778,21 @@ namespace HomeCycle.Application.Services.Payments
                 decimal unitPrice = agreement.FinalPrice ?? agreement.InitialPrice ?? 0;
                 decimal basePrice = unitPrice * Math.Max(agreement.Quantity, 1);
                 decimal paidAmount = payment.Amount ?? 0;
-                decimal holdAmount = details?.DeliveryMethod == DeliveryMethod.GhnDelivery ? basePrice : paidAmount;
-                decimal shippingFee = details?.DeliveryMethod == DeliveryMethod.GhnDelivery
-                    ? details?.EstimatedShippingFee ?? Math.Max(paidAmount - basePrice, 0)
-                    : 0;
-                bool needsSystemLedger = details?.DeliveryMethod == DeliveryMethod.GhnDelivery && shippingFee > 0;
+                decimal holdAmount = agreement.AgreementType == (int)AgreementType.Inspection
+                    ? paidAmount
+                    : details?.DeliveryMethod == DeliveryMethod.GhnDelivery
+                        ? basePrice
+                        : paidAmount;
+                decimal shippingFee =
+                    agreement.AgreementType != (int)AgreementType.Inspection &&
+                    details?.DeliveryMethod == DeliveryMethod.GhnDelivery
+                        ? details.EstimatedShippingFee
+                            ?? Math.Max(paidAmount - basePrice, 0)
+                        : 0;
+                bool needsSystemLedger =
+                    agreement.AgreementType != (int)AgreementType.Inspection &&
+                    details?.DeliveryMethod == DeliveryMethod.GhnDelivery &&
+                    shippingFee > 0;
 
                 wallet_transaction? systemWalletTx = null;
                 wallet_ledger? systemLedger = null;

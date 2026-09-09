@@ -120,6 +120,7 @@ using HomeCycle.Application.Interfaces.Services.Inspections;
 using HomeCycle.Application.Services.Inspections;
 using HomeCycle.Application.Interfaces.Services.Shipments;
 using HomeCycle.Application.Services.Shipments;
+using HomeCycle.Application.Services.Payments.HomeCycle.Application.Services.Payments;
 
 namespace HomeCycle.Infrastructure
 {
@@ -242,6 +243,7 @@ namespace HomeCycle.Infrastructure
             services.AddScoped<IMessageService, MessageService>();
             services.AddScoped<IAgreementFormService, AgreementFormService>();
             services.AddScoped<IPaymentService, PaymentService>();
+            services.AddScoped<IOrderSettlementService, OrderSettlementService>();
             services.AddScoped<IAppointmentService, AppointmentService>();
             services.AddScoped<IOrderService, OrderService>();
             services.AddSingleton<IOrderTimelineBuilder, OrderTimelineBuilder>();
@@ -257,6 +259,7 @@ namespace HomeCycle.Infrastructure
             services.AddScoped<IPlatformPolicyService>(sp => sp.GetRequiredService<PlatformPolicyService>());
             services.AddScoped<IPlatformPolicyProvider>(sp => sp.GetRequiredService<PlatformPolicyService>());
             services.AddScoped<IInspectionFormService, InspectionFormService>();
+            services.AddScoped<IInspectionCollectionService, InspectionCollectionService>();
             services.AddScoped<IConversationService, ConversationService>();
 
 

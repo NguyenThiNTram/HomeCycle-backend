@@ -72,6 +72,7 @@ namespace HomeCycle.Application.DTOs.Responses.Inspections
         public bool CanSellerReject { get; set; }
 
         public bool CanCollectNow { get; set; }
+        public bool CanScheduleCollection { get; set; }
         public bool CanCancelTransaction { get; set; }
     }
 }
