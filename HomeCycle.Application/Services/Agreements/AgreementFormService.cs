@@ -239,17 +239,19 @@ namespace HomeCycle.Application.Services.Agreements
                 await _messageRepo.AddAsync(agreementMessage, cancellationToken);
                 await _conversationRepo.UpdateLastActivityAsync(conversation.ConversationId, now, cancellationToken);
 
-                await _unitOfWork.SaveChangesAsync();
-                await _unitOfWork.CommitTransactionAsync();
-
-                var response = _mapper.Map<MessageResponse>(agreementMessage);
-                await PublishChatActivitySafelyAsync(negotiation, response);
-                await SendAgreementNotificationSafelyAsync(
+                var agreementNotification = await AddAgreementNotificationPendingAsync(
                     negotiation.BuyerId,
                     "Có thỏa thuận mới",
                     "Người bán vừa tạo thỏa thuận mua bán. Vui lòng kiểm tra và xác nhận.",
                     newAgreement.AgreementId,
                     cancellationToken);
+
+                await _unitOfWork.SaveChangesAsync();
+                await _unitOfWork.CommitTransactionAsync();
+
+                var response = _mapper.Map<MessageResponse>(agreementMessage);
+                await PublishChatActivitySafelyAsync(negotiation, response);
+                await _notificationService.PublishCreatedSafelyAsync(agreementNotification);
 
                 return Result<Guid>.Success(newAgreement.AgreementId);
             }
@@ -423,21 +425,28 @@ namespace HomeCycle.Application.Services.Agreements
 
                 negotiation.LastMessageAt = now;
 
+                var updateRecipientId = isSeller ? agreement.BuyerId : agreement.SellerId;
+
                 await _agreementRepo.UpdateAsync(agreement, cancellationToken);
                 await _negotiationRepo.UpdateAsync(negotiation, cancellationToken);
                 await _messageRepo.AddAsync(agreementMessage, cancellationToken);
                 await _conversationRepo.UpdateLastActivityAsync(conversation.ConversationId, now, cancellationToken);
-                await _unitOfWork.SaveChangesAsync(cancellationToken);
-                await _unitOfWork.CommitTransactionAsync(cancellationToken);
 
-                await PublishChatActivitySafelyAsync(negotiation, _mapper.Map<MessageResponse>(agreementMessage));
-                var updateRecipientId = isSeller ? agreement.BuyerId : agreement.SellerId;
-                await SendAgreementNotificationSafelyAsync(
+
+                var agreementNotification = await AddAgreementNotificationPendingAsync(
                     updateRecipientId,
                     "Thỏa thuận vừa được cập nhật",
                     $"{actorRole} đã cập nhật thỏa thuận. Vui lòng kiểm tra và xác nhận lại nội dung mới.",
                     agreement.AgreementId,
                     cancellationToken);
+
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+                await _unitOfWork.CommitTransactionAsync(cancellationToken);
+
+                await PublishChatActivitySafelyAsync(negotiation, _mapper.Map<MessageResponse>(agreementMessage));
+
+
+                await _notificationService.PublishCreatedSafelyAsync(agreementNotification);
 
 
                 return Result<AgreementActionResponse>.Success(new AgreementActionResponse
@@ -550,15 +559,6 @@ namespace HomeCycle.Application.Services.Agreements
 
                 negotiation.LastMessageAt = now;
 
-                await _agreementRepo.UpdateAsync(agreement, cancellationToken);
-                await _negotiationRepo.UpdateAsync(negotiation, cancellationToken);
-                await _messageRepo.AddAsync(agreementMessage, cancellationToken);
-                await _conversationRepo.UpdateLastActivityAsync(conversation.ConversationId, now, cancellationToken);
-                await _unitOfWork.SaveChangesAsync(cancellationToken);
-                await _unitOfWork.CommitTransactionAsync(cancellationToken);
-
-                await PublishChatActivitySafelyAsync(negotiation, _mapper.Map<MessageResponse>(agreementMessage));
-                // Bên còn lại (không phải người vừa xác nhận) là người cần được báo.
                 var acceptRecipientId = isSeller ? agreement.BuyerId : agreement.SellerId;
                 var acceptTitle = bothConfirmed ? "Thỏa thuận đã được chốt" : "Thỏa thuận vừa được xác nhận";
                 var acceptMessage = bothConfirmed
@@ -567,12 +567,25 @@ namespace HomeCycle.Application.Services.Agreements
                         : "Cả hai bên đã đồng ý thỏa thuận.")
                     : $"{actorRole} đã xác nhận thỏa thuận. Đang chờ bạn xác nhận.";
 
-                await SendAgreementNotificationSafelyAsync(
+                await _agreementRepo.UpdateAsync(agreement, cancellationToken);
+                await _negotiationRepo.UpdateAsync(negotiation, cancellationToken);
+                await _messageRepo.AddAsync(agreementMessage, cancellationToken);
+                await _conversationRepo.UpdateLastActivityAsync(conversation.ConversationId, now, cancellationToken);
+
+                var agreementNotification = await AddAgreementNotificationPendingAsync(
                     acceptRecipientId,
                     acceptTitle,
                     acceptMessage,
                     agreement.AgreementId,
                     cancellationToken);
+
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+                await _unitOfWork.CommitTransactionAsync(cancellationToken);
+
+                await PublishChatActivitySafelyAsync(negotiation, _mapper.Map<MessageResponse>(agreementMessage));
+
+                // Bên còn lại (không phải người vừa xác nhận) là người cần được báo.
+                await _notificationService.PublishCreatedSafelyAsync(agreementNotification);
 
 
                 return Result<AgreementActionResponse>.Success(new AgreementActionResponse
@@ -643,6 +656,24 @@ namespace HomeCycle.Application.Services.Agreements
         }
 
 
+        // ================== HELPER =====================
+        private Task<notification> AddAgreementNotificationPendingAsync(
+            Guid recipientId,
+            string title,
+            string message,
+            Guid agreementId,
+            CancellationToken cancellationToken)
+        {
+            return _notificationService.AddPendingAsync(
+                new CreateNotificationCommand(
+                    recipientId,
+                    title,
+                    message,
+                    NotificationTargetType.Agreement,
+                    agreementId),
+                cancellationToken);
+        }
+
         private async Task<conversation> GetOrCreateConversationAsync(
             negotiation negotiation,
             DateTime activityAt,
@@ -670,35 +701,35 @@ namespace HomeCycle.Application.Services.Agreements
             return conversation;
         }
 
-        private async Task SendAgreementNotificationSafelyAsync(
-            Guid recipientId,
-            string title,
-            string message,
-            Guid agreementId,
-            CancellationToken cancellationToken)
-        {
-            try
-            {
-                var notification = await _notificationService.AddPendingAsync(
-                    new CreateNotificationCommand(
-                        recipientId,
-                        title,
-                        message,
-                        NotificationTargetType.Agreement,
-                        agreementId),
-                    cancellationToken);
+        //private async Task SendAgreementNotificationSafelyAsync(
+        //    Guid recipientId,
+        //    string title,
+        //    string message,
+        //    Guid agreementId,
+        //    CancellationToken cancellationToken)
+        //{
+        //    try
+        //    {
+        //        var notification = await _notificationService.AddPendingAsync(
+        //            new CreateNotificationCommand(
+        //                recipientId,
+        //                title,
+        //                message,
+        //                NotificationTargetType.Agreement,
+        //                agreementId),
+        //            cancellationToken);
 
-                await _notificationService.PublishCreatedSafelyAsync(notification);
-            }
-            catch (Exception exception)
-            {
-                _logger.LogWarning(
-                    exception,
-                    "Không thể tạo/phát notification cho AgreementId {AgreementId}, UserId {RecipientId}.",
-                    agreementId,
-                    recipientId);
-            }
-        }
+        //        await _notificationService.PublishCreatedSafelyAsync(notification);
+        //    }
+        //    catch (Exception exception)
+        //    {
+        //        _logger.LogWarning(
+        //            exception,
+        //            "Không thể tạo/phát notification cho AgreementId {AgreementId}, UserId {RecipientId}.",
+        //            agreementId,
+        //            recipientId);
+        //    }
+        //}
 
         private async Task PublishChatActivitySafelyAsync(
             negotiation negotiation,

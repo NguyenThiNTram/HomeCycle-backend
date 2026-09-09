@@ -18,5 +18,12 @@ namespace HomeCycle.Application.Interfaces.Repositories.Payments
         Task UpdateAsync(payment payment, CancellationToken ct = default);
         Task<PagedResult<PaymentHistoryResponseDto>> GetPagedPaymentHistoryAsync(Guid userId, PaymentHistorySearchRequest request, CancellationToken ct = default);
         Task<payment?> GetLatestPaidByOrderIdAsync(Guid orderId, CancellationToken ct = default);
+        Task<payment?> GetLatestByAgreementAsync(
+            Guid agreementId,
+            CancellationToken ct = default);
+
+        Task<payment?> GetByIdForUpdateAsync(
+            Guid paymentId,
+            CancellationToken ct = default);
     }
 }

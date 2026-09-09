@@ -7,6 +7,7 @@ using HomeCycle.Application.Interfaces.Repositories.GHN;
 using HomeCycle.Application.Interfaces.Repositories.Orders;
 using HomeCycle.Application.Interfaces.Repositories.Shipments;
 using HomeCycle.Application.Interfaces.Services.GHN;
+using HomeCycle.Application.Interfaces.Services.Orders;
 using HomeCycle.Application.Services.GHN;
 using HomeCycle.Domain.Entities;
 using HomeCycle.Domain.Enums;
@@ -26,6 +27,7 @@ namespace HomeCycle.Infrastructure.Externals.GHN
         private readonly IShipmentRepository _shipmentRepo;
         private readonly IGhnShipmentRepository _ghnShipmentRepo;
         private readonly IGhnService _ghnService;
+        private readonly IOrderTrackingRealtimeService _orderTrackingRealtimeService;
         private readonly IUnitOfWork _unitOfWork;
         private readonly ILogger<GhnTrackingSyncService> _logger;
 
@@ -35,6 +37,7 @@ namespace HomeCycle.Infrastructure.Externals.GHN
             IShipmentRepository shipmentRepo,
             IGhnShipmentRepository ghnShipmentRepo,
             IGhnService ghnService,
+            IOrderTrackingRealtimeService orderTrackingRealtimeService,
             IUnitOfWork unitOfWork,
             ILogger<GhnTrackingSyncService> logger)
         {
@@ -43,6 +46,7 @@ namespace HomeCycle.Infrastructure.Externals.GHN
             _shipmentRepo = shipmentRepo;
             _ghnShipmentRepo = ghnShipmentRepo;
             _ghnService = ghnService;
+            _orderTrackingRealtimeService = orderTrackingRealtimeService;
             _unitOfWork = unitOfWork;
             _logger = logger;
         }
@@ -122,6 +126,12 @@ namespace HomeCycle.Infrastructure.Externals.GHN
                     ghnShipment.GHNOrderCode,
                     cancellationToken);
 
+                // Chụp các mốc timeline trước khi cập nhật.
+                var previousShipmentStatus = shipment.ShipmentStatus;
+                var previousPickedUpAt = shipment.PickedUpAt;
+                var previousDeliveredAt = shipment.DeliveredAt;
+
+
                 var syncedAt = DateTime.UtcNow;
 
                 if (!string.IsNullOrWhiteSpace(detail.CarrierStatus))
@@ -136,7 +146,39 @@ namespace HomeCycle.Infrastructure.Externals.GHN
                     // GHN gửi status mới/không nhận diện:
                     // giữ trạng thái HomeCycle cũ, không cập nhật sai.
                     if (mappedStatus.HasValue)
+                    {
                         shipment.ShipmentStatus = mappedStatus.Value;
+
+                        var carrierHasPickedUp =
+                            mappedStatus.Value == ShipmentStatus.Delivering ||
+                            mappedStatus.Value == ShipmentStatus.Delivered ||
+                            mappedStatus.Value == ShipmentStatus.Returning ||
+                            mappedStatus.Value == ShipmentStatus.Returned ||
+                            mappedStatus.Value == ShipmentStatus.Damage_Lost;
+
+                        if (carrierHasPickedUp)
+                        {
+                            // Lấy mốc đầu tiên trong lịch sử GHN đã đi qua trạng thái Delivering.
+                            var pickedUpLog = detail.Timeline
+                                .Where(x =>
+                                    x.OccurredAt.HasValue &&
+                                    GhnStatusMapper.Map(x.Status) ==
+                                        ShipmentStatus.Delivering)
+                                .OrderBy(x => x.OccurredAt)
+                                .FirstOrDefault();
+
+                            var detectedPickedUpAt =
+                                pickedUpLog?.OccurredAt?.UtcDateTime ??
+                                detail.CarrierUpdatedAt?.UtcDateTime ??
+                                syncedAt;
+
+                            if (!shipment.PickedUpAt.HasValue ||
+                                detectedPickedUpAt < shipment.PickedUpAt.Value)
+                            {
+                                shipment.PickedUpAt = detectedPickedUpAt;
+                            }
+                        }
+                    }
                 }
 
                 if (detail.ExpectedDeliveryAt.HasValue)
@@ -163,6 +205,19 @@ namespace HomeCycle.Infrastructure.Externals.GHN
 
                 // Một SaveChanges cập nhật hai bảng trong cùng transaction EF.
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+                var trackingChanged =
+                    previousShipmentStatus != shipment.ShipmentStatus ||
+                    previousPickedUpAt != shipment.PickedUpAt ||
+                    previousDeliveredAt != shipment.DeliveredAt;
+
+                // Không phát khi chỉ LastSyncedAt hoặc raw GHN status thay đổi.
+                if (trackingChanged)
+                {
+                    await _orderTrackingRealtimeService.PublishByOrderIdSafelyAsync(
+                        shipment.OrderId,
+                        shipment.UpdatedAt);
+                }
 
                 return Result<ShipmentTrackingResponse>.Success(
                     BuildResponse(

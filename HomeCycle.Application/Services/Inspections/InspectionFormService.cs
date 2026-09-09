@@ -4,6 +4,7 @@ using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Requests.Inspections;
 using HomeCycle.Application.DTOs.Responses.Inspections;
 using HomeCycle.Application.DTOs.Responses.Media;
+using HomeCycle.Application.DTOs.Responses.Notifications;
 using HomeCycle.Application.Interfaces.Generics;
 using HomeCycle.Application.Interfaces.Repositories.Agreements;
 using HomeCycle.Application.Interfaces.Repositories.Appointments;
@@ -11,8 +12,11 @@ using HomeCycle.Application.Interfaces.Repositories.Disputes;
 using HomeCycle.Application.Interfaces.Repositories.Inspections;
 using HomeCycle.Application.Interfaces.Repositories.Orders;
 using HomeCycle.Application.Interfaces.Repositories.Payments;
+using HomeCycle.Application.Interfaces.Repositories.Shipments;
 using HomeCycle.Application.Interfaces.Repositories.Wallets;
 using HomeCycle.Application.Interfaces.Services.Inspections;
+using HomeCycle.Application.Interfaces.Services.Notifications;
+using HomeCycle.Application.Interfaces.Services.Orders;
 using HomeCycle.Application.Interfaces.Services.Payments;
 using HomeCycle.Application.Interfaces.Services.Posts;
 using HomeCycle.Domain.Entities;
@@ -39,6 +43,9 @@ namespace HomeCycle.Application.Services.Inspections
         private readonly IDisputeRepository _disputeRepo;
         private readonly IMediaService _mediaService;
         private readonly IPaymentService _paymentService;
+        private readonly INotificationService _notificationService;
+        private readonly IShipmentRepository _shipmentRepo;
+        private readonly IOrderTrackingRealtimeService _orderTrackingRealtimeService;
         private readonly IUnitOfWork _unitOfWork;
 
         private readonly IValidator<CreateInspectionFormRequest> _createValidator;
@@ -46,7 +53,7 @@ namespace HomeCycle.Application.Services.Inspections
         private readonly IValidator<InspectionRevisionRequest> _revisionValidator;
         private readonly IValidator<RejectInspectionFormRequest> _rejectValidator;
 
-        public InspectionFormService(IInspectionFormRepository inspectionFormRepo, IInspectionAppointmentRepository inspectionAppointmentRepo, IAppointmentRepository appointmentRepo, IAgreementFormRepository agreementRepo, IOrderRepository orderRepo, IDisputeRepository disputeRepo, IMediaService mediaService, IPaymentService paymentService, IUnitOfWork unitOfWork, IValidator<CreateInspectionFormRequest> createValidator, IValidator<UpdateInspectionFormRequest> updateValidator, IValidator<InspectionRevisionRequest> revisionValidator, IValidator<RejectInspectionFormRequest> rejectValidator)
+        public InspectionFormService(IInspectionFormRepository inspectionFormRepo, IInspectionAppointmentRepository inspectionAppointmentRepo, IAppointmentRepository appointmentRepo, IAgreementFormRepository agreementRepo, IOrderRepository orderRepo, IDisputeRepository disputeRepo, IMediaService mediaService, IPaymentService paymentService, INotificationService notificationService, IShipmentRepository shipmentRepo, IOrderTrackingRealtimeService orderTrackingRealtimeService, IUnitOfWork unitOfWork, IValidator<CreateInspectionFormRequest> createValidator, IValidator<UpdateInspectionFormRequest> updateValidator, IValidator<InspectionRevisionRequest> revisionValidator, IValidator<RejectInspectionFormRequest> rejectValidator)
         {
             _inspectionFormRepo = inspectionFormRepo;
             _inspectionAppointmentRepo = inspectionAppointmentRepo;
@@ -56,6 +63,9 @@ namespace HomeCycle.Application.Services.Inspections
             _disputeRepo = disputeRepo;
             _mediaService = mediaService;
             _paymentService = paymentService;
+            _notificationService = notificationService;
+            _shipmentRepo = shipmentRepo;
+            _orderTrackingRealtimeService = orderTrackingRealtimeService;
             _unitOfWork = unitOfWork;
             _createValidator = createValidator;
             _updateValidator = updateValidator;
@@ -427,6 +437,14 @@ namespace HomeCycle.Application.Services.Inspections
                     return Result<InspectionFormResponseDto>.Fail(InspectionErrors.BothCheckInRequired);
                 }
 
+                var agreement = await _agreementRepo.GetByIdAsync(appointment.AgreementId, ct);
+
+                if (agreement == null)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    return Result<InspectionFormResponseDto>.Fail(AgreementErrors.NotFound);
+                }
+
                 var now = DateTime.UtcNow;
 
                 form.InspectionStatus = (int)InspectionStatus.PendingSellerConfirmation;
@@ -435,8 +453,18 @@ namespace HomeCycle.Application.Services.Inspections
 
                 await _inspectionFormRepo.UpdateAsync(form, ct);
 
+                var inspectionNotification = await _notificationService.AddPendingAsync(
+                    new CreateNotificationCommand(
+                        agreement.SellerId,
+                        "Có kết quả kiểm định mới",
+                        "Người mua đã gửi kết quả kiểm định. Vui lòng kiểm tra và xác nhận.",
+                        NotificationTargetType.Appointment,
+                        appointment.AppointmentId),
+                    ct);
+
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
+                await _notificationService.PublishCreatedSafelyAsync(inspectionNotification);
 
                 return Result<InspectionFormResponseDto>.Success(await BuildResponseAsync(form, buyerId, ct));
             }
@@ -501,6 +529,16 @@ namespace HomeCycle.Application.Services.Inspections
                     return Result<InspectionFormResponseDto>.Fail(InspectionErrors.SellerOnly);
                 }
 
+                var inspection = await _inspectionAppointmentRepo.GetByIdAsync(
+                    form.InspectionAppointmentId,
+                    ct);
+
+                if (inspection == null)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    return Result<InspectionFormResponseDto>.Fail(InspectionErrors.InvalidAppointment);
+                }
+
                 var now = DateTime.UtcNow;
 
                 form.InspectionStatus = (int)InspectionStatus.Rejected;
@@ -510,8 +548,18 @@ namespace HomeCycle.Application.Services.Inspections
 
                 await _inspectionFormRepo.UpdateAsync(form, ct);
 
+                var inspectionNotification = await _notificationService.AddPendingAsync(
+                    new CreateNotificationCommand(
+                        agreement.BuyerId,
+                        "Kết quả kiểm định bị từ chối",
+                        $"Người bán đã từ chối kết quả kiểm định. Lý do: {form.SellerDecisionReason}",
+                        NotificationTargetType.Appointment,
+                        inspection.AppointmentId),
+                    ct);
+
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
+                await _notificationService.PublishCreatedSafelyAsync(inspectionNotification);
 
                 return Result<InspectionFormResponseDto>.Success(await BuildResponseAsync(form, sellerId, ct));
             }
@@ -778,8 +826,32 @@ namespace HomeCycle.Application.Services.Inspections
                 await _appointmentRepo.UpdateAsync(appointment, ct);
                 await _orderRepo.UpdateAsync(order, ct);
 
+                var inspectionMessage = conclusion switch
+                {
+                    InspectionConclusion.Failed =>
+                        "Người bán đã xác nhận sản phẩm không đạt kiểm định. Đơn hàng đã bị hủy và khoản tiền nền tảng giữ đã được hoàn lại.",
+                    InspectionConclusion.PriceAdjustment =>
+                        "Người bán đã chấp nhận kết quả kiểm định và mức giá điều chỉnh.",
+                    _ =>
+                        "Người bán đã xác nhận kết quả kiểm định."
+                };
+
+                var inspectionNotification = await _notificationService.AddPendingAsync(
+                    new CreateNotificationCommand(
+                        agreement.BuyerId,
+                        "Kết quả kiểm định đã được xác nhận",
+                        inspectionMessage,
+                        NotificationTargetType.Appointment,
+                        appointment.AppointmentId),
+                    ct);
+
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
+                await _notificationService.PublishCreatedSafelyAsync(inspectionNotification);
+
+                await _orderTrackingRealtimeService.PublishByOrderIdSafelyAsync(
+                    order.OrderId,
+                    order.UpdatedAt);
 
                 return Result<InspectionFormResponseDto>.Success(
                     await BuildResponseAsync(
@@ -855,19 +927,68 @@ namespace HomeCycle.Application.Services.Inspections
                     return Result<InspectionFormResponseDto>.Fail(InspectionErrors.BuyerOnly);
                 }
 
+                var inspection = await _inspectionAppointmentRepo.GetByIdAsync(
+                    form.InspectionAppointmentId,
+                    ct);
+
+                if (inspection == null)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    return Result<InspectionFormResponseDto>.Fail(InspectionErrors.InvalidAppointment);
+                }
+
                 if (order.OrderStatus != (int)OrderStatus.Processing)
                 {
                     await _unitOfWork.RollbackTransactionAsync(ct);
                     return Result<InspectionFormResponseDto>.Fail(OrderErrors.InvalidStatus);
                 }
 
+                if (await _shipmentRepo.GetByOrderIdAsync(order.OrderId, ct) != null)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    return Result<InspectionFormResponseDto>.Fail(ShipmentErrors.AlreadyExists);
+                }
+
+                var now = DateTime.UtcNow;
+
+                var shipment = new shipment
+                {
+                    ShipmentId = Guid.NewGuid(),
+                    OrderId = order.OrderId,
+                    CollectionAppointmentId = null,
+                    DeliveryMethod = DeliveryMethod.BuyerPickUp,
+                    ShipmentStatus = ShipmentStatus.ReadyToPick,
+                    PickupAddress = inspection.InspectionAddress,
+                    DeliveryAddress = inspection.InspectionAddress,
+                    SellerReadyAt = now,
+                    CreatedAt = now,
+                    UpdatedAt = now
+                };
+
                 form.CollectAction = (int)InspectionCollectAction.CollectNow;
-                form.UpdatedAt = DateTime.UtcNow;
+                form.Revision++;
+                form.UpdatedAt = now;
+
+                await _shipmentRepo.AddAsync(shipment, ct);
 
                 await _inspectionFormRepo.UpdateAsync(form, ct);
 
+                var collectNotification = await _notificationService.AddPendingAsync(
+                    new CreateNotificationCommand(
+                        agreement.SellerId,
+                        "Người mua chọn nhận hàng",
+                        "Người mua đã chọn nhận sản phẩm ngay sau khi hoàn tất kiểm định.",
+                        NotificationTargetType.Appointment,
+                        inspection.AppointmentId),
+                    ct);
+
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
+                await _notificationService.PublishCreatedSafelyAsync(collectNotification);
+
+                await _orderTrackingRealtimeService.PublishByAgreementIdSafelyAsync(
+                    agreement.AgreementId,
+                    form.UpdatedAt);
 
                 return Result<InspectionFormResponseDto>.Success(await BuildResponseAsync(form, buyerId, ct));
             }
@@ -1021,6 +1142,13 @@ namespace HomeCycle.Application.Services.Inspections
                     CanSellerReject = isSeller && status == InspectionStatus.PendingSellerConfirmation,
 
                     CanCollectNow =
+                        isBuyer &&
+                        status == InspectionStatus.Accepted &&
+                        conclusion != InspectionConclusion.Failed &&
+                        !collectAction.HasValue &&
+                        order.OrderStatus == (int)OrderStatus.Processing,
+
+                    CanScheduleCollection =
                         isBuyer &&
                         status == InspectionStatus.Accepted &&
                         conclusion != InspectionConclusion.Failed &&

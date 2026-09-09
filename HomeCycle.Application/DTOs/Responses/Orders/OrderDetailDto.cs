@@ -61,6 +61,8 @@ namespace HomeCycle.Application.DTOs.Responses.Orders
         public ReviewSummaryDto Review { get; set; } = new();
 
         public DisputeSummaryDto Dispute { get; set; } = new();
+
+        public IReadOnlyList<OrderTimelineStepDto> Timeline { get; set; } = Array.Empty<OrderTimelineStepDto>();
         public OrderActionDto Actions { get; set; } = new();
     }
 
@@ -93,6 +95,8 @@ namespace HomeCycle.Application.DTOs.Responses.Orders
     {
         public Guid ShipmentId { get; set; }
         public ShipmentStatus? ShipmentStatus { get; set; }
+        public DateTime? SellerReadyAt { get; set; }
+        public DateTime? PickedUpAt { get; set; }
         public DateTime? DeliveredAt { get; set; }
     }
 
@@ -108,5 +112,8 @@ namespace HomeCycle.Application.DTOs.Responses.Orders
         public bool HasActiveDispute { get; set; }
         public Guid? LatestDisputeId { get; set; }
         public DisputeStatus? LatestDisputeStatus { get; set; }
+        public DateTime? LatestDisputeCreatedAt { get; set; }
+        public DateTime? LatestDisputeResolvedAt { get; set; }
+
     }
 }

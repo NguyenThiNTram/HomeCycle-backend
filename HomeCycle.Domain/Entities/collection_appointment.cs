@@ -15,6 +15,8 @@ public partial class collection_appointment
     public string? PickupAddress { get; set; }
     public string? DeliveryAddress { get; set; }
     public string? DeliveryMethod { get; set; }
+    public decimal? EstimatedShippingFee { get; set; }
+    public string? GhnShippingInfoJsonb { get; set; }
 
     public collection_appointment()
     {
