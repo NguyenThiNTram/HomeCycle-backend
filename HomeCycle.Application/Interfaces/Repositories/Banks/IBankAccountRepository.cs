@@ -14,5 +14,8 @@ namespace HomeCycle.Application.Interfaces.Repositories.Banks
         Task<bank_account?> GetByUserIdAsync(Guid userId, CancellationToken cancellationToken = default);
 
         Task UpdateAsync(bank_account account, CancellationToken cancellationToken = default);
+        Task<bank_account?> GetByIdAsync(
+            Guid userBankId,
+            CancellationToken cancellationToken = default);
     }
 }

@@ -27,6 +27,7 @@ using HomeCycle.Application.DTOs.Responses.PlatformPolicies;
 using HomeCycle.Application.DTOs.Responses.Posts;
 using HomeCycle.Application.DTOs.Responses.Products;
 using HomeCycle.Application.DTOs.Responses.Profiles;
+using HomeCycle.Application.DTOs.Responses.Shipments;
 using HomeCycle.Application.DTOs.Responses.Users;
 using HomeCycle.Domain.Entities;
 using HomeCycle.Domain.Enums;
@@ -685,6 +686,11 @@ namespace HomeCycle.Application.Mappings
                 .ForMember(dest => dest.OrderStatus, opt => opt.Ignore())
                 .ForMember(dest => dest.RefundedAmount, opt => opt.Ignore())
                 .ForMember(dest => dest.ReturnDueAt, opt => opt.Ignore());
+
+
+            // ==================== SHIPMENT ====================
+
+            CreateMap<shipment, ShipmentSellerReadyResponseDto>();
         }
     }
 }

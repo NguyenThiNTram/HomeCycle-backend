@@ -13,10 +13,13 @@ namespace HomeCycle.API.Controllers
     public class InspectionFormController : ControllerBase
     {
         private readonly IInspectionFormService _inspectionService;
-
-        public InspectionFormController(IInspectionFormService inspectionService)
+        private readonly IInspectionCollectionService _inspectionCollectionService;
+        public InspectionFormController(
+            IInspectionFormService inspectionService,
+            IInspectionCollectionService inspectionCollectionService)
         {
             _inspectionService = inspectionService;
+            _inspectionCollectionService = inspectionCollectionService;
         }
 
         [HttpGet("appointment/{appointmentId:guid}")]
@@ -67,6 +70,22 @@ namespace HomeCycle.API.Controllers
         public async Task<IActionResult> CollectNow(Guid inspectionFormId, [FromBody] InspectionRevisionRequest request, CancellationToken cancellationToken)
         {
             var result = await _inspectionService.CollectNowAsync(inspectionFormId, GetCurrentUserId(), request, cancellationToken);
+            return result.IsSuccess ? Ok(result.Data) : BadRequest(result.Error);
+        }
+
+
+        [HttpPost("{inspectionFormId:guid}/collection-appointments")]
+        public async Task<IActionResult> ScheduleCollection(
+            Guid inspectionFormId,
+            [FromBody] ScheduleInspectionCollectionRequest request,
+            CancellationToken cancellationToken)
+        {
+            var result = await _inspectionCollectionService.ScheduleAsync(
+                inspectionFormId,
+                GetCurrentUserId(),
+                request,
+                cancellationToken);
+
             return result.IsSuccess ? Ok(result.Data) : BadRequest(result.Error);
         }
 

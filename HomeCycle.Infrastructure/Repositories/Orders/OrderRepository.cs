@@ -237,6 +237,9 @@ namespace HomeCycle.Infrastructure.Repositories.Orders
                                     latestShipment.ShipmentStatus.Value
                                 : null,
 
+                        SellerReadyAt = latestShipment.SellerReadyAt,
+                        PickedUpAt = latestShipment.PickedUpAt,
+
                         DeliveredAt =
                             latestShipment.DeliveredAt
                     };
@@ -258,7 +261,10 @@ namespace HomeCycle.Infrastructure.Repositories.Orders
                         true
                             ? (DisputeStatus?)
                                 latestDispute.DisputeStatus.Value
-                            : null
+                            : null,
+
+                    LatestDisputeCreatedAt = latestDispute?.CreatedAt,
+                    LatestDisputeResolvedAt = latestDispute?.ResolvedAt
                 };
 
             var reviews =

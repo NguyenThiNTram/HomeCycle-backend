@@ -13,6 +13,8 @@ namespace HomeCycle.Domain.Enums
         Agreement = 3,
         Order = 4,
         Dispute = 5,
-        Post = 6
+        Post = 6,
+        Appointment = 7,
+        Withdrawal = 8
     }
 }

@@ -4,6 +4,7 @@ using HomeCycle.Application.Commons.Paginations;
 using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Requests.Agreements;
 using HomeCycle.Application.DTOs.Requests.Orders;
+using HomeCycle.Application.DTOs.Responses.Notifications;
 using HomeCycle.Application.DTOs.Responses.Orders;
 using HomeCycle.Application.Interfaces.Generics;
 using HomeCycle.Application.Interfaces.Repositories.Agreements;
@@ -14,6 +15,7 @@ using HomeCycle.Application.Interfaces.Repositories.Orders;
 using HomeCycle.Application.Interfaces.Repositories.Reviews;
 using HomeCycle.Application.Interfaces.Repositories.Shipments;
 using HomeCycle.Application.Interfaces.Services.Disputes;
+using HomeCycle.Application.Interfaces.Services.Notifications;
 using HomeCycle.Application.Interfaces.Services.Orders;
 using HomeCycle.Application.Interfaces.Services.Payments;
 using HomeCycle.Application.Interfaces.Services.PlatformPolicies;
@@ -45,6 +47,9 @@ namespace HomeCycle.Application.Services.Orders
         private readonly IDisputeRepository _disputeRepo;
         private readonly IPaymentService _paymentService;
         private readonly IPlatformPolicyProvider _platformPolicyProvider;
+        private readonly INotificationService _notificationService;
+        private readonly IOrderTimelineBuilder _orderTimelineBuilder;
+        private readonly IOrderTrackingRealtimeService _orderTrackingRealtimeService;
         private readonly IMapper _mapper;
 
         public OrderService(
@@ -61,6 +66,9 @@ namespace HomeCycle.Application.Services.Orders
             IDisputeRepository disputeRepo,
             IPaymentService paymentService,
             IPlatformPolicyProvider platformPolicyProvider,
+            INotificationService notificationService,
+            IOrderTimelineBuilder orderTimelineBuilder,
+            IOrderTrackingRealtimeService orderTrackingRealtimeService,
             IMapper mapper)
         {
             _orderRepo = orderRepo;
@@ -76,6 +84,9 @@ namespace HomeCycle.Application.Services.Orders
             _disputeRepo = disputeRepo;
             _paymentService = paymentService;
             _platformPolicyProvider = platformPolicyProvider;
+            _notificationService = notificationService;
+            _orderTimelineBuilder = orderTimelineBuilder;
+            _orderTrackingRealtimeService = orderTrackingRealtimeService;
             _mapper = mapper;
         }
 
@@ -124,11 +135,24 @@ namespace HomeCycle.Application.Services.Orders
                 Rating = myReview?.Rating
             };
 
+            var inspectionCollectNow =
+                await IsInspectionCollectNowReadyAsync(
+                    detail.OrderId,
+                    ct);
+
+            detail.Timeline =
+                _orderTimelineBuilder.Build(
+                    detail,
+                    inspectionCollectNow);
+
+
+
             detail.Actions = await BuildOrderActionsAsync(
                 detail,
                 agreement,
                 isBuyer,
                 isSeller,
+                inspectionCollectNow,
                 ct);
 
             return Result<OrderDetailDto>.Success(detail);
@@ -208,6 +232,15 @@ namespace HomeCycle.Application.Services.Orders
                         order.OrderId,
                         ct);
 
+                var shipment = await _shipmentRepo.GetByOrderIdAsync(order.OrderId, ct);
+
+                if (shipment == null)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    return Result<OrderConfirmationResponseDto>.Fail(
+                        OrderErrors.ShipmentNotFound);
+                }
+
                 appointment? lockedCollection = null;
 
                 if (!inspectionCollectNow)
@@ -231,6 +264,13 @@ namespace HomeCycle.Application.Services.Orders
                         await _unitOfWork.RollbackTransactionAsync(ct);
                         return Result<OrderConfirmationResponseDto>.Fail(
                             OrderErrors.DirectHandoverOnly);
+                    }
+
+                    if (!shipment.SellerReadyAt.HasValue)
+                    {
+                        await _unitOfWork.RollbackTransactionAsync(ct);
+                        return Result<OrderConfirmationResponseDto>.Fail(
+                            OrderErrors.SellerReadyRequired);
                     }
 
                     var collectionAppointment =
@@ -304,6 +344,17 @@ namespace HomeCycle.Application.Services.Orders
 
                 var confirmedAt = DateTime.UtcNow;
                 var changed = false;
+                notification? handoverNotification = null;
+
+                if (inspectionCollectNow && !shipment.SellerReadyAt.HasValue)
+                {
+                    shipment.SellerReadyAt = confirmedAt;
+                    shipment.UpdatedAt = confirmedAt;
+
+                    await _shipmentRepo.UpdateAsync(shipment, ct);
+
+                    changed = true;
+                }
 
                 if (!order.SellerHandoverConfirmedAt.HasValue)
                 {
@@ -311,6 +362,15 @@ namespace HomeCycle.Application.Services.Orders
                     order.UpdatedAt = confirmedAt;
 
                     await _orderRepo.UpdateAsync(order, ct);
+
+                    handoverNotification = await _notificationService.AddPendingAsync(
+                        new CreateNotificationCommand(
+                            agreement.BuyerId,
+                            "Người bán đã giao hàng",
+                            "Người bán đã xác nhận bàn giao sản phẩm. Vui lòng kiểm tra và xác nhận khi đã nhận hàng.",
+                            NotificationTargetType.Order,
+                            order.OrderId),
+                        ct);
 
                     changed = true;
                 }
@@ -336,6 +396,16 @@ namespace HomeCycle.Application.Services.Orders
                     await _unitOfWork.SaveChangesAsync(ct);
 
                 await _unitOfWork.CommitTransactionAsync(ct);
+
+                if (handoverNotification != null)
+                    await _notificationService.PublishCreatedSafelyAsync(handoverNotification);
+
+                if (changed)
+                {
+                    await _orderTrackingRealtimeService.PublishByOrderIdSafelyAsync(
+                        order.OrderId,
+                        order.UpdatedAt);
+                }
 
                 return Result<OrderConfirmationResponseDto>.Success(
                     new OrderConfirmationResponseDto
@@ -592,8 +662,23 @@ namespace HomeCycle.Application.Services.Orders
                         ct);
                 }
 
+                var receivedNotification = await _notificationService.AddPendingAsync(
+                    new CreateNotificationCommand(
+                        agreement.SellerId,
+                        "Đơn hàng đã hoàn thành",
+                        "Người mua đã xác nhận nhận hàng. Đơn hàng đã chuyển sang trạng thái hoàn thành.",
+                        NotificationTargetType.Order,
+                        order.OrderId),
+                    ct);
+
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
+
+                await _notificationService.PublishCreatedSafelyAsync(receivedNotification);
+
+                await _orderTrackingRealtimeService.PublishByOrderIdSafelyAsync(
+                    order.OrderId,
+                    order.UpdatedAt);
 
                 return Result<OrderConfirmationResponseDto>.Success(
                     new OrderConfirmationResponseDto
@@ -832,8 +917,25 @@ namespace HomeCycle.Application.Services.Orders
                     order,
                     ct);
 
+                var cancelRecipientId = userId == agreement.BuyerId
+                    ? agreement.SellerId
+                    : agreement.BuyerId;
+
+                var cancellationNotification = await _notificationService.AddPendingAsync(
+                    new CreateNotificationCommand(
+                        cancelRecipientId,
+                        "Đơn hàng đã bị hủy",
+                        "Đơn hàng đã bị hủy sau khi kết quả kiểm định bị từ chối. Khoản tiền nền tảng giữ đã được hoàn lại.",
+                        NotificationTargetType.Order,
+                        order.OrderId),
+                    ct);
+
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
+                await _notificationService.PublishCreatedSafelyAsync(cancellationNotification);
+                await _orderTrackingRealtimeService.PublishByOrderIdSafelyAsync(
+                    order.OrderId,
+                    order.UpdatedAt);
 
                 return Result<OrderCancellationResponseDto>.Success(
                     new OrderCancellationResponseDto
@@ -952,8 +1054,21 @@ namespace HomeCycle.Application.Services.Orders
 
                 await _orderRepo.UpdateAsync(order, ct);
                 await _disputeRepo.UpdateAsync(dispute, ct);
+                var returnNotification = await _notificationService.AddPendingAsync(
+                    new CreateNotificationCommand(
+                        agreement.SellerId,
+                        "Người mua đã trả hàng",
+                        "Người mua đã xác nhận gửi trả sản phẩm. Vui lòng xác nhận sau khi nhận được hàng.",
+                        NotificationTargetType.Order,
+                        order.OrderId),
+                    ct);
+
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
+                await _notificationService.PublishCreatedSafelyAsync(returnNotification);
+                await _orderTrackingRealtimeService.PublishByOrderIdSafelyAsync(
+                    order.OrderId,
+                    order.UpdatedAt);
 
                 var response = _mapper.Map<OrderReturnConfirmationResponseDto>(order);
                 response.DisputeId = dispute.DisputeId;
@@ -1058,8 +1173,22 @@ namespace HomeCycle.Application.Services.Orders
 
                 await _orderRepo.UpdateAsync(order, ct);
                 await _disputeRepo.UpdateAsync(dispute, ct);
+
+                var returnNotification = await _notificationService.AddPendingAsync(
+                    new CreateNotificationCommand(
+                        agreement.BuyerId,
+                        "Hoàn trả đã hoàn tất",
+                        "Người bán đã xác nhận nhận lại sản phẩm. Khoản tiền nền tảng giữ đã được hoàn lại cho bạn.",
+                        NotificationTargetType.Order,
+                        order.OrderId),
+                    ct);
+
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
+                await _notificationService.PublishCreatedSafelyAsync(returnNotification);
+                await _orderTrackingRealtimeService.PublishByOrderIdSafelyAsync(
+                    order.OrderId,
+                    order.UpdatedAt);
 
                 var response = _mapper.Map<OrderReturnConfirmationResponseDto>(order);
                 response.DisputeId = dispute.DisputeId;
@@ -1101,6 +1230,7 @@ namespace HomeCycle.Application.Services.Orders
             agreement_form agreement,
             bool isBuyer,
             bool isSeller,
+            bool inspectionCollectNow,
             CancellationToken ct)
         {
             var canConfirm = false;
@@ -1108,10 +1238,22 @@ namespace HomeCycle.Application.Services.Orders
 
             var now = DateTime.UtcNow;
 
-            var inspectionCollectNow =
-                await IsInspectionCollectNowReadyAsync(
-                    detail.OrderId,
-                    ct);
+            var shipment = await _shipmentRepo.GetByOrderIdAsync(detail.OrderId, ct);
+
+            var supportsSellerReady =
+                shipment != null &&
+                (shipment.DeliveryMethod == DeliveryMethod.GhnDelivery ||
+                 shipment.DeliveryMethod == DeliveryMethod.SellerDelivers ||
+                 shipment.DeliveryMethod == DeliveryMethod.BuyerPickUp);
+
+            var canConfirmSellerReady =
+                isSeller &&
+                !inspectionCollectNow &&
+                detail.OrderStatus == OrderStatus.Processing &&
+                supportsSellerReady &&
+                shipment!.ShipmentStatus == ShipmentStatus.ReadyToPick &&
+                !shipment.SellerReadyAt.HasValue;
+
 
             var latestCollection =
                 detail.Appointments
@@ -1154,7 +1296,8 @@ namespace HomeCycle.Application.Services.Orders
                         inspectionCollectNow ||
                         (
                             isDirect &&
-                            collectionConfirmationOpen
+                            collectionConfirmationOpen &&
+                            shipment?.SellerReadyAt.HasValue == true
                         )
                     ) &&
                     !detail.SellerHandoverConfirmedAt.HasValue)
@@ -1258,6 +1401,7 @@ namespace HomeCycle.Application.Services.Orders
 
             return new OrderActionDto
             {
+                CanConfirmSellerReady = canConfirmSellerReady,
                 CanConfirm = canConfirm,
                 ConfirmAction = confirmAction,
                 CanCancel = canCancel,

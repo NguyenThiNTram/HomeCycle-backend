@@ -19,7 +19,9 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 CollectionDate = entity.CollectionDate,
                 PickupAddress = entity.PickupAddress,
                 DeliveryAddress = entity.DeliveryAddress,
-                DeliveryMethod = entity.DeliveryMethod
+                DeliveryMethod = entity.DeliveryMethod,
+                EstimatedShippingFee = entity.EstimatedShippingFee,
+                GhnShippingInfoJsonb = entity.GhnShippingInfoJsonb
             };
         }
         public static Collection_Appointment ToInfrastructure(this collection_appointment entity)
@@ -32,7 +34,9 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 CollectionDate = entity.CollectionDate,
                 PickupAddress = entity.PickupAddress,
                 DeliveryAddress = entity.DeliveryAddress,
-                DeliveryMethod = entity.DeliveryMethod
+                DeliveryMethod = entity.DeliveryMethod,
+                EstimatedShippingFee = entity.EstimatedShippingFee,
+                GhnShippingInfoJsonb = entity.GhnShippingInfoJsonb
             };
         }
     }

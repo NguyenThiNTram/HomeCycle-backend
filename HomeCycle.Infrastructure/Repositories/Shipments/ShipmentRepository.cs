@@ -38,5 +38,16 @@ namespace HomeCycle.Infrastructure.Repositories.Shipments
             _db.Shipments.Update(shipment.ToInfrastructure());
             return Task.CompletedTask;
         }
+
+        public async Task<shipment?> GetByIdForUpdateAsync(Guid shipmentId, CancellationToken ct = default)
+        {
+            var entities = await _db.Shipments
+                .FromSqlInterpolated(
+                    $"SELECT * FROM public.\"Shipment\" WHERE \"ShipmentId\" = {shipmentId} FOR UPDATE")
+                .AsNoTracking()
+                .ToListAsync(ct);
+
+            return entities.SingleOrDefault()?.ToDomain();
+        }
     }
 }

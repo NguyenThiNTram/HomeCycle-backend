@@ -327,6 +327,10 @@ namespace HomeCycle.Application.Commons.Errors
 
         public static readonly Error ShipmentNotDelivered =
             new("Order.ShipmentNotDelivered", "Đơn vận chuyển chưa được xác nhận giao thành công.");
+
+        public static readonly Error SellerReadyRequired =
+            new("Order.SellerReadyRequired", "Người bán phải xác nhận đã chuẩn bị hàng trước khi xác nhận bàn giao.");
+
         public static readonly Error CancellationRequiresRejectedInspection =
             new("Order.CancellationRequiresRejectedInspection", "Chỉ có thể hủy đơn theo luồng này sau khi Seller từ chối kết quả kiểm định.");
 
@@ -516,6 +520,15 @@ namespace HomeCycle.Application.Commons.Errors
 
         public static readonly Error DepositMissing =
             new("Inspection.DepositMissing", "Không xác định được khoản tiền cọc cần hoàn.");
+
+        public static readonly Error CollectionAddressRequired =
+            new("Inspection.CollectionAddressRequired", "Cần đầy đủ địa chỉ lấy và giao hàng.");
+
+        public static readonly Error CollectionScheduleFailed =
+            new("Inspection.CollectionScheduleFailed", "Không thể tạo lịch thu gom.");
+
+        public static readonly Error GhnFullPaymentRequired =
+            new("Inspection.GhnFullPaymentRequired", "Vận chuyển GHN yêu cầu thanh toán toàn bộ phần còn thiếu.");
     }
 
     public static class PaymentErrors
@@ -572,11 +585,41 @@ namespace HomeCycle.Application.Commons.Errors
             new(
                 "Payment.BankAccountNotVerified",
                 "Bạn cần có tài khoản ngân hàng đã xác minh trước khi thanh toán.");
+
+        public static readonly Error OrderSettlementNotFound =
+            new("Payment.OrderSettlementNotFound", "Không tìm thấy khoản thanh toán bổ sung.");
+
+        public static readonly Error OrderSettlementInvalidStatus =
+            new("Payment.OrderSettlementInvalidStatus", "Khoản thanh toán bổ sung không còn ở trạng thái hợp lệ.");
+
+        public static readonly Error OrderSettlementAmountMismatch =
+            new("Payment.OrderSettlementAmountMismatch", "Số tiền thanh toán không còn khớp với số tiền còn lại của đơn hàng.");
     }
 
 
     public static class NotificationErrors
     {
         public static readonly Error NotFound = new("NOTIFICATION_NOT_FOUND", "can not found notification");
+    }
+
+    public static class ShipmentErrors
+    {
+        public static readonly Error NotFound =
+            new("Shipment.NotFound", "Không tìm thấy thông tin giao nhận của đơn hàng.");
+
+        public static readonly Error Forbidden =
+            new("Shipment.Forbidden", "Bạn không có quyền thực hiện thao tác này trên thông tin giao nhận.");
+
+        public static readonly Error SellerReadyNotAllowed =
+            new("Shipment.SellerReadyNotAllowed", "Trạng thái hiện tại không cho phép xác nhận đã chuẩn bị hàng.");
+
+        public static readonly Error UnsupportedDeliveryMethod =
+            new("Shipment.UnsupportedDeliveryMethod", "Phương thức giao nhận hiện tại không hỗ trợ xác nhận chuẩn bị hàng.");
+
+        public static readonly Error OrderMismatch =
+            new("Shipment.OrderMismatch", "Thông tin giao nhận không còn thuộc đơn hàng hiện tại.");
+
+        public static readonly Error AlreadyExists =
+            new("Shipment.AlreadyExists", "Đơn hàng đã có thông tin giao nhận.");
     }
 }
