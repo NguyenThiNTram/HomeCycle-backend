@@ -10,6 +10,8 @@ namespace HomeCycle.Domain.Enums
     {
         Dispute = 1,
         Appointment = 2,
-        FileUpload = 3
+        FileUpload = 3,
+        Payment = 4,
+        Order = 5
     }
 }
