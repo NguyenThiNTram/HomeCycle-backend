@@ -240,6 +240,97 @@ namespace HomeCycle.API.Controllers
             return Ok(Result<FileUploadPolicyClientResponseDto>.Success(response));
         }
 
+        [HttpGet("payment")]
+        [SwaggerOperation(
+            Summary = "Lấy cấu hình thanh toán hiện hành",
+            Description =
+                "Dùng cho màn hình cấu hình của Admin. " +
+                "Trả về tỷ lệ đặt cọc và thời gian hết hạn thanh toán đang áp dụng.")]
+        public async Task<IActionResult> GetPaymentPolicy(CancellationToken cancellationToken)
+        {
+            var result =
+                await _platformPolicyService.GetPaymentPolicyAsync(
+                    cancellationToken);
+
+            if (!result.IsSuccess)
+                return BadRequest(result);
+
+            return Ok(result);
+        }
+
+        [HttpPatch("payment")]
+        [SwaggerOperation(
+            Summary = "Cập nhật cấu hình thanh toán",
+            Description =
+                "Cho phép Admin cập nhật tỷ lệ đặt cọc hoặc thời gian hết hạn thanh toán. " +
+                "Nếu cấu hình thay đổi, hệ thống tạo phiên bản mới và giữ lại lịch sử cũ.")]
+        public async Task<IActionResult> UpdatePaymentPolicy(
+            [FromBody] UpdatePaymentPolicyRequest request,
+            CancellationToken cancellationToken)
+        {
+            var adminId = GetCurrentUserId();
+
+            if (adminId == Guid.Empty)
+                return Unauthorized();
+
+            var result =
+                await _platformPolicyService.UpdatePaymentPolicyAsync(
+                    adminId,
+                    request,
+                    cancellationToken);
+
+            if (!result.IsSuccess)
+                return BadRequest(result);
+
+            return Ok(result);
+        }
+
+
+        [HttpGet("order")]
+        [SwaggerOperation(
+            Summary = "Lấy cấu hình vòng đời đơn hàng hiện hành",
+            Description =
+                "Dùng cho màn hình cấu hình của Admin. " +
+                "Trả về thời gian Buyer được phép xác nhận nhận hàng sau khi Seller xác nhận bàn giao.")]
+        public async Task<IActionResult> GetOrderPolicy(CancellationToken cancellationToken)
+        {
+            var result =
+                await _platformPolicyService.GetOrderPolicyAsync(
+                    cancellationToken);
+
+            if (!result.IsSuccess)
+                return BadRequest(result);
+
+            return Ok(result);
+        }
+
+        [HttpPatch("order")]
+        [SwaggerOperation(
+            Summary = "Cập nhật cấu hình vòng đời đơn hàng",
+            Description =
+                "Cho phép Admin cập nhật thời gian Buyer xác nhận nhận hàng. " +
+                "Nếu cấu hình thay đổi, hệ thống tạo phiên bản mới và giữ lại lịch sử cũ.")]
+        public async Task<IActionResult> UpdateOrderPolicy(
+            [FromBody] UpdateOrderPolicyRequest request,
+            CancellationToken cancellationToken)
+        {
+            var adminId = GetCurrentUserId();
+
+            if (adminId == Guid.Empty)
+                return Unauthorized();
+
+            var result =
+                await _platformPolicyService.UpdateOrderPolicyAsync(
+                    adminId,
+                    request,
+                    cancellationToken);
+
+            if (!result.IsSuccess)
+                return BadRequest(result);
+
+            return Ok(result);
+        }
+
         private Guid GetCurrentUserId()
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
@@ -266,6 +357,14 @@ namespace HomeCycle.API.Controllers
                 case "file-upload":
                 case "fileupload":
                     type = PlatformPolicyType.FileUpload;
+                    return true;
+
+                case "payment":
+                    type = PlatformPolicyType.Payment;
+                    return true;
+
+                case "order":
+                    type = PlatformPolicyType.Order;
                     return true;
 
                 default:
