@@ -86,6 +86,10 @@ namespace HomeCycle.Infrastructure.Repositories.GHN
                 .AsNoTracking()
                 .Where(x =>
                     x.GHNOrderCode == null && // đơn chưa từng được GHN tạo thành công
+                    x.Shipment.SellerReadyAt.HasValue &&
+                    x.Shipment.DeliveryMethod == (int)DeliveryMethod.GhnDelivery &&
+                    x.Shipment.ShipmentStatus == (int)ShipmentStatus.ReadyToPick &&
+                    x.Shipment.Order.OrderStatus == (int)OrderStatus.Processing &&
                     (
                         x.CreationStatus == (int)GHNCreationStatus.Pending ||
                         x.CreationStatus == (int)GHNCreationStatus.Failed ||
@@ -138,6 +142,10 @@ namespace HomeCycle.Infrastructure.Repositories.GHN
                 .Where(x =>
                     x.ShipmentId == shipmentId && // Tìm đúng bản ghi dựa trên ShipmentId khóa ngoại
                     x.GHNOrderCode == null &&     // Đơn chưa được tạo thành công trên GHN
+                    x.Shipment.SellerReadyAt.HasValue &&
+                    x.Shipment.DeliveryMethod == (int)DeliveryMethod.GhnDelivery &&
+                    x.Shipment.ShipmentStatus == (int)ShipmentStatus.ReadyToPick &&
+                    x.Shipment.Order.OrderStatus == (int)OrderStatus.Processing &&
                     (
                         x.CreationStatus == (int)GHNCreationStatus.Pending ||
                         x.CreationStatus == (int)GHNCreationStatus.Failed ||

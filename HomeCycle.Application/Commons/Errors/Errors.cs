@@ -322,6 +322,10 @@ namespace HomeCycle.Application.Commons.Errors
 
         public static readonly Error ShipmentNotDelivered =
             new("Order.ShipmentNotDelivered", "Đơn vận chuyển chưa được xác nhận giao thành công.");
+
+        public static readonly Error SellerReadyRequired =
+            new("Order.SellerReadyRequired", "Người bán phải xác nhận đã chuẩn bị hàng trước khi xác nhận bàn giao.");
+
         public static readonly Error CancellationRequiresRejectedInspection =
             new("Order.CancellationRequiresRejectedInspection", "Chỉ có thể hủy đơn theo luồng này sau khi Seller từ chối kết quả kiểm định.");
 
@@ -573,5 +577,23 @@ namespace HomeCycle.Application.Commons.Errors
     public static class NotificationErrors
     {
         public static readonly Error NotFound = new("NOTIFICATION_NOT_FOUND", "can not found notification");
+    }
+
+    public static class ShipmentErrors
+    {
+        public static readonly Error NotFound =
+            new("Shipment.NotFound", "Không tìm thấy thông tin giao nhận của đơn hàng.");
+
+        public static readonly Error Forbidden =
+            new("Shipment.Forbidden", "Bạn không có quyền thực hiện thao tác này trên thông tin giao nhận.");
+
+        public static readonly Error SellerReadyNotAllowed =
+            new("Shipment.SellerReadyNotAllowed", "Trạng thái hiện tại không cho phép xác nhận đã chuẩn bị hàng.");
+
+        public static readonly Error UnsupportedDeliveryMethod =
+            new("Shipment.UnsupportedDeliveryMethod", "Phương thức giao nhận hiện tại không hỗ trợ xác nhận chuẩn bị hàng.");
+
+        public static readonly Error OrderMismatch =
+            new("Shipment.OrderMismatch", "Thông tin giao nhận không còn thuộc đơn hàng hiện tại.");
     }
 }

@@ -5,6 +5,7 @@ using HomeCycle.Application.Interfaces.Generics;
 using HomeCycle.Application.Interfaces.Repositories.GHN;
 using HomeCycle.Application.Interfaces.Repositories.Shipments;
 using HomeCycle.Application.Interfaces.Services.GHN;
+using HomeCycle.Application.Interfaces.Services.Orders;
 using HomeCycle.Application.Services.GHN;
 using HomeCycle.Domain.Entities;
 using HomeCycle.Domain.Enums;
@@ -23,6 +24,7 @@ namespace HomeCycle.Infrastructure.Externals.GHN
         private readonly IGhnShipmentRepository _ghnShipmentRepository;
         private readonly IShipmentRepository _shipmentRepository;
         private readonly IGhnService _ghnService;
+        private readonly IOrderTrackingRealtimeService _orderTrackingRealtimeService;
         private readonly IUnitOfWork _unitOfWork;
         private readonly GhnSettings _settings;
         private readonly ILogger<GhnWebhookService> _logger;
@@ -31,6 +33,7 @@ namespace HomeCycle.Infrastructure.Externals.GHN
             IGhnShipmentRepository ghnShipmentRepository,
             IShipmentRepository shipmentRepository,
             IGhnService ghnService,
+            IOrderTrackingRealtimeService orderTrackingRealtimeService,
             IUnitOfWork unitOfWork,
             IOptions<GhnSettings> settings,
             ILogger<GhnWebhookService> logger)
@@ -38,6 +41,7 @@ namespace HomeCycle.Infrastructure.Externals.GHN
             _ghnShipmentRepository = ghnShipmentRepository;
             _shipmentRepository = shipmentRepository;
             _ghnService = ghnService;
+            _orderTrackingRealtimeService = orderTrackingRealtimeService;
             _unitOfWork = unitOfWork;
             _settings = settings.Value;
             _logger = logger;
@@ -126,6 +130,11 @@ namespace HomeCycle.Infrastructure.Externals.GHN
                     "Không tìm thấy Shipment tương ứng."));
             }
 
+            // Chụp các mốc timeline trước khi cập nhật.
+            var previousShipmentStatus = shipment.ShipmentStatus;
+            var previousPickedUpAt = shipment.PickedUpAt;
+            var previousDeliveredAt = shipment.DeliveredAt;
+
             var now = DateTime.UtcNow;
             var eventTime = request.Time?.UtcDateTime ?? now;
 
@@ -147,6 +156,22 @@ namespace HomeCycle.Infrastructure.Externals.GHN
                 shipment.ShipmentStatus = mappedStatus.Value;
                 shipment.UpdatedAt = now;
 
+                // Tên biến này có nghĩa shipment đã đi qua mốc GHN lấy hàng,
+                // không có nghĩa GHN vẫn đang giữ hàng tại thời điểm hiện tại.
+                var carrierHasPickedUp =
+                    mappedStatus.Value == ShipmentStatus.Delivering ||
+                    mappedStatus.Value == ShipmentStatus.Delivered ||
+                    mappedStatus.Value == ShipmentStatus.Returning ||
+                    mappedStatus.Value == ShipmentStatus.Returned ||
+                    mappedStatus.Value == ShipmentStatus.Damage_Lost;
+
+                if (carrierHasPickedUp &&
+                    (!shipment.PickedUpAt.HasValue ||
+                     eventTime < shipment.PickedUpAt.Value))
+                {
+                    shipment.PickedUpAt = eventTime;
+                }
+
                 if (mappedStatus.Value == ShipmentStatus.Delivered &&
                     shipment.DeliveredAt is null)
                 {
@@ -167,6 +192,19 @@ namespace HomeCycle.Infrastructure.Externals.GHN
             }
 
             await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+            var trackingChanged =
+                previousShipmentStatus != shipment.ShipmentStatus ||
+                previousPickedUpAt != shipment.PickedUpAt ||
+                previousDeliveredAt != shipment.DeliveredAt;
+
+            // Chỉ phát sau khi dữ liệu đã lưu thành công.
+            if (trackingChanged)
+            {
+                await _orderTrackingRealtimeService.PublishByOrderIdSafelyAsync(
+                    shipment.OrderId,
+                    shipment.UpdatedAt);
+            }
 
             _logger.LogInformation(
                 "Đã xử lý webhook GHN. Type={Type}, OrderCode={OrderCode}, Status={Status}",

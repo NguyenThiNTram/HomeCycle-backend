@@ -13,5 +13,6 @@ namespace HomeCycle.Application.Interfaces.Repositories.Shipments
         Task<shipment?> GetByOrderIdAsync(Guid orderId, CancellationToken ct = default);
         Task AddAsync(shipment shipment, CancellationToken ct = default);
         Task UpdateAsync(shipment shipment, CancellationToken ct = default);
+        Task<shipment?> GetByIdForUpdateAsync(Guid shipmentId, CancellationToken ct = default);
     }
 }

@@ -9,6 +9,7 @@ namespace HomeCycle.Application.DTOs.Responses.Orders
 {
     public class OrderActionDto
     {
+        public bool CanConfirmSellerReady { get; set; }
         public bool CanConfirm { get; set; }
         public OrderConfirmAction? ConfirmAction { get; set; }
         public bool CanCancel { get; set; }

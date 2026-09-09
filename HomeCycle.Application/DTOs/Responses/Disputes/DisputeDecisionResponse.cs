@@ -18,6 +18,6 @@ namespace HomeCycle.Application.DTOs.Responses.Disputes
         public OrderStatus? OrderStatus { get; set; }
         public decimal RefundedAmount { get; set; }
         public DateTime? ReturnDueAt { get; set; }
-        public DateTime ResolvedAt { get; set; }
+        public DateTime? ResolvedAt { get; set; }
     }
 }

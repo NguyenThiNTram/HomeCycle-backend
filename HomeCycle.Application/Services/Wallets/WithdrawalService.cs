@@ -2,10 +2,12 @@
 using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Requests.Payments;
 using HomeCycle.Application.DTOs.Requests.Wallets;
+using HomeCycle.Application.DTOs.Responses.Notifications;
 using HomeCycle.Application.Interfaces.Externals;
 using HomeCycle.Application.Interfaces.Generics;
 using HomeCycle.Application.Interfaces.Repositories.Banks;
 using HomeCycle.Application.Interfaces.Repositories.Wallets;
+using HomeCycle.Application.Interfaces.Services.Notifications;
 using HomeCycle.Application.Interfaces.Services.Wallets;
 using HomeCycle.Domain.Entities;
 using HomeCycle.Domain.Enums;
@@ -27,6 +29,7 @@ namespace HomeCycle.Application.Services.Wallets
         private readonly IWalletTransactionRepository _walletTxRepo;
         private readonly IWalletLedgerRepository _ledgerRepo;
         private readonly IWithdrawalRepository _withdrawalRepo;
+        private readonly INotificationService _notificationService;
         private readonly ILogger<WithdrawalService> _logger;
         private readonly IValidator<CreateWithdrawalRequest> _createValidator;
         private readonly IValidator<RejectWithdrawalRequest> _rejectValidator;
@@ -39,6 +42,7 @@ namespace HomeCycle.Application.Services.Wallets
             IWalletTransactionRepository walletTxRepo,
             IWalletLedgerRepository ledgerRepo,
             IWithdrawalRepository withdrawalRepo,
+            INotificationService notificationService,
             ILogger<WithdrawalService> logger,
             IValidator<CreateWithdrawalRequest> createValidator,
             IValidator<RejectWithdrawalRequest> rejectValidator)
@@ -50,6 +54,7 @@ namespace HomeCycle.Application.Services.Wallets
             _walletTxRepo = walletTxRepo;
             _ledgerRepo = ledgerRepo;
             _withdrawalRepo = withdrawalRepo;
+            _notificationService = notificationService;
             _createValidator = createValidator;
             _rejectValidator = rejectValidator;
             _logger = logger;
@@ -170,7 +175,9 @@ namespace HomeCycle.Application.Services.Wallets
             if (withdrawalEntity.WithdrawalStatus != (int)WithdrawalStatus.Pending)
                 return Result<bool>.Fail(new Error("Withdrawal.InvalidStatus", "Yêu cầu không ở trạng thái chờ duyệt."));
 
-            var bankAccount = await _bankAccountRepo.GetByUserIdAsync(withdrawalEntity.UserBankId, ct);
+            var bankAccount = await _bankAccountRepo.GetByIdAsync(
+                withdrawalEntity.UserBankId,
+                ct);
             if (bankAccount == null || bankAccount.VerifyStatus != VerifyStatus.Verified)
                 return Result<bool>.Fail(new Error("Withdrawal.BankAccountInvalid", "Tài khoản ngân hàng không hợp lệ/chưa xác thực."));
 
@@ -269,27 +276,63 @@ namespace HomeCycle.Application.Services.Wallets
 
 
         // ================== HELPERS DÙNG CHUNG ==================
-        private async Task FinalizeSuccessAsync(withdrawal withdrawalEntity, CancellationToken ct)
+
+        private async Task FinalizeSuccessAsync(
+            withdrawal withdrawalEntity,
+            CancellationToken ct)
         {
+            notification? completedNotification = null;
+
             await _unitOfWork.BeginTransactionAsync(ct);
+
             try
             {
-                var wallet = await _walletRepo.GetByIdAsync(withdrawalEntity.WalletId, ct);
-                var amount = withdrawalEntity.Amount!.Value;
+                var lockedWithdrawal =
+                    await _withdrawalRepo.GetByIdForUpdateAsync(
+                        withdrawalEntity.WithdrawalId,
+                        ct);
+
+                if (lockedWithdrawal == null)
+                    throw new InvalidOperationException(
+                        "Không tìm thấy yêu cầu rút tiền.");
+
+                if (lockedWithdrawal.WithdrawalStatus ==
+                    (int)WithdrawalStatus.Completed)
+                {
+                    await _unitOfWork.CommitTransactionAsync(ct);
+                    return;
+                }
+
+                if (lockedWithdrawal.WithdrawalStatus !=
+                    (int)WithdrawalStatus.Processing)
+                {
+                    await _unitOfWork.CommitTransactionAsync(ct);
+                    return;
+                }
+
+                var wallet = await _walletRepo.GetByIdAsync(
+                    lockedWithdrawal.WalletId,
+                    ct);
+
+                if (wallet?.UserId is not Guid recipientId)
+                    throw new InvalidOperationException(
+                        "Không tìm thấy người sở hữu ví.");
+
+                var amount = lockedWithdrawal.Amount!.Value;
                 var now = DateTime.UtcNow;
 
                 var walletTx = new wallet_transaction
                 {
                     WalletTransactionId = Guid.NewGuid(),
-                    ToWalletId = wallet!.WalletId,
-                    ReferenceId = withdrawalEntity.WithdrawalId,
+                    ToWalletId = wallet.WalletId,
+                    ReferenceId = lockedWithdrawal.WithdrawalId,
                     ReferenceType = (int)ReferenceType.Withdrawal,
                     TransactionType = (int)TransactionType.Withdrawal_Success,
                     Amount = -amount,
-                    WalletTransactionStatus = (int)WalletTransactionStatus.Completed,
+                    WalletTransactionStatus =
+                        (int)WalletTransactionStatus.Completed,
                     CreatedAt = now
                 };
-                await _walletTxRepo.AddAsync(walletTx, ct);
 
                 var ledger = new wallet_ledger
                 {
@@ -302,19 +345,32 @@ namespace HomeCycle.Application.Services.Wallets
                     BalanceBefore = wallet.HoldBalance,
                     BalanceAfter = wallet.HoldBalance - amount,
                     ReferenceType = (int)ReferenceType.Withdrawal,
-                    ReferenceId = withdrawalEntity.WithdrawalId,
-                    Description = $"Rut tien thanh cong {withdrawalEntity.WithdrawalId}",
+                    ReferenceId = lockedWithdrawal.WithdrawalId,
+                    Description =
+                        $"Rut tien thanh cong {lockedWithdrawal.WithdrawalId}",
                     CreatedAt = now
                 };
-                await _ledgerRepo.AddAsync(ledger, ct);
 
                 wallet.HoldBalance -= amount;
                 wallet.UpdatedAt = now;
-                await _walletRepo.UpdateAsync(wallet, ct);
 
-                // KHÔNG đụng ProcessedBy/ProcessedAt — đã được set đúng lúc Approve, đây không phải quyết định mới.
-                withdrawalEntity.WithdrawalStatus = (int)WithdrawalStatus.Completed;
-                await _withdrawalRepo.UpdateAsync(withdrawalEntity, ct);
+                lockedWithdrawal.WithdrawalStatus =
+                    (int)WithdrawalStatus.Completed;
+
+                await _walletTxRepo.AddAsync(walletTx, ct);
+                await _ledgerRepo.AddAsync(ledger, ct);
+                await _walletRepo.UpdateAsync(wallet, ct);
+                await _withdrawalRepo.UpdateAsync(lockedWithdrawal, ct);
+
+                completedNotification =
+                    await _notificationService.AddPendingAsync(
+                        new CreateNotificationCommand(
+                            recipientId,
+                            "Rút tiền thành công",
+                            "Khoản tiền rút đã được chuyển thành công tới tài khoản ngân hàng của bạn.",
+                            NotificationTargetType.Withdrawal,
+                            lockedWithdrawal.WithdrawalId),
+                        ct);
 
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
@@ -322,33 +378,81 @@ namespace HomeCycle.Application.Services.Wallets
             catch (Exception ex)
             {
                 await _unitOfWork.RollbackTransactionAsync(ct);
-                _logger.LogError(ex, "Lỗi hạch toán Withdrawal_Success cho {WithdrawalId}", withdrawalEntity.WithdrawalId);
+
+                _logger.LogError(
+                    ex,
+                    "Lỗi hạch toán Withdrawal_Success cho {WithdrawalId}",
+                    withdrawalEntity.WithdrawalId);
+
                 throw;
             }
+
+            await _notificationService.PublishCreatedSafelyAsync(
+                completedNotification);
         }
 
         private async Task RevertHoldToAvailableAsync(
-            withdrawal withdrawalEntity, WithdrawalStatus finalStatus, string reason, CancellationToken ct)
+            withdrawal withdrawalEntity,
+            WithdrawalStatus finalStatus,
+            string reason,
+            CancellationToken ct)
         {
+            notification? revertedNotification = null;
+
             await _unitOfWork.BeginTransactionAsync(ct);
+
             try
             {
-                var wallet = await _walletRepo.GetByIdAsync(withdrawalEntity.WalletId, ct);
-                var amount = withdrawalEntity.Amount!.Value;
+                var lockedWithdrawal =
+                    await _withdrawalRepo.GetByIdForUpdateAsync(
+                        withdrawalEntity.WithdrawalId,
+                        ct);
+
+                if (lockedWithdrawal == null)
+                    throw new InvalidOperationException(
+                        "Không tìm thấy yêu cầu rút tiền.");
+
+                if (lockedWithdrawal.WithdrawalStatus == (int)finalStatus)
+                {
+                    await _unitOfWork.CommitTransactionAsync(ct);
+                    return;
+                }
+
+                var expectedStatus = finalStatus == WithdrawalStatus.Rejected
+                    ? WithdrawalStatus.Pending
+                    : WithdrawalStatus.Processing;
+
+                if (lockedWithdrawal.WithdrawalStatus !=
+                    (int)expectedStatus)
+                {
+                    await _unitOfWork.CommitTransactionAsync(ct);
+                    return;
+                }
+
+                var wallet = await _walletRepo.GetByIdAsync(
+                    lockedWithdrawal.WalletId,
+                    ct);
+
+                if (wallet?.UserId is not Guid recipientId)
+                    throw new InvalidOperationException(
+                        "Không tìm thấy người sở hữu ví.");
+
+                var amount = lockedWithdrawal.Amount!.Value;
                 var now = DateTime.UtcNow;
 
                 var walletTx = new wallet_transaction
                 {
                     WalletTransactionId = Guid.NewGuid(),
-                    ToWalletId = wallet!.WalletId,
-                    ReferenceId = withdrawalEntity.WithdrawalId,
+                    ToWalletId = wallet.WalletId,
+                    ReferenceId = lockedWithdrawal.WithdrawalId,
                     ReferenceType = (int)ReferenceType.Withdrawal,
-                    TransactionType = (int)TransactionType.Withdrawal_Revert,
+                    TransactionType =
+                        (int)TransactionType.Withdrawal_Revert,
                     Amount = amount,
-                    WalletTransactionStatus = (int)WalletTransactionStatus.Completed,
+                    WalletTransactionStatus =
+                        (int)WalletTransactionStatus.Completed,
                     CreatedAt = now
                 };
-                await _walletTxRepo.AddAsync(walletTx, ct);
 
                 var ledgerOutHold = new wallet_ledger
                 {
@@ -361,11 +465,10 @@ namespace HomeCycle.Application.Services.Wallets
                     BalanceBefore = wallet.HoldBalance,
                     BalanceAfter = wallet.HoldBalance - amount,
                     ReferenceType = (int)ReferenceType.Withdrawal,
-                    ReferenceId = withdrawalEntity.WithdrawalId,
+                    ReferenceId = lockedWithdrawal.WithdrawalId,
                     Description = $"Hoan tien: {reason}",
                     CreatedAt = now
                 };
-                await _ledgerRepo.AddAsync(ledgerOutHold, ct);
 
                 var ledgerInAvailable = new wallet_ledger
                 {
@@ -378,20 +481,47 @@ namespace HomeCycle.Application.Services.Wallets
                     BalanceBefore = wallet.AvailableBalance,
                     BalanceAfter = wallet.AvailableBalance + amount,
                     ReferenceType = (int)ReferenceType.Withdrawal,
-                    ReferenceId = withdrawalEntity.WithdrawalId,
+                    ReferenceId = lockedWithdrawal.WithdrawalId,
                     Description = $"Hoan tien: {reason}",
                     CreatedAt = now
                 };
-                await _ledgerRepo.AddAsync(ledgerInAvailable, ct);
 
                 wallet.HoldBalance -= amount;
                 wallet.AvailableBalance += amount;
                 wallet.UpdatedAt = now;
-                await _walletRepo.UpdateAsync(wallet, ct);
 
-                withdrawalEntity.WithdrawalStatus = (int)finalStatus;
-                withdrawalEntity.RejectReason = reason; // luôn ghi lý do, dù do moderator hay hệ thống tự phát hiện
-                await _withdrawalRepo.UpdateAsync(withdrawalEntity, ct);
+                lockedWithdrawal.WithdrawalStatus = (int)finalStatus;
+                lockedWithdrawal.RejectReason = reason;
+
+                if (finalStatus == WithdrawalStatus.Rejected)
+                    lockedWithdrawal.ProcessedBy =
+                        withdrawalEntity.ProcessedBy;
+
+                await _walletTxRepo.AddAsync(walletTx, ct);
+                await _ledgerRepo.AddAsync(ledgerOutHold, ct);
+                await _ledgerRepo.AddAsync(ledgerInAvailable, ct);
+                await _walletRepo.UpdateAsync(wallet, ct);
+                await _withdrawalRepo.UpdateAsync(lockedWithdrawal, ct);
+
+                var notificationTitle =
+                    finalStatus == WithdrawalStatus.Rejected
+                        ? "Yêu cầu rút tiền bị từ chối"
+                        : "Rút tiền không thành công";
+
+                var notificationMessage =
+                    finalStatus == WithdrawalStatus.Rejected
+                        ? $"Yêu cầu rút tiền đã bị từ chối. Lý do: {reason}"
+                        : "Giao dịch rút tiền không thành công. Toàn bộ số tiền tạm giữ đã được trả lại số dư khả dụng.";
+
+                revertedNotification =
+                    await _notificationService.AddPendingAsync(
+                        new CreateNotificationCommand(
+                            recipientId,
+                            notificationTitle,
+                            notificationMessage,
+                            NotificationTargetType.Withdrawal,
+                            lockedWithdrawal.WithdrawalId),
+                        ct);
 
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
@@ -399,9 +529,17 @@ namespace HomeCycle.Application.Services.Wallets
             catch (Exception ex)
             {
                 await _unitOfWork.RollbackTransactionAsync(ct);
-                _logger.LogError(ex, "Lỗi hoàn tiền Withdrawal_Revert cho {WithdrawalId}", withdrawalEntity.WithdrawalId);
+
+                _logger.LogError(
+                    ex,
+                    "Lỗi hoàn tiền Withdrawal_Revert cho {WithdrawalId}",
+                    withdrawalEntity.WithdrawalId);
+
                 throw;
             }
+
+            await _notificationService.PublishCreatedSafelyAsync(
+                revertedNotification);
         }
     }
 }

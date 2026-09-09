@@ -7,6 +7,7 @@ using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Requests.Disputes;
 using HomeCycle.Application.DTOs.Responses.Disputes;
 using HomeCycle.Application.DTOs.Responses.Media;
+using HomeCycle.Application.DTOs.Responses.Notifications;
 using HomeCycle.Application.Interfaces.Generics;
 using HomeCycle.Application.Interfaces.Repositories.Agreements;
 using HomeCycle.Application.Interfaces.Repositories.Disputes;
@@ -14,6 +15,8 @@ using HomeCycle.Application.Interfaces.Repositories.Orders;
 using HomeCycle.Application.Interfaces.Repositories.Profiles;
 using HomeCycle.Application.Interfaces.Repositories.Users;
 using HomeCycle.Application.Interfaces.Services.Disputes;
+using HomeCycle.Application.Interfaces.Services.Notifications;
+using HomeCycle.Application.Interfaces.Services.Orders;
 using HomeCycle.Application.Interfaces.Services.Payments;
 using HomeCycle.Application.Interfaces.Services.PlatformPolicies;
 using HomeCycle.Application.Interfaces.Services.Posts;
@@ -40,6 +43,8 @@ namespace HomeCycle.Application.Services.Disputes
         private readonly IMediaService _mediaService;
         private readonly IPaymentService _paymentService;
         private readonly IPlatformPolicyProvider _platformPolicyProvider;
+        private readonly INotificationService _notificationService;
+        private readonly IOrderTrackingRealtimeService _orderTrackingRealtimeService;
         private readonly IUnitOfWork _unitOfWork;
         private readonly IMapper _mapper;
         private readonly IValidator<CreateDisputeRequest> _createValidator;
@@ -58,6 +63,8 @@ namespace HomeCycle.Application.Services.Disputes
             IMediaService mediaService,
             IPaymentService paymentService,
             IPlatformPolicyProvider platformPolicyProvider,
+            INotificationService notificationService,
+            IOrderTrackingRealtimeService orderTrackingRealtimeService,
             IUnitOfWork unitOfWork,
             IMapper mapper,
             IValidator<CreateDisputeRequest> createValidator,
@@ -75,6 +82,8 @@ namespace HomeCycle.Application.Services.Disputes
             _mediaService = mediaService;
             _paymentService = paymentService;
             _platformPolicyProvider = platformPolicyProvider;
+            _notificationService = notificationService;
+            _orderTrackingRealtimeService = orderTrackingRealtimeService;
             _unitOfWork = unitOfWork;
             _mapper = mapper;
             _createValidator = createValidator;
@@ -158,8 +167,32 @@ namespace HomeCycle.Application.Services.Disputes
                     return Result<CreateDisputeResponse>.Fail(mediaResult.Error!);
                 }
 
+                notification? disputeNotification = null;
+
+                if (dispute.TargetUserId.HasValue &&
+                    dispute.TargetUserId.Value != dispute.SenderId)
+                {
+                    disputeNotification = await _notificationService.AddPendingAsync(
+                        new CreateNotificationCommand(
+                            dispute.TargetUserId.Value,
+                            "Có tranh chấp mới",
+                            "Một tranh chấp liên quan đến bạn vừa được tạo. Vui lòng kiểm tra thông tin.",
+                            NotificationTargetType.Dispute,
+                            dispute.DisputeId),
+                        cancellationToken);
+                }
+
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync(cancellationToken);
+                if (disputeNotification != null)
+                    await _notificationService.PublishCreatedSafelyAsync(disputeNotification);
+
+                if (dispute.OrderId.HasValue)
+                {
+                    await _orderTrackingRealtimeService.PublishByOrderIdSafelyAsync(
+                        dispute.OrderId.Value,
+                        dispute.UpdatedAt);
+                }
 
                 return Result<CreateDisputeResponse>.Success(new CreateDisputeResponse
                 {
@@ -292,8 +325,33 @@ namespace HomeCycle.Application.Services.Disputes
                 dispute.UpdatedAt = closedAt;
 
                 await _disputeRepository.UpdateAsync(dispute, cancellationToken);
+
+                notification? closedNotification = null;
+
+                if (dispute.TargetUserId.HasValue &&
+                    dispute.TargetUserId.Value != dispute.SenderId)
+                {
+                    closedNotification = await _notificationService.AddPendingAsync(
+                        new CreateNotificationCommand(
+                            dispute.TargetUserId.Value,
+                            "Tranh chấp đã được đóng",
+                            "Người tạo tranh chấp đã chủ động đóng yêu cầu. Trạng thái liên quan đã được khôi phục.",
+                            NotificationTargetType.Dispute,
+                            dispute.DisputeId),
+                        cancellationToken);
+                }
+
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync(cancellationToken);
+                if (closedNotification != null)
+                    await _notificationService.PublishCreatedSafelyAsync(closedNotification);
+
+                if (dispute.OrderId.HasValue)
+                {
+                    await _orderTrackingRealtimeService.PublishByOrderIdSafelyAsync(
+                        dispute.OrderId.Value,
+                        dispute.UpdatedAt);
+                }
 
                 return Result<CloseDisputeResponse>.Success(new CloseDisputeResponse
                 {
@@ -387,8 +445,37 @@ namespace HomeCycle.Application.Services.Disputes
                 dispute.UpdatedAt = now;
 
                 await _disputeRepository.UpdateAsync(dispute, cancellationToken);
+
+                var claimNotifications = new List<notification>
+                {
+                    await _notificationService.AddPendingAsync(
+                        new CreateNotificationCommand(
+                            dispute.SenderId,
+                            "Tranh chấp đang được xem xét",
+                            "Moderator đã tiếp nhận và bắt đầu xem xét tranh chấp.",
+                            NotificationTargetType.Dispute,
+                            dispute.DisputeId),
+                        cancellationToken)
+                };
+
+                if (dispute.TargetUserId.HasValue &&
+                    dispute.TargetUserId.Value != dispute.SenderId)
+                {
+                    claimNotifications.Add(
+                        await _notificationService.AddPendingAsync(
+                            new CreateNotificationCommand(
+                                dispute.TargetUserId.Value,
+                                "Tranh chấp đang được xem xét",
+                                "Moderator đã tiếp nhận và bắt đầu xem xét tranh chấp.",
+                                NotificationTargetType.Dispute,
+                                dispute.DisputeId),
+                            cancellationToken));
+                }
+
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync(cancellationToken);
+                foreach (var notification in claimNotifications)
+                    await _notificationService.PublishCreatedSafelyAsync(notification);
 
                 return Result<ClaimDisputeResponse>.Success(new ClaimDisputeResponse
                 {
@@ -551,10 +638,64 @@ namespace HomeCycle.Application.Services.Disputes
                     return Result<DisputeDecisionResponse>.Fail(reputationResult.Error!);
                 }
 
+
+                string buyerMessage;
+                string sellerMessage;
+
+                if (request.ResolutionOutcome == DisputeResolutionOutcome.BuyerFavored)
+                {
+                    if (wasCompleted)
+                    {
+                        buyerMessage = "Tranh chấp được giải quyết có lợi cho bạn. Vui lòng hoàn trả sản phẩm trong thời hạn quy định.";
+                        sellerMessage = "Tranh chấp được giải quyết có lợi cho người mua. Đơn hàng đang chờ sản phẩm được hoàn trả.";
+                    }
+                    else
+                    {
+                        buyerMessage = "Tranh chấp được giải quyết có lợi cho bạn. Khoản tiền nền tảng giữ đã được hoàn lại.";
+                        sellerMessage = "Tranh chấp được giải quyết có lợi cho người mua và đơn hàng đã được kết thúc.";
+                    }
+                }
+                else
+                {
+                    buyerMessage = "Tranh chấp được giải quyết có lợi cho người bán. Vui lòng xem kết luận của moderator.";
+                    sellerMessage = "Tranh chấp được giải quyết có lợi cho bạn. Vui lòng xem kết luận của moderator.";
+                }
+
+                var decisionNotifications = new List<notification>
+                {
+                    await _notificationService.AddPendingAsync(
+                        new CreateNotificationCommand(
+                            agreement.BuyerId,
+                            "Kết quả tranh chấp",
+                            buyerMessage,
+                            NotificationTargetType.Dispute,
+                            dispute.DisputeId),
+                        cancellationToken),
+
+                    await _notificationService.AddPendingAsync(
+                        new CreateNotificationCommand(
+                            agreement.SellerId,
+                            "Kết quả tranh chấp",
+                            sellerMessage,
+                            NotificationTargetType.Dispute,
+                            dispute.DisputeId),
+                        cancellationToken)
+                };
+
                 await _orderRepository.UpdateAsync(order, cancellationToken);
                 await _disputeRepository.UpdateAsync(dispute, cancellationToken);
+
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync(cancellationToken);
+                foreach (var notification in decisionNotifications)
+                    await _notificationService.PublishCreatedSafelyAsync(notification);
+
+                if (dispute.OrderId.HasValue)
+                {
+                    await _orderTrackingRealtimeService.PublishByOrderIdSafelyAsync(
+                        dispute.OrderId.Value,
+                        dispute.UpdatedAt);
+                }
 
                 var response = _mapper.Map<DisputeDecisionResponse>(dispute);
                 response.OrderStatus = (OrderStatus)order.OrderStatus!.Value;
@@ -631,6 +772,16 @@ namespace HomeCycle.Application.Services.Disputes
                     return Result<DisputeDecisionResponse>.Fail(OrderErrors.NotDisputing);
                 }
 
+                var agreement = await _agreementRepository.GetByIdAsync(
+                    order.AgreementId,
+                    cancellationToken);
+
+                if (agreement == null)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<DisputeDecisionResponse>.Fail(AgreementErrors.NotFound);
+                }
+
                 var now = DateTime.UtcNow;
                 var restoredOrderStatus = order.CompletedAt.HasValue
                     ? OrderStatus.Completed
@@ -648,8 +799,39 @@ namespace HomeCycle.Application.Services.Disputes
 
                 await _orderRepository.UpdateAsync(order, cancellationToken);
                 await _disputeRepository.UpdateAsync(dispute, cancellationToken);
+
+                var rejectionNotifications = new List<notification>
+                {
+                    await _notificationService.AddPendingAsync(
+                        new CreateNotificationCommand(
+                            agreement.BuyerId,
+                            "Tranh chấp bị từ chối",
+                            "Moderator đã từ chối tranh chấp. Trạng thái đơn hàng đã được khôi phục.",
+                            NotificationTargetType.Dispute,
+                            dispute.DisputeId),
+                        cancellationToken),
+
+                    await _notificationService.AddPendingAsync(
+                        new CreateNotificationCommand(
+                            agreement.SellerId,
+                            "Tranh chấp bị từ chối",
+                            "Moderator đã từ chối tranh chấp. Trạng thái đơn hàng đã được khôi phục.",
+                            NotificationTargetType.Dispute,
+                            dispute.DisputeId),
+                        cancellationToken)
+                };
+
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync(cancellationToken);
+                foreach (var notification in rejectionNotifications)
+                    await _notificationService.PublishCreatedSafelyAsync(notification);
+
+                if (dispute.OrderId.HasValue)
+                {
+                    await _orderTrackingRealtimeService.PublishByOrderIdSafelyAsync(
+                        dispute.OrderId.Value,
+                        dispute.UpdatedAt);
+                }
 
                 var response = _mapper.Map<DisputeDecisionResponse>(dispute);
                 response.OrderStatus = restoredOrderStatus;
@@ -807,8 +989,47 @@ namespace HomeCycle.Application.Services.Disputes
 
                 await _orderRepository.UpdateAsync(order, cancellationToken);
                 await _disputeRepository.UpdateAsync(dispute, cancellationToken);
+
+                var buyerVerificationMessage = request.IsReturnCompleted
+                    ? "Moderator đã xác nhận việc hoàn trả thành công. Khoản tiền nền tảng giữ đã được hoàn lại."
+                    : "Moderator không xác nhận việc hoàn trả thành công. Đơn hàng đã được khôi phục về trạng thái hoàn thành.";
+
+                var sellerVerificationMessage = request.IsReturnCompleted
+                    ? "Moderator đã xác nhận việc hoàn trả thành công. Đơn hàng đã chuyển sang trạng thái đã trả hàng."
+                    : "Moderator không xác nhận việc hoàn trả thành công. Đơn hàng đã được khôi phục về trạng thái hoàn thành.";
+
+                var verificationNotifications = new List<notification>
+                {
+                    await _notificationService.AddPendingAsync(
+                        new CreateNotificationCommand(
+                            agreement.BuyerId,
+                            "Kết quả xác minh hoàn trả",
+                            buyerVerificationMessage,
+                            NotificationTargetType.Dispute,
+                            dispute.DisputeId),
+                        cancellationToken),
+
+                    await _notificationService.AddPendingAsync(
+                        new CreateNotificationCommand(
+                            agreement.SellerId,
+                            "Kết quả xác minh hoàn trả",
+                            sellerVerificationMessage,
+                            NotificationTargetType.Dispute,
+                            dispute.DisputeId),
+                        cancellationToken)
+                };
+
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync(cancellationToken);
+                foreach (var notification in verificationNotifications)
+                    await _notificationService.PublishCreatedSafelyAsync(notification);
+
+                if (dispute.OrderId.HasValue)
+                {
+                    await _orderTrackingRealtimeService.PublishByOrderIdSafelyAsync(
+                        dispute.OrderId.Value,
+                        dispute.UpdatedAt);
+                }
 
                 var response = _mapper.Map<DisputeDecisionResponse>(dispute);
                 response.OrderStatus = (OrderStatus)order.OrderStatus!.Value;

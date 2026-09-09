@@ -2,6 +2,7 @@
 using HomeCycle.Application.DTOs.Responses.Messages;
 using HomeCycle.Application.DTOs.Responses.Notifications;
 using HomeCycle.Application.DTOs.Responses.Offers;
+using HomeCycle.Application.DTOs.Responses.Orders;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -39,6 +40,8 @@ namespace HomeCycle.Application.Interfaces.Repositories.Offers
 
         Task NotificationsReadAll(NotificationsReadAllResponse response);
 
+        // Order tracking
+        Task OrderTrackingUpdated(OrderTrackingUpdatedResponse response);
 
     }
 }
