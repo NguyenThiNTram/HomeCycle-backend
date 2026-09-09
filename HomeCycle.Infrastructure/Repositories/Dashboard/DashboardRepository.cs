@@ -11,93 +11,245 @@ namespace HomeCycle.Infrastructure.Repositories.Dashboard;
 
 public sealed class DashboardRepository(HomeCycleDbContext db) : IDashboardRepository
 {
-    private sealed class ActivityRow
+    private static readonly int?[] ActiveOrderStatuses =
+        [(int)OrderStatus.Pending, (int)OrderStatus.Processing, (int)OrderStatus.Disputing];
+
+    private static readonly int?[] NonTerminalAppointmentStatuses =
+        [(int)AppointmentStatus.Proposed, (int)AppointmentStatus.Scheduled, (int)AppointmentStatus.InProgress];
+
+    private static readonly int?[] UnresolvedDisputeStatuses =
+        [(int)DisputeStatus.Pending, (int)DisputeStatus.UnderReview, (int)DisputeStatus.AwaitingReturn];
+
+    private sealed class AppointmentScheduleRow
     {
+        public DateTime? ScheduledAt { get; set; }
         public DateTime CreatedAt { get; set; }
         public int? Status { get; set; }
         public int? Type { get; set; }
-        public int? Method { get; set; }
+        public Guid? RescheduledFromAppointmentId { get; set; }
+        public DateTime? CompletedAt { get; set; }
+        public DateTime? CancelledAt { get; set; }
     }
 
-    private static async Task<OperationDashboardData> AggregateActivityAsync(
-        IQueryable<ActivityRow> query, DashboardPeriod period, CancellationToken ct, bool includeType = false, bool includeMethod = false)
+    private static async Task<DashboardAgingData> GetAgingAsync(
+        IQueryable<DateTime> timestamps, DateTime nowUtc, CancellationToken ct)
     {
-        var from = period.FromUtc;
-        var to = period.EndUtc;
-        var previous = period.PreviousFromUtc;
-        var current = query.Where(x => x.CreatedAt >= from && x.CreatedAt < to);
-        return new OperationDashboardData
+        var oneDayAgo = nowUtc.AddDays(-1);
+        var threeDaysAgo = nowUtc.AddDays(-3);
+        var sevenDaysAgo = nowUtc.AddDays(-7);
+        var count = await timestamps.CountAsync(ct);
+        if (count == 0) return new DashboardAgingData();
+
+        var oldest = await timestamps.MinAsync(ct);
+        var averageHours = await timestamps.AverageAsync(timestamp => (nowUtc - timestamp).TotalHours, ct);
+        return new DashboardAgingData
         {
-            TotalCount = await query.CountAsync(ct),
-            PreviousCount = await query.CountAsync(x => x.CreatedAt >= previous && x.CreatedAt < from, ct),
-            Daily = await current.GroupBy(x => x.CreatedAt.AddHours(7).Date)
-                .Select(g => new DashboardDailyCount(g.Key, g.Count())).ToListAsync(ct),
-            Statuses = await current.GroupBy(x => x.Status).Select(g => new DashboardCodeCount(g.Key, g.Count())).ToListAsync(ct),
-            Types = includeType ? await current.GroupBy(x => x.Type).Select(g => new DashboardCodeCount(g.Key, g.Count())).ToListAsync(ct) : [],
-            Methods = includeMethod ? await current.GroupBy(x => x.Method).Select(g => new DashboardCodeCount(g.Key, g.Count())).ToListAsync(ct) : []
+            AverageAgeHours = averageHours,
+            OldestAgeHours = (nowUtc - oldest).TotalHours,
+            UnderOneDayCount = await timestamps.CountAsync(x => x > oneDayAgo, ct),
+            OneToThreeDaysCount = await timestamps.CountAsync(x => x <= oneDayAgo && x > threeDaysAgo, ct),
+            ThreeToSevenDaysCount = await timestamps.CountAsync(x => x <= threeDaysAgo && x > sevenDaysAgo, ct),
+            OverSevenDaysCount = await timestamps.CountAsync(x => x <= sevenDaysAgo, ct)
         };
     }
 
-    public async Task<OperationDashboardData> GetPaymentsAsync(PaymentDashboardRequest request, DashboardPeriod period, CancellationToken ct)
-    {
-        var query = db.Payments.AsNoTracking();
-        if (request.PaymentStatus.HasValue) query = query.Where(x => x.PaymentStatus == (int)request.PaymentStatus.Value);
-        if (request.PaymentMethod.HasValue) query = query.Where(x => x.PaymentMethod == (int)request.PaymentMethod.Value);
-        if (request.PaymentType.HasValue) query = query.Where(x => x.PaymentType == (int)request.PaymentType.Value);
-        var data = await AggregateActivityAsync(query.Select(x => new ActivityRow
-        { CreatedAt = x.CreatedAt, Status = x.PaymentStatus, Type = x.PaymentType, Method = x.PaymentMethod }), period, ct, includeMethod: true);
-        var from = period.FromUtc;
-        var to = period.EndUtc;
-        // Refunded payments still represent historically successful payment events.
-        data.Events["Paid"] = await query.CountAsync(x => x.PaidAt >= from && x.PaidAt < to &&
-            (x.PaymentStatus == (int)PaymentStatus.Completed || x.PaymentStatus == (int)PaymentStatus.Refunded
-             || x.PaymentStatus == (int)PaymentStatus.PartiallyRefunded), ct);
-        return data;
-    }
-
-    public async Task<OperationDashboardData> GetOrdersAsync(OrderDashboardRequest request, DashboardPeriod period, CancellationToken ct)
-    {
-        var query = db.Orders.AsNoTracking();
-        if (request.OrderStatus.HasValue) query = query.Where(x => x.OrderStatus == (int)request.OrderStatus.Value);
-        var data = await AggregateActivityAsync(query.Select(x => new ActivityRow
-        { CreatedAt = x.CreatedAt, Status = x.OrderStatus }), period, ct);
-        var from = period.FromUtc;
-        var to = period.EndUtc;
-        data.Events["Completed"] = await query.CountAsync(x => x.CompletedAt >= from && x.CompletedAt < to, ct);
-        data.Events["Cancelled"] = await query.CountAsync(x => x.CancelledAt >= from && x.CancelledAt < to, ct);
-        data.Events["Returned"] = await query.CountAsync(x => x.ReturnedAt >= from && x.ReturnedAt < to, ct);
-        return data;
-    }
-
-    public async Task<OperationDashboardData> GetAppointmentsAsync(AppointmentDashboardRequest request, DashboardPeriod period, CancellationToken ct)
+    private IQueryable<AppointmentScheduleRow> AppointmentScheduleQuery(AppointmentDashboardRequest? request = null)
     {
         var query = db.Appointments.AsNoTracking();
-        if (request.AppointmentStatus.HasValue) query = query.Where(x => x.AppointmentStatus == (int)request.AppointmentStatus.Value);
-        if (request.AppointmentType.HasValue) query = query.Where(x => x.AppointmentType == (int)request.AppointmentType.Value);
-        var data = await AggregateActivityAsync(query.Select(x => new ActivityRow
-        { CreatedAt = x.CreatedAt, Status = x.AppointmentStatus, Type = x.AppointmentType }), period, ct, includeType: true);
-        var from = period.FromUtc;
-        var to = period.EndUtc;
-        data.Events["Rescheduled"] = await query.CountAsync(x => x.CreatedAt >= from && x.CreatedAt < to && x.RescheduledFromAppointmentId != null, ct);
-        data.Events["ScheduledDate"] = await query.CountAsync(x =>
-            (x.AppointmentType == (int)AppointmentType.Inspection && x.Inspection_Appointment != null
-             && x.Inspection_Appointment.InspectionDate >= from && x.Inspection_Appointment.InspectionDate < to)
-            || (x.AppointmentType == (int)AppointmentType.Collection && x.Collection_Appointment != null
-                && x.Collection_Appointment.CollectionDate >= from && x.Collection_Appointment.CollectionDate < to), ct);
-        return data;
+        if (request?.AppointmentStatus.HasValue == true)
+            query = query.Where(x => x.AppointmentStatus == (int)request.AppointmentStatus.Value);
+        if (request?.AppointmentType.HasValue == true)
+            query = query.Where(x => x.AppointmentType == (int)request.AppointmentType.Value);
+
+        return query.Select(x => new AppointmentScheduleRow
+        {
+            ScheduledAt = x.AppointmentType == (int)AppointmentType.Inspection
+                ? x.Inspection_Appointment!.InspectionDate
+                : x.AppointmentType == (int)AppointmentType.Collection
+                    ? x.Collection_Appointment!.CollectionDate
+                    : null,
+            CreatedAt = x.CreatedAt,
+            Status = x.AppointmentStatus,
+            Type = x.AppointmentType,
+            RescheduledFromAppointmentId = x.RescheduledFromAppointmentId,
+            CompletedAt = x.CompletedAt,
+            CancelledAt = x.CancelledAt
+        });
     }
 
-    public async Task<OperationDashboardData> GetDisputesAsync(DisputeDashboardRequest request, DashboardPeriod period, CancellationToken ct)
+    private static (DateTime StartUtc, DateTime EndUtc) CurrentVietnamDay(DateTime nowUtc)
+    {
+        var today = nowUtc.AddHours(7).Date;
+        return (today.AddHours(-7), today.AddDays(1).AddHours(-7));
+    }
+
+    public async Task<OperationOverviewData> GetOperationOverviewAsync(
+        DashboardPeriod period, DateTime nowUtc, CancellationToken ct)
+    {
+        var (todayStartUtc, todayEndUtc) = CurrentVietnamDay(nowUtc);
+        var appointments = AppointmentScheduleQuery();
+        var unresolvedDisputes = db.Disputes.AsNoTracking()
+            .Where(x => UnresolvedDisputeStatuses.Contains(x.DisputeStatus));
+
+        return new OperationOverviewData
+        {
+            TotalOrders = await db.Orders.AsNoTracking().CountAsync(ct),
+            ActiveOrderCount = await db.Orders.AsNoTracking()
+                .CountAsync(x => ActiveOrderStatuses.Contains(x.OrderStatus), ct),
+            UpcomingAppointmentCount = await appointments.CountAsync(x =>
+                x.Status == (int)AppointmentStatus.Scheduled && x.ScheduledAt >= nowUtc, ct),
+            TodayAppointmentCount = await appointments.CountAsync(x =>
+                NonTerminalAppointmentStatuses.Contains(x.Status)
+                && x.ScheduledAt >= todayStartUtc && x.ScheduledAt < todayEndUtc, ct),
+            TotalPayments = await db.Payments.AsNoTracking().CountAsync(ct),
+            PendingPaymentCount = await db.Payments.AsNoTracking()
+                .CountAsync(x => x.PaymentStatus == (int)PaymentStatus.Pending, ct),
+            TotalDisputes = await db.Disputes.AsNoTracking().CountAsync(ct),
+            UnresolvedDisputeCount = await unresolvedDisputes.CountAsync(ct),
+            ResolvedDisputeInPeriodCount = await db.Disputes.AsNoTracking().CountAsync(x =>
+                x.ResolvedAt >= period.FromUtc && x.ResolvedAt < period.EndUtc, ct)
+        };
+    }
+
+    public async Task<PaymentDashboardData> GetPaymentsAsync(
+        PaymentDashboardRequest request, DashboardPeriod period, DateTime nowUtc, CancellationToken ct)
+    {
+        var query = db.Payments.AsNoTracking();
+        if (request.PaymentStatus.HasValue)
+            query = query.Where(x => x.PaymentStatus == (int)request.PaymentStatus.Value);
+        if (request.PaymentMethod.HasValue)
+            query = query.Where(x => x.PaymentMethod == (int)request.PaymentMethod.Value);
+        if (request.PaymentType.HasValue)
+            query = query.Where(x => x.PaymentType == (int)request.PaymentType.Value);
+
+        var pending = query.Where(x => x.PaymentStatus == (int)PaymentStatus.Pending);
+        var paidInPeriod = query.Where(x => x.PaidAt >= period.FromUtc && x.PaidAt < period.EndUtc);
+
+        return new PaymentDashboardData
+        {
+            TotalPayments = await query.CountAsync(ct),
+            PendingCount = await pending.CountAsync(ct),
+            PaidInPeriodCount = await paidInPeriod.CountAsync(ct),
+            CurrentStatuses = await query.GroupBy(x => (int?)x.PaymentStatus)
+                .Select(g => new DashboardCodeCount(g.Key, g.Count())).ToListAsync(ct),
+            PaidDaily = await paidInPeriod.GroupBy(x => x.PaidAt!.Value.AddHours(7).Date)
+                .Select(g => new DashboardDailyCount(g.Key, g.Count())).ToListAsync(ct),
+            MethodPerformance = await query.GroupBy(x => (int?)x.PaymentMethod)
+                .Select(g => new PaymentMethodPerformanceData(
+                    g.Key,
+                    g.Count(),
+                    g.Count(x => x.PaidAt != null),
+                    g.Count(x => x.PaymentStatus == (int)PaymentStatus.Failed)))
+                .ToListAsync(ct),
+            PendingAging = await GetAgingAsync(pending.Select(x => x.CreatedAt), nowUtc, ct)
+        };
+    }
+
+    public async Task<OrderDashboardData> GetOrdersAsync(
+        OrderDashboardRequest request, DashboardPeriod period, DateTime nowUtc, CancellationToken ct)
+    {
+        var query = db.Orders.AsNoTracking();
+        if (request.OrderStatus.HasValue)
+            query = query.Where(x => x.OrderStatus == (int)request.OrderStatus.Value);
+
+        var active = query.Where(x => ActiveOrderStatuses.Contains(x.OrderStatus));
+        var completed = query.Where(x => x.CompletedAt >= period.FromUtc && x.CompletedAt < period.EndUtc);
+        var cancelled = query.Where(x => x.CancelledAt >= period.FromUtc && x.CancelledAt < period.EndUtc);
+        var returned = query.Where(x => x.ReturnedAt >= period.FromUtc && x.ReturnedAt < period.EndUtc);
+
+        return new OrderDashboardData
+        {
+            TotalOrders = await query.CountAsync(ct),
+            ActiveOrderCount = await active.CountAsync(ct),
+            CompletedInPeriodCount = await completed.CountAsync(ct),
+            CancelledInPeriodCount = await cancelled.CountAsync(ct),
+            ReturnedInPeriodCount = await returned.CountAsync(ct),
+            CurrentStatuses = await query.GroupBy(x => (int?)x.OrderStatus)
+                .Select(g => new DashboardCodeCount(g.Key, g.Count())).ToListAsync(ct),
+            CompletedDaily = await completed.GroupBy(x => x.CompletedAt!.Value.AddHours(7).Date)
+                .Select(g => new DashboardDailyCount(g.Key, g.Count())).ToListAsync(ct),
+            CancelledDaily = await cancelled.GroupBy(x => x.CancelledAt!.Value.AddHours(7).Date)
+                .Select(g => new DashboardDailyCount(g.Key, g.Count())).ToListAsync(ct),
+            ReturnedDaily = await returned.GroupBy(x => x.ReturnedAt!.Value.AddHours(7).Date)
+                .Select(g => new DashboardDailyCount(g.Key, g.Count())).ToListAsync(ct),
+            ActiveAging = await GetAgingAsync(active.Select(x => x.CreatedAt), nowUtc, ct)
+        };
+    }
+
+    public async Task<AppointmentDashboardData> GetAppointmentsAsync(
+        AppointmentDashboardRequest request, DashboardPeriod period, DateTime nowUtc, CancellationToken ct)
+    {
+        var query = AppointmentScheduleQuery(request);
+        var (todayStartUtc, todayEndUtc) = CurrentVietnamDay(nowUtc);
+        var overdue = query.Where(x => x.ScheduledAt < nowUtc
+            && NonTerminalAppointmentStatuses.Contains(x.Status));
+        var scheduledInPeriod = query.Where(x =>
+            x.ScheduledAt >= period.FromUtc && x.ScheduledAt < period.EndUtc);
+
+        return new AppointmentDashboardData
+        {
+            TotalAppointments = await query.CountAsync(ct),
+            UpcomingCount = await query.CountAsync(x =>
+                x.Status == (int)AppointmentStatus.Scheduled && x.ScheduledAt >= nowUtc, ct),
+            TodayCount = await query.CountAsync(x =>
+                NonTerminalAppointmentStatuses.Contains(x.Status)
+                && x.ScheduledAt >= todayStartUtc && x.ScheduledAt < todayEndUtc, ct),
+            PendingCount = await query.CountAsync(x =>
+                x.Status == (int)AppointmentStatus.Proposed, ct),
+            CompletedInPeriodCount = await query.CountAsync(x =>
+                x.CompletedAt >= period.FromUtc && x.CompletedAt < period.EndUtc, ct),
+            CancelledInPeriodCount = await query.CountAsync(x =>
+                x.CancelledAt >= period.FromUtc && x.CancelledAt < period.EndUtc, ct),
+            ExpiredCount = await query.CountAsync(x =>
+                x.Status == (int)AppointmentStatus.Expired, ct),
+            RescheduleProposalCount = await query.CountAsync(x =>
+                x.RescheduledFromAppointmentId != null, ct),
+            OverdueCount = await overdue.CountAsync(ct),
+            CurrentStatuses = await query.GroupBy(x => x.Status)
+                .Select(g => new DashboardCodeCount(g.Key, g.Count())).ToListAsync(ct),
+            Types = await query.GroupBy(x => x.Type)
+                .Select(g => new DashboardCodeCount(g.Key, g.Count())).ToListAsync(ct),
+            ScheduledDaily = await scheduledInPeriod.GroupBy(x => x.ScheduledAt!.Value.AddHours(7).Date)
+                .Select(g => new DashboardDailyCount(g.Key, g.Count())).ToListAsync(ct),
+            OverdueAging = await GetAgingAsync(overdue.Select(x => x.ScheduledAt!.Value), nowUtc, ct)
+        };
+    }
+
+    public async Task<DisputeDashboardData> GetDisputesAsync(
+        DisputeDashboardRequest request, DashboardPeriod period, DateTime nowUtc, CancellationToken ct)
     {
         var query = db.Disputes.AsNoTracking();
-        if (request.Status.HasValue) query = query.Where(x => x.DisputeStatus == (int)request.Status.Value);
-        if (request.Category.HasValue) query = query.Where(x => x.DisputeCategory == (int)request.Category.Value);
-        if (request.TargetType.HasValue) query = query.Where(x => x.DisputeTargetType == (int)request.TargetType.Value);
-        var data = await AggregateActivityAsync(query.Select(x => new ActivityRow
-        { CreatedAt = x.CreatedAt, Status = x.DisputeStatus, Type = x.DisputeCategory }), period, ct, includeType: true);
-        data.CurrentStatuses = await query.GroupBy(x => x.DisputeStatus)
-            .Select(g => new DashboardCodeCount(g.Key, g.Count())).ToListAsync(ct);
-        return data;
+        if (request.Status.HasValue)
+            query = query.Where(x => x.DisputeStatus == (int)request.Status.Value);
+        if (request.Category.HasValue)
+            query = query.Where(x => x.DisputeCategory == (int)request.Category.Value);
+        if (request.TargetType.HasValue)
+            query = query.Where(x => x.DisputeTargetType == (int)request.TargetType.Value);
+
+        var unresolved = query.Where(x => UnresolvedDisputeStatuses.Contains(x.DisputeStatus));
+        var opened = query.Where(x => x.CreatedAt >= period.FromUtc && x.CreatedAt < period.EndUtc);
+        var resolved = query.Where(x =>
+            x.ResolvedAt >= period.FromUtc && x.ResolvedAt < period.EndUtc);
+
+        return new DisputeDashboardData
+        {
+            TotalDisputes = await query.CountAsync(ct),
+            UnresolvedDisputeCount = await unresolved.CountAsync(ct),
+            ResolvedInPeriodCount = await resolved.CountAsync(ct),
+            AverageResolutionTimeHours = await resolved
+                .AverageAsync(x => (double?)(x.ResolvedAt!.Value - x.CreatedAt).TotalHours, ct),
+            CurrentStatuses = await query.GroupBy(x => (int?)x.DisputeStatus)
+                .Select(g => new DashboardCodeCount(g.Key, g.Count())).ToListAsync(ct),
+            Categories = await query.GroupBy(x => (int?)x.DisputeCategory)
+                .Select(g => new DashboardCodeCount(g.Key, g.Count())).ToListAsync(ct),
+            UnresolvedCategories = await unresolved.GroupBy(x => (int?)x.DisputeCategory)
+                .Select(g => new DashboardCodeCount(g.Key, g.Count())).ToListAsync(ct),
+            OpenedDaily = await opened.GroupBy(x => x.CreatedAt.AddHours(7).Date)
+                .Select(g => new DashboardDailyCount(g.Key, g.Count())).ToListAsync(ct),
+            ResolvedDaily = await resolved.GroupBy(x => x.ResolvedAt!.Value.AddHours(7).Date)
+                .Select(g => new DashboardDailyCount(g.Key, g.Count())).ToListAsync(ct),
+            UnresolvedAging = await GetAgingAsync(unresolved.Select(x => x.CreatedAt), nowUtc, ct)
+        };
     }
 
     private IQueryable<User> BusinessAccounts(BusinessOverviewRequest request)

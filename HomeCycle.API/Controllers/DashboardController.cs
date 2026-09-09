@@ -37,36 +37,36 @@ public sealed class DashboardController(IDashboardService service) : ControllerB
         => Ok(await service.GetUserRegistrationTrendAsync(request, ct));
 
     [HttpGet("operations/overview")]
-    [SwaggerOperation(Summary = "Tổng quan vận hành và tăng giảm so với kỳ trước",
-        Description = "Giao dịch = Payment. Tổng toàn thời gian; xu hướng theo CreatedAt. From/To là ngày UTC+7, To không tính; mặc định 30 ngày hoàn tất. GroupBy: Day/Week/Month.")]
+    [SwaggerOperation(Summary = "Tổng quan nhanh trạng thái vận hành hiện tại",
+        Description = "Trả snapshot hiện tại của đơn hàng, lịch hẹn, thanh toán và tranh chấp. From/To chỉ áp dụng cho số tranh chấp đã giải quyết trong kỳ; là ngày UTC+7 và To không tính.")]
     public async Task<ActionResult<OperationOverviewResponse>> GetOperationOverview(
         [FromQuery] DashboardPeriodRequest request, CancellationToken ct)
         => Ok(await service.GetOperationOverviewAsync(request, ct));
 
     [HttpGet("payments")]
-    [SwaggerOperation(Summary = "Thống kê thanh toán và xu hướng tạo mới",
-        Description = "Các filter trạng thái/phương thức/loại áp dụng cho cả hai kỳ và các chỉ số sự kiện. PaidInPeriodCount gồm Completed/Refunded/PartiallyRefunded có PaidAt trong kỳ.")]
+    [SwaggerOperation(Summary = "Thống kê vận hành thanh toán",
+        Description = "Tổng và phân bố trạng thái là snapshot hiện tại. Chuỗi Paid và PaidInPeriodCount dùng PaidAt. Tuổi pending tính từ CreatedAt. Tỷ lệ thành công theo phương thức = Paid/(Paid+Failed); null khi chưa có kết quả cuối. Các filter áp dụng cho toàn bộ response.")]
     public async Task<ActionResult<PaymentDashboardResponse>> GetPayments(
         [FromQuery] PaymentDashboardRequest request, CancellationToken ct)
         => Ok(await service.GetPaymentDashboardAsync(request, ct));
 
     [HttpGet("orders")]
-    [SwaggerOperation(Summary = "Thống kê đơn hàng và xu hướng tạo mới",
-        Description = "Phân bố trạng thái của đơn tạo trong kỳ; các số hoàn thành/hủy/hoàn trả dùng timestamp tương ứng, cùng filter trạng thái hiện tại.")]
+    [SwaggerOperation(Summary = "Thống kê kết quả và tồn đọng đơn hàng",
+        Description = "Tổng, active, phân bố trạng thái và tuổi active là snapshot hiện tại. Chuỗi kết quả dùng CompletedAt, CancelledAt và ReturnedAt trong kỳ. Active gồm Pending, Processing và Disputing.")]
     public async Task<ActionResult<OrderDashboardResponse>> GetOrders(
         [FromQuery] OrderDashboardRequest request, CancellationToken ct)
         => Ok(await service.GetOrderDashboardAsync(request, ct));
 
     [HttpGet("appointments")]
-    [SwaggerOperation(Summary = "Thống kê lịch hẹn và xu hướng tạo mới",
-        Description = "Đếm bản ghi, bao gồm đề xuất đổi lịch. ScheduledDateInPeriodCount là lịch có ngày hẹn trong kỳ, không mặc định loại lịch Cancelled/Expired; dùng filter nếu cần.")]
+    [SwaggerOperation(Summary = "Thống kê lịch hẹn theo lịch thực tế và tồn đọng",
+        Description = "Tổng, upcoming, hôm nay, pending, expired, overdue và phân bố là snapshot hiện tại. Chuỗi lịch dùng InspectionDate hoặc CollectionDate; hoàn tất/hủy dùng timestamp nghiệp vụ tương ứng. Ngày tính theo UTC+7.")]
     public async Task<ActionResult<AppointmentDashboardResponse>> GetAppointments(
         [FromQuery] AppointmentDashboardRequest request, CancellationToken ct)
         => Ok(await service.GetAppointmentDashboardAsync(request, ct));
 
     [HttpGet("disputes")]
-    [SwaggerOperation(Summary = "Phân bố case tranh chấp, nhiều nhất và ít nhất",
-        Description = "Tỷ lệ trên tranh chấp tạo trong kỳ sau filter. Ít nhất chỉ xét case có lượt chọn, hỗ trợ đồng hạng. Unspecified là dữ liệu category không xác định.")]
+    [SwaggerOperation(Summary = "Thống kê case, luồng xử lý và tồn đọng tranh chấp",
+        Description = "Tổng, unresolved và các phân bố là snapshot hiện tại. Chuỗi opened dùng CreatedAt; resolved và thời gian xử lý dùng ResolvedAt. Category được sắp theo lượt giảm dần để FE lọc hoặc chọn nhiều/ít nhất; Unspecified là dữ liệu không xác định.")]
     public async Task<ActionResult<DisputeDashboardResponse>> GetDisputes(
         [FromQuery] DisputeDashboardRequest request, CancellationToken ct)
         => Ok(await service.GetDisputeDashboardAsync(request, ct));
