@@ -592,7 +592,9 @@ namespace HomeCycle.Application.Mappings
                         !src.IsActive &&
                         (src.PolicyType == PlatformPolicyType.Dispute ||
                          src.PolicyType == PlatformPolicyType.Appointment ||
-                         src.PolicyType == PlatformPolicyType.FileUpload)));
+                         src.PolicyType == PlatformPolicyType.FileUpload ||
+                         src.PolicyType == PlatformPolicyType.Payment ||
+                         src.PolicyType == PlatformPolicyType.Order)));
 
             CreateMap<platform_policy, PlatformPolicyResponseDto<DisputePolicyConfigDto>>()
                 .ForMember(dest => dest.Config, opt => opt.Ignore());
@@ -603,15 +605,33 @@ namespace HomeCycle.Application.Mappings
             CreateMap<platform_policy, PlatformPolicyResponseDto<FileUploadPolicyConfigDto>>()
                 .ForMember(dest => dest.Config, opt => opt.Ignore());
 
+            CreateMap<platform_policy, PlatformPolicyResponseDto<PaymentPolicyConfigDto>>()
+                .ForMember(dest => dest.Config, opt => opt.Ignore());
+
+            CreateMap<platform_policy, PlatformPolicyResponseDto<OrderPolicyConfigDto>>()
+                .ForMember(dest => dest.Config, opt => opt.Ignore());
+
             CreateMap<DisputePolicyConfigDto, DisputePolicyConfigDto>();
 
             CreateMap<AppointmentPolicyConfigDto, AppointmentPolicyConfigDto>();
+
+            CreateMap<PaymentPolicyConfigDto, PaymentPolicyConfigDto>();
+
+            CreateMap<OrderPolicyConfigDto, OrderPolicyConfigDto>();
 
             CreateMap<UpdateDisputePolicyRequest, DisputePolicyConfigDto>()
                 .ForAllMembers(opt => opt.Condition(
                     (src, dest, srcMember) => srcMember != null));
 
             CreateMap<UpdateAppointmentPolicyRequest, AppointmentPolicyConfigDto>()
+                .ForAllMembers(opt => opt.Condition(
+                    (src, dest, srcMember) => srcMember != null));
+
+            CreateMap<UpdatePaymentPolicyRequest, PaymentPolicyConfigDto>()
+                .ForAllMembers(opt => opt.Condition(
+                    (src, dest, srcMember) => srcMember != null));
+
+            CreateMap<UpdateOrderPolicyRequest, OrderPolicyConfigDto>()
                 .ForAllMembers(opt => opt.Condition(
                     (src, dest, srcMember) => srcMember != null));
 

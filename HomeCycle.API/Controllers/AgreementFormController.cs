@@ -175,15 +175,55 @@ namespace HomeCycle.API.Controllers
 
             var error = result.Error!;
 
-            return error.Code switch
+            if (!result.IsSuccess)
             {
-                "Auth.Forbidden" => StatusCode(StatusCodes.Status403Forbidden, error),
-                "Negotiation.NotFound"
-                    or "Product.NotFound"
+                //var error = result.Error!;
+
+                return error.Code switch
+                {
+                    "Auth.Forbidden"
+                        => StatusCode(StatusCodes.Status403Forbidden, error),
+
+                    "Negotiation.NotFound"
+                        or "Product.NotFound"
                         => NotFound(error),
-                "Negotiation.Cancelled" => Conflict(error),
-                _ => BadRequest(error)
-            };
+
+                    "Negotiation.Cancelled"
+                        => Conflict(error),
+
+                    _ => BadRequest(error)
+                };
+            }
+
+            //return error.Code switch
+            //{
+            //    "Auth.Forbidden" => StatusCode(StatusCodes.Status403Forbidden, error),
+            //    "Negotiation.NotFound"
+            //        or "Product.NotFound"
+            //            => NotFound(error),
+            //    "Negotiation.Cancelled" => Conflict(error),
+            //    _ => BadRequest(error)
+            //};
+
+            if (result.Data is null)
+            {
+                return StatusCode(
+                    StatusCodes.Status500InternalServerError,
+                    new
+                    {
+                        message = "Service success nhưng Data = null"
+                    });
+            }
+
+            return Ok(new
+            {
+                test = "API_SERIALIZATION_OK",
+                result.Data.NegotiationId,
+                result.Data.ServiceTypeId,
+                result.Data.HasProductDimensions,
+                result.Data.LightParcel,
+                result.Data.Items
+            });
         }
 
         [HttpPost("negotiations/{negotiationId:guid}/ghn-preview")]

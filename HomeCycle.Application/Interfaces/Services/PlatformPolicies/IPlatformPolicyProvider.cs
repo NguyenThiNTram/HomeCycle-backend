@@ -15,5 +15,9 @@ namespace HomeCycle.Application.Interfaces.Services.PlatformPolicies
 
         Task<FileUploadPolicyConfigDto> GetFileUploadConfigAsync(CancellationToken cancellationToken = default);
 
+        Task<PaymentPolicyConfigDto> GetPaymentConfigAsync(CancellationToken cancellationToken = default);
+
+        Task<OrderPolicyConfigDto> GetOrderConfigAsync(CancellationToken cancellationToken = default);
+
     }
 }
