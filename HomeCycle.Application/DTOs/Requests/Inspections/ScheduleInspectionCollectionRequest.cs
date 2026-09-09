@@ -15,7 +15,7 @@ namespace HomeCycle.Application.DTOs.Requests.Inspections
         public string? PickupAddress { get; set; }
         public string? DeliveryAddress { get; set; }
         public DeliveryMethod DeliveryMethod { get; set; }
-        public PaymentType PaymentType { get; set; }
+        //public PaymentType PaymentType { get; set; }
         public decimal? EstimatedShippingFee { get; set; }
         public GhnShippingInfo? GhnInfo { get; set; }
     }

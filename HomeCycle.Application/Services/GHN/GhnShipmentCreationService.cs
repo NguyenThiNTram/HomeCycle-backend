@@ -298,6 +298,7 @@ namespace HomeCycle.Application.Services.GHN
                 ToDistrictId = toDistrictId.Value,
                 ToWardCode = toWardCode.Trim(),
                 ServiceTypeId = serviceTypeId,
+                PaymentTypeId = row.PaymentTypeId,
                 InsuranceValue = row.InsuranceValue,
                 RequiredNote = requiredNote.Trim().ToUpperInvariant(),
                 Content = null,

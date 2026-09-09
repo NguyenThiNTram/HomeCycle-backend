@@ -90,7 +90,6 @@ namespace HomeCycle.Infrastructure.Repositories.GHN
                     x.Shipment.DeliveryMethod == (int)DeliveryMethod.GhnDelivery &&
                     x.Shipment.ShipmentStatus == (int)ShipmentStatus.ReadyToPick &&
                     x.Shipment.Order.OrderStatus == (int)OrderStatus.Processing &&
-                    x.Shipment.Order.PaymentStatus == (int)PaymentStatus.Completed &&
                     (
                         x.CreationStatus == (int)GHNCreationStatus.Pending ||
                         x.CreationStatus == (int)GHNCreationStatus.Failed ||
@@ -147,7 +146,6 @@ namespace HomeCycle.Infrastructure.Repositories.GHN
                     x.Shipment.DeliveryMethod == (int)DeliveryMethod.GhnDelivery &&
                     x.Shipment.ShipmentStatus == (int)ShipmentStatus.ReadyToPick &&
                     x.Shipment.Order.OrderStatus == (int)OrderStatus.Processing &&
-                    x.Shipment.Order.PaymentStatus == (int)PaymentStatus.Completed &&
                     (
                         x.CreationStatus == (int)GHNCreationStatus.Pending ||
                         x.CreationStatus == (int)GHNCreationStatus.Failed ||
