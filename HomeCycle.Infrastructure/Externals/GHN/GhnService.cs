@@ -344,7 +344,7 @@ namespace HomeCycle.Infrastructure.Externals.GHN
 
                 InsuranceValue = 0,
                 CodValue = 0,
-                CodFailedAmount = 0,
+                //CodFailedAmount = 0,
                 Coupon = null,
 
                 Items = isHeavy

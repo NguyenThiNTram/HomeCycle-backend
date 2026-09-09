@@ -23,9 +23,9 @@ namespace HomeCycle.Infrastructure.Externals.GHN
         [JsonPropertyName("to_ward_code")]
         public required string ToWardCode { get; init; }
 
-        [JsonPropertyName("service_id")]
-        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        public int? ServiceId { get; init; }
+        ////[JsonPropertyName("service_id")]
+        ////[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        //public int? ServiceId { get; init; }
 
         [JsonPropertyName("service_type_id")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -51,9 +51,6 @@ namespace HomeCycle.Infrastructure.Externals.GHN
 
         [JsonPropertyName("cod_value")]
         public int CodValue { get; init; }
-
-        [JsonPropertyName("cod_failed_amount")]
-        public int CodFailedAmount { get; init; }
 
         [JsonPropertyName("coupon")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -103,6 +100,10 @@ namespace HomeCycle.Infrastructure.Externals.GHN
         [JsonNumberHandling(JsonNumberHandling.AllowReadingFromString)]
         public decimal InsuranceFee { get; init; }
 
+        [JsonPropertyName("cod_fee")]
+        [JsonNumberHandling(JsonNumberHandling.AllowReadingFromString)]
+        public decimal CodFee { get; init; }
+
         [JsonPropertyName("pick_station_fee")]
         [JsonNumberHandling(JsonNumberHandling.AllowReadingFromString)]
         public decimal PickStationFee { get; init; }
@@ -115,6 +116,10 @@ namespace HomeCycle.Infrastructure.Externals.GHN
         [JsonNumberHandling(JsonNumberHandling.AllowReadingFromString)]
         public decimal R2sFee { get; init; }
 
+        [JsonPropertyName("return_again")]
+        [JsonNumberHandling(JsonNumberHandling.AllowReadingFromString)]
+        public decimal ReturnAgainFee { get; init; }
+
         [JsonPropertyName("document_return")]
         [JsonNumberHandling(JsonNumberHandling.AllowReadingFromString)]
         public decimal DocumentReturnFee { get; init; }
@@ -122,10 +127,6 @@ namespace HomeCycle.Infrastructure.Externals.GHN
         [JsonPropertyName("double_check")]
         [JsonNumberHandling(JsonNumberHandling.AllowReadingFromString)]
         public decimal DoubleCheckFee { get; init; }
-
-        [JsonPropertyName("cod_fee")]
-        [JsonNumberHandling(JsonNumberHandling.AllowReadingFromString)]
-        public decimal CodFee { get; init; }
 
         [JsonPropertyName("pick_remote_areas_fee")]
         [JsonNumberHandling(JsonNumberHandling.AllowReadingFromString)]
@@ -139,8 +140,17 @@ namespace HomeCycle.Infrastructure.Externals.GHN
         [JsonNumberHandling(JsonNumberHandling.AllowReadingFromString)]
         public decimal CodFailedFee { get; init; }
 
-        [JsonPropertyName("fee")]
-        public GhnCalculateFeeBreakdownData? FeeBreakdown { get; init; }
+        [JsonPropertyName("change_to_address_fee")]
+        [JsonNumberHandling(JsonNumberHandling.AllowReadingFromString)]
+        public decimal ChangeToAddressFee { get; init; }
+
+        [JsonPropertyName("change_return_address_fee")]
+        [JsonNumberHandling(JsonNumberHandling.AllowReadingFromString)]
+        public decimal ChangeReturnAddressFee { get; init; }
+
+        [JsonPropertyName("return")]
+        [JsonNumberHandling(JsonNumberHandling.AllowReadingFromString)]
+        public decimal ReturnFee { get; init; }
     }
 
     internal sealed class GhnCalculateFeeBreakdownData
