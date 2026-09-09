@@ -15,7 +15,7 @@ public partial class OTP
 
     public Guid? UserId { get; set; }
 
-    [StringLength(20)]
+    [StringLength(64)]
     public string? Code { get; set; }
 
     public string? Email { get; set; }

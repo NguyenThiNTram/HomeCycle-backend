@@ -129,6 +129,11 @@ namespace HomeCycle.Infrastructure
     {
         public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
         {
+            services.TryAddSingleton<TimeProvider>(TimeProvider.System);
+            services.AddScoped<HomeCycle.Application.Interfaces.Repositories.Dashboard.IUserDashboardRepository,
+                HomeCycle.Infrastructure.Repositories.Dashboard.UserDashboardRepository>();
+            services.AddScoped<HomeCycle.Application.Interfaces.Services.Dashboard.IUserDashboardService,
+                HomeCycle.Application.Services.Dashboard.UserDashboardService>();
             //register DB
             services.AddDbContext<HomeCycleDbContext>(options =>
             {
