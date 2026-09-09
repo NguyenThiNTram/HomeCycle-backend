@@ -9,6 +9,10 @@ namespace HomeCycle.Application.Interfaces.Security
 {
     public interface IOtpRepository
     {
+        Task AddModeratorTokenAsync(otp token, CancellationToken cancellationToken = default);
+        Task<otp?> GetModeratorTokenAsync(string hash, string purpose, CancellationToken cancellationToken = default);
+        Task<bool> ConsumeModeratorTokenAsync(Guid tokenId, string purpose, CancellationToken cancellationToken = default);
+        Task<bool> UpdateModeratorActivationAsync(Guid userId, string? passwordHash, CancellationToken cancellationToken = default);
         Task AddAsync(otp otp);
 
         Task<otp?> GetValidOtpAsync(string email, string code);

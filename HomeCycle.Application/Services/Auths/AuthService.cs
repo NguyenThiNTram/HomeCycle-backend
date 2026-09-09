@@ -32,6 +32,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Security.Cryptography;
 
 namespace HomeCycle.Application.Services.Auths
 {
@@ -56,6 +57,10 @@ namespace HomeCycle.Application.Services.Auths
         private readonly IValidator<RegisterBusinessAccountRequest> _registerBusinessValidator;
         private readonly IFileStorageService _fileStorageService;
         private readonly IWalletRepository _walletRepository;
+        private readonly IValidator<CreateModeratorRequest> _createModeratorValidator;
+        private readonly IValidator<SetModeratorPasswordRequest> _setModeratorPasswordValidator;
+        private const string ModeratorEmailPurpose = "ModeratorEmailVerification";
+        private const string ModeratorPasswordPurpose = "ModeratorPasswordSetup";
 
         public AuthService(
             IUserRepository userRepository, 
@@ -73,7 +78,9 @@ namespace HomeCycle.Application.Services.Auths
             ILogger<AuthService> logger,
             IValidator<RegisterBusinessAccountRequest> registerBusinessValidator,
             IFileStorageService fileStorageService,
-            IWalletRepository walletRepository
+            IWalletRepository walletRepository,
+            IValidator<CreateModeratorRequest> createModeratorValidator,
+            IValidator<SetModeratorPasswordRequest> setModeratorPasswordValidator
             )
         {
             _userRepository = userRepository;
@@ -95,7 +102,153 @@ namespace HomeCycle.Application.Services.Auths
             _registerBusinessValidator = registerBusinessValidator;
             _fileStorageService = fileStorageService;
             _walletRepository = walletRepository;
+            _createModeratorValidator = createModeratorValidator;
+            _setModeratorPasswordValidator = setModeratorPasswordValidator;
         }
+
+        public async Task<Result<UserAdminResponse>> CreateModeratorAsync(Guid adminId, CreateModeratorRequest request, CancellationToken cancellationToken = default)
+        {
+            var admin = await _userRepository.GetByIdAsync(adminId, cancellationToken);
+            if (admin?.Role != UserRole.Admin || admin.Status != UserStatus.Active)
+                return Result<UserAdminResponse>.Fail(AuthErrors.ModeratorCreationForbidden);
+
+            request.Email = request.Email?.Trim().ToLowerInvariant() ?? string.Empty;
+            request.Username = request.Username?.Trim().ToLowerInvariant() ?? string.Empty;
+            var validation = await _createModeratorValidator.ValidateAsync(request, cancellationToken);
+            if (!validation.IsValid)
+                return Result<UserAdminResponse>.Fail(ValidationErrors.InvalidRequest(string.Join("; ", validation.Errors.Select(x => x.ErrorMessage))));
+            if (await _userRepository.ExistsByEmailAsync(request.Email, cancellationToken))
+                return Result<UserAdminResponse>.Fail(AuthErrors.EmailExists);
+            if (await _userRepository.ExistsByUsernameAsync(request.Username, cancellationToken))
+                return Result<UserAdminResponse>.Fail(AuthErrors.UsernameExists);
+
+            if (!Uri.TryCreate(_configuration["ModeratorActivation:FrontendUrl"], UriKind.Absolute, out var frontendUrl) ||
+                (frontendUrl.Scheme != Uri.UriSchemeHttps && !(frontendUrl.Scheme == Uri.UriSchemeHttp && frontendUrl.IsLoopback)) ||
+                !string.IsNullOrEmpty(frontendUrl.Fragment) || !string.IsNullOrEmpty(frontendUrl.Query) ||
+                !int.TryParse(_configuration["ModeratorActivation:EmailTokenLifetimeHours"], out var hours) || hours < 1 || hours > 168)
+                return Result<UserAdminResponse>.Fail(AuthErrors.ModeratorConfigurationInvalid);
+
+            var now = DateTime.UtcNow;
+            var token = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
+            var expiresAt = now.AddHours(hours);
+            var moderator = new user
+            {
+                UserId = Guid.NewGuid(), Email = request.Email, Username = request.Username,
+                Password = _passwordHasher.HashPassword(Convert.ToHexString(RandomNumberGenerator.GetBytes(32))),
+                Role = UserRole.Moderator, Status = UserStatus.Pending, IsEmailVerified = false, CreatedAt = now
+            };
+            await _unitOfWork.BeginTransactionAsync(cancellationToken);
+            try
+            {
+                await _userRepository.AddAsync(moderator, cancellationToken);
+                await _otpRepository.AddModeratorTokenAsync(CreateModeratorToken(moderator.UserId, moderator.Email, token, ModeratorEmailPurpose, expiresAt), cancellationToken);
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+                await _unitOfWork.CommitTransactionAsync(cancellationToken);
+            }
+            catch (DbUpdateException ex) when (IsUniqueConstraintViolation(ex, out _))
+            {
+                await _unitOfWork.RollbackTransactionAsync(CancellationToken.None);
+                return Result<UserAdminResponse>.Fail(await _userRepository.ExistsByEmailAsync(request.Email, cancellationToken)
+                    ? AuthErrors.EmailExists : AuthErrors.UsernameExists);
+            }
+            catch
+            {
+                await _unitOfWork.RollbackTransactionAsync(CancellationToken.None);
+                throw;
+            }
+
+            try
+            {
+                await _emailService.SendModeratorConfirmationEmailAsync(moderator.Email, moderator.Username,
+                    frontendUrl.AbsoluteUri + "#token=" + token, expiresAt, cancellationToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogWarning("Moderator confirmation email failed for user {UserId} ({FailureType}).", moderator.UserId, ex.GetType().Name);
+                return Result<UserAdminResponse>.Fail(AuthErrors.ModeratorEmailFailed);
+            }
+            return Result<UserAdminResponse>.Success(MapAdminUser(moderator));
+        }
+
+        public async Task<Result<VerifyModeratorEmailResponse>> VerifyModeratorEmailAsync(VerifyModeratorEmailRequest request, CancellationToken cancellationToken = default)
+        {
+            if (!IsModeratorToken(request.Token))
+                return Result<VerifyModeratorEmailResponse>.Fail(AuthErrors.InvalidModeratorToken);
+            if (!int.TryParse(_configuration["ModeratorActivation:PasswordTokenLifetimeMinutes"], out var minutes) || minutes < 1 || minutes > 60)
+                return Result<VerifyModeratorEmailResponse>.Fail(AuthErrors.ModeratorConfigurationInvalid);
+            var stored = await _otpRepository.GetModeratorTokenAsync(HashModeratorToken(request.Token), ModeratorEmailPurpose, cancellationToken);
+            if (stored?.UserId == null)
+                return Result<VerifyModeratorEmailResponse>.Fail(AuthErrors.InvalidModeratorToken);
+
+            var token = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
+            var expiresAt = DateTime.UtcNow.AddMinutes(minutes);
+            await _unitOfWork.BeginTransactionAsync(cancellationToken);
+            try
+            {
+                if (!await _otpRepository.ConsumeModeratorTokenAsync(stored.OtpId, ModeratorEmailPurpose, cancellationToken))
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<VerifyModeratorEmailResponse>.Fail(AuthErrors.InvalidModeratorToken);
+                }
+                if (!await _otpRepository.UpdateModeratorActivationAsync(stored.UserId.Value, null, cancellationToken))
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<VerifyModeratorEmailResponse>.Fail(AuthErrors.ModeratorActivationUnavailable);
+                }
+                await _otpRepository.AddModeratorTokenAsync(CreateModeratorToken(stored.UserId.Value, stored.Email!, token, ModeratorPasswordPurpose, expiresAt), cancellationToken);
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+                await _unitOfWork.CommitTransactionAsync(cancellationToken);
+            }
+            catch
+            {
+                await _unitOfWork.RollbackTransactionAsync(CancellationToken.None);
+                throw;
+            }
+            return Result<VerifyModeratorEmailResponse>.Success(new VerifyModeratorEmailResponse { PasswordSetupToken = token, ExpiresAt = expiresAt });
+        }
+
+        public async Task<Result<UserAdminResponse>> SetModeratorPasswordAsync(SetModeratorPasswordRequest request, CancellationToken cancellationToken = default)
+        {
+            var validation = await _setModeratorPasswordValidator.ValidateAsync(request, cancellationToken);
+            if (!validation.IsValid)
+                return Result<UserAdminResponse>.Fail(ValidationErrors.InvalidRequest(string.Join("; ", validation.Errors.Select(x => x.ErrorMessage))));
+            var stored = await _otpRepository.GetModeratorTokenAsync(HashModeratorToken(request.Token), ModeratorPasswordPurpose, cancellationToken);
+            if (stored?.UserId == null)
+                return Result<UserAdminResponse>.Fail(AuthErrors.InvalidModeratorToken);
+            var passwordHash = _passwordHasher.HashPassword(request.Password);
+            await _unitOfWork.BeginTransactionAsync(cancellationToken);
+            try
+            {
+                if (!await _otpRepository.ConsumeModeratorTokenAsync(stored.OtpId, ModeratorPasswordPurpose, cancellationToken))
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<UserAdminResponse>.Fail(AuthErrors.InvalidModeratorToken);
+                }
+                if (!await _otpRepository.UpdateModeratorActivationAsync(stored.UserId.Value, passwordHash, cancellationToken))
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<UserAdminResponse>.Fail(AuthErrors.ModeratorActivationUnavailable);
+                }
+                await _unitOfWork.CommitTransactionAsync(cancellationToken);
+            }
+            catch
+            {
+                await _unitOfWork.RollbackTransactionAsync(CancellationToken.None);
+                throw;
+            }
+            var moderator = await _userRepository.GetByIdAsync(stored.UserId.Value, cancellationToken);
+            return Result<UserAdminResponse>.Success(MapAdminUser(moderator!));
+        }
+
+        private static bool IsModeratorToken(string? token) => token != null && Regex.IsMatch(token, @"\A[0-9A-Fa-f]{64}\z");
+
+        private static string HashModeratorToken(string token) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token)));
+
+        private static otp CreateModeratorToken(Guid userId, string email, string token, string purpose, DateTime expiresAt) => new otp
+        {
+            OtpId = Guid.NewGuid(), UserId = userId, Email = email, Code = HashModeratorToken(token),
+            Purpose = purpose, ExpiredAt = expiresAt, CreatedAt = DateTime.UtcNow, IsUsed = false
+        };
 
         //login chung cho tất cả các loại user (Personal, Business, Moderator, Admin)
         public async Task<Result<LoginResponseDto>> LoginAsync(

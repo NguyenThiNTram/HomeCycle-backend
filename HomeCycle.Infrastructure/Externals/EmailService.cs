@@ -20,6 +20,27 @@ namespace HomeCycle.Infrastructure.Externals
             _config = config;
         }
 
+        public async Task SendModeratorConfirmationEmailAsync(string toEmail, string username, string activationUrl, DateTime expiresAt, CancellationToken cancellationToken = default)
+        {
+            var settings = _config.GetSection("EmailSettings");
+            var email = new MimeMessage();
+            email.From.Add(new MailboxAddress(settings["SenderName"], settings["SenderEmail"]));
+            email.To.Add(new MailboxAddress(username, toEmail));
+            email.Subject = "Xác nhận tài khoản kiểm duyệt viên HomeCycle";
+            var safeUsername = System.Net.WebUtility.HtmlEncode(username);
+            var safeUrl = System.Net.WebUtility.HtmlEncode(activationUrl);
+            email.Body = new BodyBuilder
+            {
+                TextBody = $"Xin chào {username}, mở liên kết để xác nhận email và tạo mật khẩu: {activationUrl}\nLiên kết hết hạn lúc {expiresAt:yyyy-MM-dd HH:mm} UTC.",
+                HtmlBody = $"<p>Xin chào {safeUsername},</p><p>Admin đã tạo tài khoản kiểm duyệt viên HomeCycle cho bạn. Bấm Active để xác nhận email và tạo mật khẩu.</p><p><a href=\"{safeUrl}\">Active</a></p><p>Liên kết hết hạn lúc {expiresAt:yyyy-MM-dd HH:mm} UTC.</p>"
+            }.ToMessageBody();
+            using var smtp = new MailKit.Net.Smtp.SmtpClient();
+            await smtp.ConnectAsync(settings["MailServer"], int.Parse(settings["MailPort"]!), SecureSocketOptions.StartTls, cancellationToken);
+            await smtp.AuthenticateAsync(settings["SenderEmail"], settings["SenderPassword"], cancellationToken);
+            await smtp.SendAsync(email, cancellationToken);
+            await smtp.DisconnectAsync(true, cancellationToken);
+        }
+
         public async Task SendOtpEmailAsync(string toEmail, string otpCode)
         {
             var settings = _config.GetSection("EmailSettings");
