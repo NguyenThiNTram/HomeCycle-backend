@@ -20,7 +20,7 @@ public sealed class DashboardService(IDashboardRepository repository, TimeProvid
         var to = request.To ?? today;
         return new DashboardPeriod
         {
-            From = from, ToExclusive = to, PreviousFrom = from.AddDays(-(to.DayNumber - from.DayNumber)),
+            From = from, ToExclusive = to,
             GroupBy = request.GroupBy, IsPartialPeriod = to > today
         };
     }
@@ -30,16 +30,22 @@ public sealed class DashboardService(IDashboardRepository repository, TimeProvid
         public object? GetService(Type serviceType) => serviceType == typeof(TimeProvider) ? clock : null;
     }
 
-    private static CountTrend Trend(OperationDashboardData data)
-    {
-        var current = data.Daily.Sum(x => x.Count);
-        var previous = data.PreviousCount;
-        return new(current, previous, current - previous,
-            previous == 0 ? null : Math.Round((current - previous) * 100m / previous, 2),
-            current > previous ? "Increasing" : current < previous ? "Decreasing" : "Stable");
-    }
-
     private static decimal Percent(decimal count, decimal total) => total == 0 ? 0 : Math.Round(count * 100m / total, 2);
+
+    private static decimal? Hours(double? value) => value.HasValue ? Math.Round((decimal)value.Value, 2) : null;
+
+    private static IReadOnlyList<AgingBucket> Aging(DashboardAgingData data)
+    {
+        var total = data.UnderOneDayCount + data.OneToThreeDaysCount
+            + data.ThreeToSevenDaysCount + data.OverSevenDaysCount;
+        return
+        [
+            new("underOneDay", "Dưới 1 ngày", data.UnderOneDayCount, Percent(data.UnderOneDayCount, total)),
+            new("oneToThreeDays", "Từ 1 đến dưới 3 ngày", data.OneToThreeDaysCount, Percent(data.OneToThreeDaysCount, total)),
+            new("threeToSevenDays", "Từ 3 đến dưới 7 ngày", data.ThreeToSevenDaysCount, Percent(data.ThreeToSevenDaysCount, total)),
+            new("overSevenDays", "Từ 7 ngày trở lên", data.OverSevenDaysCount, Percent(data.OverSevenDaysCount, total))
+        ];
+    }
 
     private static IReadOnlyList<DistributionItem> Distribution<T>(IEnumerable<DashboardCodeCount> counts) where T : struct, Enum
     {
@@ -84,78 +90,150 @@ public sealed class DashboardService(IDashboardRepository repository, TimeProvid
     public async Task<OperationOverviewResponse> GetOperationOverviewAsync(DashboardPeriodRequest request, CancellationToken ct)
     {
         var period = ResolvePeriod(request);
-        // Queries share a scoped DbContext; execute sequentially.
-        var payments = await repository.GetPaymentsAsync(new(), period, ct);
-        var orders = await repository.GetOrdersAsync(new(), period, ct);
-        var appointments = await repository.GetAppointmentsAsync(new(), period, ct);
-        var disputes = await repository.GetDisputesAsync(new(), period, ct);
+        var nowUtc = clock.GetUtcNow().UtcDateTime;
+        var data = await repository.GetOperationOverviewAsync(period, nowUtc, ct);
         return new()
         {
-            GeneratedAtUtc = clock.GetUtcNow().UtcDateTime, Period = period,
-            Payments = new(payments.TotalCount, Trend(payments)), Orders = new(orders.TotalCount, Trend(orders)),
-            Appointments = new(appointments.TotalCount, Trend(appointments)), Disputes = new(disputes.TotalCount, Trend(disputes)),
-            DisputeCurrentStatusCounts = Distribution<DisputeStatus>(disputes.CurrentStatuses)
+            GeneratedAtUtc = nowUtc,
+            Period = period,
+            Orders = new OrderOverviewMetric
+            {
+                TotalCount = data.TotalOrders,
+                ActiveCount = data.ActiveOrderCount
+            },
+            Appointments = new AppointmentOverviewMetric
+            {
+                UpcomingCount = data.UpcomingAppointmentCount,
+                TodayCount = data.TodayAppointmentCount
+            },
+            Payments = new PaymentOverviewMetric
+            {
+                TotalCount = data.TotalPayments,
+                PendingCount = data.PendingPaymentCount
+            },
+            Disputes = new DisputeOverviewMetric
+            {
+                TotalCount = data.TotalDisputes,
+                UnresolvedCount = data.UnresolvedDisputeCount,
+                ResolvedInPeriodCount = data.ResolvedDisputeInPeriodCount
+            }
         };
     }
 
     public async Task<PaymentDashboardResponse> GetPaymentDashboardAsync(PaymentDashboardRequest request, CancellationToken ct)
     {
         var period = ResolvePeriod(request);
-        var data = await repository.GetPaymentsAsync(request, period, ct);
+        var nowUtc = clock.GetUtcNow().UtcDateTime;
+        var data = await repository.GetPaymentsAsync(request, period, nowUtc, ct);
         return new()
         {
-            GeneratedAtUtc = clock.GetUtcNow().UtcDateTime, Period = period, TotalCount = data.TotalCount,
-            CreatedTrend = Trend(data), CreatedSeries = Series(data.Daily, period),
-            CreatedInPeriodByCurrentStatus = Distribution<PaymentStatus>(data.Statuses),
-            CreatedInPeriodByMethod = Distribution<PaymentMethod>(data.Methods),
-            PaidInPeriodCount = data.Events.GetValueOrDefault("Paid")
+            GeneratedAtUtc = nowUtc,
+            Period = period,
+            TotalPayments = data.TotalPayments,
+            PendingCount = data.PendingCount,
+            PaidInPeriodCount = data.PaidInPeriodCount,
+            AveragePendingAgeHours = Hours(data.PendingAging.AverageAgeHours),
+            OldestPendingAgeHours = Hours(data.PendingAging.OldestAgeHours),
+            CurrentStatusDistribution = Distribution<PaymentStatus>(data.CurrentStatuses),
+            PaymentMethodPerformance = data.MethodPerformance.Select(row =>
+            {
+                var method = row.Method.HasValue && Enum.IsDefined(typeof(PaymentMethod), row.Method.Value)
+                    ? ((PaymentMethod)row.Method.Value).ToString()
+                    : "Unspecified";
+                var finished = row.PaidCount + row.FailedCount;
+                return new PaymentMethodPerformanceItem(method, row.TotalCount, row.PaidCount, row.FailedCount,
+                    finished == 0 ? null : Percent(row.PaidCount, finished));
+            }).OrderByDescending(x => x.TotalCount).ThenBy(x => x.Method).ToArray(),
+            PendingAgingDistribution = Aging(data.PendingAging),
+            PaidSeries = Series(data.PaidDaily, period)
         };
     }
 
     public async Task<OrderDashboardResponse> GetOrderDashboardAsync(OrderDashboardRequest request, CancellationToken ct)
     {
         var period = ResolvePeriod(request);
-        var data = await repository.GetOrdersAsync(request, period, ct);
+        var nowUtc = clock.GetUtcNow().UtcDateTime;
+        var data = await repository.GetOrdersAsync(request, period, nowUtc, ct);
         return new()
         {
-            GeneratedAtUtc = clock.GetUtcNow().UtcDateTime, Period = period, TotalCount = data.TotalCount,
-            CreatedTrend = Trend(data), CreatedSeries = Series(data.Daily, period),
-            CreatedInPeriodByCurrentStatus = Distribution<OrderStatus>(data.Statuses),
-            CompletedInPeriodCount = data.Events.GetValueOrDefault("Completed"),
-            CancelledInPeriodCount = data.Events.GetValueOrDefault("Cancelled"),
-            ReturnedInPeriodCount = data.Events.GetValueOrDefault("Returned")
+            GeneratedAtUtc = nowUtc,
+            Period = period,
+            TotalOrders = data.TotalOrders,
+            ActiveOrderCount = data.ActiveOrderCount,
+            CompletedInPeriodCount = data.CompletedInPeriodCount,
+            CancelledInPeriodCount = data.CancelledInPeriodCount,
+            ReturnedInPeriodCount = data.ReturnedInPeriodCount,
+            AverageActiveOrderAgeHours = Hours(data.ActiveAging.AverageAgeHours),
+            OldestActiveOrderAgeHours = Hours(data.ActiveAging.OldestAgeHours),
+            CurrentStatusDistribution = Distribution<OrderStatus>(data.CurrentStatuses),
+            ActiveOrderAgingDistribution = Aging(data.ActiveAging),
+            OutcomeSeries = Buckets(period).Select(bucket => new OrderOutcomeSeriesPoint(
+                bucket.From,
+                bucket.To,
+                data.CompletedDaily.Where(x => DateOnly.FromDateTime(x.Date) >= bucket.From
+                    && DateOnly.FromDateTime(x.Date) < bucket.To).Sum(x => x.Count),
+                data.CancelledDaily.Where(x => DateOnly.FromDateTime(x.Date) >= bucket.From
+                    && DateOnly.FromDateTime(x.Date) < bucket.To).Sum(x => x.Count),
+                data.ReturnedDaily.Where(x => DateOnly.FromDateTime(x.Date) >= bucket.From
+                    && DateOnly.FromDateTime(x.Date) < bucket.To).Sum(x => x.Count))).ToArray()
         };
     }
 
     public async Task<AppointmentDashboardResponse> GetAppointmentDashboardAsync(AppointmentDashboardRequest request, CancellationToken ct)
     {
         var period = ResolvePeriod(request);
-        var data = await repository.GetAppointmentsAsync(request, period, ct);
+        var nowUtc = clock.GetUtcNow().UtcDateTime;
+        var data = await repository.GetAppointmentsAsync(request, period, nowUtc, ct);
         return new()
         {
-            GeneratedAtUtc = clock.GetUtcNow().UtcDateTime, Period = period, TotalCount = data.TotalCount,
-            CreatedTrend = Trend(data), CreatedSeries = Series(data.Daily, period),
-            CreatedInPeriodByCurrentStatus = Distribution<AppointmentStatus>(data.Statuses),
-            CreatedInPeriodByType = Distribution<AppointmentType>(data.Types),
-            RescheduleProposalsCreatedInPeriodCount = data.Events.GetValueOrDefault("Rescheduled"),
-            ScheduledDateInPeriodCount = data.Events.GetValueOrDefault("ScheduledDate")
+            GeneratedAtUtc = nowUtc,
+            Period = period,
+            TotalAppointments = data.TotalAppointments,
+            UpcomingCount = data.UpcomingCount,
+            TodayCount = data.TodayCount,
+            PendingCount = data.PendingCount,
+            CompletedInPeriodCount = data.CompletedInPeriodCount,
+            CancelledInPeriodCount = data.CancelledInPeriodCount,
+            ExpiredCount = data.ExpiredCount,
+            RescheduleProposalCount = data.RescheduleProposalCount,
+            OverdueCount = data.OverdueCount,
+            AverageOverdueAgeHours = Hours(data.OverdueAging.AverageAgeHours),
+            OldestOverdueAgeHours = Hours(data.OverdueAging.OldestAgeHours),
+            CurrentStatusDistribution = Distribution<AppointmentStatus>(data.CurrentStatuses),
+            AppointmentTypeDistribution = Distribution<AppointmentType>(data.Types),
+            ScheduledSeries = Series(data.ScheduledDaily, period),
+            OverdueAgingDistribution = Aging(data.OverdueAging)
         };
     }
 
     public async Task<DisputeDashboardResponse> GetDisputeDashboardAsync(DisputeDashboardRequest request, CancellationToken ct)
     {
         var period = ResolvePeriod(request);
-        var data = await repository.GetDisputesAsync(request, period, ct);
-        var categories = Distribution<DisputeCategory>(data.Types);
-        var used = categories.Where(x => x.Key != "Unspecified" && x.Count > 0).ToArray();
+        var nowUtc = clock.GetUtcNow().UtcDateTime;
+        var data = await repository.GetDisputesAsync(request, period, nowUtc, ct);
+        var categories = Distribution<DisputeCategory>(data.Categories)
+            .OrderByDescending(x => x.Count).ThenBy(x => x.Key).ToArray();
         return new()
         {
-            GeneratedAtUtc = clock.GetUtcNow().UtcDateTime, Period = period,
-            TotalCount = data.TotalCount, PeriodCount = data.Daily.Sum(x => x.Count),
-            ByCategory = categories, ByStatus = Distribution<DisputeStatus>(data.Statuses),
-            MostSelectedCategories = used.Where(x => x.Count == used.Max(y => y.Count)).Select(x => x.Key).ToArray(),
-            LeastSelectedUsedCategories = used.Where(x => x.Count == used.Min(y => y.Count)).Select(x => x.Key).ToArray(),
-            UnselectedCategories = categories.Where(x => x.Count == 0).Select(x => x.Key).ToArray(),
+            GeneratedAtUtc = nowUtc,
+            Period = period,
+            TotalDisputes = data.TotalDisputes,
+            UnresolvedDisputeCount = data.UnresolvedDisputeCount,
+            ResolvedInPeriodCount = data.ResolvedInPeriodCount,
+            AverageResolutionTimeHours = Hours(data.AverageResolutionTimeHours),
+            OldestUnresolvedAgeHours = Hours(data.UnresolvedAging.OldestAgeHours),
+            CurrentStatusDistribution = Distribution<DisputeStatus>(data.CurrentStatuses),
+            CategoryDistribution = categories,
+            UnresolvedByCategory = Distribution<DisputeCategory>(data.UnresolvedCategories)
+                .OrderByDescending(x => x.Count).ThenBy(x => x.Key).ToArray(),
+            UnresolvedAgingDistribution = Aging(data.UnresolvedAging),
+            OpenedVsResolvedSeries = Buckets(period).Select(bucket => new DisputeFlowSeriesPoint(
+                bucket.From,
+                bucket.To,
+                data.OpenedDaily.Where(x => DateOnly.FromDateTime(x.Date) >= bucket.From
+                    && DateOnly.FromDateTime(x.Date) < bucket.To).Sum(x => x.Count),
+                data.ResolvedDaily.Where(x => DateOnly.FromDateTime(x.Date) >= bucket.From
+                    && DateOnly.FromDateTime(x.Date) < bucket.To).Sum(x => x.Count))).ToArray(),
             UnknownCategoryCount = categories.Where(x => x.Key == "Unspecified").Sum(x => x.Count)
         };
     }
