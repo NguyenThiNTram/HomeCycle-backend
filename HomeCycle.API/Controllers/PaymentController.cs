@@ -12,13 +12,10 @@ namespace HomeCycle.API.Controllers
     public class PaymentController : ControllerBase
     {
         private readonly IPaymentService _paymentService;
-        private readonly IOrderSettlementService _orderSettlementService;
         public PaymentController(
-            IPaymentService paymentService,
-            IOrderSettlementService orderSettlementService)
+            IPaymentService paymentService)
         {
             _paymentService = paymentService;
-            _orderSettlementService = orderSettlementService;
         }
 
         [HttpPost("payos/checkout/{agreementId}")]
@@ -109,52 +106,52 @@ namespace HomeCycle.API.Controllers
             return Ok(result.Data);
         }
 
-        [HttpPost("order-settlements/{paymentId:guid}/payos/checkout")]
-        [Authorize]
-        public async Task<IActionResult> CreateOrderSettlementPayOsCheckout(
-            Guid paymentId,
-            [FromBody] PayOSCheckoutRequest request,
-            CancellationToken cancellationToken)
-        {
-            var result = await _orderSettlementService.GeneratePayOsCheckoutUrlAsync(
-                paymentId,
-                GetUserIdFromToken(),
-                request.ReturnUrl,
-                request.CancelUrl,
-                cancellationToken);
+        //[HttpPost("order-settlements/{paymentId:guid}/payos/checkout")]
+        //[Authorize]
+        //public async Task<IActionResult> CreateOrderSettlementPayOsCheckout(
+        //    Guid paymentId,
+        //    [FromBody] PayOSCheckoutRequest request,
+        //    CancellationToken cancellationToken)
+        //{
+        //    var result = await _orderSettlementService.GeneratePayOsCheckoutUrlAsync(
+        //        paymentId,
+        //        GetUserIdFromToken(),
+        //        request.ReturnUrl,
+        //        request.CancelUrl,
+        //        cancellationToken);
 
-            return result.IsSuccess
-                ? Ok(new { checkoutUrl = result.Data })
-                : BadRequest(result.Error);
-        }
+        //    return result.IsSuccess
+        //        ? Ok(new { checkoutUrl = result.Data })
+        //        : BadRequest(result.Error);
+        //}
 
-        [HttpPost("order-settlements/{paymentId:guid}/wallet/checkout")]
-        [Authorize]
-        public async Task<IActionResult> ExecuteOrderSettlementWalletCheckout(
-            Guid paymentId,
-            CancellationToken cancellationToken)
-        {
-            var result = await _orderSettlementService.ExecuteWalletAsync(
-                paymentId,
-                GetUserIdFromToken(),
-                cancellationToken);
+        //[HttpPost("order-settlements/{paymentId:guid}/wallet/checkout")]
+        //[Authorize]
+        //public async Task<IActionResult> ExecuteOrderSettlementWalletCheckout(
+        //    Guid paymentId,
+        //    CancellationToken cancellationToken)
+        //{
+        //    var result = await _orderSettlementService.ExecuteWalletAsync(
+        //        paymentId,
+        //        GetUserIdFromToken(),
+        //        cancellationToken);
 
-            return result.IsSuccess ? Ok(result.Data) : BadRequest(result.Error);
-        }
+        //    return result.IsSuccess ? Ok(result.Data) : BadRequest(result.Error);
+        //}
 
-        [HttpGet("order-settlements/{paymentId:guid}/status")]
-        [Authorize]
-        public async Task<IActionResult> SyncOrderSettlementStatus(
-            Guid paymentId,
-            CancellationToken cancellationToken)
-        {
-            var result = await _orderSettlementService.SyncPayOsStatusAsync(
-                paymentId,
-                GetUserIdFromToken(),
-                cancellationToken);
+        //[HttpGet("order-settlements/{paymentId:guid}/status")]
+        //[Authorize]
+        //public async Task<IActionResult> SyncOrderSettlementStatus(
+        //    Guid paymentId,
+        //    CancellationToken cancellationToken)
+        //{
+        //    var result = await _orderSettlementService.SyncPayOsStatusAsync(
+        //        paymentId,
+        //        GetUserIdFromToken(),
+        //        cancellationToken);
 
-            return result.IsSuccess ? Ok(result.Data) : BadRequest(result.Error);
-        }
+        //    return result.IsSuccess ? Ok(result.Data) : BadRequest(result.Error);
+        //}
 
 
         private Guid GetUserIdFromToken()

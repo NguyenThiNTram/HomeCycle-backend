@@ -15,12 +15,12 @@ namespace HomeCycle.Application.DTOs.Responses.Inspections
         public Guid AppointmentId { get; set; }
         public Guid CollectionAppointmentId { get; set; }
         public Guid ShipmentId { get; set; }
-        public Guid? PaymentId { get; set; }
+        //public Guid? PaymentId { get; set; }
         public DeliveryMethod DeliveryMethod { get; set; }
-        public PaymentType PaymentType { get; set; }
+        //public PaymentType PaymentType { get; set; }
         public decimal EstimatedShippingFee { get; set; }
-        public decimal AdditionalPaymentAmount { get; set; }
-        public bool PaymentRequired { get; set; }
+        //public decimal AdditionalPaymentAmount { get; set; }
+        //public bool PaymentRequired { get; set; }
         public DateTime CollectionDate { get; set; }
     }
 }

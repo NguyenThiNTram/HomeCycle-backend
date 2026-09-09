@@ -73,7 +73,6 @@ using HomeCycle.Application.Services.Offers;
 using HomeCycle.Application.Services.Orders;
 using HomeCycle.Application.Services.Orders;
 using HomeCycle.Application.Services.Payments;
-using HomeCycle.Application.Services.Payments.HomeCycle.Application.Services.Payments;
 using HomeCycle.Application.Services.Personals;
 using HomeCycle.Application.Services.PlatformPolicies;
 using HomeCycle.Application.Services.Posts;
@@ -245,7 +244,7 @@ namespace HomeCycle.Infrastructure
             services.AddScoped<IMessageService, MessageService>();
             services.AddScoped<IAgreementFormService, AgreementFormService>();
             services.AddScoped<IPaymentService, PaymentService>();
-            services.AddScoped<IOrderSettlementService, OrderSettlementService>();
+            //services.AddScoped<IOrderSettlementService, OrderSettlementService>();
             services.AddScoped<IAppointmentService, AppointmentService>();
             services.AddScoped<IOrderService, OrderService>();
             services.AddSingleton<IOrderTimelineBuilder, OrderTimelineBuilder>();
