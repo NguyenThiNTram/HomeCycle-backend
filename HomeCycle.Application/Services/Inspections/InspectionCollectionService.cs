@@ -176,11 +176,11 @@ namespace HomeCycle.Application.Services.Inspections
 
             if (request.DeliveryMethod == DeliveryMethod.GhnDelivery)
             {
-                if (request.PaymentType != PaymentType.Full_Payment)
-                {
-                    return Result<ScheduleInspectionCollectionResponse>.Fail(
-                        InspectionErrors.GhnFullPaymentRequired);
-                }
+                //if (request.PaymentType != PaymentType.Full_Payment)
+                //{
+                //    return Result<ScheduleInspectionCollectionResponse>.Fail(
+                //        InspectionErrors.GhnFullPaymentRequired);
+                //}
 
                 if (ghnInfo == null)
                 {
@@ -247,16 +247,12 @@ namespace HomeCycle.Application.Services.Inspections
                             "Không thể tính phí vận chuyển GHN ở thời điểm hiện tại."));
                 }
             }
-            else if (request.DeliveryMethod == DeliveryMethod.SellerDelivers)
+            else
             {
                 shippingFee = Math.Round(
                     request.EstimatedShippingFee ?? 0,
                     0,
                     MidpointRounding.AwayFromZero);
-            }
-            else
-            {
-                shippingFee = 0;
             }
 
             var appointmentPolicy = await _platformPolicyProvider
@@ -413,7 +409,7 @@ namespace HomeCycle.Application.Services.Inspections
                             ? feeRequest.HeightCm
                             : largestItem?.HeightCm,
                         CODAmount = 0,
-                        PaymentTypeId = 1,
+                        PaymentTypeId = 2,
                         InsuranceValue = 0,
                         RequiredNote = ghnInfo.RequiredNote?.Trim().ToUpperInvariant(),
                         GHNServiceFee = null,
@@ -440,44 +436,57 @@ namespace HomeCycle.Application.Services.Inspections
                     return Result<ScheduleInspectionCollectionResponse>.Fail(InspectionErrors.InvalidOrderPrice);
                 }
 
+                //var finalTotalAmount = goodsTotal + shippingFee;
+                //var amountPaid = order.AmountPaid ?? 0;
+                //var additionalPaymentAmount = Math.Max(
+                //    Math.Round(finalTotalAmount - amountPaid, 0, MidpointRounding.AwayFromZero),
+                //    0);
+
+                //order.FinalTotalAmount = finalTotalAmount;
+                //order.AmountRemaining = additionalPaymentAmount;
+                //order.PaymentStatus = additionalPaymentAmount <= AmountEpsilon
+                //    ? (int)PaymentStatus.Completed
+                //    : (int)PaymentStatus.Pending;
+                //order.UpdatedAt = now;
+
+                //Guid? paymentId = null;
+
+                //if (request.PaymentType == PaymentType.Full_Payment
+                //    && additionalPaymentAmount > AmountEpsilon)
+                //{
+                //    paymentId = Guid.NewGuid();
+
+                //    var payment = new payment
+                //    {
+                //        PaymentId = paymentId.Value,
+                //        AgreementId = agreement.AgreementId,
+                //        OrderId = order.OrderId,
+                //        PayerId = buyerId,
+                //        PaymentType = (int)PaymentType.Full_Payment,
+                //        PaymentMethod = null,
+                //        Amount = additionalPaymentAmount,
+                //        Description = $"Thanh toán phần còn lại đơn {order.OrderCode}",
+                //        PaymentStatus = (int)PaymentStatus.Pending,
+                //        CreatedAt = now,
+                //        PaidAt = null,
+                //        ExpiredAt = null
+                //    };
+
+                //    await _paymentRepo.AddAsync(payment, cancellationToken);
+                //}
+
                 var finalTotalAmount = goodsTotal + shippingFee;
                 var amountPaid = order.AmountPaid ?? 0;
-                var additionalPaymentAmount = Math.Max(
+                var amountRemaining = Math.Max(
                     Math.Round(finalTotalAmount - amountPaid, 0, MidpointRounding.AwayFromZero),
                     0);
 
                 order.FinalTotalAmount = finalTotalAmount;
-                order.AmountRemaining = additionalPaymentAmount;
-                order.PaymentStatus = additionalPaymentAmount <= AmountEpsilon
+                order.AmountRemaining = amountRemaining;
+                order.PaymentStatus = amountRemaining <= AmountEpsilon
                     ? (int)PaymentStatus.Completed
                     : (int)PaymentStatus.Pending;
                 order.UpdatedAt = now;
-
-                Guid? paymentId = null;
-
-                if (request.PaymentType == PaymentType.Full_Payment
-                    && additionalPaymentAmount > AmountEpsilon)
-                {
-                    paymentId = Guid.NewGuid();
-
-                    var payment = new payment
-                    {
-                        PaymentId = paymentId.Value,
-                        AgreementId = agreement.AgreementId,
-                        OrderId = order.OrderId,
-                        PayerId = buyerId,
-                        PaymentType = (int)PaymentType.Full_Payment,
-                        PaymentMethod = null,
-                        Amount = additionalPaymentAmount,
-                        Description = $"Thanh toán phần còn lại đơn {order.OrderCode}",
-                        PaymentStatus = (int)PaymentStatus.Pending,
-                        CreatedAt = now,
-                        PaidAt = null,
-                        ExpiredAt = null
-                    };
-
-                    await _paymentRepo.AddAsync(payment, cancellationToken);
-                }
 
                 form.CollectAction = (int)InspectionCollectAction.ScheduleCollection;
                 form.Revision++;
@@ -504,6 +513,24 @@ namespace HomeCycle.Application.Services.Inspections
                     order.OrderId,
                     now);
 
+                //return Result<ScheduleInspectionCollectionResponse>.Success(
+                //    new ScheduleInspectionCollectionResponse
+                //    {
+                //        InspectionFormId = form.InspectionFormId,
+                //        Revision = form.Revision,
+                //        OrderId = order.OrderId,
+                //        AppointmentId = appointmentId,
+                //        CollectionAppointmentId = collectionAppointmentId,
+                //        ShipmentId = shipmentId,
+                //        PaymentId = paymentId,
+                //        DeliveryMethod = request.DeliveryMethod,
+                //        PaymentType = request.PaymentType,
+                //        EstimatedShippingFee = shippingFee,
+                //        AdditionalPaymentAmount = additionalPaymentAmount,
+                //        PaymentRequired = paymentId.HasValue,
+                //        CollectionDate = collectionDate
+                //    });
+
                 return Result<ScheduleInspectionCollectionResponse>.Success(
                     new ScheduleInspectionCollectionResponse
                     {
@@ -513,12 +540,8 @@ namespace HomeCycle.Application.Services.Inspections
                         AppointmentId = appointmentId,
                         CollectionAppointmentId = collectionAppointmentId,
                         ShipmentId = shipmentId,
-                        PaymentId = paymentId,
                         DeliveryMethod = request.DeliveryMethod,
-                        PaymentType = request.PaymentType,
                         EstimatedShippingFee = shippingFee,
-                        AdditionalPaymentAmount = additionalPaymentAmount,
-                        PaymentRequired = paymentId.HasValue,
                         CollectionDate = collectionDate
                     });
             }

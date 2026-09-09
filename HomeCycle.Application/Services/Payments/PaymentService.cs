@@ -83,7 +83,7 @@ namespace HomeCycle.Application.Services.Payments
         private readonly IConversationRepository _conversationRepo;
         private readonly IChatRealtimePublisher _chatRealtimePublisher;
         private readonly INotificationService _notificationService;
-        private readonly IOrderSettlementService _orderSettlementService;
+        //private readonly IOrderSettlementService _orderSettlementService;
         private readonly IMapper _mapper;
         public PaymentService(
             IUnitOfWork unitOfWork,
@@ -111,7 +111,7 @@ namespace HomeCycle.Application.Services.Payments
             IConversationRepository conversationRepo,
             IChatRealtimePublisher chatRealtimePublisher,
             INotificationService notificationService,
-            IOrderSettlementService orderSettlementService,
+            //IOrderSettlementService orderSettlementService,
             IMapper mapper)
         {
             _unitOfWork = unitOfWork;
@@ -139,7 +139,7 @@ namespace HomeCycle.Application.Services.Payments
             _conversationRepo = conversationRepo;
             _chatRealtimePublisher = chatRealtimePublisher;
             _notificationService = notificationService;
-            _orderSettlementService = orderSettlementService;
+            //_orderSettlementService = orderSettlementService;
             _mapper = mapper;
         }
 
@@ -1721,20 +1721,20 @@ namespace HomeCycle.Application.Services.Payments
             var paymentSnapshot = await _paymentRepo.GetByIdAsync(paymentTxSnapshot.PaymentId, ct);
 
             if (paymentSnapshot == null)
-    throw new InvalidOperationException("Không tìm thấy payment của giao dịch PayOS.");
+                throw new InvalidOperationException("Không tìm thấy payment của giao dịch PayOS.");
 
-if (paymentSnapshot.OrderId.HasValue)
-{
-    var settlementResult = await _orderSettlementService.CompletePayOsAsync(
-        payOsOrderCode,
-        payOsTransactionId,
-        ct);
+            //if (paymentSnapshot.OrderId.HasValue)
+            //{
+            //    var settlementResult = await _orderSettlementService.CompletePayOsAsync(
+            //        payOsOrderCode,
+            //        payOsTransactionId,
+            //        ct);
 
-    if (!settlementResult.IsSuccess)
-        throw new InvalidOperationException(settlementResult.Error?.Message);
+            //    if (!settlementResult.IsSuccess)
+            //        throw new InvalidOperationException(settlementResult.Error?.Message);
 
-    return;
-}
+            //    return;
+            //}
 
 
             if (paymentSnapshot?.AgreementId == null)
