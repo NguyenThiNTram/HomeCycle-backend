@@ -30,6 +30,8 @@ namespace HomeCycle.Application.Services.PlatformPolicies
         private readonly IValidator<UpdateAppointmentPolicyRequest> _appointmentValidator;
         private readonly IValidator<UpdateFileUploadPolicyRequest> _fileUploadRequestValidator;
         private readonly IValidator<FileUploadPolicyConfigDto> _fileUploadPolicyValidator;
+        private readonly IValidator<UpdatePaymentPolicyRequest> _paymentValidator;
+        private readonly IValidator<UpdateOrderPolicyRequest> _orderValidator;
 
         public PlatformPolicyService(
             IPlatformPolicyRepository policyRepository,
@@ -38,7 +40,9 @@ namespace HomeCycle.Application.Services.PlatformPolicies
             IValidator<UpdateDisputePolicyRequest> disputeValidator,
             IValidator<UpdateAppointmentPolicyRequest> appointmentValidator,
             IValidator<UpdateFileUploadPolicyRequest> fileUploadRequestValidator,
-            IValidator<FileUploadPolicyConfigDto> fileUploadPolicyValidator)
+            IValidator<FileUploadPolicyConfigDto> fileUploadPolicyValidator,
+            IValidator<UpdatePaymentPolicyRequest> paymentValidator,
+            IValidator<UpdateOrderPolicyRequest> orderValidator)
         {
             _policyRepository = policyRepository;
             _unitOfWork = unitOfWork;
@@ -47,6 +51,8 @@ namespace HomeCycle.Application.Services.PlatformPolicies
             _appointmentValidator = appointmentValidator;
             _fileUploadRequestValidator = fileUploadRequestValidator;
             _fileUploadPolicyValidator = fileUploadPolicyValidator;
+            _paymentValidator = paymentValidator;
+            _orderValidator = orderValidator;
         }
 
         public async Task<Result<IReadOnlyList<PlatformPolicySummaryResponseDto>>> GetAllActiveAsync(
@@ -728,6 +734,333 @@ namespace HomeCycle.Application.Services.PlatformPolicies
             return result.Data.Config;
         }
 
+        public async Task<Result<PlatformPolicyResponseDto<PaymentPolicyConfigDto>>> GetPaymentPolicyAsync(CancellationToken cancellationToken = default)
+        {
+            var policy = await _policyRepository.GetActiveAsync(
+                PlatformPolicyType.Payment,
+                cancellationToken);
+
+            if (policy == null)
+                return Result<PlatformPolicyResponseDto<PaymentPolicyConfigDto>>
+                    .Fail(PlatformPolicyErrors.ActiveNotFound(PlatformPolicyType.Payment));
+
+            if (!TryDeserialize(policy.Content, out PaymentPolicyConfigDto? config)
+                || !IsValidPaymentConfig(config!))
+            {
+                return Result<PlatformPolicyResponseDto<PaymentPolicyConfigDto>>
+                    .Fail(PlatformPolicyErrors.InvalidContent(PlatformPolicyType.Payment));
+            }
+
+            var response =
+                _mapper.Map<PlatformPolicyResponseDto<PaymentPolicyConfigDto>>(policy);
+
+            response.Config = config!;
+
+            return Result<PlatformPolicyResponseDto<PaymentPolicyConfigDto>>
+                .Success(response);
+        }
+
+
+        public async Task<Result<PlatformPolicyResponseDto<OrderPolicyConfigDto>>> GetOrderPolicyAsync(CancellationToken cancellationToken = default)
+        {
+            var policy = await _policyRepository.GetActiveAsync(
+                PlatformPolicyType.Order,
+                cancellationToken);
+
+            if (policy == null)
+                return Result<PlatformPolicyResponseDto<OrderPolicyConfigDto>>
+                    .Fail(PlatformPolicyErrors.ActiveNotFound(PlatformPolicyType.Order));
+
+            if (!TryDeserialize(policy.Content, out OrderPolicyConfigDto? config)
+                || !IsValidOrderConfig(config!))
+            {
+                return Result<PlatformPolicyResponseDto<OrderPolicyConfigDto>>
+                    .Fail(PlatformPolicyErrors.InvalidContent(PlatformPolicyType.Order));
+            }
+
+            var response =
+                _mapper.Map<PlatformPolicyResponseDto<OrderPolicyConfigDto>>(policy);
+
+            response.Config = config!;
+
+            return Result<PlatformPolicyResponseDto<OrderPolicyConfigDto>>
+                .Success(response);
+        }
+
+
+        public async Task<Result<PlatformPolicyResponseDto<PaymentPolicyConfigDto>>> UpdatePaymentPolicyAsync(
+            Guid adminId,
+            UpdatePaymentPolicyRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            var validation = await _paymentValidator.ValidateAsync(
+                request,
+                cancellationToken);
+
+            if (!validation.IsValid)
+            {
+                var message = string.Join(
+                    "\n",
+                    validation.Errors.Select(x => x.ErrorMessage));
+
+                return Result<PlatformPolicyResponseDto<PaymentPolicyConfigDto>>
+                    .Fail(ValidationErrors.InvalidRequest(message));
+            }
+
+            await _unitOfWork.BeginTransactionAsync(cancellationToken);
+
+            try
+            {
+                var current = await _policyRepository.GetActiveForUpdateAsync(
+                    PlatformPolicyType.Payment,
+                    cancellationToken);
+
+                if (current == null)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+
+                    return Result<PlatformPolicyResponseDto<PaymentPolicyConfigDto>>
+                        .Fail(PlatformPolicyErrors.ActiveNotFound(
+                            PlatformPolicyType.Payment));
+                }
+
+                if (!TryDeserialize(
+                        current.Content,
+                        out PaymentPolicyConfigDto? currentConfig)
+                    || !IsValidPaymentConfig(currentConfig!))
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+
+                    return Result<PlatformPolicyResponseDto<PaymentPolicyConfigDto>>
+                        .Fail(PlatformPolicyErrors.InvalidContent(
+                            PlatformPolicyType.Payment));
+                }
+
+                var config = _mapper.Map<PaymentPolicyConfigDto>(currentConfig);
+                _mapper.Map(request, config);
+
+                if (!IsValidPaymentConfig(config))
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+
+                    return Result<PlatformPolicyResponseDto<PaymentPolicyConfigDto>>
+                        .Fail(PlatformPolicyErrors.InvalidPaymentPolicy);
+                }
+
+                if (SamePaymentConfig(currentConfig!, config))
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+
+                    var currentResponse =
+                        _mapper.Map<PlatformPolicyResponseDto<PaymentPolicyConfigDto>>(
+                            current);
+
+                    currentResponse.Config = currentConfig;
+
+                    return Result<PlatformPolicyResponseDto<PaymentPolicyConfigDto>>
+                        .Success(currentResponse);
+                }
+
+                var now = DateTime.UtcNow;
+
+                var nextVersion = await _policyRepository.GetNextVersionAsync(
+                    PlatformPolicyType.Payment,
+                    cancellationToken);
+
+                current.IsActive = false;
+                current.UpdatedAt = now;
+
+                await _policyRepository.UpdateAsync(current, cancellationToken);
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+                var newPolicy = new platform_policy
+                {
+                    PolicyId = Guid.NewGuid(),
+                    PolicyType = PlatformPolicyType.Payment,
+                    Title = string.IsNullOrWhiteSpace(current.Title)
+                        ? "Payment Policy"
+                        : current.Title,
+                    Content = JsonSerializer.Serialize(config, JsonOptions),
+                    Version = nextVersion,
+                    IsActive = true,
+                    CreatedAt = now,
+                    CreatedBy = adminId,
+                    UpdatedAt = now
+                };
+
+                await _policyRepository.AddAsync(newPolicy, cancellationToken);
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+                await _unitOfWork.CommitTransactionAsync(cancellationToken);
+
+                var response =
+                    _mapper.Map<PlatformPolicyResponseDto<PaymentPolicyConfigDto>>(
+                        newPolicy);
+
+                response.Config = config;
+
+                return Result<PlatformPolicyResponseDto<PaymentPolicyConfigDto>>
+                    .Success(response);
+            }
+            catch
+            {
+                await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                throw;
+            }
+        }
+
+
+        public async Task<Result<PlatformPolicyResponseDto<OrderPolicyConfigDto>>> UpdateOrderPolicyAsync(
+            Guid adminId,
+            UpdateOrderPolicyRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            var validation = await _orderValidator.ValidateAsync(
+                request,
+                cancellationToken);
+
+            if (!validation.IsValid)
+            {
+                var message = string.Join(
+                    "\n",
+                    validation.Errors.Select(x => x.ErrorMessage));
+
+                return Result<PlatformPolicyResponseDto<OrderPolicyConfigDto>>
+                    .Fail(ValidationErrors.InvalidRequest(message));
+            }
+
+            await _unitOfWork.BeginTransactionAsync(cancellationToken);
+
+            try
+            {
+                var current = await _policyRepository.GetActiveForUpdateAsync(
+                    PlatformPolicyType.Order,
+                    cancellationToken);
+
+                if (current == null)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+
+                    return Result<PlatformPolicyResponseDto<OrderPolicyConfigDto>>
+                        .Fail(PlatformPolicyErrors.ActiveNotFound(
+                            PlatformPolicyType.Order));
+                }
+
+                if (!TryDeserialize(
+                        current.Content,
+                        out OrderPolicyConfigDto? currentConfig)
+                    || !IsValidOrderConfig(currentConfig!))
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+
+                    return Result<PlatformPolicyResponseDto<OrderPolicyConfigDto>>
+                        .Fail(PlatformPolicyErrors.InvalidContent(
+                            PlatformPolicyType.Order));
+                }
+
+                var config = _mapper.Map<OrderPolicyConfigDto>(currentConfig);
+                _mapper.Map(request, config);
+
+                if (!IsValidOrderConfig(config))
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+
+                    return Result<PlatformPolicyResponseDto<OrderPolicyConfigDto>>
+                        .Fail(PlatformPolicyErrors.InvalidOrderPolicy);
+                }
+
+                if (SameOrderConfig(currentConfig!, config))
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+
+                    var currentResponse =
+                        _mapper.Map<PlatformPolicyResponseDto<OrderPolicyConfigDto>>(
+                            current);
+
+                    currentResponse.Config = currentConfig;
+
+                    return Result<PlatformPolicyResponseDto<OrderPolicyConfigDto>>
+                        .Success(currentResponse);
+                }
+
+                var now = DateTime.UtcNow;
+
+                var nextVersion = await _policyRepository.GetNextVersionAsync(
+                    PlatformPolicyType.Order,
+                    cancellationToken);
+
+                current.IsActive = false;
+                current.UpdatedAt = now;
+
+                await _policyRepository.UpdateAsync(current, cancellationToken);
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+                var newPolicy = new platform_policy
+                {
+                    PolicyId = Guid.NewGuid(),
+                    PolicyType = PlatformPolicyType.Order,
+                    Title = string.IsNullOrWhiteSpace(current.Title)
+                        ? "Order Policy"
+                        : current.Title,
+                    Content = JsonSerializer.Serialize(config, JsonOptions),
+                    Version = nextVersion,
+                    IsActive = true,
+                    CreatedAt = now,
+                    CreatedBy = adminId,
+                    UpdatedAt = now
+                };
+
+                await _policyRepository.AddAsync(newPolicy, cancellationToken);
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+                await _unitOfWork.CommitTransactionAsync(cancellationToken);
+
+                var response =
+                    _mapper.Map<PlatformPolicyResponseDto<OrderPolicyConfigDto>>(
+                        newPolicy);
+
+                response.Config = config;
+
+                return Result<PlatformPolicyResponseDto<OrderPolicyConfigDto>>
+                    .Success(response);
+            }
+            catch
+            {
+                await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                throw;
+            }
+        }
+
+        public async Task<PaymentPolicyConfigDto> GetPaymentConfigAsync(CancellationToken cancellationToken = default)
+        {
+            var result = await GetPaymentPolicyAsync(cancellationToken);
+
+            if (!result.IsSuccess || result.Data == null)
+            {
+                throw new InvalidOperationException(
+                    result.Error?.Message
+                    ?? "Payment policy configuration is unavailable.");
+            }
+
+            return result.Data.Config;
+        }
+
+        public async Task<OrderPolicyConfigDto> GetOrderConfigAsync(
+            CancellationToken cancellationToken = default)
+        {
+            var result = await GetOrderPolicyAsync(cancellationToken);
+
+            if (!result.IsSuccess || result.Data == null)
+            {
+                throw new InvalidOperationException(
+                    result.Error?.Message
+                    ?? "Order policy configuration is unavailable.");
+            }
+
+            return result.Data.Config;
+        }
+
+
+        // ================= HELPER ====================
+
         private static bool TryDeserialize<T>(
             string? content,
             out T? config) where T : class
@@ -785,6 +1118,37 @@ namespace HomeCycle.Application.Services.PlatformPolicies
                 && config.RescheduleCutoffHours is >= 1 and <= 720
                 && config.CancellationCutoffHours is >= 1 and <= 720
                 && config.RescheduleCutoffHours >= config.CancellationCutoffHours;
+        }
+
+        private static bool IsValidPaymentConfig(
+            PaymentPolicyConfigDto config)
+        {
+            return config.DepositRatePercent > 0
+                && config.DepositRatePercent <= 100
+                && config.PaymentExpiryMinutes is >= 1 and <= 1440;
+        }
+
+        private static bool IsValidOrderConfig(
+            OrderPolicyConfigDto config)
+        {
+            return config.BuyerReceiveConfirmationTimeoutHours
+                is >= 1 and <= 720;
+        }
+
+        private static bool SamePaymentConfig(
+            PaymentPolicyConfigDto current,
+            PaymentPolicyConfigDto updated)
+        {
+            return current.DepositRatePercent == updated.DepositRatePercent
+                && current.PaymentExpiryMinutes == updated.PaymentExpiryMinutes;
+        }
+
+        private static bool SameOrderConfig(
+            OrderPolicyConfigDto current,
+            OrderPolicyConfigDto updated)
+        {
+            return current.BuyerReceiveConfirmationTimeoutHours
+                == updated.BuyerReceiveConfirmationTimeoutHours;
         }
 
         private static bool SameDisputeConfig(
@@ -867,6 +1231,18 @@ namespace HomeCycle.Application.Services.PlatformPolicies
         {
             switch (policyType)
             {
+                case PlatformPolicyType.Payment:
+                    return TryDeserialize(
+                               content,
+                               out PaymentPolicyConfigDto? paymentConfig)
+                           && IsValidPaymentConfig(paymentConfig!);
+
+                case PlatformPolicyType.Order:
+                    return TryDeserialize(
+                               content,
+                               out OrderPolicyConfigDto? orderConfig)
+                           && IsValidOrderConfig(orderConfig!);
+
                 case PlatformPolicyType.Dispute:
                     return TryDeserialize(content, out DisputePolicyConfigDto? disputeConfig)
                            && IsValidDisputeConfig(disputeConfig!);
@@ -895,7 +1271,9 @@ namespace HomeCycle.Application.Services.PlatformPolicies
             return policyType is
                 PlatformPolicyType.Dispute or
                 PlatformPolicyType.Appointment or
-                PlatformPolicyType.FileUpload;
+                PlatformPolicyType.FileUpload or
+                PlatformPolicyType.Payment or
+                PlatformPolicyType.Order;
         }
 
         private static bool IsValidJsonObject(string? content)

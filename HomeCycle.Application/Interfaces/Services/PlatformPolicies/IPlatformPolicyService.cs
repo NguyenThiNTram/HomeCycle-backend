@@ -32,5 +32,19 @@ namespace HomeCycle.Application.Interfaces.Services.PlatformPolicies
         Task<Result<PlatformPolicyResponseDto<FileUploadPolicyConfigDto>>> GetFileUploadPolicyAsync(CancellationToken cancellationToken = default);
 
         Task<Result<PlatformPolicyResponseDto<FileUploadPolicyConfigDto>>> UpdateFileUploadPolicyAsync(Guid adminId, UpdateFileUploadPolicyRequest request, CancellationToken cancellationToken = default);
+
+        Task<Result<PlatformPolicyResponseDto<PaymentPolicyConfigDto>>> GetPaymentPolicyAsync(CancellationToken cancellationToken = default);
+
+        Task<Result<PlatformPolicyResponseDto<OrderPolicyConfigDto>>> GetOrderPolicyAsync(CancellationToken cancellationToken = default);
+
+        Task<Result<PlatformPolicyResponseDto<PaymentPolicyConfigDto>>> UpdatePaymentPolicyAsync(
+            Guid adminId,
+            UpdatePaymentPolicyRequest request,
+            CancellationToken cancellationToken = default);
+
+        Task<Result<PlatformPolicyResponseDto<OrderPolicyConfigDto>>> UpdateOrderPolicyAsync(
+            Guid adminId,
+            UpdateOrderPolicyRequest request,
+            CancellationToken cancellationToken = default);
     }
 }
