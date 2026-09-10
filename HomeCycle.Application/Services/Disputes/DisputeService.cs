@@ -1,4 +1,5 @@
-﻿using AutoMapper;
+using HomeCycle.Application.Interfaces.Repositories.Posts;
+using AutoMapper;
 using FluentValidation;
 using HomeCycle.Application.Commons.Errors;
 using HomeCycle.Application.Commons.Helpers;
@@ -36,6 +37,7 @@ namespace HomeCycle.Application.Services.Disputes
 
         private readonly IDisputeRepository _disputeRepository;
         private readonly IOrderRepository _orderRepository;
+        private readonly IPostRepository _postRepo;
         private readonly IAgreementFormRepository _agreementRepository;
         private readonly IBusinessProfileRepository _businessProfileRepository;
         private readonly IPersonalProfileRepository _personalProfileRepository;
@@ -56,6 +58,7 @@ namespace HomeCycle.Application.Services.Disputes
         public DisputeService(
             IDisputeRepository disputeRepository,
             IOrderRepository orderRepository,
+            IPostRepository postRepo,
             IAgreementFormRepository agreementRepository,
             IBusinessProfileRepository businessProfileRepository,
             IPersonalProfileRepository personalProfileRepository,
@@ -75,6 +78,7 @@ namespace HomeCycle.Application.Services.Disputes
         {
             _disputeRepository = disputeRepository;
             _orderRepository = orderRepository;
+            _postRepo = postRepo;
             _agreementRepository = agreementRepository;
             _businessProfileRepository = businessProfileRepository;
             _personalProfileRepository = personalProfileRepository;
@@ -250,6 +254,12 @@ namespace HomeCycle.Application.Services.Disputes
 
             try
             {
+                var disputeSnapshot = await _disputeRepository.GetByIdAsync(disputeId, cancellationToken);
+                if (disputeSnapshot?.OrderId is Guid relatedOrderId)
+                {
+                    var tradeSnapshot = await _postRepo.GetTradeByOrderAsync(relatedOrderId, cancellationToken);
+                    if (tradeSnapshot != null) await _postRepo.LockAsync(tradeSnapshot.PostId, tradeSnapshot.BuyPostId, cancellationToken);
+                }
                 var dispute = await _disputeRepository.GetByIdForUpdateAsync(disputeId, cancellationToken);
 
                 if (dispute == null)
@@ -400,6 +410,12 @@ namespace HomeCycle.Application.Services.Disputes
 
             try
             {
+                var disputeSnapshot = await _disputeRepository.GetByIdAsync(disputeId, cancellationToken);
+                if (disputeSnapshot?.OrderId is Guid relatedOrderId)
+                {
+                    var tradeSnapshot = await _postRepo.GetTradeByOrderAsync(relatedOrderId, cancellationToken);
+                    if (tradeSnapshot != null) await _postRepo.LockAsync(tradeSnapshot.PostId, tradeSnapshot.BuyPostId, cancellationToken);
+                }
                 var dispute = await _disputeRepository.GetByIdForUpdateAsync(disputeId, cancellationToken);
 
                 if (dispute == null)
@@ -510,6 +526,12 @@ namespace HomeCycle.Application.Services.Disputes
 
             try
             {
+                var disputeSnapshot = await _disputeRepository.GetByIdAsync(disputeId, cancellationToken);
+                if (disputeSnapshot?.OrderId is Guid relatedOrderId)
+                {
+                    var tradeSnapshot = await _postRepo.GetTradeByOrderAsync(relatedOrderId, cancellationToken);
+                    if (tradeSnapshot != null) await _postRepo.LockAsync(tradeSnapshot.PostId, tradeSnapshot.BuyPostId, cancellationToken);
+                }
                 var dispute = await _disputeRepository.GetByIdForUpdateAsync(disputeId, cancellationToken);
                 var stateError = ValidateModeratorDecisionState(dispute, moderatorId);
 
@@ -608,6 +630,7 @@ namespace HomeCycle.Application.Services.Disputes
                                 ? "Order cancelled and platform-held funds refunded after a buyer-favored dispute."
                                 : "Order cancelled and platform-held funds refunded because the seller retained the item.";
 
+                        await _postRepo.RestoreOrderQuantityAsync(order.OrderId, true, cancellationToken);
                         ApplyRefundedCancellationState(
                             order,
                             refundedAmount,
@@ -729,6 +752,12 @@ namespace HomeCycle.Application.Services.Disputes
 
             try
             {
+                var disputeSnapshot = await _disputeRepository.GetByIdAsync(disputeId, cancellationToken);
+                if (disputeSnapshot?.OrderId is Guid relatedOrderId)
+                {
+                    var tradeSnapshot = await _postRepo.GetTradeByOrderAsync(relatedOrderId, cancellationToken);
+                    if (tradeSnapshot != null) await _postRepo.LockAsync(tradeSnapshot.PostId, tradeSnapshot.BuyPostId, cancellationToken);
+                }
                 var dispute = await _disputeRepository.GetByIdForUpdateAsync(disputeId, cancellationToken);
                 var stateError = ValidateModeratorDecisionState(dispute, moderatorId);
 
@@ -866,6 +895,12 @@ namespace HomeCycle.Application.Services.Disputes
 
             try
             {
+                var disputeSnapshot = await _disputeRepository.GetByIdAsync(disputeId, cancellationToken);
+                if (disputeSnapshot?.OrderId is Guid relatedOrderId)
+                {
+                    var tradeSnapshot = await _postRepo.GetTradeByOrderAsync(relatedOrderId, cancellationToken);
+                    if (tradeSnapshot != null) await _postRepo.LockAsync(tradeSnapshot.PostId, tradeSnapshot.BuyPostId, cancellationToken);
+                }
                 var dispute = await _disputeRepository.GetByIdForUpdateAsync(disputeId, cancellationToken);
 
                 if (dispute == null)
@@ -966,6 +1001,7 @@ namespace HomeCycle.Application.Services.Disputes
                     }
 
                     refundedAmount = refundResult.Data;
+                    await _postRepo.RestoreOrderQuantityAsync(order.OrderId, true, cancellationToken);
                     ApplyReturnedOrderState(order, refundedAmount, now);
                 }
                 else

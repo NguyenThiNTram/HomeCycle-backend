@@ -1,4 +1,4 @@
-﻿using HomeCycle.Application.Commons.Results;
+using HomeCycle.Application.Commons.Results;
 using HomeCycle.Domain.Entities;
 using System;
 using System.Collections.Generic;
@@ -10,6 +10,6 @@ namespace HomeCycle.Application.Interfaces.Services.Offers
 {
     public interface IOfferTermsPolicy
     {
-        Error? Validate(post post, decimal offerPrice, int offerQuantity);
+        Error? Validate(post post, decimal offerPrice, int offerQuantity, bool procurement = false);
     }
 }

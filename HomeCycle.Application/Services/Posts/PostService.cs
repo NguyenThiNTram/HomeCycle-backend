@@ -1,4 +1,5 @@
-﻿using AutoMapper;
+using HomeCycle.Application.Interfaces.Repositories.Offers;
+using AutoMapper;
 using FluentValidation;
 using HomeCycle.Application.Commons.Errors;
 using HomeCycle.Application.Commons.Paginations;
@@ -27,9 +28,10 @@ using System.Threading.Tasks;
 
 namespace HomeCycle.Application.Services.Posts
 {
-    public class PostService : IPostService
+    public partial class PostService : IPostService
     {
         private readonly IPostRepository _postRepository;
+        private readonly IOfferRepository _offerRepository;
         private readonly IProductService _productService;
         private readonly IMediaService _mediaService;
         private readonly IUserRepository _userRepository;
@@ -48,6 +50,7 @@ namespace HomeCycle.Application.Services.Posts
 
         public PostService(
             IPostRepository postRepository,
+            IOfferRepository offerRepository,
             IProductService productService,
             IMediaService mediaService,
             IUserRepository userRepository,
@@ -62,6 +65,7 @@ namespace HomeCycle.Application.Services.Posts
             INotificationService notificationService)
         {
             _postRepository = postRepository;
+            _offerRepository = offerRepository;
             _productService = productService;
             _mediaService = mediaService;
             _userRepository = userRepository;
@@ -163,85 +167,6 @@ namespace HomeCycle.Application.Services.Posts
             }
         }
 
-        // ================== CREATE - BUY ==================
-
-        public async Task<Result<PostResponse>> CreateBuyPostAsync(
-            Guid ownerId, CreateBuyPostRequest request, CancellationToken cancellationToken = default)
-        {
-            var validation = await _createBuyValidator.ValidateAsync(request, cancellationToken);
-            if (!validation.IsValid)
-            {
-                await SendPostCreationFailedNotificationAsync(ownerId, "Tạo bài đăng mua thất bại: " + string.Join(", ", validation.Errors.Select(e => e.ErrorMessage)), cancellationToken);
-                return Result<PostResponse>.Fail(
-                    ValidationErrors.InvalidRequest(string.Join("\n", validation.Errors.Select(e => e.ErrorMessage))));
-            }
-
-            var roleError = await ValidateCreateRoleAsync(ownerId, UserRole.Business, cancellationToken);
-            if (roleError is not null)
-            {
-                await SendPostCreationFailedNotificationAsync(ownerId, "Tạo bài đăng mua thất bại: " + roleError.Message, cancellationToken);
-                return Result<PostResponse>.Fail(roleError);
-            }
-
-            var now = DateTime.UtcNow;
-            var post = _mapper.Map<post>(request);
-
-            post.PostId = Guid.NewGuid();
-            post.OwnerId = ownerId;
-            post.PostType = PostType.Buy;
-            //post.ProductName = request.Requirement?.ProductName;
-            post.BasePrice = request.ExpectedPrice;
-            post.CreatedAt = now;
-            post.UpdatedAt = now;
-            post.RemainingQuantity = request.Quantity;
-            post.Status = PostStatus.Active;
-
-            try
-            {
-                await _unitOfWork.BeginTransactionAsync(cancellationToken);
-                await _postRepository.AddAsync(post, cancellationToken);
-
-                var productResult = await _productService.PrepareForRequirementAsync(post.PostId, request.Requirement, cancellationToken);
-                if (!productResult.IsSuccess)
-                {
-                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
-                    await SendPostCreationFailedNotificationAsync(ownerId, "Tạo bài đăng mua thất bại: " + productResult.Error!.Message, cancellationToken);
-                    return Result<PostResponse>.Fail(productResult.Error!);
-                }
-
-                var mediaResult = await _mediaService.UploadAndSaveMediaAsync(
-                    targetId: post.PostId,
-                    targetType: "Post",
-                    folderName: PostMediaFolder,
-                    files: request.Medias ?? [],
-                    uploadContext: FileUploadContext.PostMedia,
-                    cancellationToken: cancellationToken);
-
-                if (!mediaResult.IsSuccess)
-                {
-                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
-                    await SendPostCreationFailedNotificationAsync(ownerId, "Tạo bài đăng mua thất bại: " + mediaResult.Error!.Message, cancellationToken);
-                    return Result<PostResponse>.Fail(mediaResult.Error!);
-                }
-
-                await _unitOfWork.SaveChangesAsync(cancellationToken);
-                await _unitOfWork.CommitTransactionAsync(cancellationToken);
-
-                var response = _mapper.Map<PostResponse>(post);
-
-                // Gửi thông báo realtime khi tạo bài đăng thành công
-                await SendPostCreatedNotificationAsync(ownerId, post.PostId, "Bài đăng mua đã được tạo thành công", "Bài đăng mua của bạn đã được đăng tải.", cancellationToken);
-
-                return Result<PostResponse>.Success(response);
-            }
-            catch (Exception ex)
-            {
-                await _unitOfWork.RollbackTransactionAsync(cancellationToken);
-                await SendPostCreationFailedNotificationAsync(ownerId, "Tạo bài đăng mua thất bại: " + ex.Message, cancellationToken);
-                throw;
-            }
-        }
-
         // ================== UPDATE - SELL ==================
 
         public async Task<Result<PostResponse>> UpdateSellPostAsync(
@@ -252,22 +177,32 @@ namespace HomeCycle.Application.Services.Posts
                 return Result<PostResponse>.Fail(
                     ValidationErrors.InvalidRequest(string.Join("\n", validation.Errors.Select(e => e.ErrorMessage))));
 
-            var existing = await _postRepository.GetByIdAsync(postId, cancellationToken);
-
-            var checkError = ValidateOwnershipAndComputeRemaining(
-                existing, ownerId, PostType.Sell, request.Quantity ?? existing.Quantity, out int newRemainingQuantity);
-            if (checkError is not null)
-                return Result<PostResponse>.Fail(checkError);
-
-            _mapper.Map(request, existing);
-            existing!.BasePrice = request.BasePrice;
-            //existing.ProductName = request.Product?.ProductName;
-            existing.RemainingQuantity = newRemainingQuantity;
-            existing.UpdatedAt = DateTime.UtcNow;
-
+            await _unitOfWork.BeginTransactionAsync(cancellationToken);
             try
             {
-                await _unitOfWork.BeginTransactionAsync(cancellationToken);
+                var existing = await _postRepository.GetByIdForUpdateAsync(postId, cancellationToken);
+
+                var checkError = ValidateOwnershipAndComputeRemaining(
+                    existing, ownerId, PostType.Sell, request.Quantity ?? existing?.Quantity ?? 0, out int newRemainingQuantity);
+                if (checkError is not null)
+                    return Result<PostResponse>.Fail(checkError);
+
+                var reserved = await _postRepository.GetReservedQuantityAsync(postId, null, cancellationToken);
+                if (newRemainingQuantity < reserved)
+                    return Result<PostResponse>.Fail(PostErrors.InvalidUpdateQuantity(existing!.Quantity - existing.RemainingQuantity + reserved, request.Quantity ?? existing.Quantity));
+                var previousPrice = existing!.BasePrice;
+                var previousQuantity = existing.Quantity;
+                _mapper.Map(request, existing);
+                existing.Quantity = request.Quantity ?? previousQuantity;
+                existing.BasePrice = request.BasePrice ?? previousPrice;
+                existing.RemainingQuantity = newRemainingQuantity;
+                existing.UpdatedAt = DateTime.UtcNow;
+
+                if (existing.RemainingQuantity == 0)
+                {
+                    existing.Status = PostStatus.Closed;
+                    await _offerRepository.ClosePendingByPostAsync(postId, OfferStatus.Closed, cancellationToken);
+                }
                 await _postRepository.UpdateAsync(existing, cancellationToken);
 
                 var productResult = await _productService.PrepareForUpdateAsync(postId, request.Product, cancellationToken);
@@ -304,85 +239,9 @@ namespace HomeCycle.Application.Services.Posts
                 var response = _mapper.Map<PostResponse>(existing);
                 return Result<PostResponse>.Success(response);
             }
-            catch
+            finally
             {
-                await _unitOfWork.RollbackTransactionAsync(cancellationToken);
-                throw;
-            }
-        }
-
-        // ================== UPDATE - BUY ==================
-
-        public async Task<Result<PostResponse>> UpdateBuyPostAsync(
-            Guid ownerId, Guid postId, UpdateBuyPostRequest request, CancellationToken cancellationToken = default)
-        {
-            var validation = await _updateBuyValidator.ValidateAsync(request, cancellationToken);
-            if (!validation.IsValid)
-                return Result<PostResponse>.Fail(
-                    ValidationErrors.InvalidRequest(string.Join("\n", validation.Errors.Select(e => e.ErrorMessage))));
-
-            var existing = await _postRepository.GetByIdAsync(postId, cancellationToken);
-
-            //var checkError = ValidateOwnershipAndComputeRemaining(
-            //    existing, ownerId, PostType.Buy, (int)request.Quantity, out int newRemainingQuantity);
-            var checkError = ValidateOwnershipAndComputeRemaining(
-                existing,
-                ownerId,
-                PostType.Buy,
-                request.Quantity ?? existing!.Quantity,
-                out int newRemainingQuantity);
-
-            if (checkError is not null)
-                return Result<PostResponse>.Fail(checkError);
-
-            _mapper.Map(request, existing);
-            existing!.BasePrice = request.ExpectedPrice;
-            //existing.ProductName = request.Requirement?.ProductName;
-            existing.RemainingQuantity = newRemainingQuantity;
-            existing.UpdatedAt = DateTime.UtcNow;
-
-            try
-            {
-                await _unitOfWork.BeginTransactionAsync(cancellationToken);
-                await _postRepository.UpdateAsync(existing, cancellationToken);
-
-                var productResult = await _productService.UpdateForRequirementAsync(postId, request.Requirement, cancellationToken);
-                if (!productResult.IsSuccess)
-                {
-                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
-                    return Result<PostResponse>.Fail(productResult.Error!);
-                }
-
-                // Kiểm tra xem request có chứa danh sách ảnh mới không
-                if (request.Medias != null && request.Medias.Any())
-                {
-                    //var mediaResult = await _mediaService.ReplaceMediaAsync(
-                    //    postId, PostMediaTargetType, PostMediaFolder, request.Medias, cancellationToken);
-                    var mediaResult = await _mediaService.ReplaceMediaAsync(
-                        targetId: postId,
-                        targetType: PostMediaTargetType,
-                        folderName: PostMediaFolder,
-                        files: request.Medias,
-                        uploadContext: FileUploadContext.PostMedia,
-                        cancellationToken: cancellationToken);
-
-                    if (!mediaResult.IsSuccess)
-                    {
-                        await _unitOfWork.RollbackTransactionAsync(cancellationToken);
-                        return Result<PostResponse>.Fail(mediaResult.Error!);
-                    }
-                }
-
-                await _unitOfWork.SaveChangesAsync(cancellationToken);
-                await _unitOfWork.CommitTransactionAsync(cancellationToken);
-
-                var response = _mapper.Map<PostResponse>(existing);
-                return Result<PostResponse>.Success(response);
-            }
-            catch
-            {
-                await _unitOfWork.RollbackTransactionAsync(cancellationToken);
-                throw;
+                await _unitOfWork.RollbackTransactionAsync(CancellationToken.None);
             }
         }
 
@@ -648,57 +507,10 @@ namespace HomeCycle.Application.Services.Posts
             return Result<PagedResult<PostResponse>>.Success(response);
         }
 
-        public async Task<Result<bool>> CloseAsync(
-            Guid ownerId,
-            Guid postId,
-            CancellationToken cancellationToken = default)
-        {
-            var existing = await _postRepository.GetByIdAsync(postId, cancellationToken);
-            if (existing is null)
-                return Result<bool>.Fail(PostErrors.NotFound);
-
-            if (existing.OwnerId != ownerId)
-                return Result<bool>.Fail(PostErrors.Forbidden);
-
-            if (existing.Status == PostStatus.Closed)
-                return Result<bool>.Fail(PostErrors.PostAlreadyClosedOrDeleted);
-
-            var updated = await _postRepository.UpdateStatusAsync(postId, PostStatus.Closed, cancellationToken);
-            if (!updated)
-                return Result<bool>.Fail(PostErrors.NotFound);
-
-            existing.Status = PostStatus.Closed;
-            existing.UpdatedAt = DateTime.UtcNow;
-
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
-            return Result<bool>.Success(true);
-        }
-
-        public async Task<Result<bool>> ReactivateAsync(
-            Guid ownerId,
-            Guid postId,
-            CancellationToken cancellationToken = default)
-        {
-            var existing = await _postRepository.GetByIdAsync(postId, cancellationToken);
-            if (existing is null)
-                return Result<bool>.Fail(PostErrors.NotFound);
-
-            if (existing.OwnerId != ownerId)
-                return Result<bool>.Fail(PostErrors.Forbidden);
-
-            if (existing.Status != PostStatus.Closed)
-                return Result<bool>.Fail(PostErrors.PostAlreadyClosedOrDeleted);
-
-            var updated = await _postRepository.UpdateStatusAsync(postId, PostStatus.Active, cancellationToken);
-            if (!updated)
-                return Result<bool>.Fail(PostErrors.NotFound);
-
-            existing.Status = PostStatus.Active;
-            existing.UpdatedAt = DateTime.UtcNow;
-
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
-            return Result<bool>.Success(true);
-        }
+        public Task<Result<bool>> CloseAsync(Guid ownerId, Guid postId, CancellationToken cancellationToken = default) =>
+            ChangeLifecycleAsync(ownerId, postId, PostStatus.Closed, false, cancellationToken);
+        public Task<Result<bool>> ReactivateAsync(Guid ownerId, Guid postId, CancellationToken cancellationToken = default) =>
+            ChangeLifecycleAsync(ownerId, postId, PostStatus.Active, false, cancellationToken);
 
         public async Task<Result<bool>> DeleteAsync(
             Guid ownerId,
@@ -712,6 +524,9 @@ namespace HomeCycle.Application.Services.Posts
             if (existing.OwnerId != ownerId)
                 return Result<bool>.Fail(PostErrors.Forbidden);
 
+            if (existing.PostType == PostType.Buy) return await DeleteBuyPostAsync(ownerId, postId, cancellationToken);
+            if (await _postRepository.HasUnfinishedTransactionsAsync(postId, cancellationToken))
+                return Result<bool>.Fail(ValidationErrors.InvalidRequest("Bài đăng đang có giao dịch chưa hoàn tất."));
             var deleted = await _postRepository.DeleteAsync(postId, cancellationToken);
             if (!deleted)
                 return Result<bool>.Fail(PostErrors.NotFound);
@@ -726,22 +541,21 @@ namespace HomeCycle.Application.Services.Posts
             Guid postId,
             CancellationToken cancellationToken = default)
         {
-            var existing = await _postRepository.GetByIdAsync(postId, cancellationToken);
-            if (existing is null || existing.Status == PostStatus.Deleted)
-                return Result<bool>.Fail(PostErrors.NotFound);
-
-            if (existing.Status == PostStatus.Suspended)
-                return Result<bool>.Fail(PostErrors.PostAlreadySuspended);
-
-            var updated = await _postRepository.UpdateStatusAsync(postId, PostStatus.Suspended, cancellationToken);
-            if (!updated)
-                return Result<bool>.Fail(PostErrors.NotFound);
-
-            existing.Status = PostStatus.Suspended;
-            existing.UpdatedAt = DateTime.UtcNow;
-
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
-            return Result<bool>.Success(true);
+            await _unitOfWork.BeginTransactionAsync(cancellationToken);
+            try
+            {
+                var existing = await _postRepository.GetByIdForUpdateAsync(postId, cancellationToken);
+                if (existing is null || existing.Status == PostStatus.Deleted) return Result<bool>.Fail(PostErrors.NotFound);
+                if (existing.Status == PostStatus.Suspended) return Result<bool>.Fail(PostErrors.PostAlreadySuspended);
+                existing.Status = PostStatus.Suspended;
+                existing.UpdatedAt = DateTime.UtcNow;
+                await _postRepository.UpdateAsync(existing, cancellationToken);
+                await _offerRepository.ClosePendingByPostAsync(postId, OfferStatus.Closed, cancellationToken);
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+                await _unitOfWork.CommitTransactionAsync(cancellationToken);
+                return Result<bool>.Success(true);
+            }
+            finally { await _unitOfWork.RollbackTransactionAsync(CancellationToken.None); }
         }
 
         private async Task<Error?> ValidateCreateRoleAsync(
@@ -751,7 +565,7 @@ namespace HomeCycle.Application.Services.Posts
             if (owner is null)
                 return PostErrors.RoleNotAllowed;
 
-            return owner.Role == requiredRole
+            return owner.Status == UserStatus.Active && owner.Role == requiredRole
                 ? null
                 : PostErrors.RoleNotAllowed;
         }
@@ -770,7 +584,7 @@ namespace HomeCycle.Application.Services.Posts
             if (existing.PostType != postType)
                 return PostErrors.InvalidPostType;
 
-            if (existing.Status == PostStatus.Deleted || existing.Status == PostStatus.Closed)
+            if (existing.Status is PostStatus.Deleted or PostStatus.Closed or PostStatus.Suspended)
                 return PostErrors.PostAlreadyClosedOrDeleted;
 
             // Spec: "Sửa hoặc xóa tin trong thời hạn cho phép"

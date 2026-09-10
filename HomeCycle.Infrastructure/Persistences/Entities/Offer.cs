@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
@@ -17,6 +17,7 @@ public partial class Offer
     public Guid OfferId { get; set; }
 
     public Guid PostId { get; set; }
+    public Guid? BuyPostId { get; set; }
 
     public Guid SenderId { get; set; }
 
@@ -39,6 +40,10 @@ public partial class Offer
     [ForeignKey("PostId")]
     [InverseProperty("Offers")]
     public virtual Post Post { get; set; } = null!;
+
+    [ForeignKey(nameof(BuyPostId))]
+    [InverseProperty(nameof(global::HomeCycle.Infrastructure.Post.BuyOffers))]
+    public virtual Post? BuyPost { get; set; }
 
     [ForeignKey("ReceiverId")]
     [InverseProperty("OfferReceivers")]

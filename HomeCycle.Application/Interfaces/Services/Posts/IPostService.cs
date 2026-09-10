@@ -1,4 +1,4 @@
-﻿using HomeCycle.Application.Commons.Paginations;
+using HomeCycle.Application.Commons.Paginations;
 using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Requests.Posts;
 using HomeCycle.Application.DTOs.Responses.Posts;
@@ -12,6 +12,9 @@ namespace HomeCycle.Application.Interfaces.Services.Posts
 {
     public interface IPostService
     {
+        Task<Result<PagedResult<BuyPostMatchResponse>>> GetMatchesAsync(Guid buyPostId, PaginationRequest request, CancellationToken cancellationToken = default);
+        Task<Result<bool>> DeleteBuyPostAsync(Guid ownerId, Guid postId, CancellationToken cancellationToken = default);
+        Task ExpireBuyPostsAsync(CancellationToken cancellationToken = default);
         Task<Result<PostResponse>> CreateSellPostAsync(Guid ownerId, CreateSellPostRequest request, CancellationToken cancellationToken = default);
 
         Task<Result<PostResponse>> CreateBuyPostAsync(Guid ownerId, CreateBuyPostRequest request, CancellationToken cancellationToken = default);

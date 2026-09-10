@@ -1,4 +1,4 @@
-﻿using HomeCycle.Application.Commons.Paginations;
+using HomeCycle.Application.Commons.Paginations;
 using HomeCycle.Application.DTOs.Requests.Posts;
 using HomeCycle.Application.Interfaces.Repositories.Posts;
 using HomeCycle.Domain.Entities;
@@ -14,7 +14,7 @@ using System.Threading.Tasks;
 
 namespace HomeCycle.Infrastructure.Repositories.Posts
 {
-    public class PostRepository : IPostRepository
+    public partial class PostRepository : IPostRepository
     {
         private readonly HomeCycleDbContext _db;
 
@@ -32,7 +32,9 @@ namespace HomeCycle.Infrastructure.Repositories.Posts
         public Task UpdateAsync(post entity, CancellationToken cancellationToken = default)
         {
             var infraPost = entity.ToInfrastructure();
-            _db.Posts.Update(infraPost);
+            var local = _db.Posts.Local.FirstOrDefault(p => p.PostId == infraPost.PostId);
+            if (local != null) _db.Entry(local).CurrentValues.SetValues(infraPost);
+            else _db.Posts.Update(infraPost);
             return Task.CompletedTask;
         }
 
@@ -144,7 +146,7 @@ namespace HomeCycle.Infrastructure.Repositories.Posts
                 .Include(x => x.Product)
                     .ThenInclude(x => x.Brand)
                 .Include(x => x.Product)
-                .Where(x => x.Status == (int)PostStatus.Active)
+                .Where(x => x.Status == (int)PostStatus.Active && (x.ExpiryDate == null || x.ExpiryDate > DateTime.UtcNow))
                 .OrderByDescending(x => x.CreatedAt);
 
             var totalCount = await query.CountAsync(cancellationToken);
@@ -173,7 +175,7 @@ namespace HomeCycle.Infrastructure.Repositories.Posts
                     .ThenInclude(x => x.Category)
                 .Include(x => x.Product)
                     .ThenInclude(x => x.Brand)
-                .Where(x => x.OwnerId == ownerId)
+                .Where(x => x.OwnerId == ownerId && x.Status != (int)PostStatus.Deleted)
                 .OrderByDescending(x => x.CreatedAt);
 
             var totalCount = await query.CountAsync(cancellationToken);
@@ -209,7 +211,7 @@ namespace HomeCycle.Infrastructure.Repositories.Posts
                     .ThenInclude(x => x.Product_Attribute_Values)
                         .ThenInclude(x => x.Option)
                 .FirstOrDefaultAsync(
-                    x => x.PostId == postId && x.OwnerId == ownerId, cancellationToken);
+                    x => x.PostId == postId && x.OwnerId == ownerId && x.Status != (int)PostStatus.Deleted, cancellationToken);
 
             return entity?.ToDomain();
         }
@@ -226,7 +228,7 @@ namespace HomeCycle.Infrastructure.Repositories.Posts
                 .Include(x => x.Product)
                     .ThenInclude(x => x!.Brand)
                 .Where(x =>
-                    x.Status == (int)PostStatus.Active &&
+                    x.Status == (int)PostStatus.Active && (x.ExpiryDate == null || x.ExpiryDate > DateTime.UtcNow) &&
                     x.Product != null &&
                     x.User!.Status == (int)UserStatus.Active);
 
@@ -239,8 +241,8 @@ namespace HomeCycle.Infrastructure.Repositories.Posts
                 query = query.Where(x =>
                     EF.Functions.ILike(x.Description ?? string.Empty, keyword) ||
                     EF.Functions.ILike(x.Product!.ProductName ?? string.Empty, keyword) ||
-                    EF.Functions.ILike(x.Product.Category.CategoryName ?? string.Empty, keyword) ||
-                    EF.Functions.ILike(x.Product.ProductType.ProductTypeName ?? string.Empty, keyword) ||
+                    (x.Product.Category != null && EF.Functions.ILike(x.Product.Category.CategoryName ?? string.Empty, keyword)) ||
+                    (x.Product.ProductType != null && EF.Functions.ILike(x.Product.ProductType.ProductTypeName ?? string.Empty, keyword)) ||
 
                     (x.Product.Brand != null &&
                     EF.Functions.ILike(x.Product.Brand.BrandName ?? string.Empty, keyword)));
@@ -328,13 +330,13 @@ namespace HomeCycle.Infrastructure.Repositories.Posts
             if (request.MinPrice.HasValue)
             {
                 var minPrice = request.MinPrice.Value;
-                query = query.Where(x => x.BasePrice >= minPrice);
+                query = query.Where(x => x.PostType == (int)PostType.Buy ? x.BasePrice == null || x.BasePrice >= minPrice : x.BasePrice >= minPrice);
             }
 
             if (request.MaxPrice.HasValue)
             {
                 var maxPrice = request.MaxPrice.Value;
-                query = query.Where(x => x.BasePrice <= maxPrice);
+                query = query.Where(x => x.PostType == (int)PostType.Buy ? x.MinExpectedPrice == null || x.MinExpectedPrice <= maxPrice : x.BasePrice <= maxPrice);
             }
 
             // ==================== AVAILABILITY ====================
@@ -459,7 +461,7 @@ namespace HomeCycle.Infrastructure.Repositories.Posts
         public async Task<int> CountActiveByOwnerAsync(Guid ownerId, CancellationToken cancellationToken = default)
         {
             return await _db.Posts.CountAsync(
-                x => x.OwnerId == ownerId && x.Status == (int)PostStatus.Active,
+                x => x.OwnerId == ownerId && x.Status == (int)PostStatus.Active && (x.ExpiryDate == null || x.ExpiryDate > DateTime.UtcNow),
                 cancellationToken);
         }
 

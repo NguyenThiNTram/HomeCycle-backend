@@ -1,4 +1,4 @@
-﻿using HomeCycle.Domain.Enums;
+using HomeCycle.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 using System;
 using System.Collections.Generic;
@@ -11,8 +11,8 @@ public class product
 {
     public Guid ProductId { get; set; }
     public Guid PostId { get; set; }
-    public Guid CategoryId { get; set; }
-    public Guid ProductTypeId { get; set; }
+    public Guid? CategoryId { get; set; }
+    public Guid? ProductTypeId { get; set; }
     public Guid? BrandId { get; set; }
 
     public string? ProductName { get; set; }
@@ -44,7 +44,7 @@ public class product
     {
     }
 
-    public product(Guid ProductId, Guid PostId, Guid CategoryId, Guid ProductTypeId, Guid? BrandId)
+    public product(Guid ProductId, Guid PostId, Guid? CategoryId, Guid? ProductTypeId, Guid? BrandId)
     {
         this.ProductId = ProductId;
         this.PostId = PostId;

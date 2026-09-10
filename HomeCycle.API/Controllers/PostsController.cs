@@ -1,4 +1,6 @@
-﻿using HomeCycle.Application.Commons.Errors;
+using HomeCycle.Application.DTOs.Requests.Offers;
+using HomeCycle.Application.Interfaces.Services.Offers;
+using HomeCycle.Application.Commons.Errors;
 using HomeCycle.Application.Commons.Paginations;
 using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Requests.Posts;
@@ -69,15 +71,15 @@ namespace HomeCycle.API.Controllers
         [HttpPost("create/buy")]
         [SwaggerOperation(
             Summary = "Tạo bài đăng mua",
-            Description = "Tạo mới bài đăng thu mua sản phẩm với thông tin chi tiết và hình ảnh."
+            Description = "Tạo mới bài đăng thu mua sản phẩm với thông tin chi tiết không cần hình ảnh."
         )]
         [Authorize(Roles = "Business")]
-        [Consumes("multipart/form-data")]
+        [Consumes("application/json")]
         [ProducesResponseType(StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status403Forbidden)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         public async Task<IActionResult> CreateBuyPost(
-            [FromForm] CreateBuyPostRequest request,
+            [FromBody] CreateBuyPostRequest request,
             CancellationToken cancellationToken)
         {
             var result = await _postService.CreateBuyPostAsync(CurrentUserId, request, cancellationToken);
@@ -120,10 +122,11 @@ namespace HomeCycle.API.Controllers
             Summary = "Cập nhật bài đăng mua",
             Description = "Cập nhật thông tin bài đăng thu mua sản phẩm."
         )]
-        [Consumes("multipart/form-data")]
+        [Consumes("application/json")]
+        [Authorize(Roles = "Business")]
         public async Task<IActionResult> UpdateBuyPost(
             Guid postId,
-            [FromForm] UpdateBuyPostRequest request,
+            [FromBody] UpdateBuyPostRequest request,
             CancellationToken cancellationToken)
         {
             var result = await _postService.UpdateBuyPostAsync(CurrentUserId, postId, request, cancellationToken);
@@ -161,7 +164,7 @@ namespace HomeCycle.API.Controllers
             Summary = "Lấy tất cả bài đăng (dành cho Moderator/Admin quản lý hệ thống)",
             Description = "Trả về danh sách TẤT CẢ bài đăng bất kể trạng thái (Active, Suspended, Closed, Deleted) có hỗ trợ phân trang. Chỉ dành cho Moderator/Admin."
         )]
-        [AllowAnonymous]
+        [Authorize(Roles = "Moderator,Admin")]
         [ProducesResponseType(StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status403Forbidden)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -251,8 +254,6 @@ namespace HomeCycle.API.Controllers
         public async Task<IActionResult> Close(Guid postId, CancellationToken cancellationToken)
         {
             var result = await _postService.CloseAsync(CurrentUserId, postId, cancellationToken);
-            // TẠM THỜI — xóa sau khi xác nhận
-            Console.WriteLine($"IsSuccess={result.IsSuccess}, Value is null={result.Data == null}");
             if (!result.IsSuccess)
                 return MapErrorToResponse(result.Error!);
 
@@ -296,12 +297,44 @@ namespace HomeCycle.API.Controllers
             return NoContent();
         }
 
+        [HttpGet("buy/{buyPostId:guid}/matches")]
+        [Authorize(Roles = "Personal,Business")]
+        [SwaggerOperation(Summary = "Tìm bài bán phù hợp nhu cầu thu mua")]
+        public async Task<IActionResult> Matches(Guid buyPostId, [FromQuery] PaginationRequest request, CancellationToken ct)
+        {
+            var result = await _postService.GetMatchesAsync(buyPostId, request, ct);
+            return result.IsSuccess ? Ok(result.Data) : MapErrorToResponse(result.Error!);
+        }
+
+        [HttpPost("buy/{buyPostId:guid}/seller-requests")]
+        [Authorize(Roles = "Personal")]
+        [Consumes("application/json")]
+        [SwaggerOperation(Summary = "Chào bán sản phẩm đã đăng cho doanh nghiệp")]
+        public async Task<IActionResult> SellerRequest(Guid buyPostId, [FromBody] CreateSellerRequest request,
+            [FromServices] IOfferService offers, CancellationToken ct)
+        {
+            var result = await offers.CreateSellerRequestAsync(CurrentUserId, buyPostId, request, ct);
+            return result.IsSuccess ? Ok(result) : MapErrorToResponse(result.Error!);
+        }
+
+        [HttpDelete("buy/{postId:guid}")]
+        [Authorize(Roles = "Business")]
+        [SwaggerOperation(Summary = "Xóa mềm tin thu mua của doanh nghiệp hiện tại")]
+        public async Task<IActionResult> DeleteBuy(Guid postId, CancellationToken ct)
+        {
+            var result = await _postService.DeleteBuyPostAsync(CurrentUserId, postId, ct);
+            return result.IsSuccess ? NoContent() : MapErrorToResponse(result.Error!);
+        }
+
         private IActionResult MapErrorToResponse(Error error)
         {
             return error.Code switch
             {
-                nameof(PostErrors.Forbidden) => Forbid(),
-                nameof(PostErrors.NotFound) => NotFound(error),
+                "POST_FORBIDDEN" => StatusCode(StatusCodes.Status403Forbidden, error),
+                "POST_NOT_FOUND" => NotFound(error),
+                "OFFER_FORBIDDEN" or "OFFER_ROLE_NOT_ALLOWED" or "OFFER_USER_NOT_ACTIVE" => StatusCode(StatusCodes.Status403Forbidden, error),
+                "OFFER_NOT_FOUND" or "OFFER_POST_NOT_FOUND" => NotFound(error),
+                "OFFER_QUANTITY_EXCEEDS_REMAINING" or "OFFER_DUPLICATE_PENDING" => Conflict(error),
                 _ => BadRequest(error)
             };
         }
