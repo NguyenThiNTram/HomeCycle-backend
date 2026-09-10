@@ -9,6 +9,7 @@ namespace HomeCycle.Application.DTOs.Requests.Offers
     public class CreateOfferRequest
     {
         public Guid PostId { get; set; }
+        public Guid? BuyPostId { get; set; }
 
         public decimal OfferPrice { get; set; }
 

@@ -1,4 +1,4 @@
-﻿using AutoMapper;
+using AutoMapper;
 using HomeCycle.Application.Commons.Paginations;
 using HomeCycle.Application.DTOs.Configs;
 using HomeCycle.Application.DTOs.Requests.Auths;
@@ -357,120 +357,39 @@ namespace HomeCycle.Application.Mappings
 
             // ==================== POST (Sell / Buy) ====================
 
-            CreateMap<CreatePostRequest, post>()
-                .ForMember(dest => dest.PostId, opt => opt.Ignore())
-                .ForMember(dest => dest.OwnerId, opt => opt.Ignore())
-                .ForMember(dest => dest.PostType, opt => opt.Ignore())
-                .ForMember(dest => dest.BasePrice, opt => opt.Ignore())
-                .ForMember(dest => dest.RemainingQuantity, opt => opt.Ignore())
-                .ForMember(dest => dest.Status, opt => opt.Ignore())
-                .ForMember(dest => dest.CreatedAt, opt => opt.Ignore())
-                .ForMember(dest => dest.UpdatedAt, opt => opt.Ignore())
-                // Chỉ include các DTO kế thừa CreatePostRequest
-                .Include<CreateSellPostRequest, post>()
-                .Include<CreateBuyPostRequest, post>();
-
-            CreateMap<CreateSellPostRequest, post>();
-            CreateMap<CreateBuyPostRequest, post>();
-
-            CreateMap<UpdatePostRequest, post>()
-                .ForMember(dest => dest.PostId, opt => opt.Ignore())
-                .ForMember(dest => dest.OwnerId, opt => opt.Ignore())
-                .ForMember(dest => dest.PostType, opt => opt.Ignore())
-                .ForMember(dest => dest.BasePrice, opt => opt.Ignore())
-                .ForMember(dest => dest.RemainingQuantity, opt => opt.Ignore())
-                .ForMember(dest => dest.Status, opt => opt.Ignore())
-                .ForMember(dest => dest.CreatedAt, opt => opt.Ignore())
-                .ForMember(dest => dest.UpdatedAt, opt => opt.Ignore())
-                //.ForAllMembers(opt => opt.Condition((src, dest, srcMember) => srcMember != null))
-                .Include<UpdateSellPostRequest, post>()
-                .Include<UpdateBuyPostRequest, post>();
-
-            CreateMap<UpdateSellPostRequest, post>();
-            CreateMap<UpdateBuyPostRequest, post>();
-
-            //CreateMap<post, PostResponse>();
-
-            CreateMap<post, PostDetailResponse>()
-                .IncludeBase<post, PostResponse>()
-                .ForMember(dest => dest.Product, opt => opt.Ignore())
-                .ForMember(dest => dest.Medias, opt => opt.Ignore());
-
-            CreateMap<CreateSellPostRequest, post>()
-                .ForMember(dest => dest.PostType, opt => opt.Ignore())
-                .ForMember(x => x.BasePrice, opt => opt.Ignore());
-
-            CreateMap<CreateBuyPostRequest, post>()
-                .ForMember(x => x.PostType, opt => opt.Ignore())
-                .ForMember(x => x.BasePrice, opt => opt.Ignore());
-
-            CreateMap<UpdateSellPostRequest, post>()
-                .IncludeBase<UpdatePostRequest, post>()
-                .ForMember(dest => dest.PostId, opt => opt.Ignore())
-                .ForMember(dest => dest.OwnerId, opt => opt.Ignore())
-                .ForMember(dest => dest.PostType, opt => opt.Ignore())
-                .ForMember(dest => dest.Status, opt => opt.Ignore())
-                .ForMember(dest => dest.RemainingQuantity, opt => opt.Ignore())
-                .ForMember(dest => dest.CreatedAt, opt => opt.Ignore())
-                .ForMember(x => x.BasePrice, opt => opt.Ignore())
-                .ForMember(dest => dest.UpdatedAt, opt => opt.Ignore());
-
-            CreateMap<UpdateBuyPostRequest, post>()
-                .ForMember(x => x.PostType, opt => opt.Ignore())
-                .ForMember(x => x.BasePrice, opt => opt.Ignore());
-
-            CreateMap<ProductRequest, product>()
-                .ForMember(dest => dest.ProductId, opt => opt.Ignore())
-                .ForMember(dest => dest.PostId, opt => opt.Ignore());
-
-            //CreateMap<post, PostResponse>();
-            //CreateMap<post, PostDetailResponse>();
-
-            CreateMap<post, PostResponse>()
+            CreateMap<CreatePostRequest, post>(MemberList.None);
+            CreateMap<UpdatePostRequest, post>(MemberList.None)
+                .ForAllMembers(o => o.Condition((src, dest, value) => value != null));
+            CreateMap<CreateSellPostRequest, post>(MemberList.None).IncludeBase<CreatePostRequest, post>();
+            CreateMap<UpdateSellPostRequest, post>(MemberList.None).IncludeBase<UpdatePostRequest, post>();
+            CreateMap<CreateBuyPostRequest, post>(MemberList.None)
+                .ForMember(x => x.MinExpectedPrice, o => o.MapFrom(s => s.PriceFrom))
+                .ForMember(x => x.BasePrice, o => o.MapFrom(s => s.PriceTo));
+            CreateMap<CreateBuyPostRequest, ProductRequirementRequest>(MemberList.None)
+                .ForMember(x => x.ProductName, o => o.MapFrom(s => s.Title));
+            CreateMap<ProductRequest, product>(MemberList.None)
+                .ForMember(x => x.Product_Attribute_Values, o => o.Ignore());
+            CreateMap<ProductRequirementRequest, product>(MemberList.None)
+                .ForMember(x => x.Product_Attribute_Values, o => o.Ignore());
+            CreateMap<product, ProductResponse>()
+                .ForMember(x => x.AttributeValues, o => o.MapFrom(s => s.Product_Attribute_Values));
+            CreateMap<product_attribute_value, ProductAttributeValueResponse>();
+            CreateMap<post, PostResponse>(MemberList.None)
                 .ForMember(d => d.ProductId, o => o.MapFrom(s => s.Product == null ? Guid.Empty : s.Product.ProductId))
-                .ForMember(d => d.AvatarUrl, o => o.MapFrom(s => s.User == null ? string.Empty : s.User.AvatarUrl))
+                .ForMember(d => d.AvatarUrl, o => o.MapFrom(s => s.User == null ? null : s.User.AvatarUrl))
                 .ForMember(d => d.ProductName, o => o.MapFrom(s => s.Product == null ? null : s.Product.ProductName))
                 .ForMember(d => d.OwnerName, o => o.MapFrom(s => s.User == null ? string.Empty : s.User.Username))
                 .ForMember(d => d.ProductTypeName, o => o.MapFrom(s => s.Product == null ? null : s.Product.ProductTypeName))
                 .ForMember(d => d.CategoryName, o => o.MapFrom(s => s.Product == null ? null : s.Product.CategoryName))
                 .ForMember(d => d.BrandName, o => o.MapFrom(s => s.Product == null ? null : s.Product.BrandName))
+                .ForMember(d => d.PriceFrom, o => o.MapFrom(s => s.PostType == PostType.Buy ? s.MinExpectedPrice : null))
+                .ForMember(d => d.PriceTo, o => o.MapFrom(s => s.PostType == PostType.Buy ? s.BasePrice : null))
                 .ForMember(d => d.Medias, o => o.Ignore());
-
-            CreateMap<post, PostDetailResponse>()
+            CreateMap<post, PostDetailResponse>(MemberList.None)
                 .IncludeBase<post, PostResponse>()
-                .ForMember(d => d.Product, o => o.Ignore())
-                .ForMember(d => d.Medias, o => o.Ignore());
-
+                .ForMember(d => d.Product, o => o.Ignore());
             CreateMap<PagedResult<post>, PagedResult<PostResponse>>()
                 .ForMember(d => d.Items, o => o.MapFrom(s => s.Items));
-
-            // ==================== PRODUCT (dùng chung cho Sell/Buy, gắn liền Post) ====================
-
-            CreateMap<ProductRequest, product>()
-                .ForMember(d => d.ProductId, o => o.Ignore())
-                .ForMember(d => d.PostId, o => o.Ignore())
-                .ForMember(d => d.CategoryName, o => o.Ignore())
-                .ForMember(d => d.ProductTypeName, o => o.Ignore())
-                .ForMember(d => d.BrandName, o => o.Ignore())
-                .ForMember(d => d.Product_Attribute_Values, o => o.Ignore());
-
-            CreateMap<product, ProductResponse>()
-                .ForMember(dest => dest.AttributeValues, opt => opt.MapFrom(src => src.Product_Attribute_Values));
-            CreateMap<product_attribute_value, ProductAttributeValueResponse>();
-
-            CreateMap<ProductRequirementRequest, product>()
-                .ForMember(dest => dest.ProductId, opt => opt.Ignore())
-                .ForMember(dest => dest.PostId, opt => opt.Ignore())
-                // Đã chốt từ trước: ExpectedPrice (Buy) dùng chung cột OriginalPrice.
-                .ForMember(dest => dest.OriginalPrice, opt => opt.MapFrom(src => src.ExpectedPrice));
-
-            CreateMap<ProductRequirementRequest, product>()
-                .ForMember(x => x.ProductId, opt => opt.Ignore())
-                .ForMember(x => x.PostId, opt => opt.Ignore());
-
-            CreateMap<ProductRequest, product>()
-                .ForMember(x => x.ProductId, opt => opt.Ignore())
-                .ForMember(x => x.PostId, opt => opt.Ignore());
 
             CreateMap<CreateAttributeRequest, product_attribute>()
                 .ForMember(destination => destination.AttributeId, option => option.Ignore())

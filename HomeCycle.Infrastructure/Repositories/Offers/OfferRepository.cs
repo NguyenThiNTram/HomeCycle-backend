@@ -1,4 +1,5 @@
-﻿using HomeCycle.Application.Commons.Paginations;
+using HomeCycle.Application.DTOs.Requests.Offers;
+using HomeCycle.Application.Commons.Paginations;
 using HomeCycle.Application.Interfaces.Repositories.Offers;
 using HomeCycle.Domain.Entities;
 using HomeCycle.Infrastructure.DbContexts;
@@ -13,13 +14,17 @@ using System.Threading.Tasks;
 
 namespace HomeCycle.Infrastructure.Repositories.Offers
 {
-    public class OfferRepository : IOfferRepository
+    public partial class OfferRepository : IOfferRepository
     {
         private readonly HomeCycleDbContext _db;
 
-        public OfferRepository(HomeCycleDbContext db)
+        private readonly HomeCycle.Application.Interfaces.Generics.IUnitOfWork _unit;
+        private readonly HomeCycle.Application.Interfaces.Repositories.Offers.IChatRealtimePublisher _publisher;
+        private readonly AutoMapper.IMapper _mapper;
+        public OfferRepository(HomeCycleDbContext db, HomeCycle.Application.Interfaces.Generics.IUnitOfWork unit,
+            HomeCycle.Application.Interfaces.Repositories.Offers.IChatRealtimePublisher publisher, AutoMapper.IMapper mapper)
         {
-            _db = db;
+            _db = db; _unit = unit; _publisher = publisher; _mapper = mapper;
         }
 
         public async Task<offer?> GetByIdForUpdateAsync(Guid offerId, CancellationToken cancellationToken)
@@ -55,7 +60,8 @@ namespace HomeCycle.Infrastructure.Repositories.Offers
         {
             var entity = await _db.Offers
                 .AsNoTracking()
-                .Include(x => x.Post)
+                .Include(x => x.Post).ThenInclude(p => p.Product)
+                .Include(x => x.BuyPost).ThenInclude(p => p!.Product)
                 .Include(x => x.Sender)
                 .Include(x => x.Receiver)
                 .FirstOrDefaultAsync(x => x.OfferId == offerId, cancellationToken);
@@ -63,7 +69,7 @@ namespace HomeCycle.Infrastructure.Repositories.Offers
             return entity?.ToDomain();
         }
 
-        public async Task<PagedResult<offer>> GetSentAsync(Guid senderId, PaginationRequest request, CancellationToken cancellationToken = default)
+        public async Task<PagedResult<offer>> GetSentAsync(Guid senderId, OfferSearchRequest request, CancellationToken cancellationToken = default)
         {
             var query = _db.Offers
                 .AsNoTracking()
@@ -73,6 +79,9 @@ namespace HomeCycle.Infrastructure.Repositories.Offers
                     .ThenInclude(x => x!.Product)
                 .Where(x => x.SenderId == senderId);
 
+            if (request.PostId.HasValue) query = query.Where(x => x.PostId == request.PostId);
+            if (request.BuyPostId.HasValue) query = query.Where(x => x.BuyPostId == request.BuyPostId);
+            if (request.Status.HasValue) query = query.Where(x => x.OfferStatus == (int)request.Status.Value);
             var totalCount = await query.CountAsync(cancellationToken);
 
             var items = await query
@@ -90,7 +99,7 @@ namespace HomeCycle.Infrastructure.Repositories.Offers
             };
         }
 
-        public async Task<PagedResult<offer>> GetReceivedAsync(Guid receiverId, PaginationRequest request, CancellationToken cancellationToken = default)
+        public async Task<PagedResult<offer>> GetReceivedAsync(Guid receiverId, OfferSearchRequest request, CancellationToken cancellationToken = default)
         {
             var query = _db.Offers
                 .AsNoTracking()
@@ -100,6 +109,9 @@ namespace HomeCycle.Infrastructure.Repositories.Offers
                     .ThenInclude(x => x!.Product)
                 .Where(x => x.ReceiverId == receiverId);
 
+            if (request.PostId.HasValue) query = query.Where(x => x.PostId == request.PostId);
+            if (request.BuyPostId.HasValue) query = query.Where(x => x.BuyPostId == request.BuyPostId);
+            if (request.Status.HasValue) query = query.Where(x => x.OfferStatus == (int)request.Status.Value);
             var totalCount = await query.CountAsync(cancellationToken);
 
             var items = await query
@@ -117,11 +129,11 @@ namespace HomeCycle.Infrastructure.Repositories.Offers
             };
         }
 
-        public async Task<bool> ExistsPendingByPostAndSenderAsync(Guid postId, Guid senderId, CancellationToken cancellationToken = default)
+        public async Task<bool> ExistsPendingByPostAndSenderAsync(Guid postId, Guid senderId, Guid receiverId, Guid? buyPostId, CancellationToken cancellationToken = default)
         {
             return await _db.Offers.AnyAsync(
                 x => x.PostId == postId
-                  && x.SenderId == senderId
+                  && x.SenderId == senderId && x.ReceiverId == receiverId && x.BuyPostId == buyPostId
                   && x.OfferStatus == (int)HomeCycle.Domain.Enums.OfferStatus.Pending,
                 cancellationToken);
         }

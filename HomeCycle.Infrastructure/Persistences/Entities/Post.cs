@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
@@ -28,6 +28,7 @@ public partial class Post
 
     [Precision(18, 2)]
     public decimal? BasePrice { get; set; }
+    public decimal? MinExpectedPrice { get; set; }
 
     public string? StreetAddress { get; set; }
 
@@ -63,6 +64,9 @@ public partial class Post
 
     [InverseProperty("Post")]
     public virtual ICollection<Offer> Offers { get; set; } = new List<Offer>();
+
+    [InverseProperty(nameof(Offer.BuyPost))]
+    public virtual ICollection<Offer> BuyOffers { get; set; } = new List<Offer>();
 
     [InverseProperty("Post")]
     public virtual ICollection<Order> Orders { get; set; } = new List<Order>();

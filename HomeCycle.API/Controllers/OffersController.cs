@@ -103,7 +103,7 @@ namespace HomeCycle.API.Controllers
         [HttpPatch("{offerId:guid}/accept")]
         [SwaggerOperation(
             Summary = "Chấp nhận mở thương lượng",
-            Description = "Người nhận (Receiver) chấp nhận request ban đầu. Hệ thống đổi OfferStatus sang Accepted và tạo phiên Negotiation mới (chưa chốt giao dịch hay trừ tồn kho)."
+            Description = "Người nhận chấp nhận giá và số lượng hiện tại: Offer Accepted, Negotiation Agreed. Chỉ giữ chỗ; chưa trừ RemainingQuantity. Dùng counter để tiếp tục thương lượng."
         )]
         [ProducesResponseType(typeof(Result<AcceptOfferResponse>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(Result<AcceptOfferResponse>), StatusCodes.Status400BadRequest)]
@@ -156,7 +156,7 @@ namespace HomeCycle.API.Controllers
         [ProducesResponseType(typeof(Result<PagedResult<OfferListItem>>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(Result<PagedResult<OfferListItem>>), StatusCodes.Status400BadRequest)]
         public async Task<IActionResult> GetSent(
-            [FromQuery] PaginationRequest request,
+            [FromQuery] OfferSearchRequest request,
             CancellationToken cancellationToken)
         {
             var result = await _offerService.GetSentAsync(CurrentUserId, request, cancellationToken);
@@ -171,7 +171,7 @@ namespace HomeCycle.API.Controllers
         [ProducesResponseType(typeof(Result<PagedResult<OfferListItem>>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(Result<PagedResult<OfferListItem>>), StatusCodes.Status400BadRequest)]
         public async Task<IActionResult> GetReceived(
-            [FromQuery] PaginationRequest request,
+            [FromQuery] OfferSearchRequest request,
             CancellationToken cancellationToken)
         {
             var result = await _offerService.GetReceivedAsync(CurrentUserId, request, cancellationToken);
@@ -185,7 +185,13 @@ namespace HomeCycle.API.Controllers
             if (result.IsSuccess)
                 return Ok(result);
 
-            return BadRequest(result);
+            return result.Error!.Code switch
+            {
+                "OFFER_NOT_FOUND" or "OFFER_POST_NOT_FOUND" => NotFound(result),
+                "OFFER_FORBIDDEN" or "OFFER_ROLE_NOT_ALLOWED" or "OFFER_USER_NOT_ACTIVE" => StatusCode(StatusCodes.Status403Forbidden, result),
+                "OFFER_DUPLICATE_PENDING" or "OFFER_NOT_PENDING" or "OFFER_TERMS_CHANGED" or "OFFER_QUANTITY_EXCEEDS_REMAINING" => Conflict(result),
+                _ => BadRequest(result)
+            };
         }
 
         #endregion

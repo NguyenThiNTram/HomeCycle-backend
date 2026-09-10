@@ -1,4 +1,4 @@
-﻿using HomeCycle.Application.Commons.Paginations;
+using HomeCycle.Application.Commons.Paginations;
 using HomeCycle.Application.DTOs.Requests.Posts;
 using HomeCycle.Domain.Entities;
 using HomeCycle.Domain.Enums;
@@ -12,6 +12,13 @@ namespace HomeCycle.Application.Interfaces.Repositories.Posts
 {
     public interface IPostRepository
     {
+        Task<offer?> GetTradeByAgreementAsync(Guid agreementId, CancellationToken cancellationToken = default);
+        Task<offer?> GetTradeByOrderAsync(Guid orderId, CancellationToken cancellationToken = default);
+        Task RestoreOrderQuantityAsync(Guid orderId, bool restoreSellStock, CancellationToken cancellationToken = default);
+        Task<int> GetReservedQuantityAsync(Guid postId, Guid? excludedNegotiationId = null, CancellationToken cancellationToken = default);
+        Task<bool> HasUnfinishedTransactionsAsync(Guid postId, CancellationToken cancellationToken = default);
+        Task<IReadOnlyList<Guid>> GetExpiredBuyPostIdsAsync(DateTime now, int count, CancellationToken cancellationToken = default);
+        Task<PagedResult<post>> GetMatchesAsync(post buyPost, PaginationRequest request, CancellationToken cancellationToken = default);
         Task AddAsync(post entity, CancellationToken cancellationToken = default);
         Task UpdateAsync(post entity, CancellationToken cancellationToken = default);
 

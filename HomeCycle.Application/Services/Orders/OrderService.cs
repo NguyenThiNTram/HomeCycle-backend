@@ -1,4 +1,6 @@
-﻿using AutoMapper;
+using HomeCycle.Application.Commons.Helpers;
+using HomeCycle.Application.Interfaces.Repositories.Posts;
+using AutoMapper;
 using HomeCycle.Application.Commons.Errors;
 using HomeCycle.Application.Commons.Paginations;
 using HomeCycle.Application.Commons.Results;
@@ -35,6 +37,7 @@ namespace HomeCycle.Application.Services.Orders
     {
         private const decimal AmountEpsilon = 0.01m;
         private readonly IOrderRepository _orderRepo;
+        private readonly IPostRepository _postRepo;
         private readonly IAgreementFormRepository _agreementRepo;
         private readonly IAppointmentRepository _appointmentRepo;
         private readonly IShipmentRepository _shipmentRepo;
@@ -54,6 +57,7 @@ namespace HomeCycle.Application.Services.Orders
 
         public OrderService(
             IOrderRepository orderRepo,
+            IPostRepository postRepo,
             IAgreementFormRepository agreementRepo,
             IAppointmentRepository appointmentRepo,
             IShipmentRepository shipmentRepo,
@@ -72,6 +76,7 @@ namespace HomeCycle.Application.Services.Orders
             IMapper mapper)
         {
             _orderRepo = orderRepo;
+            _postRepo = postRepo;
             _agreementRepo = agreementRepo;
             _appointmentRepo = appointmentRepo;
             _shipmentRepo = shipmentRepo;
@@ -713,6 +718,9 @@ namespace HomeCycle.Application.Services.Orders
 
             try
             {
+                var tradeSnapshot = await _postRepo.GetTradeByOrderAsync(orderId, ct);
+                if (tradeSnapshot != null) await _postRepo.LockAsync(tradeSnapshot.PostId, tradeSnapshot.BuyPostId, ct);
+
                 var order =
                     await _orderRepo.GetByIdForUpdateAsync(
                         orderId,
@@ -888,6 +896,7 @@ namespace HomeCycle.Application.Services.Orders
                 appointment.CompletedAt ??= now;
                 appointment.UpdatedAt = now;
 
+                await _postRepo.RestoreOrderQuantityAsync(order.OrderId, true, ct);
                 order.OrderStatus =
                     (int)OrderStatus.Cancelled;
 
@@ -1094,6 +1103,9 @@ namespace HomeCycle.Application.Services.Orders
 
             try
             {
+                var tradeSnapshot = await _postRepo.GetTradeByOrderAsync(orderId, ct);
+                if (tradeSnapshot != null) await _postRepo.LockAsync(tradeSnapshot.PostId, tradeSnapshot.BuyPostId, ct);
+
                 var dispute = await _disputeRepo.GetAwaitingReturnByOrderIdForUpdateAsync(orderId, ct);
 
                 if (dispute == null)
@@ -1161,6 +1173,7 @@ namespace HomeCycle.Application.Services.Orders
                 order.PaymentStatus = remainingPaid <= AmountEpsilon
                     ? (int)PaymentStatus.Refunded
                     : (int)PaymentStatus.PartiallyRefunded;
+                await _postRepo.RestoreOrderQuantityAsync(order.OrderId, true, ct);
                 order.OrderStatus = (int)OrderStatus.Returned;
                 order.SellerReturnReceivedAt = now;
                 order.ReturnDueAt = null;

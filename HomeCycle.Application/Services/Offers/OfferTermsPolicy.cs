@@ -1,4 +1,4 @@
-﻿using HomeCycle.Application.Commons.Errors;
+using HomeCycle.Application.Commons.Errors;
 using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.Interfaces.Services.Offers;
 using HomeCycle.Domain.Entities;
@@ -15,8 +15,9 @@ namespace HomeCycle.Application.Services.Offers
         private const decimal MinPriceFactor = 0.2m;
         private const decimal MaxPriceFactor = 3m;
 
-        public Error? Validate(post post, decimal offerPrice, int offerQuantity)
+        public Error? Validate(post post, decimal offerPrice, int offerQuantity, bool procurement = false)
         {
+            if (offerPrice <= 0) return ValidationErrors.InvalidRequest("Giá đề nghị phải lớn hơn 0.");
             if (offerQuantity <= 0)
                 return OfferErrors.InvalidQuantity;
 
@@ -27,6 +28,7 @@ namespace HomeCycle.Application.Services.Offers
                     post.RemainingQuantity);
             }
 
+            if (procurement) return null; // Buy price bounds express preferences, not a negotiation limit.
             if (!post.BasePrice.HasValue)
                 return OfferErrors.PriceOutOfRange(0, 0);
 

@@ -1,4 +1,5 @@
-﻿using HomeCycle.Domain.Enums;
+using HomeCycle.Application.DTOs.Responses.Posts;
+using HomeCycle.Domain.Enums;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -12,6 +13,7 @@ namespace HomeCycle.Application.DTOs.Responses.Offers
         public Guid OfferId { get; set; }
 
         public Guid PostId { get; set; }
+        public Guid? BuyPostId { get; set; }
 
         public OfferParticipantResponse Sender { get; set; } = null!;
         public OfferParticipantResponse Receiver { get; set; } = null!;
@@ -31,6 +33,7 @@ namespace HomeCycle.Application.DTOs.Responses.Offers
     {
         public Guid OfferId { get; set; }
         public Guid PostId { get; set; }
+        public Guid? BuyPostId { get; set; }
 
         public string ProductName { get; set; } = string.Empty;
         public string? PostThumbnailUrl { get; set; }
@@ -53,8 +56,14 @@ namespace HomeCycle.Application.DTOs.Responses.Offers
 
     public sealed class OfferDetailResponse
     {
+        public PostDetailResponse? BuyPost { get; set; }
+        public PostResponse? SellPost { get; set; }
+        public ProductResponse? Product { get; set; }
+        public OfferParticipantResponse? Seller { get; set; }
+        public OfferParticipantResponse? Buyer { get; set; }
         public Guid OfferId { get; set; }
         public Guid PostId { get; set; }
+        public Guid? BuyPostId { get; set; }
 
         public OfferParticipantResponse Sender { get; set; } = null!;
         public OfferParticipantResponse Receiver { get; set; } = null!;
