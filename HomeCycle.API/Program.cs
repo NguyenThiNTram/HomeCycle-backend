@@ -119,6 +119,8 @@ namespace HomeCycle.API
             // Worker nền tự tạo vận đơn GHN cho các ghn_shipment Pending/Failed
             builder.Services.AddHostedService<HomeCycle.API.Workers.GhnShipmentCreationWorker>();
 
+            // Worker nền reconcile các PayOS payment Pending nếu webhook bị delay/miss
+            builder.Services.AddHostedService<HomeCycle.API.Workers.PayOsPaymentSyncWorker>();
 
             // Add DbContext with PostgreSQL configuration
             builder.Services.AddDbContext<HomeCycleDbContext>(options =>
