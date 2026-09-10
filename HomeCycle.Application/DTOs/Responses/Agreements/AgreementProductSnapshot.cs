@@ -1,4 +1,4 @@
-﻿using HomeCycle.Domain.Enums;
+using HomeCycle.Domain.Enums;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -30,10 +30,10 @@ namespace HomeCycle.Application.DTOs.Responses.Agreements
     {
         public Guid ProductId { get; init; }
 
-        public Guid CategoryId { get; init; }
+        public Guid? CategoryId { get; init; }
         public string? CategoryName { get; init; }
 
-        public Guid ProductTypeId { get; init; }
+        public Guid? ProductTypeId { get; init; }
         public string? ProductTypeName { get; init; }
 
         public Guid? BrandId { get; init; }

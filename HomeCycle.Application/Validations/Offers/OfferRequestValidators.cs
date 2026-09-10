@@ -1,4 +1,4 @@
-﻿using FluentValidation;
+using FluentValidation;
 using HomeCycle.Application.Commons.Helpers;
 using HomeCycle.Application.DTOs.Requests.Offers;
 using System;
@@ -13,6 +13,7 @@ namespace HomeCycle.Application.Validations.Offers
     {
         public CreateOfferRequestValidator()
         {
+            RuleFor(x => x.BuyPostId).NotEmpty().When(x => x.BuyPostId.HasValue);
             RuleFor(x => x.PostId)
                 .NotEmpty()
                 .WithMessage("PostId is not empty");

@@ -1,4 +1,5 @@
-﻿using AutoMapper;
+using HomeCycle.Application.Commons.Helpers;
+using AutoMapper;
 using FluentValidation;
 using HomeCycle.Application.Commons.Errors;
 using HomeCycle.Application.Commons.Paginations;
@@ -70,6 +71,7 @@ namespace HomeCycle.Application.Services.Payments
         private readonly ICollectionAppointmentRepository _collectionRepo;
         private readonly IInspectionAppointmentRepository _inspectionRepo;
         private readonly IPostRepository _postRepo;
+        private readonly IOfferRepository _procurementOffers;
         private readonly ILogger<PaymentService> _logger;
 
         private readonly IShipmentRepository _shipmentRepo;
@@ -99,6 +101,7 @@ namespace HomeCycle.Application.Services.Payments
             ICollectionAppointmentRepository collectionRepo,
             IInspectionAppointmentRepository inspectionRepo,
             IPostRepository postRepo,
+            IOfferRepository procurementOffers,
             ILogger<PaymentService> logger,
             IShipmentRepository shipmentRepository,
             IGhnShipmentRepository ghnShipmentRepository,
@@ -129,6 +132,7 @@ namespace HomeCycle.Application.Services.Payments
             _collectionRepo = collectionRepo;
             _inspectionRepo = inspectionRepo;
             _postRepo = postRepo;
+            _procurementOffers = procurementOffers;
             _logger = logger;
             _payOSCheckoutValidator = payOSCheckoutValidator;
             _platformPolicyProvider = platformPolicyProvider;
@@ -387,6 +391,8 @@ namespace HomeCycle.Application.Services.Payments
             await _unitOfWork.BeginTransactionAsync(ct);
             try
             {
+                var tradeSnapshot = await _postRepo.GetTradeByAgreementAsync(agreementId, ct);
+                if (tradeSnapshot != null) await _postRepo.LockAsync(tradeSnapshot.PostId, tradeSnapshot.BuyPostId, ct);
                 var lockedAgreement = await _agreementRepo.GetByIdForUpdateAsync(agreementId, ct);
                 if (lockedAgreement == null)
                 {
@@ -1744,6 +1750,8 @@ namespace HomeCycle.Application.Services.Payments
 
             try
             {
+                var tradeSnapshot = await _postRepo.GetTradeByAgreementAsync(paymentSnapshot.AgreementId.Value, ct);
+                if (tradeSnapshot != null) await _postRepo.LockAsync(tradeSnapshot.PostId, tradeSnapshot.BuyPostId, ct);
                 var agreement = await _agreementRepo.GetByIdForUpdateAsync(paymentSnapshot.AgreementId.Value, ct)
                     ?? throw new InvalidOperationException("Không tìm thấy thỏa thuận của giao dịch PayOS.");
 
@@ -2400,20 +2408,25 @@ namespace HomeCycle.Application.Services.Payments
             await _appointmentRepo.AddAsync(appointment, ct);
             await _orderRepo.AddAsync(order, ct);
 
-            // Trừ số lượng còn lại của Post — dùng FOR UPDATE để serialize giữa các giao dịch
-            // đồng thời (chống oversell: còn 5 mà 2 giao dịch cùng trừ 4 đều thành công).
-            var postForUpdate = await _postRepo.GetByIdForUpdateAsync(agreement.PostId, ct);
-            if (postForUpdate == null)
-                throw new InvalidOperationException("Không tìm thấy bài đăng của thỏa thuận.");
-
-            if (postForUpdate.RemainingQuantity < agreement.Quantity)
-                throw new InvalidOperationException($"Bài đăng chỉ còn {postForUpdate.RemainingQuantity} sản phẩm, không đủ cho {agreement.Quantity}.");
-
-            postForUpdate.RemainingQuantity -= agreement.Quantity;
-            if (postForUpdate.RemainingQuantity <= 0)
-                postForUpdate.Status = PostStatus.Closed;
-
-            await _postRepo.UpdateAsync(postForUpdate, ct);
+            var trade = await _postRepo.GetTradeByAgreementAsync(agreement.AgreementId, ct)
+                ?? throw new InvalidOperationException("Không tìm thấy đề nghị của thỏa thuận.");
+            var capacityError = await _postRepo.ValidateCapacityAsync(trade, agreement.Quantity, agreement.NegotiationId, false, ct);
+            if (capacityError != null) throw new InvalidOperationException(capacityError.Message);
+            post? postForUpdate = null;
+            foreach (var id in new Guid?[] { trade.PostId, trade.BuyPostId }.Where(x => x.HasValue).Select(x => x!.Value).Distinct().OrderBy(x => x))
+            {
+                var relatedPost = await _postRepo.GetByIdForUpdateAsync(id, ct)
+                    ?? throw new InvalidOperationException("Không tìm thấy bài đăng của giao dịch.");
+                relatedPost.RemainingQuantity -= agreement.Quantity;
+                relatedPost.UpdatedAt = DateTime.UtcNow;
+                if (relatedPost.RemainingQuantity == 0)
+                {
+                    relatedPost.Status = PostStatus.Closed;
+                    await _procurementOffers.ClosePendingByPostAsync(id, OfferStatus.Closed, ct);
+                }
+                await _postRepo.UpdateAsync(relatedPost, ct);
+                if (id == agreement.PostId) postForUpdate = relatedPost;
+            }
 
             agreement.AgreementStatus = (int)AgreementStatus.Confirmed;
             await _agreementRepo.UpdateAsync(agreement, ct);

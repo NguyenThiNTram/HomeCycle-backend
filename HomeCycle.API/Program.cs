@@ -1,4 +1,4 @@
-﻿using HomeCycle.API.Hubs;
+using HomeCycle.API.Hubs;
 using HomeCycle.API.Middlewares;
 using HomeCycle.Application.Interfaces.Repositories.Notifications;
 using HomeCycle.Application.Interfaces.Repositories.Offers;
@@ -118,6 +118,7 @@ namespace HomeCycle.API
 
             // Worker nền tự tạo vận đơn GHN cho các ghn_shipment Pending/Failed
             builder.Services.AddHostedService<HomeCycle.API.Workers.GhnShipmentCreationWorker>();
+            builder.Services.AddHostedService<HomeCycle.API.Workers.BuyPostExpiryWorker>();
 
 
             // Add DbContext with PostgreSQL configuration

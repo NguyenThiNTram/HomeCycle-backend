@@ -10,6 +10,7 @@ namespace HomeCycle.Application.Interfaces.Repositories.Offers
 {
     public interface INegotiationRepository
     {
+        Task<bool> HasAgreementAsync(Guid negotiationId, CancellationToken cancellationToken = default);
         Task<negotiation?> GetByOfferIdAsync(Guid offerId, CancellationToken cancellationToken = default);
 
         Task<negotiation?> GetByIdAsync(Guid negotiationId, CancellationToken cancellationToken = default);
@@ -19,7 +20,7 @@ namespace HomeCycle.Application.Interfaces.Repositories.Offers
 
         Task<PagedResult<negotiation>> GetByConversationIdAsync(Guid conversationId, PaginationRequest request, CancellationToken cancellationToken = default);
 
-        Task<bool> ExistsActiveByPostAndParticipantsAsync(Guid postId, Guid sellerId, Guid buyerId, CancellationToken cancellationToken = default);
+        Task<bool> ExistsActiveByPostAndParticipantsAsync(Guid postId, Guid sellerId, Guid buyerId, CancellationToken cancellationToken = default, Guid? buyPostId = null);
 
         Task AddAsync(negotiation entity, CancellationToken cancellationToken = default);
 

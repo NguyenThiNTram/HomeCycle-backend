@@ -1,4 +1,4 @@
-﻿using HomeCycle.Infrastructure;
+using HomeCycle.Infrastructure;
 using HomeCycle.Infrastructure.Persistences.Entities;
 using Microsoft.EntityFrameworkCore;
 using System;
@@ -642,9 +642,14 @@ public partial class HomeCycleDbContext : DbContext
 
             // Chống tạo trùng Offer Pending cho cùng (Post, Sender) khi có 2 request đồng thời
             // vượt qua ExistsPendingByPostAndSenderAsync(). Partial index chỉ áp dụng khi OfferStatus = Pending.
-            entity.HasIndex(e => new { e.PostId, e.SenderId }, "uq_offer_pending_post_sender")
-                .IsUnique()
-                .HasFilter("\"OfferStatus\" = 0");
+            entity.HasIndex(e => new { e.PostId, e.SenderId, e.ReceiverId }, "uq_offer_pending_direct")
+                .IsUnique().HasFilter("\"OfferStatus\" = 0 AND \"BuyPostId\" IS NULL");
+            entity.HasIndex(e => new { e.PostId, e.BuyPostId, e.SenderId, e.ReceiverId }, "uq_offer_pending_buy")
+                .IsUnique().HasFilter("\"OfferStatus\" = 0 AND \"BuyPostId\" IS NOT NULL");
+            entity.HasIndex(e => e.BuyPostId, "idx_offer_buy_post");
+            entity.HasOne(e => e.BuyPost).WithMany(p => p.BuyOffers)
+                .HasForeignKey(e => e.BuyPostId).IsRequired(false)
+                .OnDelete(DeleteBehavior.Restrict).HasConstraintName("fk_offer_buy_post");
         });
 
         modelBuilder.Entity<Order>(entity =>
@@ -757,6 +762,7 @@ public partial class HomeCycleDbContext : DbContext
             entity.Property(e => e.PostId).ValueGeneratedNever();
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()");
             entity.Property(e => e.IsBusinessPosting).HasDefaultValue(false);
+            entity.Property(e => e.MinExpectedPrice).HasPrecision(18, 2).IsRequired(false);
             entity.Property(e => e.UpdatedAt).HasDefaultValueSql("now()");
 
             //---
@@ -779,7 +785,7 @@ public partial class HomeCycleDbContext : DbContext
                 .WithMany(p => p.Products)
                 .HasForeignKey(e => e.CategoryId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("fk_product_category");
+                .IsRequired(false).HasConstraintName("fk_product_category");
 
             //entity.HasOne(d => d.Post).WithOne(p => p.Product)
             //    .OnDelete(DeleteBehavior.ClientSetNull)
@@ -798,7 +804,7 @@ public partial class HomeCycleDbContext : DbContext
                 .WithMany(p => p.Products)
                 .HasForeignKey(e => e.ProductTypeId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("fk_product_type");
+                .IsRequired(false).HasConstraintName("fk_product_type");
 
             entity.HasOne(d => d.Brand)
                 .WithMany(p => p.Products)

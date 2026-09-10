@@ -1,4 +1,4 @@
-﻿using HomeCycle.Application.DTOs.Responses.Products;
+using HomeCycle.Application.DTOs.Responses.Products;
 using HomeCycle.Domain.Enums;
 using System;
 using System.Collections.Generic;
@@ -12,9 +12,9 @@ namespace HomeCycle.Application.DTOs.Responses.Posts
     {
         public Guid ProductId { get; set; }
 
-        public Guid CategoryId { get; set; }
+        public Guid? CategoryId { get; set; }
 
-        public Guid ProductTypeId { get; set; }
+        public Guid? ProductTypeId { get; set; }
 
         public Guid? BrandId { get; set; }
 
