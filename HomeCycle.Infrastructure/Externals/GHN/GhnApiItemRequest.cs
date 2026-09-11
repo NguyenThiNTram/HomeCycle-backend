@@ -12,19 +12,27 @@ namespace HomeCycle.Infrastructure.Externals.GHN
         [JsonPropertyName("name")]
         public required string Name { get; init; }
 
+        [JsonPropertyName("code")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? Code { get; init; }
+
         [JsonPropertyName("quantity")]
         public int Quantity { get; init; }
 
         [JsonPropertyName("weight")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
         public int WeightGram { get; init; }
 
         [JsonPropertyName("length")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
         public int LengthCm { get; init; }
 
         [JsonPropertyName("width")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
         public int WidthCm { get; init; }
 
         [JsonPropertyName("height")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
         public int HeightCm { get; init; }
     }
 }

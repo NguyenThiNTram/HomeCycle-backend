@@ -175,57 +175,14 @@ namespace HomeCycle.API.Controllers
 
             var error = result.Error!;
 
-            if (!result.IsSuccess)
+            return error.Code switch
             {
-                //var error = result.Error!;
-
-                return error.Code switch
-                {
-                    "Auth.Forbidden"
-                        => StatusCode(StatusCodes.Status403Forbidden, error),
-
-                    "Negotiation.NotFound"
-                        or "Product.NotFound"
-                        => NotFound(error),
-
-                    "Negotiation.Cancelled"
-                        => Conflict(error),
-
-                    _ => BadRequest(error)
-                };
-            }
-
-            //return error.Code switch
-            //{
-            //    "Auth.Forbidden" => StatusCode(StatusCodes.Status403Forbidden, error),
-            //    "Negotiation.NotFound"
-            //        or "Product.NotFound"
-            //            => NotFound(error),
-            //    "Negotiation.Cancelled" => Conflict(error),
-            //    _ => BadRequest(error)
-            //};
-
-            if (result.Data is null)
-            {
-                return StatusCode(
-                    StatusCodes.Status500InternalServerError,
-                    new
-                    {
-                        message = "Service success nhưng Data = null"
-                    });
-            }
-
-            return Ok(new
-            {
-                test = "API_SERIALIZATION_OK",
-                result.Data.NegotiationId,
-                result.Data.ServiceTypeId,
-                result.Data.HasProductDimensions,
-                result.Data.LightParcel,
-                result.Data.Items
-            });
+                "Auth.Forbidden" => StatusCode(StatusCodes.Status403Forbidden, error),
+                "Negotiation.NotFound" or "Product.NotFound" => NotFound(error),
+                "Negotiation.Cancelled" => Conflict(error),
+                _ => BadRequest(error)
+            };
         }
-
         [HttpPost("negotiations/{negotiationId:guid}/ghn-preview")]
         [SwaggerOperation(
             Summary = "Xem trước thông tin vận chuyển GHN",
@@ -252,7 +209,8 @@ namespace HomeCycle.API.Controllers
                     or "Product.NotFound"
                         => NotFound(error),
                 "Negotiation.Cancelled" => Conflict(error),
-                "Ghn.PreviewFailed" => StatusCode(StatusCodes.Status502BadGateway, error),
+                "Ghn.ServiceUnavailable" => Conflict(error),
+                "Ghn.PreviewFailed" or "Ghn.ShopNotFound" => StatusCode(StatusCodes.Status502BadGateway, error),
                 _ => BadRequest(error)
             };
         }

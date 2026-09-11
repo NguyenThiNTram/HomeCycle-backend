@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -25,6 +25,9 @@ namespace HomeCycle.Application.DTOs.Responses.GHN
             = Array.Empty<GhnItemSnapshotDto>();
 
         public bool HasProductDimensions { get; init; }
+
+        // Kích thước product không đủ mô tả kiện đóng gói khi có nhiều sản phẩm.
+        public bool RequiresPackagingDimensions { get; init; }
     }
 
     // Kết quả tính phí GHN (không kèm breakdown phí)
@@ -36,6 +39,13 @@ namespace HomeCycle.Application.DTOs.Responses.GHN
         public decimal TotalFee { get; init; }
 
         public DateTimeOffset? ExpectedDeliveryAt { get; init; }
+
+        // Thông số cấp đơn thực tế dùng cho preview, kể cả hàng nặng.
+        public int WeightGram { get; init; }
+        public int LengthCm { get; init; }
+        public int WidthCm { get; init; }
+        public int HeightCm { get; init; }
+        public int ParcelCount { get; init; }
 
         // Giá trị thực tế đã dùng để gọi GHN (sau khi merge ghi đè của FE).
         public GhnLightParcelSnapshotDto? LightParcel { get; init; }
