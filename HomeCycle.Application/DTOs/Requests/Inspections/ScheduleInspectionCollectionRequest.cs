@@ -10,6 +10,8 @@ namespace HomeCycle.Application.DTOs.Requests.Inspections
 {
     public sealed class ScheduleInspectionCollectionRequest
     {
+        // GHN only: calculate a quote without scheduling or creating a shipment.
+        public bool PreviewOnly { get; set; }
         public int ExpectedRevision { get; set; }
         public DateTimeOffset CollectionDate { get; set; }
         public string? PickupAddress { get; set; }

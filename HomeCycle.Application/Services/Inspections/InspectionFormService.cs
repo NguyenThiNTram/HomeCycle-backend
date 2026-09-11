@@ -723,7 +723,7 @@ namespace HomeCycle.Application.Services.Inspections
                     var newTotal = form.SuggestedPrice.Value;
                     var currentAmountPaid = order.AmountPaid ?? 0;
 
-                   
+
                     if (currentAmountPaid > newTotal + AmountEpsilon)
                     {
                         var refundAmount =

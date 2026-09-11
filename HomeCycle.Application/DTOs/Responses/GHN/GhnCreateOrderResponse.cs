@@ -7,4 +7,5 @@ using System.Threading.Tasks;
 namespace HomeCycle.Application.DTOs.Responses.GHN
 {
     public sealed record GhnCreateOrderResponse(string OrderCode, decimal TotalFee, decimal ServiceFee, decimal CodFee, DateTimeOffset? ExpectedDeliveryAt);
+    public sealed record GhnCancelOrderResponse(string OrderCode, bool Result, string Message);
 }

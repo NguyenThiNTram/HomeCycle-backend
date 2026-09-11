@@ -8,6 +8,9 @@ namespace HomeCycle.Application.DTOs.Requests.GHN
 {
     public sealed class CalculateGhnFeeRequest
     {
+        public HomeCycle.Domain.Enums.AgreementType? AgreementType { get; init; }
+        public HomeCycle.Domain.Enums.DeliveryMethod? DeliveryMethod { get; init; }
+        public int ParcelCount { get; init; } = 1;
         public int FromDistrictId { get; init; }
         public required string FromWardCode { get; init; }
 

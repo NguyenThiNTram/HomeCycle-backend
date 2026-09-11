@@ -25,6 +25,7 @@ namespace HomeCycle.Infrastructure.Externals.GHN
 
 
         public HttpStatusCode StatusCode { get; }
+        public int HttpStatusCode => (int)StatusCode;
         public string? CodeMessage { get; }
 
         public GhnApiException(HttpStatusCode statusCode, string message, string? codeMessage = null, Exception? innerException = null)
