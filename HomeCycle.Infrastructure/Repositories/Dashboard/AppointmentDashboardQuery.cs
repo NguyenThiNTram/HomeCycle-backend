@@ -1,9 +1,6 @@
 using HomeCycle.Domain.Enums;
 
 namespace HomeCycle.Infrastructure.Repositories.Dashboard;
-
-// SQL-friendly read model and predicates shared by the repository and regression tests.
-// They classify existing rows only and never mutate appointment state.
 internal sealed class AppointmentDashboardRow
 {
     public Guid AppointmentId { get; init; }
