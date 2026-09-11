@@ -252,6 +252,9 @@ namespace HomeCycle.Infrastructure
             //services.AddScoped<IOrderSettlementService, OrderSettlementService>();
             services.AddScoped<IAppointmentService, AppointmentService>();
             services.AddScoped<IOrderService, OrderService>();
+            services.AddScoped<IOrderLifecycleProcessor, BuyerReturnTimeoutProcessor>();
+            services.AddScoped<IOrderLifecycleProcessor, AutoCompleteOrderProcessor>();
+            services.AddScoped<IOrderLifecycleProcessor, AutoReleaseOrderProcessor>();
             services.AddSingleton<IOrderTimelineBuilder, OrderTimelineBuilder>();
             services.AddScoped<IOrderTrackingRealtimeService, OrderTrackingRealtimeService>();
             services.AddScoped<IShipmentService, ShipmentService>();

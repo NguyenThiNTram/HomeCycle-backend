@@ -1,9 +1,12 @@
-﻿using HomeCycle.Application.DTOs.Requests.Wallets;
+﻿using HomeCycle.Application.Commons.Paginations;
+using HomeCycle.Application.DTOs.Requests.Wallets;
+using HomeCycle.Application.DTOs.Responses.Wallets;
 using HomeCycle.Application.Interfaces.Services.Wallets;
 using HomeCycle.Domain.Enums;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Swashbuckle.AspNetCore.Annotations;
 using System.Security.Claims;
 
 namespace HomeCycle.API.Controllers
@@ -88,6 +91,56 @@ namespace HomeCycle.API.Controllers
             return Ok(result.Data);
         }
 
+        [HttpGet("withdrawals")]
+        [SwaggerOperation(
+            Summary = "Lấy lịch sử yêu cầu rút tiền của người dùng",
+            Description = "Trả về danh sách Withdrawal thuộc người dùng hiện tại, hỗ trợ lọc theo trạng thái, khoảng thời gian và phân trang."
+        )]
+        [ProducesResponseType(typeof(PagedResult<WithdrawalListItemDto>), StatusCodes.Status200OK)]
+        public async Task<IActionResult> GetMyWithdrawals(
+            [FromQuery] WithdrawalSearchRequest request,
+            CancellationToken cancellationToken)
+        {
+            var userId = GetCurrentUserId();
+
+            var result = await _withdrawalService.GetMyWithdrawalsAsync(
+                userId,
+                request,
+                cancellationToken);
+
+            if (!result.IsSuccess)
+                return BadRequest(result.Error);
+
+            return Ok(result.Data);
+        }
+
+        [HttpGet("withdrawals/{withdrawalId:guid}")]
+        [SwaggerOperation(
+            Summary = "Lấy chi tiết yêu cầu rút tiền của người dùng",
+            Description = "Trả về chi tiết một Withdrawal thuộc người dùng hiện tại, gồm trạng thái, tài khoản ngân hàng, lý do từ chối và các financial event liên quan."
+        )]
+        [ProducesResponseType(typeof(WithdrawalDetailDto), StatusCodes.Status200OK)]
+        public async Task<IActionResult> GetMyWithdrawalDetail(
+            Guid withdrawalId,
+            CancellationToken cancellationToken)
+        {
+            var userId = GetCurrentUserId();
+
+            var result = await _withdrawalService.GetMyWithdrawalDetailAsync(
+                userId,
+                withdrawalId,
+                cancellationToken);
+
+            if (!result.IsSuccess)
+            {
+                if (result.Error?.Code == "Withdrawal.NotFound")
+                    return NotFound(result.Error);
+
+                return BadRequest(result.Error);
+            }
+
+            return Ok(result.Data);
+        }
 
         private WalletTypeEnum ResolveWalletType()
         {

@@ -393,5 +393,268 @@ namespace HomeCycle.Infrastructure.Repositories.Orders
 
             return entity?.ToDomain();
         }
+
+        public async Task<IReadOnlyList<Guid>> GetAutoCompleteCandidateIdsAsync(
+            DateTime cutoffUtc,
+            int limit,
+            CancellationToken ct = default)
+        {
+            return await _db.Orders
+                .AsNoTracking()
+                .Where(o =>
+                    o.OrderStatus == (int)OrderStatus.Processing &&
+                    o.BuyerReceivedConfirmedAt == null &&
+                    !o.Disputes.Any(d =>
+                        d.DisputeStatus == (int)DisputeStatus.Pending ||
+                        d.DisputeStatus == (int)DisputeStatus.UnderReview ||
+                        d.DisputeStatus == (int)DisputeStatus.AwaitingReturn) &&
+                    (
+                        o.Shipments.Any(s =>
+                            s.DeliveryMethod == (int)DeliveryMethod.GhnDelivery &&
+                            s.ShipmentStatus == (int)ShipmentStatus.Delivered &&
+                            s.DeliveredAt != null &&
+                            s.DeliveredAt <= cutoffUtc)
+                        ||
+                        (
+                            o.SellerHandoverConfirmedAt != null &&
+                            o.SellerHandoverConfirmedAt <= cutoffUtc &&
+                            o.Shipments.Any(s =>
+                                s.DeliveryMethod == (int)DeliveryMethod.SellerDelivers ||
+                                s.DeliveryMethod == (int)DeliveryMethod.BuyerPickUp)
+                        )
+                    ))
+                .OrderBy(o => o.UpdatedAt)
+                .Select(o => o.OrderId)
+                .Take(limit)
+                .ToListAsync(ct);
+        }
+
+        public async Task<IReadOnlyList<Guid>> GetAutoReleaseCandidateIdsAsync(
+            DateTime nowUtc,
+            int limit,
+            CancellationToken ct = default)
+        {
+            return await _db.Orders
+                .AsNoTracking()
+                .Where(o =>
+                    o.OrderStatus == (int)OrderStatus.Completed &&
+                    o.DisputeWindowEndsAt.HasValue &&
+                    o.DisputeWindowEndsAt.Value < nowUtc &&
+                    !o.Disputes.Any(d =>
+                        d.DisputeStatus == (int)DisputeStatus.Pending ||
+                        d.DisputeStatus == (int)DisputeStatus.UnderReview ||
+                        d.DisputeStatus == (int)DisputeStatus.AwaitingReturn) &&
+                    !_db.Wallet_Transactions.Any(t =>
+                        t.ReferenceType == (int)ReferenceType.Order &&
+                        t.ReferenceId == o.OrderId &&
+                        t.TransactionType == (int)TransactionType.Payout_Release &&
+                        t.WalletTransactionStatus ==
+                            (int)WalletTransactionStatus.Completed))
+                .OrderBy(o => o.DisputeWindowEndsAt)
+                .ThenBy(o => o.OrderId)
+                .Select(o => o.OrderId)
+                .Take(limit)
+                .ToListAsync(ct);
+        }
+
+        public async Task<PagedResult<ModeratorOrderReadModel>> GetPagedForModeratorAsync(
+            ModeratorOrderQuery request,
+            CancellationToken ct = default)
+        {
+            var query = _db.Orders
+                .AsNoTracking()
+                .AsQueryable();
+
+            if (request.Status.HasValue)
+            {
+                query = query.Where(o =>
+                    o.OrderStatus == (int)request.Status.Value);
+            }
+
+            if (request.PaymentStatus.HasValue)
+            {
+                query = query.Where(o =>
+                    o.PaymentStatus == (int)request.PaymentStatus.Value);
+            }
+
+            if (request.BuyerId.HasValue)
+            {
+                query = query.Where(o =>
+                    o.Agreement.BuyerId == request.BuyerId.Value);
+            }
+
+            if (request.SellerId.HasValue)
+            {
+                query = query.Where(o =>
+                    o.Agreement.SellerId == request.SellerId.Value);
+            }
+
+            if (request.CreatedFrom.HasValue)
+            {
+                query = query.Where(o =>
+                    o.CreatedAt >= request.CreatedFrom.Value);
+            }
+
+            if (request.CreatedTo.HasValue)
+            {
+                query = query.Where(o =>
+                    o.CreatedAt <= request.CreatedTo.Value);
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.Keyword))
+            {
+                var keyword = request.Keyword.Trim();
+
+                query = query.Where(o =>
+                    EF.Functions.ILike(
+                        o.OrderCode,
+                        $"%{keyword}%") ||
+
+                    (o.ProductName != null &&
+                     EF.Functions.ILike(
+                         o.ProductName,
+                         $"%{keyword}%")) ||
+
+                    EF.Functions.ILike(
+                        o.Agreement.Buyer.Username,
+                        $"%{keyword}%") ||
+
+                    EF.Functions.ILike(
+                        o.Agreement.Seller.Username,
+                        $"%{keyword}%"));
+            }
+
+            if (request.HasActiveDispute.HasValue)
+            {
+                if (request.HasActiveDispute.Value)
+                {
+                    query = query.Where(o =>
+                        o.Disputes.Any(d =>
+                            d.DisputeStatus == (int)DisputeStatus.Pending ||
+                            d.DisputeStatus == (int)DisputeStatus.UnderReview ||
+                            d.DisputeStatus == (int)DisputeStatus.AwaitingReturn));
+                }
+                else
+                {
+                    query = query.Where(o =>
+                        !o.Disputes.Any(d =>
+                            d.DisputeStatus == (int)DisputeStatus.Pending ||
+                            d.DisputeStatus == (int)DisputeStatus.UnderReview ||
+                            d.DisputeStatus == (int)DisputeStatus.AwaitingReturn));
+                }
+            }
+
+            if (request.HasInspection.HasValue)
+            {
+                if (request.HasInspection.Value)
+                {
+                    query = query.Where(o =>
+                        _db.Inspection_Forms.Any(f =>
+                            f.OrderId == o.OrderId));
+                }
+                else
+                {
+                    query = query.Where(o =>
+                        !_db.Inspection_Forms.Any(f =>
+                            f.OrderId == o.OrderId));
+                }
+            }
+
+            var totalCount =
+                await query.CountAsync(ct);
+
+            var page = query
+                .OrderByDescending(o => o.CreatedAt)
+                .Skip((request.PageNumber - 1) * request.PageSize)
+                .Take(request.PageSize);
+
+            var items = await ProjectModeratorOrders(page)
+                .ToListAsync(ct);
+
+            return new PagedResult<ModeratorOrderReadModel>
+            {
+                Items = items,
+                PageNumber = request.PageNumber,
+                PageSize = request.PageSize,
+                TotalCount = totalCount
+            };
+        }
+
+        public Task<ModeratorOrderReadModel?> GetForModeratorAsync(
+            Guid orderId,
+            CancellationToken ct = default)
+        {
+            var query = _db.Orders
+                .AsNoTracking()
+                .Where(o => o.OrderId == orderId);
+
+            return ProjectModeratorOrders(query)
+                .FirstOrDefaultAsync(ct);
+        }
+
+        private IQueryable<ModeratorOrderReadModel> ProjectModeratorOrders(
+            IQueryable<Order> query)
+        {
+            return query.Select(o =>
+                new ModeratorOrderReadModel
+                {
+                    OrderId = o.OrderId,
+                    AgreementId = o.AgreementId,
+                    PostId = o.PostId,
+
+                    OrderCode = o.OrderCode,
+                    ProductName = o.ProductName,
+
+                    ThumbnailUrl = _db.Media
+                        .Where(m =>
+                            m.TargetId == o.PostId &&
+                            m.TargetType == "Post")
+                        .OrderBy(m => m.DisplayOrder)
+                        .Select(m => m.Url)
+                        .FirstOrDefault(),
+
+                    Quantity = o.Quantity,
+
+                    FinalTotalAmount = o.FinalTotalAmount,
+                    AmountPaid = o.AmountPaid,
+                    AmountRemaining = o.AmountRemaining,
+
+                    OrderStatus = o.OrderStatus,
+                    PaymentStatus = o.PaymentStatus,
+
+                    BuyerId = o.Agreement.BuyerId,
+                    BuyerUsername = o.Agreement.Buyer.Username,
+                    BuyerPhoneNumber = o.Agreement.Buyer.PhoneNumber,
+                    BuyerAvatarUrl = o.Agreement.Buyer.AvatarUrl,
+
+                    SellerId = o.Agreement.SellerId,
+                    SellerUsername = o.Agreement.Seller.Username,
+                    SellerPhoneNumber = o.Agreement.Seller.PhoneNumber,
+                    SellerAvatarUrl = o.Agreement.Seller.AvatarUrl,
+
+                    HasActiveDispute =
+                        o.Disputes.Any(d =>
+                            d.DisputeStatus == (int)DisputeStatus.Pending ||
+                            d.DisputeStatus == (int)DisputeStatus.UnderReview ||
+                            d.DisputeStatus == (int)DisputeStatus.AwaitingReturn),
+
+                    LatestDisputeId = o.Disputes
+                        .OrderByDescending(d => d.CreatedAt)
+                        .Select(d => (Guid?)d.DisputeId)
+                        .FirstOrDefault(),
+
+                    LatestDisputeStatus = o.Disputes
+                        .OrderByDescending(d => d.CreatedAt)
+                        .Select(d => d.DisputeStatus)
+                        .FirstOrDefault(),
+
+                    HasInspection =
+                        _db.Inspection_Forms.Any(f =>
+                            f.OrderId == o.OrderId),
+
+                    CreatedAt = o.CreatedAt,
+                    UpdatedAt = o.UpdatedAt
+                });
+        }
     }
 }

@@ -40,6 +40,10 @@ namespace HomeCycle.Application.Interfaces.Repositories.Disputes
         Task<dispute?> GetAwaitingReturnByOrderIdForUpdateAsync(
             Guid orderId,
             CancellationToken cancellationToken = default);
+        Task<IReadOnlyList<Guid>> GetBuyerReturnTimeoutCandidateIdsAsync(
+            DateTime nowUtc,
+            int limit,
+            CancellationToken cancellationToken = default);
 
     }
 }

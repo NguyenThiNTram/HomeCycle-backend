@@ -120,6 +120,26 @@ namespace HomeCycle.API
             builder.Services.AddHostedService<HomeCycle.API.Workers.GhnShipmentCreationWorker>();
             builder.Services.AddHostedService<HomeCycle.API.Workers.BuyPostExpiryWorker>();
 
+            // Worker nền reconcile các PayOS payment Pending nếu webhook bị delay/miss
+            builder.Services.AddHostedService<HomeCycle.API.Workers.PayOsPaymentSyncWorker>();
+
+            // Worker OrderLifeCyclce
+            builder.Services
+                .AddOptions<HomeCycle.API.Workers.OrderLifecycleWorkerOptions>()
+                .Bind(
+                    builder.Configuration.GetSection(
+                        HomeCycle.API.Workers.OrderLifecycleWorkerOptions.SectionName))
+                .Validate(
+                    x => x.PollSeconds is >= 15 and <= 3600,
+                    "OrderLifecycleWorker PollSeconds phải từ 15 đến 3600 giây.")
+                .Validate(
+                    x => x.BatchSize is >= 1 and <= 200,
+                    "OrderLifecycleWorker BatchSize phải từ 1 đến 200.")
+                .ValidateOnStart();
+
+            builder.Services.AddHostedService<
+                HomeCycle.API.Workers.OrderLifecycleWorker>();
+
 
             // Add DbContext with PostgreSQL configuration
             builder.Services.AddDbContext<HomeCycleDbContext>(options =>

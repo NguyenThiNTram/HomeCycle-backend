@@ -1090,6 +1090,71 @@ namespace HomeCycle.Application.Services.Appointments
             }
         }
 
+        public async Task<Result<PagedResult<ModeratorAppointmentListItemDto>>> GetAllForModeratorAsync(
+            ModeratorAppointmentSearchRequest request,
+            CancellationToken ct = default)
+        {
+            var query = new ModeratorAppointmentQuery
+            {
+                Keyword = request.Keyword,
+                Type = request.Type,
+                Status = request.Status,
+                OrderId = request.OrderId,
+                BuyerId = request.BuyerId,
+                SellerId = request.SellerId,
+                IsOverdue = request.IsOverdue,
+                HasInspectionForm = request.HasInspectionForm,
+                ScheduledFrom = request.ScheduledFrom,
+                ScheduledTo = request.ScheduledTo,
+                NowUtc = DateTime.UtcNow,
+                PageNumber = request.PageNumber,
+                PageSize = request.PageSize
+            };
+
+            var result = await _appointmentRepo.GetPagedForModeratorAsync(query, ct);
+
+            return Result<PagedResult<ModeratorAppointmentListItemDto>>.Success(
+                new PagedResult<ModeratorAppointmentListItemDto>
+                {
+                    Items = _mapper.Map<List<ModeratorAppointmentListItemDto>>(result.Items),
+                    PageNumber = result.PageNumber,
+                    PageSize = result.PageSize,
+                    TotalCount = result.TotalCount
+                });
+        }
+
+
+        public async Task<Result<ModeratorAppointmentDetailDto>> GetDetailForModeratorAsync(
+            Guid appointmentId,
+            CancellationToken ct = default)
+        {
+            var context = await _appointmentRepo.GetForModeratorAsync(appointmentId, ct);
+            if (context == null)
+                return Result<ModeratorAppointmentDetailDto>.Fail(AppointmentErrors.NotFound);
+
+            var detailResult = await GetDetailAsync(appointmentId, context.BuyerId, ct);
+            if (!detailResult.IsSuccess)
+                return Result<ModeratorAppointmentDetailDto>.Fail(detailResult.Error!);
+
+            var response = _mapper.Map<ModeratorAppointmentDetailDto>(detailResult.Data);
+
+            response.Buyer = new ModeratorAppointmentPartyDto
+            {
+                UserId = context.BuyerId,
+                Username = context.BuyerUsername,
+                AvatarUrl = context.BuyerAvatarUrl
+            };
+
+            response.Seller = new ModeratorAppointmentPartyDto
+            {
+                UserId = context.SellerId,
+                Username = context.SellerUsername,
+                AvatarUrl = context.SellerAvatarUrl
+            };
+
+            return Result<ModeratorAppointmentDetailDto>.Success(response);
+        }
+
         // =================== HELPER ======================
 
         private sealed class AppointmentScheduleContext

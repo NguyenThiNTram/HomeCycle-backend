@@ -22,6 +22,9 @@ namespace HomeCycle.Application.Interfaces.Services.Inspections
         Task<Result<InspectionFormResponseDto>> SellerRejectAsync(Guid inspectionFormId, Guid sellerId, RejectInspectionFormRequest request, CancellationToken ct = default);
 
         Task<Result<InspectionFormResponseDto>> CollectNowAsync(Guid inspectionFormId, Guid buyerId, InspectionRevisionRequest request, CancellationToken ct = default);
+        Task<Result<InspectionFormResponseDto>> GetByAppointmentForModeratorAsync(
+            Guid appointmentId,
+            CancellationToken ct = default);
 
     }
 }

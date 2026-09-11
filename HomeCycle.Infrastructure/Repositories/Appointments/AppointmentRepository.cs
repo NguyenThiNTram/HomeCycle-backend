@@ -262,6 +262,217 @@ namespace HomeCycle.Infrastructure.Repositories.Appointments
         }
 
 
+        public async Task<PagedResult<ModeratorAppointmentReadModel>> GetPagedForModeratorAsync(
+            ModeratorAppointmentQuery request,
+            CancellationToken ct = default)
+        {
+            var query = _db.Appointments.AsNoTracking().AsQueryable();
+
+            if (request.Type.HasValue)
+                query = query.Where(a => a.AppointmentType == (int)request.Type.Value);
+
+            if (request.Status.HasValue)
+                query = query.Where(a => a.AppointmentStatus == (int)request.Status.Value);
+
+            if (request.OrderId.HasValue)
+                query = query.Where(a => a.Agreement.Order != null && a.Agreement.Order.OrderId == request.OrderId.Value);
+
+            if (request.BuyerId.HasValue)
+                query = query.Where(a => a.Agreement.BuyerId == request.BuyerId.Value);
+
+            if (request.SellerId.HasValue)
+                query = query.Where(a => a.Agreement.SellerId == request.SellerId.Value);
+
+            if (!string.IsNullOrWhiteSpace(request.Keyword))
+            {
+                var keyword = request.Keyword.Trim();
+
+                query = query.Where(a =>
+                    EF.Functions.ILike(a.Agreement.Buyer.Username, $"%{keyword}%") ||
+                    EF.Functions.ILike(a.Agreement.Seller.Username, $"%{keyword}%") ||
+                    (a.Agreement.Order != null && EF.Functions.ILike(a.Agreement.Order.OrderCode, $"%{keyword}%")) ||
+                    (a.Agreement.Order != null && a.Agreement.Order.ProductName != null &&
+                     EF.Functions.ILike(a.Agreement.Order.ProductName, $"%{keyword}%")) ||
+                    (a.Inspection_Appointment != null && a.Inspection_Appointment.InspectionAddress != null &&
+                     EF.Functions.ILike(a.Inspection_Appointment.InspectionAddress, $"%{keyword}%")) ||
+                    (a.Collection_Appointment != null && a.Collection_Appointment.PickupAddress != null &&
+                     EF.Functions.ILike(a.Collection_Appointment.PickupAddress, $"%{keyword}%")));
+            }
+
+            if (request.HasInspectionForm.HasValue)
+            {
+                if (request.HasInspectionForm.Value)
+                {
+                    query = query.Where(a =>
+                        a.Inspection_Appointment != null &&
+                        a.Inspection_Appointment.Inspection_Form != null);
+                }
+                else
+                {
+                    query = query.Where(a =>
+                        a.Inspection_Appointment == null ||
+                        a.Inspection_Appointment.Inspection_Form == null);
+                }
+            }
+
+            if (request.ScheduledFrom.HasValue)
+            {
+                var from = request.ScheduledFrom.Value;
+
+                query = query.Where(a =>
+                    (a.AppointmentType == (int)AppointmentType.Inspection &&
+                     a.Inspection_Appointment != null &&
+                     a.Inspection_Appointment.InspectionDate >= from) ||
+                    (a.AppointmentType == (int)AppointmentType.Collection &&
+                     a.Collection_Appointment != null &&
+                     a.Collection_Appointment.CollectionDate >= from));
+            }
+
+            if (request.ScheduledTo.HasValue)
+            {
+                var to = request.ScheduledTo.Value;
+
+                query = query.Where(a =>
+                    (a.AppointmentType == (int)AppointmentType.Inspection &&
+                     a.Inspection_Appointment != null &&
+                     a.Inspection_Appointment.InspectionDate <= to) ||
+                    (a.AppointmentType == (int)AppointmentType.Collection &&
+                     a.Collection_Appointment != null &&
+                     a.Collection_Appointment.CollectionDate <= to));
+            }
+
+            if (request.IsOverdue.HasValue)
+            {
+                if (request.IsOverdue.Value)
+                {
+                    query = query.Where(a =>
+                        a.LateThresholdAt.HasValue &&
+                        a.LateThresholdAt.Value < request.NowUtc &&
+                        (a.AppointmentStatus == (int)AppointmentStatus.Scheduled ||
+                         a.AppointmentStatus == (int)AppointmentStatus.InProgress) &&
+                        (a.AppointmentType == (int)AppointmentType.Collection ||
+                         !a.BuyerCheckAt.HasValue ||
+                         !a.SellerCheckAt.HasValue));
+                }
+                else
+                {
+                    query = query.Where(a =>
+                        !(a.LateThresholdAt.HasValue &&
+                          a.LateThresholdAt.Value < request.NowUtc &&
+                          (a.AppointmentStatus == (int)AppointmentStatus.Scheduled ||
+                           a.AppointmentStatus == (int)AppointmentStatus.InProgress) &&
+                          (a.AppointmentType == (int)AppointmentType.Collection ||
+                           !a.BuyerCheckAt.HasValue ||
+                           !a.SellerCheckAt.HasValue)));
+                }
+            }
+
+            var totalCount = await query.CountAsync(ct);
+
+            var items = await ProjectModeratorAppointments(query, request.NowUtc)
+                .OrderByDescending(x => x.CreatedAt)
+                .Skip((request.PageNumber - 1) * request.PageSize)
+                .Take(request.PageSize)
+                .ToListAsync(ct);
+
+            return new PagedResult<ModeratorAppointmentReadModel>
+            {
+                Items = items,
+                PageNumber = request.PageNumber,
+                PageSize = request.PageSize,
+                TotalCount = totalCount
+            };
+        }
+
+        public Task<ModeratorAppointmentReadModel?> GetForModeratorAsync(
+            Guid appointmentId,
+            CancellationToken ct = default)
+        {
+            var now = DateTime.UtcNow;
+
+            return ProjectModeratorAppointments(
+                    _db.Appointments.AsNoTracking().Where(a => a.AppointmentId == appointmentId),
+                    now)
+                .FirstOrDefaultAsync(ct);
+        }
+
+
+        // ================ HELPER ===================
+        private IQueryable<ModeratorAppointmentReadModel> ProjectModeratorAppointments(
+            IQueryable<Appointment> query,
+            DateTime nowUtc)
+        {
+            return query.Select(a => new ModeratorAppointmentReadModel
+            {
+                AppointmentId = a.AppointmentId,
+                AgreementId = a.AgreementId,
+
+                AppointmentType = a.AppointmentType.HasValue
+                    ? (AppointmentType?)a.AppointmentType.Value
+                    : null,
+
+                AppointmentStatus = a.AppointmentStatus.HasValue
+                    ? (AppointmentStatus?)a.AppointmentStatus.Value
+                    : null,
+
+                OrderId = a.Agreement.Order != null ? (Guid?)a.Agreement.Order.OrderId : null,
+                OrderCode = a.Agreement.Order != null ? a.Agreement.Order.OrderCode : null,
+                ProductName = a.Agreement.Order != null ? a.Agreement.Order.ProductName : null,
+
+                BuyerId = a.Agreement.BuyerId,
+                BuyerUsername = a.Agreement.Buyer.Username,
+                BuyerAvatarUrl = a.Agreement.Buyer.AvatarUrl,
+
+                SellerId = a.Agreement.SellerId,
+                SellerUsername = a.Agreement.Seller.Username,
+                SellerAvatarUrl = a.Agreement.Seller.AvatarUrl,
+
+                ScheduledAt = a.AppointmentType == (int)AppointmentType.Inspection
+                    ? a.Inspection_Appointment != null ? a.Inspection_Appointment.InspectionDate : null
+                    : a.Collection_Appointment != null ? a.Collection_Appointment.CollectionDate : null,
+
+                Location = a.AppointmentType == (int)AppointmentType.Inspection
+                    ? a.Inspection_Appointment != null ? a.Inspection_Appointment.InspectionAddress : null
+                    : a.Collection_Appointment != null ? a.Collection_Appointment.PickupAddress : null,
+
+                BuyerCheckAt = a.BuyerCheckAt,
+                SellerCheckAt = a.SellerCheckAt,
+                LateThresholdAt = a.LateThresholdAt,
+
+                IsOverdue =
+                    a.LateThresholdAt.HasValue &&
+                    a.LateThresholdAt.Value < nowUtc &&
+                    (a.AppointmentStatus == (int)AppointmentStatus.Scheduled ||
+                     a.AppointmentStatus == (int)AppointmentStatus.InProgress) &&
+                    (a.AppointmentType == (int)AppointmentType.Collection ||
+                     !a.BuyerCheckAt.HasValue ||
+                     !a.SellerCheckAt.HasValue),
+
+                InspectionFormId =
+                    a.Inspection_Appointment != null && a.Inspection_Appointment.Inspection_Form != null
+                        ? (Guid?)a.Inspection_Appointment.Inspection_Form.InspectionFormId
+                        : null,
+
+                InspectionStatus =
+                    a.Inspection_Appointment != null &&
+                    a.Inspection_Appointment.Inspection_Form != null &&
+                    a.Inspection_Appointment.Inspection_Form.InspectionStatus.HasValue
+                        ? (InspectionStatus?)a.Inspection_Appointment.Inspection_Form.InspectionStatus.Value
+                        : null,
+
+                InspectionConclusion =
+                    a.Inspection_Appointment != null &&
+                    a.Inspection_Appointment.Inspection_Form != null &&
+                    a.Inspection_Appointment.Inspection_Form.Conclusion.HasValue
+                        ? (InspectionConclusion?)a.Inspection_Appointment.Inspection_Form.Conclusion.Value
+                        : null,
+
+                CreatedAt = a.CreatedAt,
+                CompletedAt = a.CompletedAt,
+                UpdatedAt = a.UpdatedAt
+            });
+        }
+
         private IQueryable<Appointment> BuildBaseAppointmentQuery(
           AppointmentType type, Guid userId, bool isSeller, AppointmentStatus? status)
         {

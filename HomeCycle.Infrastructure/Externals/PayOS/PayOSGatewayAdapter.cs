@@ -40,7 +40,8 @@ namespace HomeCycle.Infrastructure.Externals.PayOS
                     ReturnUrl = request.ReturnUrl,
                     CancelUrl = request.CancelUrl,
                     BuyerName = request.BuyerName,
-                    BuyerEmail = request.BuyerEmail
+                    BuyerEmail = request.BuyerEmail,
+                    ExpiredAt = request.ExpiredAt
                 };
 
                 // Gọi hàm tạo link qua property PaymentRequests

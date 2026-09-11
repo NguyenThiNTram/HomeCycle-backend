@@ -21,6 +21,7 @@ namespace HomeCycle.Application.Interfaces.Generics
         void RegisterAfterCommit(Func<Task> action);
 
         void RegisterAfterRollback(Func<Task> action);
+        void ClearTrackedEntities();
 
     }
 

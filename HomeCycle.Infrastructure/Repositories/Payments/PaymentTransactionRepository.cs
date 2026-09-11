@@ -1,5 +1,6 @@
 ﻿using HomeCycle.Application.Interfaces.Repositories.Payments;
 using HomeCycle.Domain.Entities;
+using HomeCycle.Domain.Enums;
 using HomeCycle.Infrastructure.DbContexts;
 using HomeCycle.Infrastructure.Persistences.Mappers;
 using Microsoft.EntityFrameworkCore;
@@ -70,6 +71,68 @@ namespace HomeCycle.Infrastructure.Repositories.Payments
                 .SingleOrDefaultAsync(ct);
 
             return entity?.ToDomain();
+        }
+
+        public async Task<IReadOnlyList<payment_transaction>> GetPendingPayOsSyncCandidatesAsync(
+            int limit,
+            TimeSpan retryAfter,
+            CancellationToken ct = default)
+        {
+            if (limit <= 0)
+                throw new ArgumentOutOfRangeException(nameof(limit));
+
+            if (retryAfter <= TimeSpan.Zero)
+                throw new ArgumentOutOfRangeException(nameof(retryAfter));
+
+            var staleCutoff = DateTime.UtcNow - retryAfter;
+
+            var entities = await _db.Payment_Transactions
+                .AsNoTracking()
+                .Where(x =>
+                    x.PaymentTransactionStatus == (int)PaymentTransactionStatus.Pending &&
+                    x.PayOSOrderCode != null &&
+                    x.PayOSOrderCode != string.Empty &&
+                    x.UpdatedAt <= staleCutoff &&
+                    x.Payment.PaymentStatus == (int)PaymentStatus.Pending &&
+                    x.Payment.PaymentMethod == (int)PaymentMethod.PayOS &&
+                    x.Payment.AgreementId.HasValue)
+                .OrderBy(x => x.UpdatedAt)
+                .ThenBy(x => x.CreatedAt)
+                .Take(limit)
+                .ToListAsync(ct);
+
+            return entities
+                .Select(x => x.ToDomain())
+                .ToList();
+        }
+
+        public async Task<bool> TryClaimPayOsSyncAsync(
+            Guid paymentTransactionId,
+            DateTime now,
+            TimeSpan retryAfter,
+            CancellationToken ct = default)
+        {
+            if (retryAfter <= TimeSpan.Zero)
+                throw new ArgumentOutOfRangeException(nameof(retryAfter));
+
+            var staleCutoff = now - retryAfter;
+
+            var affectedRows = await _db.Payment_Transactions
+                .Where(x =>
+                    x.PaymentTransactionId == paymentTransactionId &&
+                    x.PaymentTransactionStatus == (int)PaymentTransactionStatus.Pending &&
+                    x.PayOSOrderCode != null &&
+                    x.PayOSOrderCode != string.Empty &&
+                    x.UpdatedAt <= staleCutoff &&
+                    x.Payment.PaymentStatus == (int)PaymentStatus.Pending &&
+                    x.Payment.PaymentMethod == (int)PaymentMethod.PayOS &&
+                    x.Payment.AgreementId.HasValue)
+                .ExecuteUpdateAsync(
+                    setters => setters
+                        .SetProperty(x => x.UpdatedAt, now),
+                    ct);
+
+            return affectedRows == 1;
         }
 
         private void EnsureActiveTransaction()

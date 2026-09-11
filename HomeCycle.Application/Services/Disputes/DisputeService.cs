@@ -15,6 +15,7 @@ using HomeCycle.Application.Interfaces.Repositories.Agreements;
 using HomeCycle.Application.Interfaces.Repositories.Disputes;
 using HomeCycle.Application.Interfaces.Repositories.Orders;
 using HomeCycle.Application.Interfaces.Repositories.Profiles;
+using HomeCycle.Application.Interfaces.Repositories.Shipments;
 using HomeCycle.Application.Interfaces.Repositories.Users;
 using HomeCycle.Application.Interfaces.Services.Disputes;
 using HomeCycle.Application.Interfaces.Services.Notifications;
@@ -49,6 +50,7 @@ namespace HomeCycle.Application.Services.Disputes
         private readonly IPlatformPolicyProvider _platformPolicyProvider;
         private readonly INotificationService _notificationService;
         private readonly IOrderTrackingRealtimeService _orderTrackingRealtimeService;
+        private readonly IShipmentRepository _shipmentRepository;
         private readonly IUnitOfWork _unitOfWork;
         private readonly IMapper _mapper;
         private readonly IValidator<CreateDisputeRequest> _createValidator;
@@ -70,6 +72,7 @@ namespace HomeCycle.Application.Services.Disputes
             IPlatformPolicyProvider platformPolicyProvider,
             INotificationService notificationService,
             IOrderTrackingRealtimeService orderTrackingRealtimeService,
+            IShipmentRepository shipmentRepository,
             IUnitOfWork unitOfWork,
             IMapper mapper,
             IValidator<CreateDisputeRequest> createValidator,
@@ -91,6 +94,7 @@ namespace HomeCycle.Application.Services.Disputes
             _platformPolicyProvider = platformPolicyProvider;
             _notificationService = notificationService;
             _orderTrackingRealtimeService = orderTrackingRealtimeService;
+            _shipmentRepository = shipmentRepository;
             _unitOfWork = unitOfWork;
             _mapper = mapper;
             _createValidator = createValidator;
@@ -588,7 +592,28 @@ namespace HomeCycle.Application.Services.Disputes
 
                 var policy = await _platformPolicyProvider.GetDisputeConfigAsync(cancellationToken);
                 var now = DateTime.UtcNow;
-                var wasCompleted = order.CompletedAt.HasValue;
+
+                var shipment = await _shipmentRepository.GetByOrderIdAsync(order.OrderId, cancellationToken);
+
+                var buyerHasItem =
+                    order.CompletedAt.HasValue ||
+                    (
+                        shipment?.DeliveryMethod == DeliveryMethod.GhnDelivery &&
+                        shipment.ShipmentStatus == ShipmentStatus.Delivered &&
+                        shipment.DeliveredAt.HasValue
+                    );
+
+                if (buyerHasItem && !order.CompletedAt.HasValue)
+                {
+                    order.CompletedAt = now;
+                    order.CompletionSource =
+                        (int)OrderCompletionSource.ModeratorResolved;
+
+                    // Buyer đã sử dụng dispute trước khi normal auto-complete.
+                    // Không mở lại một dispute window mới sau khi return lifecycle kết thúc.
+                    order.DisputeWindowEndsAt ??= now;
+                }
+
                 var refundedAmount = 0m;
 
                 dispute.ResolutionOutcome = (int)request.ResolutionOutcome;
@@ -599,7 +624,7 @@ namespace HomeCycle.Application.Services.Disputes
                     ? agreement.SellerId
                     : agreement.BuyerId;
 
-                if (request.ResolutionOutcome == DisputeResolutionOutcome.BuyerFavored && wasCompleted)
+                if (request.ResolutionOutcome == DisputeResolutionOutcome.BuyerFavored && buyerHasItem)
                 {
                     dispute.DisputeStatus = (int)DisputeStatus.AwaitingReturn;
                     dispute.ResolvedAt = null;
@@ -613,7 +638,7 @@ namespace HomeCycle.Application.Services.Disputes
                 }
                 else
                 {
-                    if (!wasCompleted)
+                    if (!buyerHasItem)
                     {
                         var refundResult = await _paymentService.RefundAllRemainingOrderHeldAmountAsync(
                             order,
@@ -670,7 +695,7 @@ namespace HomeCycle.Application.Services.Disputes
 
                 if (request.ResolutionOutcome == DisputeResolutionOutcome.BuyerFavored)
                 {
-                    if (wasCompleted)
+                    if (buyerHasItem)
                     {
                         buyerMessage = "Tranh chấp được giải quyết có lợi cho bạn. Vui lòng hoàn trả sản phẩm trong thời hạn quy định.";
                         sellerMessage = "Tranh chấp được giải quyết có lợi cho người mua. Đơn hàng đang chờ sản phẩm được hoàn trả.";

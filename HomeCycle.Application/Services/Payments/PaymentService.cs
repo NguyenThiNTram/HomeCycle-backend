@@ -40,9 +40,6 @@ namespace HomeCycle.Application.Services.Payments
 {
     public class PaymentService : IPaymentService
     {
-        private const decimal DEPOSIT_RATE = 0.20m;
-        private static readonly TimeSpan PAYMENT_TTL = TimeSpan.FromMinutes(15);
-
         // GHN create-order limits (đơn vị: gram / cm)
         private const int GhnMaxWeightGram = 1_600_000;
         private const int GhnMinDimensionCm = 1;
@@ -211,7 +208,10 @@ namespace HomeCycle.Application.Services.Payments
                     "Chưa có phí vận chuyển GHN. Vui lòng tính lại phí giao hàng trước khi thanh toán."));
             }
 
-            var calc = CalculatePaymentAmount(agreement, details);
+            var paymentPolicy = await _platformPolicyProvider.GetPaymentConfigAsync(ct);
+            var depositRate = paymentPolicy.DepositRatePercent / 100m;
+
+            var calc = CalculatePaymentAmount(agreement, details, depositRate);
 
             if (calc.BasePrice <= 0 || calc.AmountToPay <= 0 || calc.AmountToPay > int.MaxValue)
             {
@@ -234,6 +234,10 @@ namespace HomeCycle.Application.Services.Payments
                 await Task.Delay(5, ct); // đẩy timestamp sang millisecond khác
             }
 
+            var now = DateTime.UtcNow;
+            var expiresAt = now.AddMinutes(paymentPolicy.PaymentExpiryMinutes);
+            var payOsExpiredAt = new DateTimeOffset(expiresAt).ToUnixTimeSeconds();
+
             var gatewayRequest = new GatewayPaymentRequest
             {
                 OrderCode = orderCode,
@@ -242,7 +246,8 @@ namespace HomeCycle.Application.Services.Payments
                 BuyerName = "Buyer",
                 BuyerEmail = "buyer@homecycle.vn",
                 ReturnUrl = returnUrl,
-                CancelUrl = cancelUrl
+                CancelUrl = cancelUrl,
+                ExpiredAt = payOsExpiredAt
             };
 
             var gatewayResult = await _gatewayService.CreatePaymentLinkAsync(gatewayRequest, ct);
@@ -257,7 +262,7 @@ namespace HomeCycle.Application.Services.Payments
             }
 
             var paymentId = Guid.NewGuid();
-            var now = DateTime.UtcNow;
+
             var payment = new payment
             {
                 PaymentId = paymentId,
@@ -269,7 +274,7 @@ namespace HomeCycle.Application.Services.Payments
                 Description = "Thanh toan qua PayOS",
                 PaymentStatus = (int)PaymentStatus.Pending,
                 CreatedAt = now,
-                ExpiredAt = now.Add(PAYMENT_TTL)
+                ExpiredAt = expiresAt
             };
 
             var paymentTx = new payment_transaction
@@ -361,6 +366,9 @@ namespace HomeCycle.Application.Services.Payments
                     "Chưa có phí vận chuyển GHN. Vui lòng tính lại phí giao hàng trước khi thanh toán."));
             }
 
+            var paymentPolicy = await _platformPolicyProvider.GetPaymentConfigAsync(ct);
+            var depositRate = paymentPolicy.DepositRatePercent / 100m;
+
             DateTime? inspectionDate = details?.InspectionDate;
             string? inspectionAddress = details?.InspectionAddress;
             DateTime? collectionDate = details?.CollectionDate;
@@ -368,7 +376,7 @@ namespace HomeCycle.Application.Services.Payments
             string? deliveryAddress = details?.DeliveryAddress;
             string? deliveryMethodString = details?.DeliveryMethod?.ToString();
 
-            var calc = CalculatePaymentAmount(agreement, details);
+            var calc = CalculatePaymentAmount(agreement, details, depositRate);
             decimal basePrice = calc.BasePrice;
             decimal amountToPay = calc.AmountToPay;
             decimal shippingFee = calc.ShippingFee;
@@ -416,7 +424,9 @@ namespace HomeCycle.Application.Services.Payments
 
                 agreement = lockedAgreement;
                 details = ParseAgreementDetails(agreement, agreementId);
-                calc = CalculatePaymentAmount(agreement, details);
+
+                calc = CalculatePaymentAmount(agreement, details, depositRate);
+
                 basePrice = calc.BasePrice;
                 amountToPay = calc.AmountToPay;
                 shippingFee = calc.ShippingFee;
@@ -680,102 +690,31 @@ namespace HomeCycle.Application.Services.Payments
             }
         }
 
-        //public async Task<Result<PaymentStatusResponseDto>> SyncPaymentStatusAsync(Guid agreementId, Guid payerId, CancellationToken ct = default)
-        //{
-        //    var agreement = await _agreementRepo.GetByIdAsync(agreementId, ct);
-        //    if (agreement == null)
-        //        return Result<PaymentStatusResponseDto>.Fail(new Error("Agreement.NotFound", "Không tìm thấy thỏa thuận."));
 
-        //    if (agreement.BuyerId != payerId)
-        //        return Result<PaymentStatusResponseDto>.Fail(new Error("Auth.Forbidden", "Chỉ người mua mới có quyền xem trạng thái thanh toán này."));
-
-        //    var pending = await _paymentRepo.GetLatestPendingByAgreementAsync(agreementId, ct);
-        //    if (pending == null)
-        //    {
-        //        var currentStatus = agreement.AgreementStatus == (int)AgreementStatus.Confirmed
-        //            ? PaymentStatus.Completed
-        //            : PaymentStatus.Pending;
-        //        return Result<PaymentStatusResponseDto>.Success(await BuildPaymentStatusResponseAsync(agreementId, currentStatus, ct));
-        //    }
-
-        //    var tx = await _paymentTxRepo.GetLatestByPaymentIdAsync(pending.PaymentId, ct);
-        //    if (tx == null)
-        //        return Result<PaymentStatusResponseDto>.Fail(new Error("Payment.TransactionNotFound", "Không tìm thấy giao dịch tương ứng."));
-
-        //    // Nếu đã hết hạn từ trước, không cần gọi PayOS nữa -> trả Expired ngay và đồng bộ cả 2 bảng.
-        //    if (pending.ExpiredAt.HasValue && pending.ExpiredAt.Value <= DateTime.UtcNow
-        //        && pending.PaymentStatus != (int)PaymentStatus.Completed)
-        //    {
-        //        pending.PaymentStatus = (int)PaymentStatus.Expired;
-        //        tx.PaymentTransactionStatus = (int)PaymentTransactionStatus.Failed;
-        //        tx.UpdatedAt = DateTime.UtcNow;
-        //        await _paymentRepo.UpdateAsync(pending, ct);
-        //        await _paymentTxRepo.UpdateAsync(tx, ct);
-        //        await _unitOfWork.SaveChangesAsync(ct);
-        //        return Result<PaymentStatusResponseDto>.Success(await BuildPaymentStatusResponseAsync(agreementId, PaymentStatus.Expired, ct));
-        //    }
-
-        //    var statusResult = await _gatewayService.GetPaymentStatusAsync(tx.PayOSOrderCode, ct);
-        //    if (!statusResult.IsSuccess)
-        //    {
-        //        _logger.LogWarning("SyncPaymentStatusAsync: gọi PayOS thất bại cho OrderCode {OrderCode}, Agreement {AgreementId}",
-        //            tx.PayOSOrderCode, agreementId);
-        //        return Result<PaymentStatusResponseDto>.Fail(statusResult.Error);
-        //    }
-
-        //    switch (statusResult.Data.Status?.ToUpperInvariant())
-        //    {
-        //        case "PAID":
-        //            // Webhook có thể bị delay/miss — chủ động fulfill luôn nếu phát hiện đã PAID thật.
-        //            // ExecuteSuccessfulPaymentCoreAsync đã có guard idempotent (check PaymentTransactionStatus == Success).
-        //            await ExecuteSuccessfulPaymentCoreAsync(tx.PayOSOrderCode, statusResult.Data.TransactionId ?? string.Empty, ct);
-        //            return Result<PaymentStatusResponseDto>.Success(await BuildPaymentStatusResponseAsync(agreementId, PaymentStatus.Completed, ct));
-
-        //        case "CANCELLED":
-        //            pending.PaymentStatus = (int)PaymentStatus.Cancelled;
-        //            tx.PaymentTransactionStatus = (int)PaymentTransactionStatus.Cancelled;
-        //            tx.UpdatedAt = DateTime.UtcNow;
-        //            await _paymentRepo.UpdateAsync(pending, ct);
-        //            await _paymentTxRepo.UpdateAsync(tx, ct);
-        //            await _unitOfWork.SaveChangesAsync(ct);
-        //            return Result<PaymentStatusResponseDto>.Success(await BuildPaymentStatusResponseAsync(agreementId, PaymentStatus.Cancelled, ct));
-
-        //        case "PENDING":
-        //        case "PROCESSING":
-        //            if (pending.ExpiredAt.HasValue && pending.ExpiredAt.Value <= DateTime.UtcNow)
-        //            {
-        //                pending.PaymentStatus = (int)PaymentStatus.Expired;
-        //                tx.PaymentTransactionStatus = (int)PaymentTransactionStatus.Failed;
-        //                tx.UpdatedAt = DateTime.UtcNow;
-        //                await _paymentRepo.UpdateAsync(pending, ct);
-        //                await _paymentTxRepo.UpdateAsync(tx, ct);
-        //                await _unitOfWork.SaveChangesAsync(ct);
-        //                return Result<PaymentStatusResponseDto>.Success(await BuildPaymentStatusResponseAsync(agreementId, PaymentStatus.Expired, ct));
-        //            }
-        //            return Result<PaymentStatusResponseDto>.Success(await BuildPaymentStatusResponseAsync(agreementId, PaymentStatus.Pending, ct));
-
-        //        default:
-        //            _logger.LogWarning("SyncPaymentStatusAsync: nhận status lạ '{Status}' từ PayOS cho OrderCode {OrderCode}",
-        //                statusResult.Data.Status, tx.PayOSOrderCode);
-        //            return Result<PaymentStatusResponseDto>.Success(await BuildPaymentStatusResponseAsync(agreementId, PaymentStatus.Pending, ct));
-        //    }
-        //}
         public async Task<Result<PaymentStatusResponseDto>> SyncPaymentStatusAsync(
             Guid agreementId,
             Guid payerId,
             CancellationToken ct = default)
         {
-            var agreement = await _agreementRepo.GetByIdAsync(agreementId, ct);
+            var agreement = await _agreementRepo.GetByIdAsync(
+                agreementId,
+                ct);
 
             if (agreement == null)
+            {
                 return Result<PaymentStatusResponseDto>.Fail(
-                    new Error("Agreement.NotFound", "Không tìm thấy thỏa thuận."));
+                    new Error(
+                        "Agreement.NotFound",
+                        "Không tìm thấy thỏa thuận."));
+            }
 
             if (agreement.BuyerId != payerId)
+            {
                 return Result<PaymentStatusResponseDto>.Fail(
                     new Error(
                         "Auth.Forbidden",
                         "Chỉ người mua mới có quyền xem trạng thái thanh toán này."));
+            }
 
             var payment = await _paymentRepo.GetLatestByAgreementAsync(
                 agreementId,
@@ -803,122 +742,90 @@ namespace HomeCycle.Application.Services.Payments
                         ct));
             }
 
-            var transaction = await _paymentTxRepo.GetLatestByPaymentIdAsync(
+            var reconcileResult = await ReconcilePayOsPaymentAsync(
                 payment.PaymentId,
                 ct);
 
-            if (transaction == null)
-            {
-                return Result<PaymentStatusResponseDto>.Fail(
-                    new Error(
-                        "Payment.TransactionNotFound",
-                        "Không tìm thấy giao dịch tương ứng."));
-            }
+            if (!reconcileResult.IsSuccess)
+                return Result<PaymentStatusResponseDto>.Fail(reconcileResult.Error!);
 
-            if (payment.ExpiredAt.HasValue &&
-                payment.ExpiredAt.Value <= DateTime.UtcNow)
-            {
-                var terminalStatus = await ApplyPayOsTerminalStatusAsync(
-                    payment.PaymentId,
-                    transaction.PayOSOrderCode,
-                    PaymentStatus.Expired,
-                    PaymentTransactionStatus.Failed,
-                    "Thanh toán đã hết hạn",
-                    "Giao dịch thanh toán đã hết hạn và chưa được ghi nhận thành công. Vui lòng tạo lại thanh toán.",
+            var reconciledStatus = reconcileResult.Data;
+
+            return Result<PaymentStatusResponseDto>.Success(
+                await BuildPaymentStatusResponseAsync(
+                    agreementId,
+                    reconciledStatus,
+                    ct));
+        }
+
+        public async Task<int> ProcessPendingPayOsSyncAsync(
+            int batchSize,
+            TimeSpan retryAfter,
+            CancellationToken ct = default)
+        {
+            if (batchSize <= 0)
+                throw new ArgumentOutOfRangeException(nameof(batchSize));
+
+            if (retryAfter <= TimeSpan.Zero)
+                throw new ArgumentOutOfRangeException(nameof(retryAfter));
+
+            var candidates =
+                await _paymentTxRepo.GetPendingPayOsSyncCandidatesAsync(
+                    batchSize,
+                    retryAfter,
                     ct);
 
-                return Result<PaymentStatusResponseDto>.Success(
-                    await BuildPaymentStatusResponseAsync(
-                        agreementId,
-                        terminalStatus,
-                        ct));
-            }
+            var processed = 0;
 
-            var statusResult = await _gatewayService.GetPaymentStatusAsync(
-                transaction.PayOSOrderCode,
-                ct);
-
-            if (!statusResult.IsSuccess)
+            foreach (var candidate in candidates)
             {
-                _logger.LogWarning(
-                    "SyncPaymentStatusAsync: gọi PayOS thất bại cho OrderCode {OrderCode}, Agreement {AgreementId}",
-                    transaction.PayOSOrderCode,
-                    agreementId);
+                ct.ThrowIfCancellationRequested();
 
-                return Result<PaymentStatusResponseDto>.Fail(statusResult.Error);
-            }
+                try
+                {
+                    var claimed =
+                        await _paymentTxRepo.TryClaimPayOsSyncAsync(
+                            candidate.PaymentTransactionId,
+                            DateTime.UtcNow,
+                            retryAfter,
+                            ct);
 
-            switch (statusResult.Data.Status?.ToUpperInvariant())
-            {
-                case "PAID":
-                    await ExecuteSuccessfulPaymentCoreAsync(
-                        transaction.PayOSOrderCode,
-                        statusResult.Data.TransactionId ?? string.Empty,
+                    if (!claimed)
+                        continue;
+
+                    var result = await ReconcilePayOsPaymentAsync(
+                        candidate.PaymentId,
                         ct);
 
-                    return Result<PaymentStatusResponseDto>.Success(
-                        await BuildPaymentStatusResponseAsync(
-                            agreementId,
-                            PaymentStatus.Completed,
-                            ct));
-
-                case "CANCELLED":
+                    if (!result.IsSuccess)
                     {
-                        var terminalStatus = await ApplyPayOsTerminalStatusAsync(
-                            payment.PaymentId,
-                            transaction.PayOSOrderCode,
-                            PaymentStatus.Cancelled,
-                            PaymentTransactionStatus.Cancelled,
-                            "Thanh toán đã bị hủy",
-                            "Giao dịch thanh toán đã bị hủy. Bạn có thể tạo lại thanh toán khi sẵn sàng.",
-                            ct);
+                        _logger.LogWarning(
+                            "PayOS sync failed for Payment {PaymentId}, OrderCode {OrderCode}: {Error}",
+                            candidate.PaymentId,
+                            candidate.PayOSOrderCode,
+                            result.Error?.Message);
 
-                        return Result<PaymentStatusResponseDto>.Success(
-                            await BuildPaymentStatusResponseAsync(
-                                agreementId,
-                                terminalStatus,
-                                ct));
+                        continue;
                     }
 
-                case "PENDING":
-                case "PROCESSING":
-                    if (payment.ExpiredAt.HasValue &&
-                        payment.ExpiredAt.Value <= DateTime.UtcNow)
-                    {
-                        var terminalStatus = await ApplyPayOsTerminalStatusAsync(
-                            payment.PaymentId,
-                            transaction.PayOSOrderCode,
-                            PaymentStatus.Expired,
-                            PaymentTransactionStatus.Failed,
-                            "Thanh toán đã hết hạn",
-                            "Giao dịch thanh toán đã hết hạn và chưa được ghi nhận thành công. Vui lòng tạo lại thanh toán.",
-                            ct);
-
-                        return Result<PaymentStatusResponseDto>.Success(
-                            await BuildPaymentStatusResponseAsync(
-                                agreementId,
-                                terminalStatus,
-                                ct));
-                    }
-
-                    return Result<PaymentStatusResponseDto>.Success(
-                        await BuildPaymentStatusResponseAsync(
-                            agreementId,
-                            PaymentStatus.Pending,
-                            ct));
-
-                default:
-                    _logger.LogWarning(
-                        "SyncPaymentStatusAsync: nhận status lạ '{Status}' từ PayOS cho OrderCode {OrderCode}",
-                        statusResult.Data.Status,
-                        transaction.PayOSOrderCode);
-
-                    return Result<PaymentStatusResponseDto>.Success(
-                        await BuildPaymentStatusResponseAsync(
-                            agreementId,
-                            PaymentStatus.Pending,
-                            ct));
+                    processed++;
+                }
+                catch (OperationCanceledException)
+                    when (ct.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(
+                        ex,
+                        "Unexpected PayOS sync error for Payment {PaymentId}, OrderCode {OrderCode}",
+                        candidate.PaymentId,
+                        candidate.PayOSOrderCode);
+                }
             }
+
+            return processed;
         }
 
         public async Task<Result<PagedResult<PaymentHistoryResponseDto>>> GetMyPaymentHistoryAsync(Guid userId, PaymentHistorySearchRequest request, CancellationToken ct = default)
@@ -1284,8 +1191,179 @@ namespace HomeCycle.Application.Services.Payments
             }
         }
 
+        public async Task<Result<IReadOnlyList<OrderFinancialEventDto>>> GetOrderFinancialHistoryForModeratorAsync(
+            Guid orderId,
+            CancellationToken ct = default)
+        {
+            var order = await _orderRepo.GetByIdAsync(orderId, ct);
+            if (order == null)
+                return Result<IReadOnlyList<OrderFinancialEventDto>>.Fail(OrderErrors.NotFound);
+
+            var transactions = await _walletTxRepo.GetByReferenceAsync(ReferenceType.Order, orderId, ct);
+            var response = _mapper.Map<List<OrderFinancialEventDto>>(transactions);
+
+            return Result<IReadOnlyList<OrderFinancialEventDto>>.Success(response);
+        }
+
         #region HELPER
 
+
+        private async Task<Result<PaymentStatus>> ReconcilePayOsPaymentAsync(
+            Guid paymentId,
+            CancellationToken ct)
+        {
+            var payment = await _paymentRepo.GetByIdAsync(
+                paymentId,
+                ct);
+
+            if (payment == null)
+            {
+                return Result<PaymentStatus>.Fail(
+                    new Error(
+                        "Payment.NotFound",
+                        "Không tìm thấy giao dịch thanh toán."));
+            }
+
+            var currentStatus = payment.PaymentStatus.HasValue
+                ? (PaymentStatus)payment.PaymentStatus.Value
+                : PaymentStatus.Pending;
+
+            if (currentStatus != PaymentStatus.Pending)
+                return Result<PaymentStatus>.Success(currentStatus);
+
+            if (payment.PaymentMethod != (int)PaymentMethod.PayOS)
+                return Result<PaymentStatus>.Success(currentStatus);
+
+            var transaction =
+                await _paymentTxRepo.GetLatestByPaymentIdAsync(
+                    payment.PaymentId,
+                    ct);
+
+            if (transaction == null ||
+                string.IsNullOrWhiteSpace(transaction.PayOSOrderCode))
+            {
+                return Result<PaymentStatus>.Fail(
+                    new Error(
+                        "Payment.TransactionNotFound",
+                        "Không tìm thấy giao dịch PayOS tương ứng."));
+            }
+
+            var statusResult =
+                await _gatewayService.GetPaymentStatusAsync(
+                    transaction.PayOSOrderCode,
+                    ct);
+
+            if (!statusResult.IsSuccess)
+            {
+                _logger.LogWarning(
+                    "PayOS reconciliation failed for Payment {PaymentId}, OrderCode {OrderCode}",
+                    payment.PaymentId,
+                    transaction.PayOSOrderCode);
+
+                return Result<PaymentStatus>.Fail(
+                    statusResult.Error!);
+            }
+
+            if (statusResult.Data == null)
+            {
+                return Result<PaymentStatus>.Fail(
+                    new Error(
+                        "Payment.InvalidGatewayResponse",
+                        "PayOS không trả về trạng thái thanh toán hợp lệ."));
+            }
+
+            var gatewayStatus =
+                statusResult.Data.Status?
+                    .Trim()
+                    .ToUpperInvariant();
+
+            switch (gatewayStatus)
+            {
+                case "PAID":
+                    await ExecuteSuccessfulPaymentCoreAsync(
+                        transaction.PayOSOrderCode,
+                        statusResult.Data.TransactionId ?? string.Empty,
+                        ct);
+
+                    return Result<PaymentStatus>.Success(
+                        PaymentStatus.Completed);
+
+                case "CANCELLED":
+                    {
+                        var status = await ApplyPayOsTerminalStatusAsync(
+                            payment.PaymentId,
+                            transaction.PayOSOrderCode,
+                            PaymentStatus.Cancelled,
+                            PaymentTransactionStatus.Cancelled,
+                            "Thanh toán đã bị hủy",
+                            "Giao dịch thanh toán đã bị hủy. Bạn có thể tạo lại thanh toán khi sẵn sàng.",
+                            ct);
+
+                        return Result<PaymentStatus>.Success(status);
+                    }
+
+                case "EXPIRED":
+                    {
+                        var status = await ApplyPayOsTerminalStatusAsync(
+                            payment.PaymentId,
+                            transaction.PayOSOrderCode,
+                            PaymentStatus.Expired,
+                            PaymentTransactionStatus.Failed,
+                            "Thanh toán đã hết hạn",
+                            "Giao dịch thanh toán đã hết hạn và chưa được ghi nhận thành công. Vui lòng tạo lại thanh toán.",
+                            ct);
+
+                        return Result<PaymentStatus>.Success(status);
+                    }
+
+                case "FAILED":
+                    {
+                        var status = await ApplyPayOsTerminalStatusAsync(
+                            payment.PaymentId,
+                            transaction.PayOSOrderCode,
+                            PaymentStatus.Failed,
+                            PaymentTransactionStatus.Failed,
+                            "Thanh toán thất bại",
+                            "Giao dịch thanh toán không thành công. Vui lòng tạo lại thanh toán.",
+                            ct);
+
+                        return Result<PaymentStatus>.Success(status);
+                    }
+
+                case "UNDERPAID":
+                    _logger.LogWarning(
+                        "PayOS Payment {PaymentId}, OrderCode {OrderCode} is UNDERPAID. Payment will not be fulfilled.",
+                        payment.PaymentId,
+                        transaction.PayOSOrderCode);
+
+                    return Result<PaymentStatus>.Success(
+                        PaymentStatus.Pending);
+
+                case "PENDING":
+                case "PROCESSING":
+                    if (payment.ExpiredAt.HasValue &&
+                        payment.ExpiredAt.Value <= DateTime.UtcNow)
+                    {
+                        _logger.LogWarning(
+                            "Payment {PaymentId} passed local ExpiredAt but PayOS still reports {GatewayStatus}. Keep Pending until gateway reaches a terminal state.",
+                            payment.PaymentId,
+                            gatewayStatus);
+                    }
+
+                    return Result<PaymentStatus>.Success(
+                        PaymentStatus.Pending);
+
+                default:
+                    _logger.LogWarning(
+                        "Unknown PayOS status '{Status}' for Payment {PaymentId}, OrderCode {OrderCode}",
+                        gatewayStatus,
+                        payment.PaymentId,
+                        transaction.PayOSOrderCode);
+
+                    return Result<PaymentStatus>.Success(
+                        PaymentStatus.Pending);
+            }
+        }
 
         private async Task<PaymentStatus> ApplyPayOsTerminalStatusAsync(
             Guid paymentId,
@@ -1977,7 +2055,10 @@ namespace HomeCycle.Application.Services.Payments
             public decimal ShippingFee { get; init; }
         }
 
-        private PaymentCalculation CalculatePaymentAmount(agreement_form agreement, AgreementDetailsDto? details)
+        private PaymentCalculation CalculatePaymentAmount(
+            agreement_form agreement,
+            AgreementDetailsDto? details,
+            decimal depositRate)
         {
             decimal unitPrice = agreement.FinalPrice ?? agreement.InitialPrice ?? 0;
             decimal basePrice = unitPrice * Math.Max(agreement.Quantity, 1);
@@ -1992,7 +2073,7 @@ namespace HomeCycle.Application.Services.Payments
 
             if (agreement.AgreementType == (int)AgreementType.Inspection)
             {
-                amountToPay = basePrice * DEPOSIT_RATE;
+                amountToPay = basePrice * depositRate;
                 paymentType = (int)PaymentType.Deposit;
             }
             else if (deliveryMethod == DeliveryMethod.GhnDelivery)
@@ -2006,7 +2087,7 @@ namespace HomeCycle.Application.Services.Payments
             {
                 // BuyerPickUp / SellerDelivers / fallback: giữ nguyên loại thanh toán đã chốt lúc tạo Agreement.
                 paymentType = agreement.PaymentType ?? (int)PaymentType.Full_Payment;
-                decimal itemPay = paymentType == (int)PaymentType.Deposit ? basePrice * DEPOSIT_RATE : basePrice;
+                decimal itemPay = paymentType == (int)PaymentType.Deposit ? basePrice * depositRate : basePrice;
                 //amountToPay = deliveryMethod == DeliveryMethod.SellerDelivers ? itemPay + shippingFee : itemPay;
                 if (deliveryMethod == DeliveryMethod.SellerDelivers)
                     shippingFee = configuredShippingFee;

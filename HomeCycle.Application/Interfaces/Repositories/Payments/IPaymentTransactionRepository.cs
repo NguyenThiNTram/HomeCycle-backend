@@ -17,5 +17,15 @@ namespace HomeCycle.Application.Interfaces.Repositories.Payments
         Task<payment_transaction?> GetByPayOSOrderCodeForUpdateAsync(
             string payOSOrderCode,
             CancellationToken ct = default);
+        Task<IReadOnlyList<payment_transaction>> GetPendingPayOsSyncCandidatesAsync(
+            int limit,
+            TimeSpan retryAfter,
+            CancellationToken ct = default);
+
+        Task<bool> TryClaimPayOsSyncAsync(
+            Guid paymentTransactionId,
+            DateTime now,
+            TimeSpan retryAfter,
+            CancellationToken ct = default);
     }
 }
