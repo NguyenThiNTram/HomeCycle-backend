@@ -16,6 +16,8 @@ namespace HomeCycle.Application.Interfaces.Externals
 
     public interface IGhnService
     {
+        Task<IReadOnlyList<GhnAvailableServiceResponse>> GetAvailableServicesAsync(int fromDistrictId, int toDistrictId, CancellationToken cancellationToken = default);
+
         Task<IReadOnlyList<GhnProvinceResponse>> GetProvincesAsync(CancellationToken cancellationToken = default);
 
         Task<IReadOnlyList<GhnDistrictResponse>> GetDistrictsAsync(int provinceId, CancellationToken cancellationToken = default);

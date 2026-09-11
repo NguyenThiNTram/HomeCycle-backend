@@ -1,105 +1,68 @@
-using FluentValidation;
+﻿using FluentValidation;
 using HomeCycle.Application.DTOs.Requests.GHN;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+using HomeCycle.Application.DTOs.Responses.GHN;
 
-namespace HomeCycle.Application.Validations.GHN
+namespace HomeCycle.Application.Validations.GHN;
+
+public sealed class GhnShippingPreviewRequestValidator : AbstractValidator<GhnShippingPreviewRequest>
 {
-    public sealed class GhnShippingPreviewRequestValidator : AbstractValidator<GhnShippingPreviewRequest>
+    public GhnShippingPreviewRequestValidator()
     {
-        private const int LightGoodsServiceTypeId = 2;
-        private const int HeavyGoodsServiceTypeId = 5;
-
-        private const int MaxWeightGram = 1_600_000;
-        private const int MaxDimensionCm = 200;
-
-        private static readonly string[] AllowedRequiredNotes =
-        [
-            "CHOTHUHANG",
-            "CHOXEMHANGKHONGTHU",
-            "KHONGCHOXEMHANG"
-        ];
-
-        public GhnShippingPreviewRequestValidator()
+        RuleFor(x => x.Sender).NotNull().SetValidator(new ContactValidator()!);
+        RuleFor(x => x.Receiver).NotNull().SetValidator(new ContactValidator()!);
+        RuleFor(x => x.ServiceTypeId).Must(x => x is 2 or 5)
+            .WithMessage("ServiceTypeId chỉ nhận 2 (dưới 20kg, một kiện) hoặc 5 (từ 20kg hoặc nhiều kiện).");
+        RuleFor(x => x.ParcelCount).GreaterThan(0);
+        RuleFor(x => x.RequiredNote).NotEmpty().Must(x => x != null &&
+            new[] { "CHOTHUHANG", "CHOXEMHANGKHONGTHU", "KHONGCHOXEMHANG" }
+                .Contains(x.Trim(), StringComparer.OrdinalIgnoreCase));
+        RuleFor(x => x.Content).MaximumLength(2000);
+        RuleFor(x => x.WeightGram).Must(x => x is null or (>= 1 and <= 50_000));
+        RuleFor(x => x.LengthCm).Must(x => x is null or (>= 1 and <= 200));
+        RuleFor(x => x.WidthCm).Must(x => x is null or (>= 1 and <= 200));
+        RuleFor(x => x.HeightCm).Must(x => x is null or (>= 1 and <= 200));
+        RuleFor(x => x.Items).NotNull();
+        When(x => x.Items != null, () =>
         {
-            RuleFor(x => x.Sender)
-                .NotNull().WithMessage("Thiếu thông tin người gửi (Sender).");
-
-            RuleFor(x => x.Receiver)
-                .NotNull().WithMessage("Thiếu thông tin người nhận (Receiver).");
-
-            When(x => x.Sender != null, () =>
+            RuleForEach(x => x.Items).NotNull();
+            RuleForEach(x => x.Items).ChildRules(item =>
             {
-                RuleFor(x => x.Sender!.FullName).NotEmpty().WithMessage("Thiếu tên người gửi.");
-                RuleFor(x => x.Sender!.Phone).NotEmpty().WithMessage("Thiếu số điện thoại người gửi.");
-
-                When(x => x.Sender!.Address != null, () =>
-                {
-                    RuleFor(x => x.Sender!.Address.AddressDetail)
-                        .NotEmpty().WithMessage("Thiếu địa chỉ chi tiết người gửi.");
-                    RuleFor(x => x.Sender!.Address.DistrictId)
-                        .GreaterThan(0).WithMessage("Mã quận/huyện người gửi không hợp lệ.");
-                    RuleFor(x => x.Sender!.Address.WardCode)
-                        .NotEmpty().WithMessage("Mã phường/xã người gửi không hợp lệ.");
-                }).Otherwise(() =>
-                {
-                    RuleFor(x => x.Sender).Must(x => false).WithMessage("Thiếu địa chỉ người gửi.");
-                });
+                item.RuleFor(x => x.Name).NotEmpty().MaximumLength(512);
+                item.RuleFor(x => x.Quantity).GreaterThan(0);
+                item.RuleFor(x => x.WeightGram).GreaterThanOrEqualTo(0);
+                item.RuleFor(x => x.LengthCm).InclusiveBetween(0, 200);
+                item.RuleFor(x => x.WidthCm).InclusiveBetween(0, 200);
+                item.RuleFor(x => x.HeightCm).InclusiveBetween(0, 200);
             });
-
-            When(x => x.Receiver != null, () =>
-            {
-                RuleFor(x => x.Receiver!.FullName).NotEmpty().WithMessage("Thiếu tên người nhận.");
-                RuleFor(x => x.Receiver!.Phone).NotEmpty().WithMessage("Thiếu số điện thoại người nhận.");
-
-                When(x => x.Receiver!.Address != null, () =>
-                {
-                    RuleFor(x => x.Receiver!.Address.AddressDetail)
-                        .NotEmpty().WithMessage("Thiếu địa chỉ chi tiết người nhận.");
-                    RuleFor(x => x.Receiver!.Address.DistrictId)
-                        .GreaterThan(0).WithMessage("Mã quận/huyện người nhận không hợp lệ.");
-                    RuleFor(x => x.Receiver!.Address.WardCode)
-                        .NotEmpty().WithMessage("Mã phường/xã người nhận không hợp lệ.");
-                }).Otherwise(() =>
-                {
-                    RuleFor(x => x.Receiver).Must(x => false).WithMessage("Thiếu địa chỉ người nhận.");
-                });
-            });
-
-            RuleFor(x => x.ServiceTypeId)
-                .Must(value => value is LightGoodsServiceTypeId or HeavyGoodsServiceTypeId)
-                .WithMessage("Loại dịch vụ GHN chỉ nhận 2 (hàng nhẹ) hoặc 5 (hàng nặng).");
-
-            RuleFor(x => x.RequiredNote)
-                .NotEmpty().WithMessage("RequiredNote không được để trống.")
-                .Must(note => note is not null && AllowedRequiredNotes.Contains(note.Trim(), StringComparer.OrdinalIgnoreCase))
-                .WithMessage("RequiredNote chỉ nhận CHOTHUHANG, CHOXEMHANGKHONGTHU hoặc KHONGCHOXEMHANG.");
-
-            RuleFor(x => x.WeightGram)
-                .Must(v => v is null or (>= 1 and <= MaxWeightGram))
-                .WithMessage($"Khối lượng phải từ 1 đến {MaxWeightGram} gram.");
-
-            ValidateOptionalDimension(x => x.LengthCm, "Chiều dài");
-            ValidateOptionalDimension(x => x.WidthCm, "Chiều rộng");
-            ValidateOptionalDimension(x => x.HeightCm, "Chiều cao");
-
-            When(x => x.ServiceTypeId == HeavyGoodsServiceTypeId && x.Items.Count > 0, () =>
-            {
-                RuleForEach(x => x.Items)
-                    .SetValidator(new CalculateGhnFeeItemRequestValidator());
-            });
-        }
-
-        private void ValidateOptionalDimension(
-            System.Linq.Expressions.Expression<Func<GhnShippingPreviewRequest, int?>> selector,
-            string fieldName)
+        });
+        When(x => x.ServiceTypeId == 5 && x.Items != null, () =>
         {
-            RuleFor(selector)
-                .Must(v => v is null or (>= 1 and <= MaxDimensionCm))
-                .WithMessage($"{fieldName} phải từ 1 đến {MaxDimensionCm} cm.");
+            RuleForEach(x => x.Items).SetValidator(new CalculateGhnFeeItemRequestValidator());
+        });
+        When(x => x.ServiceTypeId == 2, () =>
+        {
+            RuleFor(x => x.ParcelCount).Equal(1).WithMessage("Nhiều kiện phải dùng ServiceTypeId = 5.");
+            RuleFor(x => x.WeightGram).Must(x => x is null or < 20_000)
+                .WithMessage("Hàng nhẹ phải có tổng khối lượng dưới 20.000 gram.");
+        });
+    }
+
+    private sealed class ContactValidator : AbstractValidator<GhnContactSnapshotDto>
+    {
+        public ContactValidator()
+        {
+            RuleFor(x => x.FullName).NotEmpty().MaximumLength(1024);
+            RuleFor(x => x.Phone).NotEmpty();
+            RuleFor(x => x.Address).NotNull();
+            When(x => x.Address != null, () =>
+            {
+                RuleFor(x => x.Address.AddressDetail).NotEmpty().MaximumLength(1024);
+                RuleFor(x => x.Address.DistrictId).GreaterThan(0);
+                RuleFor(x => x.Address.WardCode).NotEmpty();
+                RuleFor(x => x.Address.WardName).NotEmpty();
+                RuleFor(x => x.Address.DistrictName).NotEmpty();
+                RuleFor(x => x.Address.ProvinceName).NotEmpty();
+            });
         }
     }
 }
