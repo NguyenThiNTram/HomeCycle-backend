@@ -28,5 +28,8 @@ namespace HomeCycle.Application.Interfaces.Services.Payments
             int batchSize,
             TimeSpan retryAfter,
             CancellationToken ct = default);
+        Task<Result<IReadOnlyList<OrderFinancialEventDto>>> GetOrderFinancialHistoryForModeratorAsync(
+            Guid orderId,
+            CancellationToken ct = default);
     }
 }

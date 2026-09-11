@@ -32,5 +32,12 @@ namespace HomeCycle.Application.Interfaces.Services.Appointments
         Task<Result<AppointmentRescheduleResponseDto>> RejectRescheduleAsync(Guid proposalAppointmentId, Guid userId, RejectAppointmentRescheduleRequest request, CancellationToken ct = default);
 
         Task<Result<AppointmentActionResponseDto>> CancelAsync(Guid appointmentId, Guid userId, CancelAppointmentRequest request, CancellationToken ct = default);
+        Task<Result<PagedResult<ModeratorAppointmentListItemDto>>> GetAllForModeratorAsync(
+            ModeratorAppointmentSearchRequest request,
+            CancellationToken ct = default);
+
+        Task<Result<ModeratorAppointmentDetailDto>> GetDetailForModeratorAsync(
+            Guid appointmentId,
+            CancellationToken ct = default);
     }
 }

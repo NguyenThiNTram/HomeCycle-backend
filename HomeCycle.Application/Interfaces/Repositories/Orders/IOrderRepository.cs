@@ -30,5 +30,12 @@ namespace HomeCycle.Application.Interfaces.Repositories.Orders
             DateTime nowUtc,
             int limit,
             CancellationToken ct = default);
+        Task<PagedResult<ModeratorOrderReadModel>> GetPagedForModeratorAsync(
+            ModeratorOrderQuery query,
+            CancellationToken ct = default);
+
+        Task<ModeratorOrderReadModel?> GetForModeratorAsync(
+            Guid orderId,
+            CancellationToken ct = default);
     }
 }

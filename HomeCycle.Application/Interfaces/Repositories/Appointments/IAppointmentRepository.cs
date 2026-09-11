@@ -29,6 +29,13 @@ namespace HomeCycle.Application.Interfaces.Repositories.Appointments
         Task<appointment?> GetByIdForUpdateAsync(Guid appointmentId, CancellationToken ct = default);
 
         Task<appointment?> GetPendingRescheduleProposalAsync(Guid sourceAppointmentId, CancellationToken ct = default);
+        Task<PagedResult<ModeratorAppointmentReadModel>> GetPagedForModeratorAsync(
+            ModeratorAppointmentQuery query,
+            CancellationToken ct = default);
+
+        Task<ModeratorAppointmentReadModel?> GetForModeratorAsync(
+            Guid appointmentId,
+            CancellationToken ct = default);
 
     }
 }

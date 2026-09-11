@@ -1032,6 +1032,36 @@ namespace HomeCycle.Application.Services.Inspections
         }
 
 
+        public async Task<Result<InspectionFormResponseDto>> GetByAppointmentForModeratorAsync(
+            Guid appointmentId,
+            CancellationToken ct = default)
+        {
+            var appointment = await _appointmentRepo.GetByIdAsync(appointmentId, ct);
+
+            if (appointment == null)
+                return Result<InspectionFormResponseDto>.Fail(AppointmentErrors.NotFound);
+
+            if (appointment.AppointmentType != (int)AppointmentType.Inspection)
+                return Result<InspectionFormResponseDto>.Fail(InspectionErrors.InvalidAppointment);
+
+            var inspection = await _inspectionAppointmentRepo.GetByAppointmentIdAsync(appointmentId, ct);
+
+            if (inspection == null)
+                return Result<InspectionFormResponseDto>.Fail(AppointmentErrors.InspectionDetailNotFound);
+
+            var form = await _inspectionFormRepo.GetByInspectionAppointmentIdAsync(
+                inspection.InspectionAppointmentId,
+                ct);
+
+            if (form == null)
+                return Result<InspectionFormResponseDto>.Fail(InspectionErrors.NotFound);
+
+            var response = await BuildResponseAsync(form, Guid.Empty, ct);
+            response.Actions = new InspectionFormActionDto();
+
+            return Result<InspectionFormResponseDto>.Success(response);
+        }
+
         #region HELPER
 
         private async Task<InspectionFormResponseDto> BuildResponseAsync(inspection_form form, Guid currentUserId, CancellationToken ct)

@@ -1183,6 +1183,20 @@ namespace HomeCycle.Application.Services.Payments
             }
         }
 
+        public async Task<Result<IReadOnlyList<OrderFinancialEventDto>>> GetOrderFinancialHistoryForModeratorAsync(
+            Guid orderId,
+            CancellationToken ct = default)
+        {
+            var order = await _orderRepo.GetByIdAsync(orderId, ct);
+            if (order == null)
+                return Result<IReadOnlyList<OrderFinancialEventDto>>.Fail(OrderErrors.NotFound);
+
+            var transactions = await _walletTxRepo.GetByReferenceAsync(ReferenceType.Order, orderId, ct);
+            var response = _mapper.Map<List<OrderFinancialEventDto>>(transactions);
+
+            return Result<IReadOnlyList<OrderFinancialEventDto>>.Success(response);
+        }
+
         #region HELPER
 
 

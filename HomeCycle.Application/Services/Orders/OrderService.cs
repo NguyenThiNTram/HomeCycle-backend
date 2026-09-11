@@ -1204,6 +1204,266 @@ namespace HomeCycle.Application.Services.Orders
             }
         }
 
+
+        public async Task<Result<PagedResult<ModeratorOrderListItemDto>>> GetAllForModeratorAsync(
+            ModeratorOrderSearchRequest request,
+            CancellationToken ct = default)
+        {
+            var readResult =
+                await _orderRepo.GetPagedForModeratorAsync(
+                    new ModeratorOrderQuery
+                    {
+                        Keyword = request.Keyword,
+
+                        Status = request.Status,
+                        PaymentStatus = request.PaymentStatus,
+
+                        BuyerId = request.BuyerId,
+                        SellerId = request.SellerId,
+
+                        HasActiveDispute = request.HasActiveDispute,
+                        HasInspection = request.HasInspection,
+
+                        CreatedFrom = request.CreatedFrom,
+                        CreatedTo = request.CreatedTo,
+
+                        PageNumber = request.PageNumber,
+                        PageSize = request.PageSize
+                    },
+                    ct);
+
+            var items = readResult.Items
+                .Select(x =>
+                    new ModeratorOrderListItemDto
+                    {
+                        OrderId = x.OrderId,
+                        OrderCode = x.OrderCode,
+                        ProductName = x.ProductName,
+                        ThumbnailUrl = x.ThumbnailUrl,
+
+                        Quantity = x.Quantity,
+
+                        FinalTotalAmount = x.FinalTotalAmount,
+                        AmountPaid = x.AmountPaid,
+                        AmountRemaining = x.AmountRemaining,
+
+                        OrderStatus =
+                            x.OrderStatus.HasValue
+                                ? (OrderStatus?)x.OrderStatus.Value
+                                : null,
+
+                        PaymentStatus =
+                            x.PaymentStatus.HasValue
+                                ? (PaymentStatus?)x.PaymentStatus.Value
+                                : null,
+
+                        Buyer =
+                            new ModeratorOrderPartyDto
+                            {
+                                UserId = x.BuyerId,
+                                Username = x.BuyerUsername,
+                                PhoneNumber = x.BuyerPhoneNumber,
+                                AvatarUrl = x.BuyerAvatarUrl
+                            },
+
+                        Seller =
+                            new ModeratorOrderPartyDto
+                            {
+                                UserId = x.SellerId,
+                                Username = x.SellerUsername,
+                                PhoneNumber = x.SellerPhoneNumber,
+                                AvatarUrl = x.SellerAvatarUrl
+                            },
+
+                        HasActiveDispute =
+                            x.HasActiveDispute,
+
+                        LatestDisputeId =
+                            x.LatestDisputeId,
+
+                        LatestDisputeStatus =
+                            x.LatestDisputeStatus.HasValue
+                                ? (DisputeStatus?)
+                                    x.LatestDisputeStatus.Value
+                                : null,
+
+                        HasInspection =
+                            x.HasInspection,
+
+                        CreatedAt = x.CreatedAt,
+                        UpdatedAt = x.UpdatedAt
+                    })
+                .ToList();
+
+            return Result<PagedResult<ModeratorOrderListItemDto>>
+                .Success(
+                    new PagedResult<ModeratorOrderListItemDto>
+                    {
+                        Items = items,
+                        PageNumber = readResult.PageNumber,
+                        PageSize = readResult.PageSize,
+                        TotalCount = readResult.TotalCount
+                    });
+        }
+
+        public async Task<Result<ModeratorOrderDetailDto>> GetDetailForModeratorAsync(
+            Guid orderId,
+            CancellationToken ct = default)
+        {
+            var context =
+                await _orderRepo.GetForModeratorAsync(
+                    orderId,
+                    ct);
+
+            if (context == null)
+            {
+                return Result<ModeratorOrderDetailDto>
+                    .Fail(OrderErrors.NotFound);
+            }
+
+            // Legacy detail repository cần currentUserId chỉ để tính Counterparty.
+            // Moderator DTO không sử dụng Counterparty nên truyền BuyerId là an toàn.
+            var detail =
+                await _orderRepo.GetDetailWithRelationsAsync(
+                    orderId,
+                    context.BuyerId,
+                    ct);
+
+            if (detail == null)
+            {
+                return Result<ModeratorOrderDetailDto>
+                    .Fail(OrderErrors.NotFound);
+            }
+
+            detail.Appointments =
+                await _appointmentRepo
+                    .GetAppointmentSummariesByAgreementIdAsync(
+                        detail.AgreementId,
+                        ct);
+
+            var inspectionCollectNow =
+                await IsInspectionCollectNowReadyAsync(
+                    detail.OrderId,
+                    ct);
+
+            detail.Timeline =
+                _orderTimelineBuilder.Build(
+                    detail,
+                    inspectionCollectNow);
+
+            return Result<ModeratorOrderDetailDto>
+                .Success(
+                    new ModeratorOrderDetailDto
+                    {
+                        OrderId = detail.OrderId,
+                        AgreementId = detail.AgreementId,
+                        PostId = detail.PostId,
+
+                        OrderCode = detail.OrderCode,
+                        ProductName = detail.ProductName,
+                        Quantity = detail.Quantity,
+
+                        OriginalTotalAmount =
+                            detail.OriginalTotalAmount,
+
+                        FinalTotalAmount =
+                            detail.FinalTotalAmount,
+
+                        AmountPaid =
+                            detail.AmountPaid,
+
+                        AmountRemaining =
+                            detail.AmountRemaining,
+
+                        ShippingFee =
+                            detail.ShippingFee,
+
+                        PaymentStatus =
+                            detail.PaymentStatus,
+
+                        OrderStatus =
+                            detail.OrderStatus,
+
+                        DeliveryMethod =
+                            detail.DeliveryMethod,
+
+                        CreatedAt =
+                            detail.CreatedAt,
+
+                        UpdatedAt =
+                            detail.UpdatedAt,
+
+                        CompletedAt =
+                            detail.CompletedAt,
+
+                        SellerHandoverConfirmedAt =
+                            detail.SellerHandoverConfirmedAt,
+
+                        BuyerReceivedConfirmedAt =
+                            detail.BuyerReceivedConfirmedAt,
+
+                        CompletionSource =
+                            detail.CompletionSource,
+
+                        BuyerReturnConfirmedAt =
+                            detail.BuyerReturnConfirmedAt,
+
+                        SellerReturnReceivedAt =
+                            detail.SellerReturnReceivedAt,
+
+                        ReturnDueAt =
+                            detail.ReturnDueAt,
+
+                        ReturnedAt =
+                            detail.ReturnedAt,
+
+                        DisputeWindowEndsAt =
+                            detail.DisputeWindowEndsAt,
+
+                        ThumbnailUrl =
+                            detail.ThumbnailUrl,
+
+                        PostDescription =
+                            detail.PostDescription,
+
+                        Cancellation =
+                            detail.Cancellation,
+
+                        Buyer =
+                            new ModeratorOrderPartyDto
+                            {
+                                UserId = context.BuyerId,
+                                Username = context.BuyerUsername,
+                                PhoneNumber = context.BuyerPhoneNumber,
+                                AvatarUrl = context.BuyerAvatarUrl
+                            },
+
+                        Seller =
+                            new ModeratorOrderPartyDto
+                            {
+                                UserId = context.SellerId,
+                                Username = context.SellerUsername,
+                                PhoneNumber = context.SellerPhoneNumber,
+                                AvatarUrl = context.SellerAvatarUrl
+                            },
+
+                        Payment =
+                            detail.Payment,
+
+                        Shipment =
+                            detail.Shipment,
+
+                        Appointments =
+                            detail.Appointments,
+
+                        Dispute =
+                            detail.Dispute,
+
+                        Timeline =
+                            detail.Timeline
+                    });
+        }
+
         //================ HELPER =======================
 
         private async Task<bool> IsInspectionCollectNowReadyAsync(
