@@ -1,3 +1,4 @@
+﻿using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Requests.Agreements;
 using HomeCycle.Application.DTOs.Requests.GHN;
 using HomeCycle.Application.DTOs.Responses.GHN;
@@ -29,6 +30,7 @@ namespace HomeCycle.Application.Services.GHN
         private readonly IGhnService _ghnService;
         private readonly IUnitOfWork _unitOfWork;
         private readonly ILogger<GhnShipmentCreationService> _logger;
+        private readonly HomeCycle.Application.Interfaces.Repositories.Inspections.IInspectionFormRepository _inspectionRepo;
 
         public GhnShipmentCreationService(
             IGhnShipmentRepository ghnShipmentRepo,
@@ -38,7 +40,8 @@ namespace HomeCycle.Application.Services.GHN
             ICollectionAppointmentRepository collectionRepo,
             IGhnService ghnService,
             IUnitOfWork unitOfWork,
-            ILogger<GhnShipmentCreationService> logger)
+            ILogger<GhnShipmentCreationService> logger,
+            HomeCycle.Application.Interfaces.Repositories.Inspections.IInspectionFormRepository inspectionRepo)
         {
             _ghnShipmentRepo = ghnShipmentRepo;
             _shipmentRepo = shipmentRepo;
@@ -48,10 +51,92 @@ namespace HomeCycle.Application.Services.GHN
             _ghnService = ghnService;
             _unitOfWork = unitOfWork;
             _logger = logger;
+            _inspectionRepo = inspectionRepo;
         }
 
+        public async Task<Result> CancelForOrderAsync(Guid orderId, CancellationToken cancellationToken = default)
+        {
+            var rows = await _ghnShipmentRepo.GetAllByOrderIdAsync(orderId, cancellationToken);
+            Result result = Result.Success();
+            foreach (var row in rows)
+            {
+                var current = await CancelShipmentAsync(orderId, row, cancellationToken);
+                if (!current.IsSuccess) result = current;
+            }
+            return result;
+        }
+
+        private async Task<Result> CancelShipmentAsync(Guid orderId, ghn_shipment row, CancellationToken cancellationToken)
+        {
+            var order = await _orderRepo.GetByIdAsync(orderId, cancellationToken);
+
+            if (order == null || row == null) return Result.Success();
+            var inspection = await _inspectionRepo.GetLatestByOrderIdAsync(orderId, cancellationToken);
+            if (inspection?.InspectionStatus == (int)InspectionStatus.Rejected) return Result.Success();
+            var shipment = await _shipmentRepo.GetByIdAsync(row.ShipmentId, cancellationToken);
+            if (shipment == null || shipment.DeliveryMethod != DeliveryMethod.GhnDelivery) return Result.Success();
+            var expected = GhnStateVersion.Capture(row);
+            try
+            {
+                if (string.IsNullOrWhiteSpace(row.GHNOrderCode))
+                {
+                    if (row.LastCreateAttemptAt.HasValue && row.CreationStatus is GHNCreationStatus.Processing or GHNCreationStatus.Uncertain or GHNCreationStatus.Success)
+                    {
+                        row.LastErrorCode = "CANCEL:AWAITING_CREATE_RESULT";
+                        row.LastSyncedAt = DateTime.UtcNow;
+                        await _ghnShipmentRepo.TrySaveCarrierStateAsync(row, shipment, expected, cancellationToken);
+                        return Result.Fail(new Error("Ghn.CancellationPending", "Chưa xác định mã vận đơn; cần chờ kết quả tạo đơn hoặc webhook GHN."));
+                    }
+                }
+                else
+                {
+                    var detail = await _ghnService.GetOrderDetailAsync(row.GHNOrderCode, cancellationToken);
+                    if (detail.CarrierStatus != "cancel")
+                    {
+                        var result = await _ghnService.CancelOrdersAsync(new[] { row.GHNOrderCode }, "GHN-CANCEL-OTHER",
+                            order.CancellationReason ?? "Hủy đơn HomeCycle", cancellationToken);
+                        if (!result.Single().Result)
+                        {
+                            row.LastErrorCode = "CANCEL:REFUSED";
+                            row.LastSyncedAt = DateTime.UtcNow;
+                            await _ghnShipmentRepo.TrySaveCarrierStateAsync(row, shipment, expected, cancellationToken);
+                            return Result.Fail(new Error("Ghn.CancellationRefused", result.Single().Message));
+                        }
+                    }
+                    row.GHNStatusCode = "cancel";
+                }
+                row.LastErrorCode = null;
+                row.LastSyncedAt = DateTime.UtcNow;
+                shipment.ShipmentStatus = ShipmentStatus.Cancelled;
+                shipment.UpdatedAt = DateTime.UtcNow;
+                if (!await _ghnShipmentRepo.TrySaveCarrierStateAsync(row, shipment, expected, cancellationToken))
+                    return Result.Fail(new Error("Ghn.CancellationPending", "Vận đơn vừa thay đổi; cần xác nhận hủy lại."));
+                return Result.Success();
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+            catch (Exception ex) when (ex is IGhnApiError or HttpRequestException or OperationCanceledException)
+            {
+                row.LastErrorCode = "CANCEL:UNCONFIRMED";
+                row.LastSyncedAt = DateTime.UtcNow;
+                await _ghnShipmentRepo.TrySaveCarrierStateAsync(row, shipment, expected, cancellationToken);
+                _logger.LogWarning(ex, "GHN cancel needs reconciliation for {OrderId}", orderId);
+                return Result.Fail(new Error("Ghn.CancellationPending", "Chưa xác nhận được hủy vận đơn GHN; hệ thống cần đối soát lại."));
+            }
+        }
+
+        public async Task CancelForOrderSafelyAsync(Guid orderId, CancellationToken cancellationToken = default)
+        {
+            try { await CancelForOrderAsync(orderId, cancellationToken); }
+            catch (Exception ex) { _logger.LogError(ex, "GHN cancellation deferred to worker for {OrderId}", orderId); }
+        }
         public async Task<int> ProcessPendingAsync(int batchSize, TimeSpan reclaimProcessingAfter, CancellationToken cancellationToken = default)
         {
+            var cancellations = await _ghnShipmentRepo.GetCancellationCandidatesAsync(batchSize, cancellationToken);
+            foreach (var row in cancellations)
+            {
+                var shipment = await _shipmentRepo.GetByIdAsync(row.ShipmentId, cancellationToken);
+                if (shipment != null) await CancelForOrderSafelyAsync(shipment.OrderId, cancellationToken);
+            }
             var candidates = await _ghnShipmentRepo.GetCreationCandidatesAsync(batchSize, reclaimProcessingAfter, cancellationToken);
 
             int processed = 0;
@@ -82,12 +167,28 @@ namespace HomeCycle.Application.Services.GHN
         private async Task<bool> ProcessOneAsync(ghn_shipment candidate, TimeSpan reclaimProcessingAfter, CancellationToken ct)
         {
             var shipment = await _shipmentRepo.GetByIdAsync(candidate.ShipmentId, ct);
+            if (!HomeCycle.Application.Commons.Helpers.GhnShippingCalculationHelper.IsGhnDelivery(shipment?.DeliveryMethod) ||
+                !string.IsNullOrWhiteSpace(candidate.GHNOrderCode)) return false;
             var order = shipment is null
                 ? null
                 : await _orderRepo.GetByIdAsync(shipment.OrderId, ct);
             var agreement = order is null
                 ? null
                 : await _agreementRepo.GetByIdAsync(order.AgreementId, ct);
+
+            if (order?.OrderStatus != (int)OrderStatus.Processing || agreement?.AgreementStatus != (int)AgreementStatus.Confirmed)
+                return false;
+            var inspection = await _inspectionRepo.GetLatestByOrderIdAsync(order.OrderId, ct);
+            if (inspection?.InspectionStatus == (int)InspectionStatus.Rejected) return false;
+            if (agreement.AgreementType == (int)AgreementType.Inspection)
+            {
+                if (inspection?.InspectionStatus != (int)InspectionStatus.Accepted ||
+                    inspection.Conclusion is null or (int)InspectionConclusion.Failed ||
+                    inspection.CollectAction != (int)InspectionCollectAction.ScheduleCollection) return false;
+            }
+            else if (agreement.AgreementType != (int)AgreementType.No_Inspection ||
+                order.PaymentStatus != (int)PaymentStatus.Completed || order.AmountRemaining is null or > 0.01m)
+                return false;
 
             AgreementDetailsDto? details = null;
             if (agreement is not null)
@@ -130,7 +231,10 @@ namespace HomeCycle.Application.Services.GHN
                 }
             }
 
-            info ??= details?.GhnInfo;
+            if (agreement.AgreementType == (int)AgreementType.No_Inspection &&
+                HomeCycle.Application.Commons.Helpers.GhnShippingCalculationHelper.IsAgreementGhnDelivery(
+                    (AgreementType)agreement.AgreementType, details?.DeliveryMethod))
+                info ??= details?.GhnInfo;
 
 
             if (info is null || info.Sender?.Address is null || info.Receiver?.Address is null)
@@ -138,7 +242,7 @@ namespace HomeCycle.Application.Services.GHN
                 _logger.LogWarning(
                     "GhnShipmentCreationService: vận đơn {GHNShipmentId} thiếu GhnInfo để tạo đơn GHN",
                     candidate.GHNShipmentId);
-                await MarkFailedAsync(candidate, "MISSING_GHN_INFO", ct);
+                await MarkFailedAsync(candidate, "PERMANENT:MISSING_GHN_INFO", ct);
                 return true;
             }
 
@@ -167,6 +271,8 @@ namespace HomeCycle.Application.Services.GHN
                 {
                     var response = await _ghnService.CreateOrderAsync(request, ct);
                     await MarkSuccessAsync(claimedShipment, response, now, ct);
+                    var latestOrder = await _orderRepo.GetByIdAsync(shipment!.OrderId, ct);
+                    if (latestOrder?.OrderStatus == (int)OrderStatus.Cancelled) await CancelForOrderSafelyAsync(shipment.OrderId, ct);
                 }
                 catch (OperationCanceledException) when (ct.IsCancellationRequested)
                 {
@@ -177,7 +283,8 @@ namespace HomeCycle.Application.Services.GHN
                     _logger.LogWarning(
                         "GhnShipmentCreationService: GHN từ chối tạo đơn {ClientOrderCode}: {CodeMessage}",
                         clientOrderCode, ghnError.CodeMessage);
-                    await MarkFailedAsync(claimedShipment, $"GHN:{ghnError.CodeMessage}", ct);
+                    if (ghnError.HttpStatusCode >= 500) await MarkUncertainAsync(claimedShipment, $"GHN:{ghnError.CodeMessage}", ct);
+                    else await MarkFailedAsync(claimedShipment, $"PERMANENT:GHN:{ghnError.CodeMessage}", ct);
                 }
                 catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException)
                 {
@@ -196,52 +303,34 @@ namespace HomeCycle.Application.Services.GHN
                 _logger.LogWarning(ex,
                     "GhnShipmentCreationService: dữ liệu vận đơn {GHNShipmentId} không đủ/không hợp lệ để tạo đơn GHN",
                     candidate.GHNShipmentId);
-                await MarkFailedAsync(candidate, "INVALID_GHN_DATA", ct);
+                await MarkFailedAsync(candidate, "PERMANENT:INVALID_GHN_DATA", ct);
                 return true;
             }
         }
 
         private async Task MarkSuccessAsync(ghn_shipment shipment, GhnCreateOrderResponse response, DateTime now, CancellationToken ct)
         {
-            shipment.CreationStatus = GHNCreationStatus.Success;
-            shipment.GHNOrderCode = response.OrderCode;
-            shipment.GHNServiceFee = response.ServiceFee;
-            shipment.GHNCodFee = response.CodFee;
-            shipment.GHNTotalFee = response.TotalFee;
-            shipment.ExpectedDeliveryAt = response.ExpectedDeliveryAt?.UtcDateTime;
-            shipment.LastSyncedAt = now;
-            shipment.LastErrorCode = null;
-
-            await _ghnShipmentRepo.UpdateAsync(shipment, ct);
-            await _unitOfWork.SaveChangesAsync(ct);
-
+            await _ghnShipmentRepo.SaveCreationResultAsync(shipment.ShipmentId, response, ct);
             _logger.LogInformation(
                 "GhnShipmentCreationService: đã tạo vận đơn GHN {OrderCode} cho {GHNShipmentId}",
                 response.OrderCode, shipment.GHNShipmentId);
         }
 
-        private async Task MarkFailedAsync(ghn_shipment shipment, string errorCode, CancellationToken ct)
-        {
-            shipment.CreationStatus = GHNCreationStatus.Failed;
-            shipment.LastErrorCode = errorCode;
-            shipment.LastSyncedAt = DateTime.UtcNow;
+        private Task MarkFailedAsync(ghn_shipment shipment, string errorCode, CancellationToken ct) =>
+            _ghnShipmentRepo.SaveCreationFailureAsync(shipment, GHNCreationStatus.Failed, errorCode, ct);
 
-            await _ghnShipmentRepo.UpdateAsync(shipment, ct);
-            await _unitOfWork.SaveChangesAsync(ct);
-        }
-
-        private async Task MarkUncertainAsync(ghn_shipment shipment, string errorCode, CancellationToken ct)
-        {
-            shipment.CreationStatus = GHNCreationStatus.Uncertain;
-            shipment.LastErrorCode = errorCode;
-            shipment.LastSyncedAt = DateTime.UtcNow;
-
-            await _ghnShipmentRepo.UpdateAsync(shipment, ct);
-            await _unitOfWork.SaveChangesAsync(ct);
-        }
-
+        private Task MarkUncertainAsync(ghn_shipment shipment, string errorCode, CancellationToken ct) =>
+            _ghnShipmentRepo.SaveCreationFailureAsync(shipment, GHNCreationStatus.Uncertain, errorCode, ct);
         private static GhnCreateOrderRequest BuildCreateOrderRequest(ghn_shipment row, GhnShippingInfo info)
         {
+            var parcel = HomeCycle.Application.Commons.Helpers.GhnShippingCalculationHelper.GetConfirmedParcel(info);
+            if (info.Quote == null || info.Quote.InputHash != HomeCycle.Application.Commons.Helpers.GhnShippingCalculationHelper.SnapshotHash(info))
+                throw new ArgumentException("Thiếu quote hoặc snapshot GHN đã thay đổi.");
+            if (row.Weight != parcel.WeightGram || row.Length != parcel.LengthCm || row.Width != parcel.WidthCm ||
+                row.Height != parcel.HeightCm || row.ServiceTypeId != info.ServiceTypeId ||
+                row.FromDistrictId != info.Sender?.Address?.DistrictId || row.FromWardCode != info.Sender?.Address?.WardCode ||
+                row.ToDistrictId != info.Receiver?.Address?.DistrictId || row.ToWardCode != info.Receiver?.Address?.WardCode)
+                throw new ArgumentException("Snapshot shipment không khớp preview GHN.");
             var sender = info.Sender!;
             var receiver = info.Receiver!;
             var senderAddress = sender.Address;
@@ -270,8 +359,7 @@ namespace HomeCycle.Application.Services.GHN
             if (toDistrictId is null or <= 0 || string.IsNullOrWhiteSpace(toWardCode))
                 throw new ArgumentException("Thiếu địa chỉ người nhận GHN (ToDistrictId/ToWardCode).", nameof(row));
 
-            IReadOnlyList<GhnCreateOrderItemRequest> items = serviceTypeId == 5
-                ? info.Items.Select(item => new GhnCreateOrderItemRequest
+            IReadOnlyList<GhnCreateOrderItemRequest> items = (info.Items ?? Array.Empty<GhnItemSnapshotDto>()).Select(item => new GhnCreateOrderItemRequest
                 {
                     Name = item.Name,
                     Code = item.Code,
@@ -280,8 +368,7 @@ namespace HomeCycle.Application.Services.GHN
                     LengthCm = item.LengthCm,
                     WidthCm = item.WidthCm,
                     HeightCm = item.HeightCm
-                }).ToList()
-                : Array.Empty<GhnCreateOrderItemRequest>();
+                }).ToList();
 
             return new GhnCreateOrderRequest
             {
@@ -289,23 +376,29 @@ namespace HomeCycle.Application.Services.GHN
                 FromName = sender.FullName.Trim(),
                 FromPhone = sender.Phone.Trim(),
                 FromAddress = BuildAddressText(senderAddress),
-                FromWardName = senderAddress.WardName.Trim(),
-                FromDistrictName = senderAddress.DistrictName.Trim(),
-                FromProvinceName = senderAddress.ProvinceName.Trim(),
+                FromWardName = senderAddress.WardName?.Trim() ?? string.Empty,
+                FromDistrictName = senderAddress.DistrictName?.Trim() ?? string.Empty,
+                FromProvinceName = senderAddress.ProvinceName?.Trim() ?? string.Empty,
                 ToName = receiver.FullName.Trim(),
                 ToPhone = receiver.Phone.Trim(),
                 ToAddress = BuildAddressText(receiverAddress),
+                FromDistrictId = row.FromDistrictId ?? senderAddress.DistrictId,
+                FromWardCode = row.FromWardCode ?? senderAddress.WardCode,
+                ToWardName = receiverAddress.WardName,
+                ToDistrictName = receiverAddress.DistrictName,
+                ToProvinceName = receiverAddress.ProvinceName,
+                ParcelCount = info.ParcelCount,
                 ToDistrictId = toDistrictId.Value,
                 ToWardCode = toWardCode.Trim(),
                 ServiceTypeId = serviceTypeId,
                 PaymentTypeId = row.PaymentTypeId,
                 InsuranceValue = row.InsuranceValue,
                 RequiredNote = requiredNote.Trim().ToUpperInvariant(),
-                Content = null,
-                WeightGram = serviceTypeId == 2 ? row.Weight : null,
-                LengthCm = serviceTypeId == 2 ? row.Length : null,
-                WidthCm = serviceTypeId == 2 ? row.Width : null,
-                HeightCm = serviceTypeId == 2 ? row.Height : null,
+                Content = string.IsNullOrWhiteSpace(info.Content) ? "Sản phẩm HomeCycle" : info.Content,
+                WeightGram = parcel.WeightGram,
+                LengthCm = parcel.LengthCm,
+                WidthCm = parcel.WidthCm,
+                HeightCm = parcel.HeightCm,
                 Items = items
             };
         }

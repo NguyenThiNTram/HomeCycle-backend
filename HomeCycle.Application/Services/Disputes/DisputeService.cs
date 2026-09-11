@@ -1,3 +1,4 @@
+﻿using HomeCycle.Application.Interfaces.Services.GHN;
 using HomeCycle.Application.Interfaces.Repositories.Posts;
 using AutoMapper;
 using FluentValidation;
@@ -36,6 +37,7 @@ namespace HomeCycle.Application.Services.Disputes
     {
         private const decimal AmountEpsilon = 0.01m;
 
+        private readonly IGhnShipmentCreationService _ghnLifecycle;
         private readonly IDisputeRepository _disputeRepository;
         private readonly IOrderRepository _orderRepository;
         private readonly IPostRepository _postRepo;
@@ -57,7 +59,7 @@ namespace HomeCycle.Application.Services.Disputes
         private readonly IValidator<VerifyDisputeReturnRequest> _returnVerificationValidator;
         private readonly IReadOnlyDictionary<DisputeTargetType, IDisputeTargetHandler> _targetHandlers;
 
-        public DisputeService(
+        public DisputeService(IGhnShipmentCreationService ghnLifecycle,
             IDisputeRepository disputeRepository,
             IOrderRepository orderRepository,
             IPostRepository postRepo,
@@ -79,6 +81,7 @@ namespace HomeCycle.Application.Services.Disputes
             IValidator<VerifyDisputeReturnRequest> returnVerificationValidator,
             IEnumerable<IDisputeTargetHandler> targetHandlers)
         {
+            _ghnLifecycle = ghnLifecycle;
             _disputeRepository = disputeRepository;
             _orderRepository = orderRepository;
             _postRepo = postRepo;
@@ -735,6 +738,8 @@ namespace HomeCycle.Application.Services.Disputes
 
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync(cancellationToken);
+                if (order.OrderStatus == (int)OrderStatus.Cancelled)
+                    await _ghnLifecycle.CancelForOrderSafelyAsync(order.OrderId, cancellationToken);
                 foreach (var notification in decisionNotifications)
                     await _notificationService.PublishCreatedSafelyAsync(notification);
 

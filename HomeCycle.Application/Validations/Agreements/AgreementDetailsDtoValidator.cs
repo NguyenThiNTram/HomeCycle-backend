@@ -13,6 +13,14 @@ namespace HomeCycle.Application.Validations.Agreements
     {
         public AgreementDetailsDtoValidator(AgreementType agreementType)
         {
+            RuleFor(x => x.DeliveryMethod)
+                .Must(x => x is DeliveryMethod.GhnDelivery or DeliveryMethod.SellerDelivers or DeliveryMethod.BuyerPickUp)
+                .When(x => x.DeliveryMethod.HasValue)
+                .WithMessage("Phương thức giao nhận không hợp lệ.");
+            When(x => agreementType == AgreementType.Inspection || x.DeliveryMethod != DeliveryMethod.GhnDelivery, () =>
+            {
+                RuleFor(x => x.GhnInfo).Null().WithMessage("Chỉ gửi thông tin GHN khi chọn thu gom không kiểm định và GhnDelivery.");
+            });
             // Case 1: Không kiểm định (Thu gom) -> Bắt buộc phải có DeliveryMethod
             When(x => agreementType == AgreementType.No_Inspection, () =>
             {
@@ -32,7 +40,7 @@ namespace HomeCycle.Application.Validations.Agreements
             });
 
             // Case 2b: Giao hàng qua GHN -> bắt buộc có thông tin vận chuyển GHN
-            When(x => x.DeliveryMethod == DeliveryMethod.GhnDelivery, () =>
+            When(x => agreementType == AgreementType.No_Inspection && x.DeliveryMethod == DeliveryMethod.GhnDelivery, () =>
             {
                 RuleFor(x => x.GhnInfo)
                     .NotNull().WithMessage("GHN shipping info is required for GHN delivery.");

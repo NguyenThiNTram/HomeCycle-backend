@@ -1,3 +1,4 @@
+﻿using HomeCycle.Domain.Enums;
 using HomeCycle.Application.Commons.Helpers;
 using HomeCycle.Application.Interfaces.Repositories.Posts;
 using AutoMapper;
@@ -23,7 +24,6 @@ using HomeCycle.Application.Interfaces.Services.Payments;
 using HomeCycle.Application.Interfaces.Services.PlatformPolicies;
 using HomeCycle.Application.Services.Disputes;
 using HomeCycle.Domain.Entities;
-using HomeCycle.Domain.Enums;
 using System;
 using System.Collections.Generic;
 using System.Linq;

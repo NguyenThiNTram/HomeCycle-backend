@@ -12,11 +12,13 @@ namespace HomeCycle.Application.DTOs.Responses.GHN
     // Thông tin kiện hàng do server tự điền từ Product (bước "get info" trước khi tính phí)
     public sealed class GhnParcelInfoResponse
     {
+        public GhnContactSnapshotDto? Sender { get; init; }
+        public GhnContactSnapshotDto? Receiver { get; init; }
         public Guid NegotiationId { get; init; }
 
-        // 2 = Hàng nhẹ, 5 = Hàng nặng 
+        // 2 = Hàng nhẹ, 5 = Hàng nặng
         //public int ServiceTypeId { get; init; } = 2; //mặc định Hàng nhẹ
-        public int ServiceTypeId { get; init; } 
+        public int ServiceTypeId { get; init; }
 
         public GhnLightParcelSnapshotDto? LightParcel { get; init; }
 
@@ -33,6 +35,9 @@ namespace HomeCycle.Application.DTOs.Responses.GHN
     // Kết quả tính phí GHN (không kèm breakdown phí)
     public sealed class GhnShippingPreviewResponse
     {
+        public GhnShippingInfo? ShippingInfo { get; set; }
+        public string? PreviewToken { get; set; }
+        public DateTimeOffset? ExpiresAt { get; set; }
         public Guid NegotiationId { get; init; }
         public int ServiceTypeId { get; init; }
 
@@ -53,4 +58,6 @@ namespace HomeCycle.Application.DTOs.Responses.GHN
         public IReadOnlyList<GhnItemSnapshotDto> Items { get; init; }
             = Array.Empty<GhnItemSnapshotDto>();
     }
+    public sealed record GhnLeadtimeResponse(DateTimeOffset ExpectedDeliveryAt,
+        DateTimeOffset? FromEstimateDate, DateTimeOffset? ToEstimateDate);
 }

@@ -19,6 +19,8 @@ namespace HomeCycle.Application.DTOs.Responses.GHN
 
         public string? TrackingCode { get; init; }
         public string? CarrierStatus { get; init; }
+        public bool IsTerminal { get; init; }
+        public string? CarrierOperationError { get; init; }
 
         public ShipmentStatus? ShipmentStatus { get; init; }
 

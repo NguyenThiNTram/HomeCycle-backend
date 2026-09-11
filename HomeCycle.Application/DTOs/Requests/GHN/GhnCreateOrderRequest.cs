@@ -16,12 +16,18 @@ namespace HomeCycle.Application.DTOs.Requests.GHN
         public required string FromWardName { get; init; }
         public required string FromDistrictName { get; init; }
         public required string FromProvinceName { get; init; }
+        public int FromDistrictId { get; init; }
+        public string? FromWardCode { get; init; }
 
         public required string ToName { get; init; }
         public required string ToPhone { get; init; }
         public required string ToAddress { get; init; }
         public required int ToDistrictId { get; init; }
         public required string ToWardCode { get; init; }
+        public string ToWardName { get; init; } = string.Empty;
+        public string ToDistrictName { get; init; } = string.Empty;
+        public string ToProvinceName { get; init; } = string.Empty;
+        public int ParcelCount { get; init; } = 1;
 
         public int ServiceTypeId { get; init; }
 
@@ -36,7 +42,7 @@ namespace HomeCycle.Application.DTOs.Requests.GHN
         public string? Note { get; init; }
         public string? Content { get; init; }
 
-        // Chỉ dùng cho service type 2.
+        // Thông số đóng gói cấp đơn, bắt buộc cho cả type 2 và 5.
         public int? WeightGram { get; init; }
         public int? LengthCm { get; init; }
         public int? WidthCm { get; init; }

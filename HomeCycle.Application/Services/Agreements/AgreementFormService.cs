@@ -52,6 +52,11 @@ namespace HomeCycle.Application.Services.Agreements
         private readonly IValidator<CalculateGhnFeeRequest> _shippingFeeValidator;
         private readonly IValidator<GhnShippingPreviewRequest> _shippingPreviewValidator;
         private readonly IValidator<AcceptAgreementRequest> _acceptValidator;
+        private readonly Microsoft.Extensions.Configuration.IConfiguration _configuration;
+        private readonly HomeCycle.Application.Interfaces.Repositories.Profiles.IBusinessProfileRepository _businessProfileRepo;
+        private readonly HomeCycle.Application.Interfaces.Repositories.Orders.IOrderRepository _orderRepo;
+        private readonly HomeCycle.Application.Interfaces.Repositories.Users.IUserRepository _userRepo;
+        private readonly HomeCycle.Application.Interfaces.Repositories.Users.IPersonalProfileRepository _profileRepo;
 
 
         public AgreementFormService(
@@ -73,7 +78,12 @@ namespace HomeCycle.Application.Services.Agreements
             IValidator<UpdateAgreementFormRequest> updateValidator,
             IValidator<CalculateGhnFeeRequest> shippingFeeValidator,
             IValidator<GhnShippingPreviewRequest> shippingPreviewValidator,
-            IValidator<AcceptAgreementRequest> acceptValidator)
+            IValidator<AcceptAgreementRequest> acceptValidator,
+            HomeCycle.Application.Interfaces.Repositories.Users.IUserRepository userRepo,
+            HomeCycle.Application.Interfaces.Repositories.Users.IPersonalProfileRepository profileRepo,
+            HomeCycle.Application.Interfaces.Repositories.Orders.IOrderRepository orderRepo,
+            Microsoft.Extensions.Configuration.IConfiguration configuration,
+            HomeCycle.Application.Interfaces.Repositories.Profiles.IBusinessProfileRepository businessProfileRepo)
         {
             _unitOfWork = unitOfWork;
             _agreementRepo = agreementRepo;
@@ -94,6 +104,11 @@ namespace HomeCycle.Application.Services.Agreements
             _shippingFeeValidator = shippingFeeValidator;
             _shippingPreviewValidator = shippingPreviewValidator;
             _acceptValidator = acceptValidator;
+            _userRepo = userRepo;
+            _profileRepo = profileRepo;
+            _orderRepo = orderRepo;
+            _configuration = configuration;
+            _businessProfileRepo = businessProfileRepo;
         }
 
         public async Task<Result<AgreementPreviewResponse>> GetPreviewAsync(Guid negotiationId, Guid currentUserId, CancellationToken cancellationToken = default)
@@ -128,7 +143,7 @@ namespace HomeCycle.Application.Services.Agreements
                 response.AgreementId = agreement.AgreementId;
                 bool isPending = agreement.AgreementStatus == (int)AgreementStatus.Pending;
 
- 
+
                 response.CanEdit = isPending;
                 if (isPending)
                 {
@@ -151,13 +166,19 @@ namespace HomeCycle.Application.Services.Agreements
             }
 
             // Giao hàng qua GHN: server tự gọi lại API tính phí để con số trong hợp đồng luôn chính xác
-            if (request.AgreementDetails?.DeliveryMethod == DeliveryMethod.GhnDelivery)
+            if (GhnShippingCalculationHelper.IsAgreementGhnDelivery(request.AgreementType, request.AgreementDetails?.DeliveryMethod))
             {
-                var negotiation = await _negotiationRepo.GetByIdAsync(request.NegotiationId, cancellationToken);
-                if (negotiation == null)
-                    return Result<Guid>.Fail(new Error("Negotiation.NotFound", "Không tìm thấy cuộc thương lượng."));
+                var authorized = await GetAuthorizedNegotiationAsync(request.NegotiationId, currentUserId, cancellationToken);
+                if (!authorized.IsSuccess) return Result<Guid>.Fail(authorized.Error!);
+                var negotiation = authorized.Data!;
+                if (negotiation.SellerId != currentUserId)
+                    return Result<Guid>.Fail(new Error("Auth.Forbidden", "Chỉ người bán được tạo thỏa thuận."));
+                if (negotiation.NegotiationStatus != NegotiationStatus.Agreed || negotiation.FinalQuantity is not > 0 || negotiation.FinalPrice is not > 0)
+                    return Result<Guid>.Fail(new Error("Agreement.TermsNotAgreed", "Cần thống nhất giá và số lượng trước khi gọi GHN."));
+                if (await _agreementRepo.GetByNegotiationIdAsync(request.NegotiationId, cancellationToken) != null)
+                    return Result<Guid>.Fail(new Error("Agreement.AlreadyExists", "Thỏa thuận đã tồn tại."));
 
-                var feeResult = await ComputeShippingFeeAsync(request.AgreementDetails, negotiation.PostId, cancellationToken);
+                var feeResult = await ComputeShippingFeeAsync(request.AgreementDetails, negotiation.PostId, request.NegotiationId, cancellationToken);
                 if (!feeResult.IsSuccess)
                     return Result<Guid>.Fail(feeResult.Error!);
             }
@@ -336,9 +357,11 @@ namespace HomeCycle.Application.Services.Agreements
                     "Thỏa thuận đã được cả hai bên chốt. Vui lòng yêu cầu mở lại (Request Edit) trước khi chỉnh sửa."));
             }
 
-            if (request.AgreementDetails?.DeliveryMethod == DeliveryMethod.GhnDelivery)
+            if (GhnShippingCalculationHelper.IsAgreementGhnDelivery(request.AgreementType, request.AgreementDetails?.DeliveryMethod))
             {
-                var feeResult = await ComputeShippingFeeAsync(request.AgreementDetails, agreementSnapshot.PostId, cancellationToken);
+                var authorized = await GetAuthorizedNegotiationAsync(agreementSnapshot.NegotiationId, currentUserId, cancellationToken);
+                if (!authorized.IsSuccess) return Result<AgreementActionResponse>.Fail(authorized.Error!);
+                var feeResult = await ComputeShippingFeeAsync(request.AgreementDetails, agreementSnapshot.PostId, agreementSnapshot.NegotiationId, cancellationToken);
                 if (!feeResult.IsSuccess)
                     return Result<AgreementActionResponse>.Fail(feeResult.Error!);
             }
@@ -846,6 +869,10 @@ namespace HomeCycle.Application.Services.Agreements
         public async Task<Result<ShippingFeePreviewResponse>>PreviewShippingFeeAsync(Guid negotiationId, Guid currentUserId, CalculateGhnFeeRequest request, CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(request);
+            var authorized = await GetAuthorizedNegotiationAsync(negotiationId, currentUserId, cancellationToken);
+            if (!authorized.IsSuccess) return Result<ShippingFeePreviewResponse>.Fail(authorized.Error!);
+            var contextError = await ValidateAgreementGhnContextAsync(negotiationId, request.AgreementType, request.DeliveryMethod, cancellationToken);
+            if (contextError != null) return Result<ShippingFeePreviewResponse>.Fail(contextError);
 
             var negotiation = await _negotiationRepo.GetByIdAsync(
                 negotiationId,
@@ -963,6 +990,8 @@ namespace HomeCycle.Application.Services.Agreements
 
             var response = new GhnParcelInfoResponse
             {
+                Sender = await GetContactDefaultsAsync(negotiationResult.Data!.SellerId, cancellationToken),
+                Receiver = await GetContactDefaultsAsync(negotiationResult.Data!.BuyerId, cancellationToken),
                 NegotiationId = negotiationId,
                 ServiceTypeId = serviceTypeId,
                 HasProductDimensions = hasDimensions,
@@ -998,6 +1027,9 @@ namespace HomeCycle.Application.Services.Agreements
             var negotiationResult = await GetAuthorizedNegotiationAsync(negotiationId, currentUserId, cancellationToken);
             if (!negotiationResult.IsSuccess)
                 return Result<GhnShippingPreviewResponse>.Fail(negotiationResult.Error!);
+
+            var contextError = await ValidateAgreementGhnContextAsync(negotiationId, request.AgreementType, request.DeliveryMethod, cancellationToken);
+            if (contextError != null) return Result<GhnShippingPreviewResponse>.Fail(contextError);
 
             var validationResult = await _shippingPreviewValidator.ValidateAsync(request, cancellationToken);
             if (!validationResult.IsValid)
@@ -1091,7 +1123,80 @@ namespace HomeCycle.Application.Services.Agreements
                     }).ToList()
             };
 
+            var info = new GhnShippingInfo
+            {
+                Sender = resolved.Sender, Receiver = resolved.Receiver,
+                ServiceTypeId = resolved.ServiceTypeId, ParcelCount = resolved.ParcelCount,
+                WeightGram = resolved.WeightGram, LengthCm = resolved.LengthCm,
+                WidthCm = resolved.WidthCm, HeightCm = resolved.HeightCm,
+                RequiredNote = resolved.RequiredNote, Content = resolved.Content, Items = response.Items
+            };
+            var quotedAt = DateTimeOffset.UtcNow;
+            var confirmedQuote = new GhnQuoteSnapshotDto
+            {
+                TotalFee = quote.TotalFee, Breakdown = new GhnFeeBreakdownSnapshotDto(),
+                QuotedAt = quotedAt, InputHash = GhnShippingCalculationHelper.SnapshotHash(info),
+                ExpectedDeliveryAt = quote.ExpectedDeliveryAt ?? default
+            };
+            response.PreviewToken = GhnShippingCalculationHelper.IssuePreviewToken($"agreement:{negotiationId}", info,
+                confirmedQuote, _configuration["Jwt:SecretKey"]!);
+            response.ExpiresAt = quotedAt.AddMinutes(30);
+            info.PreviewToken = response.PreviewToken;
+            response.ShippingInfo = info;
             return Result<GhnShippingPreviewResponse>.Success(response);
+        }
+
+        public async Task<Result<GhnLeadtimeResponse>> GetGhnLeadtimeAsync(Guid negotiationId, Guid userId,
+            GhnLeadtimeRequest request, CancellationToken cancellationToken = default)
+        {
+            var authorization = await GetAuthorizedNegotiationAsync(negotiationId, userId, cancellationToken);
+            if (!authorization.IsSuccess) return Result<GhnLeadtimeResponse>.Fail(authorization.Error!);
+            var contextError = await ValidateAgreementGhnContextAsync(negotiationId, request.AgreementType, request.DeliveryMethod, cancellationToken);
+            if (contextError != null) return Result<GhnLeadtimeResponse>.Fail(contextError);
+            try { return Result<GhnLeadtimeResponse>.Success(await _ghnService.GetLeadtimeAsync(request, cancellationToken)); }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+            catch (ArgumentException ex) { return Result<GhnLeadtimeResponse>.Fail(new Error("Ghn.InvalidLeadtimeRequest", ex.Message)); }
+            catch (Exception ex) when (ex is IGhnApiError { HttpStatusCode: 400 })
+            { return Result<GhnLeadtimeResponse>.Fail(new Error("Ghn.InvalidLeadtimeRequest", ex.Message)); }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "GHN leadtime failed for {NegotiationId}", negotiationId);
+                return Result<GhnLeadtimeResponse>.Fail(new Error("Ghn.LeadtimeFailed", "Chưa lấy được thời gian dự kiến từ GHN."));
+            }
+        }
+        private async Task<Error?> ValidateAgreementGhnContextAsync(Guid negotiationId, AgreementType? agreementType,
+            DeliveryMethod? deliveryMethod, CancellationToken ct)
+        {
+            if (!GhnShippingCalculationHelper.IsAgreementGhnDelivery(agreementType, deliveryMethod))
+                return new Error("Ghn.InvalidDeliveryContext", "Chỉ tính GHN khi chọn No_Inspection và GhnDelivery.");
+            var agreement = await _agreementRepo.GetByNegotiationIdAsync(negotiationId, ct);
+            if (agreement == null) return null; // FE previews the draft before saving an agreement.
+            if (agreement.AgreementStatus is (int)AgreementStatus.Cancelled or (int)AgreementStatus.Expired)
+                return new Error("Ghn.InvalidDeliveryContext", "Thỏa thuận đã bị hủy hoặc hết hạn.");
+            if (await _orderRepo.GetByAgreementIdAsync(agreement.AgreementId, ct) != null)
+                return new Error("Ghn.OrderAlreadyExists", "Đã có đơn hàng; không thể tính lại GHN ở bước agreement.");
+            if (agreement.AgreementType == (int)AgreementType.Inspection)
+                return new Error("Ghn.InvalidDeliveryContext", "Đơn kiểm định chỉ chọn GHN khi thu gom sau kiểm định.");
+            return null;
+        }
+
+        private async Task<GhnContactSnapshotDto> GetContactDefaultsAsync(Guid userId, CancellationToken ct)
+        {
+            var profile = await _profileRepo.GetByUserIdAsync(userId, ct);
+            var user = await _userRepo.GetByIdAsync(userId, ct);
+            var fullName = profile?.FullName;
+            if (string.IsNullOrWhiteSpace(fullName))
+                fullName = (await _businessProfileRepo.GetByUserIdAsync(userId, ct))?.FullName;
+            return new GhnContactSnapshotDto
+            {
+                FullName = fullName?.Trim() ?? string.Empty,
+                Phone = user?.PhoneNumber?.Trim() ?? string.Empty,
+                Address = new GhnAddressSnapshotDto
+                {
+                    ProvinceName = string.Empty, DistrictName = string.Empty,
+                    WardCode = string.Empty, WardName = string.Empty, AddressDetail = string.Empty
+                }
+            };
         }
 
         private async Task<Result<negotiation>> GetAuthorizedNegotiationAsync(Guid negotiationId, Guid currentUserId, CancellationToken cancellationToken)
@@ -1106,8 +1211,12 @@ namespace HomeCycle.Application.Services.Agreements
             if (!isSeller && !isBuyer)
                 return Result<negotiation>.Fail(new Error("Auth.Forbidden", "Bạn không có quyền truy cập."));
 
-            if (negotiation.NegotiationStatus == NegotiationStatus.Cancelled)
+            if (negotiation.NegotiationStatus is NegotiationStatus.Cancelled or NegotiationStatus.Closed or NegotiationStatus.Expired)
                 return Result<negotiation>.Fail(new Error("Negotiation.Cancelled", "Không thể xem trước cho cuộc thương lượng đã bị hủy."));
+
+            var offer = await _offerRepo.GetByIdAsync(negotiation.OfferId, cancellationToken);
+            if (offer?.OfferStatus == OfferStatus.Rejected)
+                return Result<negotiation>.Fail(new Error("Ghn.InvalidDeliveryContext", "Offer đã bị từ chối."));
 
             return Result<negotiation>.Success(negotiation);
         }
@@ -1253,7 +1362,7 @@ namespace HomeCycle.Application.Services.Agreements
             };
         }
 
-        private async Task<Result<bool>> ComputeShippingFeeAsync(AgreementDetailsDto details, Guid postId, CancellationToken cancellationToken)
+        private async Task<Result<bool>> ComputeShippingFeeAsync(AgreementDetailsDto details, Guid postId, Guid negotiationId, CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(details);
 
@@ -1271,6 +1380,10 @@ namespace HomeCycle.Application.Services.Agreements
                         "Ghn.ShippingInfoRequired",
                         "Chưa có thông tin vận chuyển GHN."));
             }
+
+            GhnQuoteSnapshotDto confirmedQuote;
+            try { confirmedQuote = GhnShippingCalculationHelper.ConfirmPreview($"agreement:{negotiationId}", ghn, _configuration["Jwt:SecretKey"]!); }
+            catch (ArgumentException ex) { return Result<bool>.Fail(new Error("Ghn.InvalidPreview", ex.Message)); }
 
             var senderAddress = ghn.Sender?.Address;
             var receiverAddress = ghn.Receiver?.Address;
@@ -1296,149 +1409,9 @@ namespace HomeCycle.Application.Services.Agreements
                         "Loại dịch vụ GHN chỉ nhận 2 (hàng nhẹ) hoặc 5 (hàng nặng)."));
             }
 
-            CalculateGhnFeeRequest request;
-
-            if (ghn.ServiceTypeId == 2)
-            {
-                // Hàng nhẹ: lấy kích thước và khối lượng cấp đơn từ Product.
-                var product = await _productRepo.GetDetailByPostIdAsync(
-                    postId,
-                    cancellationToken);
-
-                if (product is null)
-                {
-                    return Result<bool>.Fail(
-                        new Error(
-                            "Product.NotFound",
-                            "Không tìm thấy sản phẩm của bài đăng."));
-                }
-
-                if (product.Weight is null or <= 0 ||
-                    product.Length is null or <= 0 ||
-                    product.Width is null or <= 0 ||
-                    product.Height is null or <= 0)
-                {
-                    return Result<bool>.Fail(
-                        new Error(
-                            "Ghn.ParcelInformationRequired",
-                            "Sản phẩm chưa có đầy đủ khối lượng và kích thước để tính phí GHN."));
-                }
-
-                int weightGram;
-                int lengthCm;
-                int widthCm;
-                int heightCm;
-
-                try
-                {
-                    // Làm tròn lên để không khai thiếu khối lượng/kích thước.
-                    weightGram = checked(
-                        (int)Math.Ceiling(product.Weight.Value * 1000));
-
-                    var sides = new[]
-                    {
-                        checked((int)Math.Ceiling(product.Length.Value)),
-                        checked((int)Math.Ceiling(product.Width.Value)),
-                        checked((int)Math.Ceiling(product.Height.Value))
-                    }
-                    .OrderByDescending(x => x)
-                    .ToArray();
-
-                    lengthCm = sides[0];
-                    widthCm = sides[1];
-                    heightCm = sides[2];
-                }
-                catch (OverflowException)
-                {
-                    return Result<bool>.Fail(
-                        new Error(
-                            "Ghn.ParcelInformationInvalid",
-                            "Khối lượng hoặc kích thước sản phẩm vượt phạm vi cho phép."));
-                }
-
-                request = new CalculateGhnFeeRequest
-                {
-                    FromDistrictId = senderAddress.DistrictId,
-                    FromWardCode = senderAddress.WardCode.Trim(),
-
-                    ToDistrictId = receiverAddress.DistrictId,
-                    ToWardCode = receiverAddress.WardCode.Trim(),
-
-                    ServiceTypeId = 2,
-                    WeightGram = weightGram,
-                    LengthCm = lengthCm,
-                    WidthCm = widthCm,
-                    HeightCm = heightCm,
-
-                    // Hàng nhẹ không gửi Items
-                    Items = Array.Empty<CalculateGhnFeeItemRequest>()
-                };
-            }
-            else
-            {
-                // Hàng nặng: mỗi phần tử là một kiện hàng
-                var items = ghn.Items?
-                    .Select(item => new CalculateGhnFeeItemRequest
-                    {
-                        Name = item.Name?.Trim() ?? string.Empty,
-                        Quantity = item.Quantity,
-                        WeightGram = item.WeightGram,
-                        LengthCm = item.LengthCm,
-                        WidthCm = item.WidthCm,
-                        HeightCm = item.HeightCm
-                    })
-                    .ToList()
-                    ?? new List<CalculateGhnFeeItemRequest>();
-
-                if (items.Count == 0)
-                {
-                    return Result<bool>.Fail(
-                        new Error(
-                            "Ghn.HeavyItemsRequired",
-                            "Hàng nặng phải có ít nhất một kiện hàng."));
-                }
-
-                long totalWeight;
-
-                try
-                {
-                    totalWeight = items.Aggregate(0L, (total, item) => checked(total + (long)item.WeightGram * item.Quantity));
-                }
-                catch (OverflowException)
-                {
-                    return Result<bool>.Fail(
-                        new Error(
-                            "Ghn.TotalWeightInvalid",
-                            "Tổng khối lượng kiện hàng không hợp lệ."));
-                }
-
-                if (totalWeight is < 1 or > 1_600_000)
-                {
-                    return Result<bool>.Fail(
-                        new Error(
-                            "Ghn.TotalWeightInvalid",
-                            "Tổng khối lượng kiện hàng phải từ 1 đến 1.600.000 gram."));
-                }
-
-                request = new CalculateGhnFeeRequest
-                {
-                    FromDistrictId = senderAddress.DistrictId,
-                    FromWardCode = senderAddress.WardCode.Trim(),
-
-                    ToDistrictId = receiverAddress.DistrictId,
-                    ToWardCode = receiverAddress.WardCode.Trim(),
-
-                    ServiceTypeId = 5,
-                    WeightGram = checked((int)totalWeight),
-
-                    // Hàng nặng lấy kích thước từ Items.
-                    LengthCm = null,
-                    WidthCm = null,
-                    HeightCm = null,
-                    Items = items
-                };
-            }
-
+            var feeRequest = HomeCycle.Application.Commons.Helpers.GhnShippingCalculationHelper.BuildFeeRequest(ghn, null);
+            if (!feeRequest.IsSuccess) return Result<bool>.Fail(feeRequest.Error!);
+            var request = feeRequest.Data!;
             var validationResult = await _shippingFeeValidator.ValidateAsync(request, cancellationToken);
 
             if (!validationResult.IsValid)
@@ -1453,6 +1426,9 @@ namespace HomeCycle.Application.Services.Agreements
             try
             {
                 var quote = await _ghnService.GetShippingFeeAsync(request, cancellationToken);
+                if (quote.TotalFee != confirmedQuote.TotalFee)
+                    return Result<bool>.Fail(new Error("Ghn.QuoteChanged", "Phí GHN đã thay đổi; vui lòng preview và xác nhận lại."));
+                ghn.Quote = confirmedQuote;
                 details.EstimatedShippingFee = quote.TotalFee;
 
                 return Result<bool>.Success(true);

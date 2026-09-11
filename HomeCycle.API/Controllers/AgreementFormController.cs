@@ -183,6 +183,7 @@ namespace HomeCycle.API.Controllers
                 _ => BadRequest(error)
             };
         }
+
         [HttpPost("negotiations/{negotiationId:guid}/ghn-preview")]
         [SwaggerOperation(
             Summary = "Xem trước thông tin vận chuyển GHN",
@@ -215,6 +216,22 @@ namespace HomeCycle.API.Controllers
             };
         }
 
+        [HttpPost("negotiations/{negotiationId:guid}/ghn-leadtime")]
+        [SwaggerOperation(Summary = "Ước tính thời gian giao GHN (chỉ đọc, không tạo đơn)")]
+        public async Task<IActionResult> GetGhnLeadtime(Guid negotiationId, [FromBody] GhnLeadtimeRequest request, CancellationToken cancellationToken)
+        {
+            var result = await _agreementService.GetGhnLeadtimeAsync(negotiationId, GetCurrentUserId(), request, cancellationToken);
+            if (result.IsSuccess) return Ok(result.Data);
+            var error = result.Error!;
+            return error.Code switch
+            {
+                "Auth.Forbidden" => StatusCode(403, error),
+                "Negotiation.NotFound" => NotFound(error),
+                "Negotiation.Cancelled" => Conflict(error),
+                "Ghn.LeadtimeFailed" => StatusCode(502, error),
+                _ => BadRequest(error)
+            };
+        }
         private Guid GetCurrentUserId()
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;

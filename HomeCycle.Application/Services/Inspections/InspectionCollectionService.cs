@@ -58,6 +58,7 @@ namespace HomeCycle.Application.Services.Inspections
         private readonly IValidator<ScheduleInspectionCollectionRequest> _validator;
         private readonly IValidator<CalculateGhnFeeRequest> _ghnFeeValidator;
         private readonly ILogger<InspectionCollectionService> _logger;
+        private readonly Microsoft.Extensions.Configuration.IConfiguration _configuration;
 
         public InspectionCollectionService(
             IInspectionFormRepository inspectionFormRepo,
@@ -76,7 +77,8 @@ namespace HomeCycle.Application.Services.Inspections
             IUnitOfWork unitOfWork,
             IValidator<ScheduleInspectionCollectionRequest> validator,
             IValidator<CalculateGhnFeeRequest> ghnFeeValidator,
-            ILogger<InspectionCollectionService> logger)
+            ILogger<InspectionCollectionService> logger,
+            Microsoft.Extensions.Configuration.IConfiguration configuration)
         {
             _inspectionFormRepo = inspectionFormRepo;
             _orderRepo = orderRepo;
@@ -95,6 +97,7 @@ namespace HomeCycle.Application.Services.Inspections
             _validator = validator;
             _ghnFeeValidator = ghnFeeValidator;
             _logger = logger;
+            _configuration = configuration;
         }
 
         public async Task<Result<ScheduleInspectionCollectionResponse>> ScheduleAsync(
@@ -137,6 +140,27 @@ namespace HomeCycle.Application.Services.Inspections
             if (agreement.BuyerId != buyerId)
                 return Result<ScheduleInspectionCollectionResponse>.Fail(InspectionErrors.BuyerOnly);
 
+            var usesGhn = GhnShippingCalculationHelper.IsGhnDelivery(request.DeliveryMethod);
+            if (request.PreviewOnly && !usesGhn)
+                return Result<ScheduleInspectionCollectionResponse>.Fail(new Error("Ghn.InvalidDeliveryContext", "Preview GHN yêu cầu GhnDelivery."));
+            if (usesGhn)
+            {
+                if (agreement.AgreementType != (int)AgreementType.Inspection ||
+                    agreement.AgreementStatus != (int)AgreementStatus.Confirmed ||
+                    orderSnapshot.OrderStatus != (int)OrderStatus.Processing)
+                    return Result<ScheduleInspectionCollectionResponse>.Fail(OrderErrors.InvalidStatus);
+                if (formSnapshot.InspectionStatus != (int)InspectionStatus.Accepted)
+                    return Result<ScheduleInspectionCollectionResponse>.Fail(InspectionErrors.AcceptedRequired);
+                if (!formSnapshot.Conclusion.HasValue || formSnapshot.Conclusion == (int)InspectionConclusion.Failed)
+                    return Result<ScheduleInspectionCollectionResponse>.Fail(InspectionErrors.FailedCannotCollect);
+                if (formSnapshot.CollectAction.HasValue)
+                    return Result<ScheduleInspectionCollectionResponse>.Fail(InspectionErrors.CollectActionAlreadySelected);
+                if (formSnapshot.Revision != request.ExpectedRevision)
+                    return Result<ScheduleInspectionCollectionResponse>.Fail(InspectionErrors.RevisionMismatch);
+                if (await _shipmentRepo.GetByOrderIdAsync(orderSnapshot.OrderId, cancellationToken) != null)
+                    return Result<ScheduleInspectionCollectionResponse>.Fail(ShipmentErrors.AlreadyExists);
+            }
+
             AgreementDetailsDto? agreementDetails = null;
 
             if (!string.IsNullOrWhiteSpace(agreement.AgreementDetailsJsonb))
@@ -154,7 +178,7 @@ namespace HomeCycle.Application.Services.Inspections
                 }
             }
 
-            var ghnInfo = request.GhnInfo ?? agreementDetails?.GhnInfo;
+            var ghnInfo = usesGhn ? request.GhnInfo : null;
             var pickupAddress = ResolveAddress(
                 request.PickupAddress,
                 agreementDetails?.PickupAddress,
@@ -174,7 +198,7 @@ namespace HomeCycle.Application.Services.Inspections
             decimal shippingFee;
             CalculateGhnFeeRequest? feeRequest = null;
 
-            if (request.DeliveryMethod == DeliveryMethod.GhnDelivery)
+            if (usesGhn)
             {
                 //if (request.PaymentType != PaymentType.Full_Payment)
                 //{
@@ -220,6 +244,17 @@ namespace HomeCycle.Application.Services.Inspections
 
                 try
                 {
+                    if (!request.PreviewOnly)
+                    {
+                        ghnInfo.Quote = GhnShippingCalculationHelper.ConfirmPreview(
+                            $"inspection:{inspectionFormId}:{request.ExpectedRevision}", ghnInfo, _configuration["Jwt:SecretKey"]!);
+                        shippingFee = ghnInfo.Quote.TotalFee;
+                    }
+                    else
+                    {
+                    var services = await _ghnService.GetAvailableServicesAsync(feeRequest.FromDistrictId, feeRequest.ToDistrictId, cancellationToken);
+                    if (!services.Any(x => x.ServiceTypeId == ghnInfo.ServiceTypeId))
+                        return Result<ScheduleInspectionCollectionResponse>.Fail(new Error("Ghn.ServiceUnavailable", "GHN không hỗ trợ dịch vụ trên tuyến này."));
                     var quote = await _ghnService.GetShippingFeeAsync(
                         feeRequest,
                         cancellationToken);
@@ -228,6 +263,33 @@ namespace HomeCycle.Application.Services.Inspections
                         quote.TotalFee,
                         0,
                         MidpointRounding.AwayFromZero);
+                    var leadtime = await _ghnService.GetLeadtimeAsync(new GhnLeadtimeRequest
+                    {
+                        FromDistrictId = feeRequest.FromDistrictId, FromWardCode = feeRequest.FromWardCode,
+                        ToDistrictId = feeRequest.ToDistrictId, ToWardCode = feeRequest.ToWardCode,
+                        ServiceTypeId = feeRequest.ServiceTypeId, WeightGram = feeRequest.WeightGram,
+                        LengthCm = feeRequest.LengthCm, WidthCm = feeRequest.WidthCm, HeightCm = feeRequest.HeightCm
+                    }, cancellationToken);
+                    var quotedAt = DateTimeOffset.UtcNow;
+                    var snapshot = new HomeCycle.Application.DTOs.Responses.GHN.GhnQuoteSnapshotDto
+                    {
+                        TotalFee = shippingFee, Breakdown = quote.Breakdown, QuotedAt = quotedAt,
+                        InputHash = GhnShippingCalculationHelper.SnapshotHash(ghnInfo), ExpectedDeliveryAt = leadtime.ExpectedDeliveryAt
+                    };
+                    return Result<ScheduleInspectionCollectionResponse>.Success(new ScheduleInspectionCollectionResponse
+                    {
+                        IsPreview = true, InspectionFormId = inspectionFormId, OrderId = orderSnapshot.OrderId,
+                        Revision = formSnapshot.Revision, DeliveryMethod = request.DeliveryMethod,
+                        CollectionDate = request.CollectionDate.UtcDateTime, EstimatedShippingFee = shippingFee,
+                        ExpectedDeliveryAt = leadtime.ExpectedDeliveryAt, ExpiresAt = quotedAt.AddMinutes(30),
+                        PreviewToken = GhnShippingCalculationHelper.IssuePreviewToken(
+                            $"inspection:{inspectionFormId}:{request.ExpectedRevision}", ghnInfo, snapshot, _configuration["Jwt:SecretKey"]!)
+                    });
+                    }
+                }
+                catch (ArgumentException ex)
+                {
+                    return Result<ScheduleInspectionCollectionResponse>.Fail(new Error("Ghn.InvalidPreview", ex.Message));
                 }
                 catch (OperationCanceledException)
                     when (cancellationToken.IsCancellationRequested)
@@ -381,12 +443,6 @@ namespace HomeCycle.Application.Services.Inspections
 
                 if (request.DeliveryMethod == DeliveryMethod.GhnDelivery)
                 {
-                    var largestItem = ghnInfo!.ServiceTypeId == 5
-                        ? ghnInfo.Items
-                            .OrderByDescending(x => (long)x.WeightGram * x.Quantity)
-                            .First()
-                        : null;
-
                     var ghnShipment = new ghn_shipment
                     {
                         GHNShipmentId = Guid.NewGuid(),
@@ -399,15 +455,9 @@ namespace HomeCycle.Application.Services.Inspections
                         ToDistrictId = ghnInfo.Receiver!.Address.DistrictId,
                         ToWardCode = ghnInfo.Receiver.Address.WardCode,
                         Weight = feeRequest!.WeightGram,
-                        Length = ghnInfo.ServiceTypeId == 2
-                            ? feeRequest.LengthCm
-                            : largestItem?.LengthCm,
-                        Width = ghnInfo.ServiceTypeId == 2
-                            ? feeRequest.WidthCm
-                            : largestItem?.WidthCm,
-                        Height = ghnInfo.ServiceTypeId == 2
-                            ? feeRequest.HeightCm
-                            : largestItem?.HeightCm,
+                        Length = feeRequest.LengthCm,
+                        Width = feeRequest.WidthCm,
+                        Height = feeRequest.HeightCm,
                         CODAmount = 0,
                         PaymentTypeId = 2,
                         InsuranceValue = 0,
@@ -415,7 +465,7 @@ namespace HomeCycle.Application.Services.Inspections
                         GHNServiceFee = null,
                         GHNCodFee = null,
                         GHNTotalFee = null,
-                        ExpectedDeliveryAt = null,
+                        ExpectedDeliveryAt = ghnInfo.Quote?.ExpectedDeliveryAt.UtcDateTime,
                         CreationStatus = GHNCreationStatus.Pending,
                         LastCreateAttemptAt = null,
                         LastSyncedAt = null,
@@ -475,6 +525,9 @@ namespace HomeCycle.Application.Services.Inspections
                 //    await _paymentRepo.AddAsync(payment, cancellationToken);
                 //}
 
+                // GHN after inspection is paid externally by the receiver. Keep the deposit ledger intact.
+                if (!usesGhn)
+                {
                 var finalTotalAmount = goodsTotal + shippingFee;
                 var amountPaid = order.AmountPaid ?? 0;
                 var amountRemaining = Math.Max(
@@ -487,6 +540,7 @@ namespace HomeCycle.Application.Services.Inspections
                     ? (int)PaymentStatus.Completed
                     : (int)PaymentStatus.Pending;
                 order.UpdatedAt = now;
+                }
 
                 form.CollectAction = (int)InspectionCollectAction.ScheduleCollection;
                 form.Revision++;

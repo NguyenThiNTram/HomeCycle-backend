@@ -105,4 +105,18 @@ namespace HomeCycle.Infrastructure.Externals.GHN
     }
 
 
+    internal sealed class GhnLeadtimeData
+    {
+        [JsonPropertyName("leadtime")]
+        public long? Leadtime { get; init; }
+        [JsonPropertyName("leadtime_order")]
+        public GhnLeadtimeRange? Range { get; init; }
+    }
+    internal sealed class GhnLeadtimeRange
+    {
+        [JsonPropertyName("from_estimate_date")]
+        public DateTimeOffset? From { get; init; }
+        [JsonPropertyName("to_estimate_date")]
+        public DateTimeOffset? To { get; init; }
+    }
 }

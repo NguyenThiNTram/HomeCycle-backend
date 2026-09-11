@@ -1,4 +1,4 @@
-using HomeCycle.Application.Commons.Helpers;
+﻿using HomeCycle.Application.Commons.Helpers;
 using AutoMapper;
 using FluentValidation;
 using HomeCycle.Application.Commons.Errors;
@@ -102,7 +102,7 @@ namespace HomeCycle.Application.Services.Payments
             ILogger<PaymentService> logger,
             IShipmentRepository shipmentRepository,
             IGhnShipmentRepository ghnShipmentRepository,
-            IValidator<PayOSCheckoutRequest> payOSCheckoutValidator, 
+            IValidator<PayOSCheckoutRequest> payOSCheckoutValidator,
             IPlatformPolicyProvider platformPolicyProvider,
             IDisputeRepository disputeRepo,
             IBankAccountRepository bankAccountRepo,
@@ -199,7 +199,8 @@ namespace HomeCycle.Application.Services.Payments
             if (details?.EstimatedShippingFee is < 0)
                 return Result<string>.Fail(new Error("Payment.InvalidShippingFee", "Phí vận chuyển không được nhỏ hơn 0."));
 
-            if (details?.DeliveryMethod == DeliveryMethod.GhnDelivery
+            if (HomeCycle.Application.Commons.Helpers.GhnShippingCalculationHelper.IsAgreementGhnDelivery(
+                    (AgreementType?)agreement.AgreementType, details?.DeliveryMethod)
                 && details?.EstimatedShippingFee is null)
             {
                 return Result<string>.Fail(new Error(
@@ -356,7 +357,8 @@ namespace HomeCycle.Application.Services.Payments
             if (details?.EstimatedShippingFee is < 0)
                 return Result<PaymentStatusResponseDto>.Fail(new Error("Payment.InvalidShippingFee", "Phí vận chuyển không được nhỏ hơn 0."));
 
-            if (details?.DeliveryMethod == DeliveryMethod.GhnDelivery
+            if (HomeCycle.Application.Commons.Helpers.GhnShippingCalculationHelper.IsAgreementGhnDelivery(
+                    (AgreementType?)agreement.AgreementType, details?.DeliveryMethod)
                 && details?.EstimatedShippingFee is null)
             {
                 return Result<PaymentStatusResponseDto>.Fail(new Error(
@@ -500,7 +502,7 @@ namespace HomeCycle.Application.Services.Payments
                     ReferenceId = orderId,
                     ReferenceType = (int)ReferenceType.Order,
                     TransactionType = (int)TransactionType.Wallet_Payment, // Thanh toán từ ví
-                    Amount = holdAmount, 
+                    Amount = holdAmount,
                     WalletTransactionStatus = (int)WalletTransactionStatus.Completed,
                     CreatedAt = now
                 };
@@ -604,7 +606,7 @@ namespace HomeCycle.Application.Services.Payments
                     AgreementId = agreement.AgreementId,
                     PayerId = payerId,
                     PaymentType = agreement.PaymentType,
-                    PaymentMethod = (int)PaymentMethod.Internal_Wallet, 
+                    PaymentMethod = (int)PaymentMethod.Internal_Wallet,
                     Amount = amountToPay,
                     OrderId = orderId,
                     Description = "Thanh toan qua Vi noi bo",
@@ -2178,6 +2180,9 @@ namespace HomeCycle.Application.Services.Payments
                 throw new InvalidOperationException("Số tiền thanh toán không hợp lệ.");
 
             bool isFullyPaid = amountRemaining <= AmountEpsilon;
+            if (HomeCycle.Application.Commons.Helpers.GhnShippingCalculationHelper.IsAgreementGhnDelivery(
+                    (AgreementType?)agreement.AgreementType, details?.DeliveryMethod) && !isFullyPaid)
+                throw new InvalidOperationException("Thu gom GHN yêu cầu thanh toán đủ tiền hàng và phí ship đã chốt.");
 
             var paymentStatus = isFullyPaid
                 ? PaymentStatus.Completed
@@ -2279,8 +2284,8 @@ namespace HomeCycle.Application.Services.Payments
             // Chỉ tạo vận đơn GHN khi đã thanh toán đủ (không phải cọc).
             bool shouldCreateGhnShipment =
                 isFullyPaid
-                && agreement.AgreementType != (int)AgreementType.Inspection
-                && details?.DeliveryMethod == DeliveryMethod.GhnDelivery;
+                && HomeCycle.Application.Commons.Helpers.GhnShippingCalculationHelper.IsAgreementGhnDelivery(
+                    (AgreementType?)agreement.AgreementType, details?.DeliveryMethod);
 
             var ghnInfo = shouldCreateGhnShipment
                 ? details?.GhnInfo
@@ -2290,6 +2295,9 @@ namespace HomeCycle.Application.Services.Payments
             {
                 if (ghnInfo == null)
                     throw new InvalidOperationException("Agreement chọn GHN nhưng thiếu GhnInfo.");
+                if (ghnInfo.Quote == null || ghnInfo.Quote.InputHash !=
+                    HomeCycle.Application.Commons.Helpers.GhnShippingCalculationHelper.SnapshotHash(ghnInfo))
+                    throw new InvalidOperationException("Thiếu quote GHN hoặc snapshot đã thay đổi. Vui lòng xác nhận agreement lại.");
 
                 if (ghnInfo.Sender == null)
                     throw new InvalidOperationException("Agreement thiếu snapshot người gửi GHN.");
@@ -2417,31 +2425,11 @@ namespace HomeCycle.Application.Services.Payments
                     var senderSnapshot = sender!;
                     var receiverSnapshot = receiver!;
 
-                    int? weight = null;
-                    int? length = null;
-                    int? width = null;
-                    int? height = null;
-
-                    if (ghnInfo!.ServiceTypeId == 2 && ghnInfo.LightParcel is not null)
-                    {
-                        weight = ghnInfo.LightParcel.WeightGram;
-                        length = ghnInfo.LightParcel.LengthCm;
-                        width = ghnInfo.LightParcel.WidthCm;
-                        height = ghnInfo.LightParcel.HeightCm;
-                    }
-                    else if (ghnInfo.ServiceTypeId == 5 && ghnInfo.Items.Count > 0)
-                    {
-                        
-                        weight = ghnInfo.Items.Sum(x => x.WeightGram * x.Quantity);
-
-                        var largestItem = ghnInfo.Items
-                            .OrderByDescending(x => (long)x.WeightGram * x.Quantity)
-                            .First();
-                        length = largestItem.LengthCm;
-                        width = largestItem.WidthCm;
-                        height = largestItem.HeightCm;
-                    }
-
+                    var parcel = HomeCycle.Application.Commons.Helpers.GhnShippingCalculationHelper.GetConfirmedParcel(ghnInfo!);
+                    int? weight = parcel.WeightGram;
+                    int? length = parcel.LengthCm;
+                    int? width = parcel.WidthCm;
+                    int? height = parcel.HeightCm;
                     localGhnShipment = new ghn_shipment
                     {
                         GHNShipmentId = Guid.NewGuid(),
