@@ -778,6 +778,15 @@ namespace HomeCycle.Application.Mappings
                         AvatarUrl = src.SellerAvatarUrl
                     }));
 
+            CreateMap<InspectionCheckInDto, ModeratorInspectionCheckInDto>();
+
+            CreateMap<InspectionAppointmentDetailDto, ModeratorInspectionAppointmentDetailDto>();
+
+            CreateMap<AppointmentRescheduleInfoDto, ModeratorAppointmentRescheduleDto>();
+
+            CreateMap<AppointmentDetailDto, ModeratorAppointmentDetailDto>()
+                .ForMember(dest => dest.Buyer, opt => opt.Ignore())
+                .ForMember(dest => dest.Seller, opt => opt.Ignore());
 
             // ----- Moderator Withdrawal -----
 
