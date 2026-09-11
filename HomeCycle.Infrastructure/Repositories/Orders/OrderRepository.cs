@@ -393,5 +393,68 @@ namespace HomeCycle.Infrastructure.Repositories.Orders
 
             return entity?.ToDomain();
         }
+
+        public async Task<IReadOnlyList<Guid>> GetAutoCompleteCandidateIdsAsync(
+            DateTime cutoffUtc,
+            int limit,
+            CancellationToken ct = default)
+        {
+            return await _db.Orders
+                .AsNoTracking()
+                .Where(o =>
+                    o.OrderStatus == (int)OrderStatus.Processing &&
+                    o.BuyerReceivedConfirmedAt == null &&
+                    !o.Disputes.Any(d =>
+                        d.DisputeStatus == (int)DisputeStatus.Pending ||
+                        d.DisputeStatus == (int)DisputeStatus.UnderReview ||
+                        d.DisputeStatus == (int)DisputeStatus.AwaitingReturn) &&
+                    (
+                        o.Shipments.Any(s =>
+                            s.DeliveryMethod == (int)DeliveryMethod.GhnDelivery &&
+                            s.ShipmentStatus == (int)ShipmentStatus.Delivered &&
+                            s.DeliveredAt != null &&
+                            s.DeliveredAt <= cutoffUtc)
+                        ||
+                        (
+                            o.SellerHandoverConfirmedAt != null &&
+                            o.SellerHandoverConfirmedAt <= cutoffUtc &&
+                            o.Shipments.Any(s =>
+                                s.DeliveryMethod == (int)DeliveryMethod.SellerDelivers ||
+                                s.DeliveryMethod == (int)DeliveryMethod.BuyerPickUp)
+                        )
+                    ))
+                .OrderBy(o => o.UpdatedAt)
+                .Select(o => o.OrderId)
+                .Take(limit)
+                .ToListAsync(ct);
+        }
+
+        public async Task<IReadOnlyList<Guid>> GetAutoReleaseCandidateIdsAsync(
+            DateTime nowUtc,
+            int limit,
+            CancellationToken ct = default)
+        {
+            return await _db.Orders
+                .AsNoTracking()
+                .Where(o =>
+                    o.OrderStatus == (int)OrderStatus.Completed &&
+                    o.DisputeWindowEndsAt.HasValue &&
+                    o.DisputeWindowEndsAt.Value < nowUtc &&
+                    !o.Disputes.Any(d =>
+                        d.DisputeStatus == (int)DisputeStatus.Pending ||
+                        d.DisputeStatus == (int)DisputeStatus.UnderReview ||
+                        d.DisputeStatus == (int)DisputeStatus.AwaitingReturn) &&
+                    !_db.Wallet_Transactions.Any(t =>
+                        t.ReferenceType == (int)ReferenceType.Order &&
+                        t.ReferenceId == o.OrderId &&
+                        t.TransactionType == (int)TransactionType.Payout_Release &&
+                        t.WalletTransactionStatus ==
+                            (int)WalletTransactionStatus.Completed))
+                .OrderBy(o => o.DisputeWindowEndsAt)
+                .ThenBy(o => o.OrderId)
+                .Select(o => o.OrderId)
+                .Take(limit)
+                .ToListAsync(ct);
+        }
     }
 }

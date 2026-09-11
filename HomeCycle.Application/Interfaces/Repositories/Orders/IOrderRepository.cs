@@ -22,5 +22,13 @@ namespace HomeCycle.Application.Interfaces.Repositories.Orders
         Task<order?> GetByIdForUpdateAsync(
             Guid orderId,
             CancellationToken ct = default);
+        Task<IReadOnlyList<Guid>> GetAutoCompleteCandidateIdsAsync(
+            DateTime cutoffUtc,
+            int limit,
+            CancellationToken ct = default);
+        Task<IReadOnlyList<Guid>> GetAutoReleaseCandidateIdsAsync(
+            DateTime nowUtc,
+            int limit,
+            CancellationToken ct = default);
     }
 }
