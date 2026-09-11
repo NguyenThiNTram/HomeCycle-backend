@@ -9,6 +9,8 @@ namespace HomeCycle.Application.DTOs.Requests.GHN
 {
     public sealed class GhnShippingPreviewRequest
     {
+        public HomeCycle.Domain.Enums.AgreementType? AgreementType { get; init; }
+        public HomeCycle.Domain.Enums.DeliveryMethod? DeliveryMethod { get; init; }
         public GhnContactSnapshotDto? Sender { get; init; }
         public GhnContactSnapshotDto? Receiver { get; init; }
 
@@ -32,5 +34,19 @@ namespace HomeCycle.Application.DTOs.Requests.GHN
         // Type 5 cần thông số từng item. Nếu rỗng, dựng danh sách từ Product và số lượng mua.
         public IReadOnlyList<CalculateGhnFeeItemRequest> Items { get; init; }
             = Array.Empty<CalculateGhnFeeItemRequest>();
+    }
+    public sealed class GhnLeadtimeRequest
+    {
+        public HomeCycle.Domain.Enums.AgreementType? AgreementType { get; init; }
+        public HomeCycle.Domain.Enums.DeliveryMethod? DeliveryMethod { get; init; }
+        public int? FromDistrictId { get; init; }
+        public string? FromWardCode { get; init; }
+        public int ToDistrictId { get; init; }
+        public string ToWardCode { get; init; } = string.Empty;
+        public int? ServiceTypeId { get; init; }
+        public int? WeightGram { get; init; }
+        public int? LengthCm { get; init; }
+        public int? WidthCm { get; init; }
+        public int? HeightCm { get; init; }
     }
 }

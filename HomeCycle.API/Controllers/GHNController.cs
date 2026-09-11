@@ -92,6 +92,8 @@ namespace HomeCycle.API.Controllers
         [ProducesResponseType(StatusCodes.Status502BadGateway)]
         public async Task<ActionResult<GhnFeeQuoteResponse>> CalculateFee([FromBody] CalculateGhnFeeRequest request, CancellationToken cancellationToken)
         {
+            if (!HomeCycle.Application.Commons.Helpers.GhnShippingCalculationHelper.IsGhnDelivery(request.DeliveryMethod))
+                return BadRequest(new Error("Ghn.InvalidDeliveryContext", "Chỉ tính phí GHN khi chọn GhnDelivery."));
             try
             {
                 var result = await _ghnService.GetShippingFeeAsync(request, cancellationToken);
@@ -116,6 +118,7 @@ namespace HomeCycle.API.Controllers
                 var result = await _ghnService.CreateOrderAsync(request, cancellationToken);
                 return Ok(result);
             }
+            catch (ArgumentException ex) { return BadRequest(new Error("Ghn.InvalidCreateRequest", ex.Message)); }
             catch (GhnApiException ex)
             {
                 return HandleGhnException(ex);

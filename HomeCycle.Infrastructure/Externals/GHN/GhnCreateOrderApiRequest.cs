@@ -40,6 +40,13 @@ namespace HomeCycle.Infrastructure.Externals.GHN
             [JsonPropertyName("to_address")]
             public required string ToAddress { get; init; }
 
+            [JsonPropertyName("to_ward_name")]
+            public string ToWardName { get; init; } = string.Empty;
+            [JsonPropertyName("to_district_name")]
+            public string ToDistrictName { get; init; } = string.Empty;
+            [JsonPropertyName("to_province_name")]
+            public string ToProvinceName { get; init; } = string.Empty;
+
             // ====================================================================
             // BỔ SUNG BẮT BUỘC: GHN cần Mã ID để định tuyến và tính toán biểu phí ship
             // ====================================================================
@@ -106,15 +113,19 @@ namespace HomeCycle.Infrastructure.Externals.GHN
         public int Quantity { get; init; }
 
         [JsonPropertyName("weight")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
         public int WeightGram { get; init; }
 
         [JsonPropertyName("length")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
         public int LengthCm { get; init; }
 
         [JsonPropertyName("width")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
         public int WidthCm { get; init; }
 
         [JsonPropertyName("height")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
         public int HeightCm { get; init; }
     }
 
@@ -143,5 +154,14 @@ namespace HomeCycle.Infrastructure.Externals.GHN
         [JsonPropertyName("cod_fee")]
         [JsonNumberHandling(JsonNumberHandling.AllowReadingFromString)]
         public decimal CodFee { get; init; }
+    }
+    internal sealed class GhnCancelOrderData
+    {
+        [JsonPropertyName("order_code")]
+        public string OrderCode { get; init; } = string.Empty;
+        [JsonPropertyName("result")]
+        public bool Result { get; init; }
+        [JsonPropertyName("message")]
+        public string Message { get; init; } = string.Empty;
     }
 }

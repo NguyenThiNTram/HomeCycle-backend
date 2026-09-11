@@ -12,6 +12,93 @@ namespace HomeCycle.Application.Commons.Helpers
 {
     public static class GhnShippingCalculationHelper
     {
+        public static bool IsGhnDelivery(HomeCycle.Domain.Enums.DeliveryMethod? deliveryMethod) =>
+            deliveryMethod == HomeCycle.Domain.Enums.DeliveryMethod.GhnDelivery;
+
+        public static bool IsAgreementGhnDelivery(HomeCycle.Domain.Enums.AgreementType? agreementType,
+            HomeCycle.Domain.Enums.DeliveryMethod? deliveryMethod) =>
+            agreementType == HomeCycle.Domain.Enums.AgreementType.No_Inspection && IsGhnDelivery(deliveryMethod);
+
+        public static string SnapshotHash(GhnShippingInfo info)
+        {
+            var json = System.Text.Json.JsonSerializer.Serialize(new
+            {
+                info.Sender, info.Receiver, info.ServiceTypeId, info.ParcelCount,
+                Parcel = GetConfirmedParcel(info), info.Items,
+                RequiredNote = info.RequiredNote?.Trim().ToUpperInvariant(),
+                Content = string.IsNullOrWhiteSpace(info.Content) ? "Sản phẩm HomeCycle" : info.Content
+            });
+            return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(json)));
+        }
+
+        // Separate purpose from access tokens; no new database/configuration is required.
+        public static string IssuePreviewToken(string scope, GhnShippingInfo info, GhnQuoteSnapshotDto quote, string secret)
+        {
+            if (string.IsNullOrWhiteSpace(secret)) throw new InvalidOperationException("Thiếu khóa xác nhận preview GHN.");
+            var payload = Convert.ToBase64String(Encoding.UTF8.GetBytes(System.Text.Json.JsonSerializer.Serialize(
+                new PreviewProof(scope, SnapshotHash(info), quote))));
+            var signature = System.Security.Cryptography.HMACSHA256.HashData(Encoding.UTF8.GetBytes(secret),
+                Encoding.UTF8.GetBytes("HomeCycle.GhnPreview.v1:" + payload));
+            return payload + "." + Convert.ToBase64String(signature);
+        }
+
+        public static GhnQuoteSnapshotDto ConfirmPreview(string scope, GhnShippingInfo info, string secret)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(secret)) throw new ArgumentException("Thiếu khóa xác nhận preview GHN.");
+                var parts = (info.PreviewToken ?? string.Empty).Split('.');
+                if (parts.Length != 2) throw new ArgumentException("Cần preview GHN trước khi xác nhận.");
+                var expected = System.Security.Cryptography.HMACSHA256.HashData(Encoding.UTF8.GetBytes(secret),
+                    Encoding.UTF8.GetBytes("HomeCycle.GhnPreview.v1:" + parts[0]));
+                if (!System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(expected, Convert.FromBase64String(parts[1])))
+                    throw new ArgumentException("Mã xác nhận preview GHN không hợp lệ.");
+                var proof = System.Text.Json.JsonSerializer.Deserialize<PreviewProof>(Convert.FromBase64String(parts[0]));
+                if (proof == null || proof.Scope != scope || proof.Hash != SnapshotHash(info) ||
+                    proof.Quote.InputHash != proof.Hash)
+                    throw new ArgumentException("Snapshot đã thay đổi; vui lòng preview GHN lại.");
+                if (proof.Quote.QuotedAt > DateTimeOffset.UtcNow || proof.Quote.QuotedAt.AddMinutes(30) <= DateTimeOffset.UtcNow)
+                    throw new ArgumentException("Preview GHN đã hết hạn; vui lòng preview lại.");
+                return proof.Quote;
+            }
+            catch (Exception ex) when (ex is FormatException or System.Text.Json.JsonException)
+            {
+                throw new ArgumentException("Mã xác nhận preview GHN không hợp lệ.", ex);
+            }
+        }
+
+        private sealed record PreviewProof(string Scope, string Hash, GhnQuoteSnapshotDto Quote);
+
+        public static GhnLightParcelSnapshotDto GetConfirmedParcel(GhnShippingInfo info)
+        {
+            ArgumentNullException.ThrowIfNull(info);
+            if (info.Items == null || info.Items.Any(x => x == null))
+                throw new ArgumentException("Danh sách kiện không hợp lệ.");
+            var legacy = info.ServiceTypeId == 2 ? info.LightParcel : null;
+            var single = info.Items is { Count: 1 } && info.Items[0].Quantity == 1 ? info.Items[0] : null;
+            var weight = info.WeightGram ?? legacy?.WeightGram ?? single?.WeightGram;
+            var length = info.LengthCm ?? legacy?.LengthCm ?? single?.LengthCm;
+            var width = info.WidthCm ?? legacy?.WidthCm ?? single?.WidthCm;
+            var height = info.HeightCm ?? legacy?.HeightCm ?? single?.HeightCm;
+            if (weight is null or < 1 or > 50_000 || length is null or < 1 or > 200 ||
+                width is null or < 1 or > 200 || height is null or < 1 or > 200 || info.ParcelCount < 1)
+                throw new ArgumentException("Cần thông số đóng gói đã xác nhận: weight 1–50.000g, mỗi chiều 1–200cm.");
+            var expectedType = weight >= 20_000 || info.ParcelCount > 1 ? 5 : 2;
+            if (info.ServiceTypeId != expectedType)
+                throw new ArgumentException("ServiceTypeId không khớp tổng cân/số kiện đã xác nhận.");
+            if (expectedType == 5)
+            {
+                if (info.Items is not { Count: > 0 } || info.Items.Any(x => x.Quantity < 1 || x.WeightGram < 1 ||
+                    string.IsNullOrWhiteSpace(x.Name) || x.Name.Length > 512 || x.LengthCm is < 1 or > 200 ||
+                    x.WidthCm is < 1 or > 200 || x.HeightCm is < 1 or > 200))
+                    throw new ArgumentException("Hàng nặng cần thông tin từng kiện.");
+                var total = info.Items.Aggregate(0L, (sum, x) => checked(sum + (long)x.WeightGram * x.Quantity));
+                if (total != weight) throw new ArgumentException("Tổng khối lượng không khớp items.");
+            }
+            return new GhnLightParcelSnapshotDto { WeightGram = weight.Value, LengthCm = length.Value,
+                WidthCm = width.Value, HeightCm = height.Value };
+        }
+
         private static readonly HashSet<string> ValidRequiredNotes = new(StringComparer.OrdinalIgnoreCase)
         {
             "CHOTHUHANG",
@@ -69,117 +156,24 @@ namespace HomeCycle.Application.Commons.Helpers
                     new Error("Ghn.InvalidRequiredNote", "RequiredNote GHN không hợp lệ."));
             }
 
-            if (info.ServiceTypeId == 2)
-                return BuildLightGoodsRequest(info, product);
-
-            return BuildHeavyGoodsRequest(info);
-        }
-
-        private static Result<CalculateGhnFeeRequest> BuildLightGoodsRequest(
-            GhnShippingInfo info,
-            product? product)
-        {
-            if (product == null)
-            {
-                return Result<CalculateGhnFeeRequest>.Fail(
-                    new Error("Product.NotFound", "Không tìm thấy sản phẩm của đơn hàng."));
-            }
-
-            if (product.Weight is null or <= 0
-                || product.Length is null or <= 0
-                || product.Width is null or <= 0
-                || product.Height is null or <= 0)
-            {
-                return Result<CalculateGhnFeeRequest>.Fail(
-                    new Error("Ghn.ParcelInformationRequired", "Sản phẩm chưa có đủ khối lượng và kích thước."));
-            }
-
             try
             {
-                var sides = new[]
+                var parcel = GetConfirmedParcel(info);
+                return Result<CalculateGhnFeeRequest>.Success(new CalculateGhnFeeRequest
                 {
-                    checked((int)Math.Ceiling(product.Length.Value)),
-                    checked((int)Math.Ceiling(product.Width.Value)),
-                    checked((int)Math.Ceiling(product.Height.Value))
-                }
-                .OrderByDescending(x => x)
-                .ToArray();
-
-                var request = new CalculateGhnFeeRequest
-                {
-                    FromDistrictId = info.Sender!.Address.DistrictId,
-                    FromWardCode = info.Sender.Address.WardCode.Trim(),
-                    ToDistrictId = info.Receiver!.Address.DistrictId,
-                    ToWardCode = info.Receiver.Address.WardCode.Trim(),
-                    ServiceTypeId = 2,
-                    WeightGram = checked((int)Math.Ceiling(product.Weight.Value * 1000)),
-                    LengthCm = sides[0],
-                    WidthCm = sides[1],
-                    HeightCm = sides[2],
-                    Items = Array.Empty<CalculateGhnFeeItemRequest>()
-                };
-
-                return Result<CalculateGhnFeeRequest>.Success(request);
+                    ParcelCount = info.ParcelCount,
+                    FromDistrictId = senderAddress.DistrictId, FromWardCode = senderAddress.WardCode,
+                    ToDistrictId = receiverAddress.DistrictId, ToWardCode = receiverAddress.WardCode,
+                    ServiceTypeId = info.ServiceTypeId.Value, WeightGram = parcel.WeightGram,
+                    LengthCm = parcel.LengthCm, WidthCm = parcel.WidthCm, HeightCm = parcel.HeightCm,
+                    Items = (info.Items ?? Array.Empty<GhnItemSnapshotDto>()).Select(x => new CalculateGhnFeeItemRequest
+                    { Name = x.Name, Code = x.Code, Quantity = x.Quantity, WeightGram = x.WeightGram,
+                      LengthCm = x.LengthCm, WidthCm = x.WidthCm, HeightCm = x.HeightCm }).ToArray()
+                });
             }
-            catch (OverflowException)
+            catch (Exception ex) when (ex is ArgumentException or OverflowException)
             {
-                return Result<CalculateGhnFeeRequest>.Fail(
-                    new Error("Ghn.ParcelInformationInvalid", "Khối lượng hoặc kích thước sản phẩm vượt phạm vi cho phép."));
-            }
-        }
-
-        private static Result<CalculateGhnFeeRequest> BuildHeavyGoodsRequest(
-            GhnShippingInfo info)
-        {
-            var items = info.Items?
-                .Select(x => new CalculateGhnFeeItemRequest
-                {
-                    Name = x.Name?.Trim() ?? string.Empty,
-                    Code = x.Code,
-                    Quantity = x.Quantity,
-                    WeightGram = x.WeightGram,
-                    LengthCm = x.LengthCm,
-                    WidthCm = x.WidthCm,
-                    HeightCm = x.HeightCm
-                })
-                .ToList()
-                ?? new List<CalculateGhnFeeItemRequest>();
-
-            if (items.Count == 0)
-            {
-                return Result<CalculateGhnFeeRequest>.Fail(
-                    new Error("Ghn.HeavyItemsRequired", "Hàng nặng phải có ít nhất một kiện hàng."));
-            }
-
-            try
-            {
-                var totalWeight = items.Aggregate(
-                    0L,
-                    (total, item) => checked(total + (long)item.WeightGram * item.Quantity));
-
-                if (totalWeight is < 1 or > 1_600_000)
-                {
-                    return Result<CalculateGhnFeeRequest>.Fail(
-                        new Error("Ghn.TotalWeightInvalid", "Tổng khối lượng phải từ 1 đến 1.600.000 gram."));
-                }
-
-                var request = new CalculateGhnFeeRequest
-                {
-                    FromDistrictId = info.Sender!.Address.DistrictId,
-                    FromWardCode = info.Sender.Address.WardCode.Trim(),
-                    ToDistrictId = info.Receiver!.Address.DistrictId,
-                    ToWardCode = info.Receiver.Address.WardCode.Trim(),
-                    ServiceTypeId = 5,
-                    WeightGram = checked((int)totalWeight),
-                    Items = items
-                };
-
-                return Result<CalculateGhnFeeRequest>.Success(request);
-            }
-            catch (OverflowException)
-            {
-                return Result<CalculateGhnFeeRequest>.Fail(
-                    new Error("Ghn.TotalWeightInvalid", "Tổng khối lượng kiện hàng không hợp lệ."));
+                return Result<CalculateGhnFeeRequest>.Fail(new Error("Ghn.ParcelInformationRequired", ex.Message));
             }
         }
     }
