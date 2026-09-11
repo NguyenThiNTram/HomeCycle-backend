@@ -58,8 +58,8 @@ public sealed class DashboardController(IDashboardService service) : ControllerB
         => Ok(await service.GetOrderDashboardAsync(request, ct));
 
     [HttpGet("appointments")]
-    [SwaggerOperation(Summary = "Thống kê lịch hẹn theo lịch thực tế và tồn đọng",
-        Description = "Tổng, upcoming, hôm nay, pending, expired, overdue và phân bố là snapshot hiện tại. Chuỗi lịch dùng InspectionDate hoặc CollectionDate; hoàn tất/hủy dùng timestamp nghiệp vụ tương ứng. Ngày tính theo UTC+7.")]
+    [SwaggerOperation(Summary = "Báo cáo và giám sát hoạt động lịch hẹn toàn hệ thống",
+        Description = "Dashboard read-only gồm snapshot lịch effective hiện tại, cơ cấu Inspection/Collection theo ngày hẹn, outcome của lịch finalized và check-in Inspection. Proposal đổi lịch chưa được accept và lịch bị thay thế với CancellationReason='Rescheduled' không được tính là lịch effective hoặc failed. Check-in dùng BuyerCheckAt/SellerCheckAt trên Inspection đủ điều kiện; không phân tích đúng giờ, trễ, grace period hoặc check-out. From/To là ngày UTC+7, To không được tính.")]
     public async Task<ActionResult<AppointmentDashboardResponse>> GetAppointments(
         [FromQuery] AppointmentDashboardRequest request, CancellationToken ct)
         => Ok(await service.GetAppointmentDashboardAsync(request, ct));

@@ -18,18 +18,28 @@ public sealed class DashboardAgingData
 public sealed class AppointmentDashboardData
 {
     public int TotalAppointments { get; set; }
-    public int UpcomingCount { get; set; }
     public int TodayCount { get; set; }
-    public int PendingCount { get; set; }
-    public int CompletedInPeriodCount { get; set; }
-    public int CancelledInPeriodCount { get; set; }
-    public int ExpiredCount { get; set; }
-    public int RescheduleProposalCount { get; set; }
+    public int UpcomingCount { get; set; }
     public int OverdueCount { get; set; }
+    public int RescheduleProposalCount { get; set; }
     public List<DashboardCodeCount> CurrentStatuses { get; set; } = [];
-    public List<DashboardCodeCount> Types { get; set; } = [];
-    public List<DashboardDailyCount> ScheduledDaily { get; set; } = [];
-    public DashboardAgingData OverdueAging { get; set; } = new();
+    public List<DashboardCodeCount> ScheduledTypes { get; set; } = [];
+    public List<AppointmentTypeDailyCount> ScheduledTypesDaily { get; set; } = [];
+    public List<AppointmentOutcomeByTypeData> OutcomesByType { get; set; } = [];
+    public InspectionCheckInData InspectionCheckIn { get; set; } = new();
+}
+
+public sealed record AppointmentTypeDailyCount(DateTime Date, int? Type, int Count);
+public sealed record AppointmentOutcomeByTypeData(int? Type, int SuccessfulCount, int FailedCount);
+
+public sealed class InspectionCheckInData
+{
+    public int EligibleInspectionCount { get; set; }
+    public int BuyerCheckInCount { get; set; }
+    public int SellerCheckInCount { get; set; }
+    public int FullyCheckedInAppointmentCount { get; set; }
+    public int PartialCheckInAppointmentCount { get; set; }
+    public int NoCheckInAppointmentCount { get; set; }
 }
 
 public sealed class OrderDashboardData
