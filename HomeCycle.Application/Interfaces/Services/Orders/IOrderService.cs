@@ -32,5 +32,12 @@ namespace HomeCycle.Application.Interfaces.Services.Orders
             Guid orderId,
             Guid sellerId,
             CancellationToken ct = default);
+        Task<Result<PagedResult<ModeratorOrderListItemDto>>> GetAllForModeratorAsync(
+            ModeratorOrderSearchRequest request,
+            CancellationToken ct = default);
+
+        Task<Result<ModeratorOrderDetailDto>> GetDetailForModeratorAsync(
+            Guid orderId,
+            CancellationToken ct = default);
     }
 }

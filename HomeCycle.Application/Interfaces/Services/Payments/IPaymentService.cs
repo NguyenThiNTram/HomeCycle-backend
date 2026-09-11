@@ -24,5 +24,12 @@ namespace HomeCycle.Application.Interfaces.Services.Payments
             agreement_form agreement,
             CancellationToken ct = default);
         Task<Result<decimal>> ReleaseCompletedOrderHeldAmountAsync(Guid orderId, CancellationToken ct = default);
+        Task<int> ProcessPendingPayOsSyncAsync(
+            int batchSize,
+            TimeSpan retryAfter,
+            CancellationToken ct = default);
+        Task<Result<IReadOnlyList<OrderFinancialEventDto>>> GetOrderFinancialHistoryForModeratorAsync(
+            Guid orderId,
+            CancellationToken ct = default);
     }
 }

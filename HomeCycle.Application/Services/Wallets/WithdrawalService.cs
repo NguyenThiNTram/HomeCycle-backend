@@ -1,8 +1,11 @@
-﻿using FluentValidation;
+﻿using AutoMapper;
+using FluentValidation;
+using HomeCycle.Application.Commons.Paginations;
 using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Requests.Payments;
 using HomeCycle.Application.DTOs.Requests.Wallets;
 using HomeCycle.Application.DTOs.Responses.Notifications;
+using HomeCycle.Application.DTOs.Responses.Wallets;
 using HomeCycle.Application.Interfaces.Externals;
 using HomeCycle.Application.Interfaces.Generics;
 using HomeCycle.Application.Interfaces.Repositories.Banks;
@@ -33,6 +36,7 @@ namespace HomeCycle.Application.Services.Wallets
         private readonly ILogger<WithdrawalService> _logger;
         private readonly IValidator<CreateWithdrawalRequest> _createValidator;
         private readonly IValidator<RejectWithdrawalRequest> _rejectValidator;
+        private readonly IMapper _mapper;
 
         public WithdrawalService(
             IUnitOfWork unitOfWork,
@@ -45,7 +49,8 @@ namespace HomeCycle.Application.Services.Wallets
             INotificationService notificationService,
             ILogger<WithdrawalService> logger,
             IValidator<CreateWithdrawalRequest> createValidator,
-            IValidator<RejectWithdrawalRequest> rejectValidator)
+            IValidator<RejectWithdrawalRequest> rejectValidator,
+            IMapper mapper)
         {
             _unitOfWork = unitOfWork;
             _bankAccountRepo = bankAccountRepo;
@@ -58,6 +63,7 @@ namespace HomeCycle.Application.Services.Wallets
             _createValidator = createValidator;
             _rejectValidator = rejectValidator;
             _logger = logger;
+            _mapper = mapper;
         }
 
 
@@ -272,6 +278,141 @@ namespace HomeCycle.Application.Services.Wallets
             }
 
             return Result<bool>.Success(true);
+        }
+
+
+        public async Task<Result<PagedResult<WithdrawalListItemDto>>> GetMyWithdrawalsAsync(
+            Guid userId,
+            WithdrawalSearchRequest request,
+            CancellationToken ct = default)
+        {
+            var query = new WithdrawalQuery
+            {
+                UserId = userId,
+                Status = request.Status,
+                FromDate = request.FromDate,
+                ToDate = request.ToDate,
+                PrioritizeActionable = false,
+                PageNumber = request.PageNumber,
+                PageSize = request.PageSize
+            };
+
+            var result = await _withdrawalRepo.GetPagedAsync(query, ct);
+
+            return Result<PagedResult<WithdrawalListItemDto>>.Success(
+                new PagedResult<WithdrawalListItemDto>
+                {
+                    Items = _mapper.Map<List<WithdrawalListItemDto>>(result.Items),
+                    PageNumber = result.PageNumber,
+                    PageSize = result.PageSize,
+                    TotalCount = result.TotalCount
+                });
+        }
+
+
+        public async Task<Result<WithdrawalDetailDto>> GetMyWithdrawalDetailAsync(
+            Guid userId,
+            Guid withdrawalId,
+            CancellationToken ct = default)
+        {
+            var withdrawal = await _withdrawalRepo.GetReadModelByIdAsync(withdrawalId, ct);
+
+            if (withdrawal == null || withdrawal.UserId != userId)
+            {
+                return Result<WithdrawalDetailDto>.Fail(
+                    new Error("Withdrawal.NotFound", "Không tìm thấy yêu cầu rút tiền."));
+            }
+
+            var transactions = await _walletTxRepo.GetByReferenceAsync(
+                ReferenceType.Withdrawal,
+                withdrawalId,
+                ct);
+
+            var response = _mapper.Map<WithdrawalDetailDto>(withdrawal);
+            response.FinancialEvents = _mapper.Map<List<WithdrawalFinancialEventDto>>(transactions);
+
+            return Result<WithdrawalDetailDto>.Success(response);
+        }
+
+        public async Task<Result<PagedResult<ModeratorWithdrawalListItemDto>>> GetAllForModeratorAsync(
+            ModeratorWithdrawalSearchRequest request,
+            CancellationToken ct = default)
+        {
+            var query = new WithdrawalQuery
+            {
+                UserId = request.UserId,
+                Keyword = request.Keyword,
+                Status = request.Status,
+                FromDate = request.FromDate,
+                ToDate = request.ToDate,
+                PrioritizeActionable = true,
+                PageNumber = request.PageNumber,
+                PageSize = request.PageSize
+            };
+
+            var result = await _withdrawalRepo.GetPagedAsync(query, ct);
+            var items = _mapper.Map<List<ModeratorWithdrawalListItemDto>>(result.Items);
+
+            for (var i = 0; i < items.Count; i++)
+            {
+                var canProcess = result.Items[i].Status == WithdrawalStatus.Pending;
+
+                items[i].Actions = new ModeratorWithdrawalActionsDto
+                {
+                    CanApprove = canProcess,
+                    CanReject = canProcess
+                };
+            }
+
+            return Result<PagedResult<ModeratorWithdrawalListItemDto>>.Success(
+                new PagedResult<ModeratorWithdrawalListItemDto>
+                {
+                    Items = items,
+                    PageNumber = result.PageNumber,
+                    PageSize = result.PageSize,
+                    TotalCount = result.TotalCount
+                });
+        }
+
+
+        public async Task<Result<ModeratorWithdrawalDetailDto>> GetDetailForModeratorAsync(
+            Guid withdrawalId,
+            CancellationToken ct = default)
+        {
+            var withdrawal = await _withdrawalRepo.GetReadModelByIdAsync(withdrawalId, ct);
+
+            if (withdrawal == null)
+            {
+                return Result<ModeratorWithdrawalDetailDto>.Fail(
+                    new Error("Withdrawal.NotFound", "Không tìm thấy yêu cầu rút tiền."));
+            }
+
+            var transactions = await _walletTxRepo.GetByReferenceAsync(
+                ReferenceType.Withdrawal,
+                withdrawalId,
+                ct);
+
+            var response = _mapper.Map<ModeratorWithdrawalDetailDto>(withdrawal);
+            response.FinancialEvents = _mapper.Map<List<WithdrawalFinancialEventDto>>(transactions);
+
+            if (withdrawal.ProcessedByUserId.HasValue)
+            {
+                response.ProcessedBy = new WithdrawalProcessorSummaryDto
+                {
+                    UserId = withdrawal.ProcessedByUserId.Value,
+                    Username = withdrawal.ProcessedByUsername
+                };
+            }
+
+            var canProcess = withdrawal.Status == WithdrawalStatus.Pending;
+
+            response.Actions = new ModeratorWithdrawalActionsDto
+            {
+                CanApprove = canProcess,
+                CanReject = canProcess
+            };
+
+            return Result<ModeratorWithdrawalDetailDto>.Success(response);
         }
 
 

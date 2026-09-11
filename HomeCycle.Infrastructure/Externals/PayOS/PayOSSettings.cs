@@ -11,5 +11,8 @@ namespace HomeCycle.Infrastructure.Externals.PayOS
         public string ClientId { get; set; } = string.Empty;
         public string ApiKey { get; set; } = string.Empty;
         public string ChecksumKey { get; set; } = string.Empty;
+        public int SyncWorkerPollSeconds { get; set; }
+        public int SyncWorkerBatchSize { get; set; }
+        public int SyncWorkerRetryAfterSeconds { get; set; }
     }
 }
