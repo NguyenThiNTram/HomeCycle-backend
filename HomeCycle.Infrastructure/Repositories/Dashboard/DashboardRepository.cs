@@ -77,6 +77,33 @@ public sealed class DashboardRepository(HomeCycleDbContext db) : IDashboardRepos
         });
     }
 
+    private IQueryable<AppointmentDashboardRow> AppointmentDashboardRows()
+        => db.Appointments.AsNoTracking().Select(x => new AppointmentDashboardRow
+        {
+            AppointmentId = x.AppointmentId,
+            Type = x.AppointmentType,
+            Status = x.AppointmentStatus,
+            ScheduledAt = x.AppointmentType == (int)AppointmentType.Inspection
+                ? x.Inspection_Appointment!.InspectionDate
+                : x.AppointmentType == (int)AppointmentType.Collection
+                    ? x.Collection_Appointment!.CollectionDate
+                    : null,
+            LateThresholdAt = x.LateThresholdAt,
+            BuyerCheckAt = x.BuyerCheckAt,
+            SellerCheckAt = x.SellerCheckAt,
+            RescheduledFromAppointmentId = x.RescheduledFromAppointmentId,
+            SourceRescheduledAt = x.RescheduledFromAppointmentId == null
+                ? null
+                : db.Appointments
+                    .Where(source => source.AppointmentId == x.RescheduledFromAppointmentId
+                        && source.CancellationReason == AppointmentDashboardQuery.RescheduledCancellationReason)
+                    .Select(source => source.CancelledAt)
+                    .FirstOrDefault(),
+            CompletedAt = x.CompletedAt,
+            CancelledAt = x.CancelledAt,
+            CancellationReason = x.CancellationReason
+        });
+
     private static (DateTime StartUtc, DateTime EndUtc) CurrentVietnamDay(DateTime nowUtc)
     {
         var today = nowUtc.AddHours(7).Date;
@@ -179,39 +206,81 @@ public sealed class DashboardRepository(HomeCycleDbContext db) : IDashboardRepos
     public async Task<AppointmentDashboardData> GetAppointmentsAsync(
         AppointmentDashboardRequest request, DashboardPeriod period, DateTime nowUtc, CancellationToken ct)
     {
-        var query = AppointmentScheduleQuery(request);
+        var rows = AppointmentDashboardRows();
+        var effective = AppointmentDashboardQuery.Effective(rows);
+        var proposals = AppointmentDashboardQuery.RescheduleProposals(rows);
+
+        if (request.AppointmentStatus.HasValue)
+        {
+            var status = (int)request.AppointmentStatus.Value;
+            effective = effective.Where(x => x.Status == status);
+            proposals = proposals.Where(x => x.Status == status);
+        }
+
+        if (request.AppointmentType.HasValue)
+        {
+            var type = (int)request.AppointmentType.Value;
+            effective = effective.Where(x => x.Type == type);
+            proposals = proposals.Where(x => x.Type == type);
+        }
+
         var (todayStartUtc, todayEndUtc) = CurrentVietnamDay(nowUtc);
-        var overdue = query.Where(x => x.ScheduledAt < nowUtc
-            && NonTerminalAppointmentStatuses.Contains(x.Status));
-        var scheduledInPeriod = query.Where(x =>
+        var overdue = AppointmentDashboardQuery.Overdue(effective, nowUtc);
+        var scheduledInPeriod = effective.Where(x =>
             x.ScheduledAt >= period.FromUtc && x.ScheduledAt < period.EndUtc);
+        var successfulInPeriod = AppointmentDashboardQuery.SuccessfulInPeriod(
+            effective, period.FromUtc, period.EndUtc);
+        var failedInPeriod = AppointmentDashboardQuery.FailedInPeriod(
+            effective, period.FromUtc, period.EndUtc);
+        var eligibleInspections = AppointmentDashboardQuery.EligibleInspections(effective, nowUtc)
+            .Where(x => x.ScheduledAt >= period.FromUtc && x.ScheduledAt < period.EndUtc);
+
+        var outcomesByType = await successfulInPeriod
+            .Select(x => new { x.Type, SuccessfulCount = 1, FailedCount = 0 })
+            .Concat(failedInPeriod.Select(x => new { x.Type, SuccessfulCount = 0, FailedCount = 1 }))
+            .GroupBy(x => x.Type)
+            .Select(g => new AppointmentOutcomeByTypeData(
+                g.Key,
+                g.Sum(x => x.SuccessfulCount),
+                g.Sum(x => x.FailedCount)))
+            .ToListAsync(ct);
+
+        var checkIn = await eligibleInspections
+            .GroupBy(_ => 1)
+            .Select(g => new InspectionCheckInData
+            {
+                EligibleInspectionCount = g.Count(),
+                BuyerCheckInCount = g.Count(x => x.BuyerCheckAt != null),
+                SellerCheckInCount = g.Count(x => x.SellerCheckAt != null),
+                FullyCheckedInAppointmentCount = g.Count(x =>
+                    x.BuyerCheckAt != null && x.SellerCheckAt != null),
+                PartialCheckInAppointmentCount = g.Count(x =>
+                    (x.BuyerCheckAt != null && x.SellerCheckAt == null)
+                    || (x.BuyerCheckAt == null && x.SellerCheckAt != null)),
+                NoCheckInAppointmentCount = g.Count(x =>
+                    x.BuyerCheckAt == null && x.SellerCheckAt == null)
+            })
+            .SingleOrDefaultAsync(ct) ?? new InspectionCheckInData();
 
         return new AppointmentDashboardData
         {
-            TotalAppointments = await query.CountAsync(ct),
-            UpcomingCount = await query.CountAsync(x =>
-                x.Status == (int)AppointmentStatus.Scheduled && x.ScheduledAt >= nowUtc, ct),
-            TodayCount = await query.CountAsync(x =>
-                NonTerminalAppointmentStatuses.Contains(x.Status)
-                && x.ScheduledAt >= todayStartUtc && x.ScheduledAt < todayEndUtc, ct),
-            PendingCount = await query.CountAsync(x =>
-                x.Status == (int)AppointmentStatus.Proposed, ct),
-            CompletedInPeriodCount = await query.CountAsync(x =>
-                x.CompletedAt >= period.FromUtc && x.CompletedAt < period.EndUtc, ct),
-            CancelledInPeriodCount = await query.CountAsync(x =>
-                x.CancelledAt >= period.FromUtc && x.CancelledAt < period.EndUtc, ct),
-            ExpiredCount = await query.CountAsync(x =>
-                x.Status == (int)AppointmentStatus.Expired, ct),
-            RescheduleProposalCount = await query.CountAsync(x =>
-                x.RescheduledFromAppointmentId != null, ct),
+            TotalAppointments = await effective.CountAsync(ct),
+            TodayCount = await effective.CountAsync(x =>
+                x.ScheduledAt >= todayStartUtc && x.ScheduledAt < todayEndUtc, ct),
+            UpcomingCount = await effective.CountAsync(x =>
+                x.Status == (int)AppointmentStatus.Scheduled && x.ScheduledAt > nowUtc, ct),
             OverdueCount = await overdue.CountAsync(ct),
-            CurrentStatuses = await query.GroupBy(x => x.Status)
+            RescheduleProposalCount = await proposals.CountAsync(ct),
+            CurrentStatuses = await effective.GroupBy(x => x.Status)
                 .Select(g => new DashboardCodeCount(g.Key, g.Count())).ToListAsync(ct),
-            Types = await query.GroupBy(x => x.Type)
+            ScheduledTypes = await scheduledInPeriod.GroupBy(x => x.Type)
                 .Select(g => new DashboardCodeCount(g.Key, g.Count())).ToListAsync(ct),
-            ScheduledDaily = await scheduledInPeriod.GroupBy(x => x.ScheduledAt!.Value.AddHours(7).Date)
-                .Select(g => new DashboardDailyCount(g.Key, g.Count())).ToListAsync(ct),
-            OverdueAging = await GetAgingAsync(overdue.Select(x => x.ScheduledAt!.Value), nowUtc, ct)
+            ScheduledTypesDaily = await scheduledInPeriod
+                .GroupBy(x => new { Date = x.ScheduledAt!.Value.AddHours(7).Date, x.Type })
+                .Select(g => new AppointmentTypeDailyCount(g.Key.Date, g.Key.Type, g.Count()))
+                .ToListAsync(ct),
+            OutcomesByType = outcomesByType,
+            InspectionCheckIn = checkIn
         };
     }
 

@@ -184,25 +184,90 @@ public sealed class DashboardService(IDashboardRepository repository, TimeProvid
         var period = ResolvePeriod(request);
         var nowUtc = clock.GetUtcNow().UtcDateTime;
         var data = await repository.GetAppointmentsAsync(request, period, nowUtc, ct);
+        var successfulCount = data.OutcomesByType.Sum(x => x.SuccessfulCount);
+        var failedCount = data.OutcomesByType.Sum(x => x.FailedCount);
+        var finalizedCount = successfulCount + failedCount;
+        var eligibleCount = data.InspectionCheckIn.EligibleInspectionCount;
+        var buyerCheckInCount = data.InspectionCheckIn.BuyerCheckInCount;
+        var sellerCheckInCount = data.InspectionCheckIn.SellerCheckInCount;
+        var successfulParticipantCheckIns = buyerCheckInCount + sellerCheckInCount;
+        var expectedParticipantCheckIns = eligibleCount * 2;
+
         return new()
         {
             GeneratedAtUtc = nowUtc,
             Period = period,
             TotalAppointments = data.TotalAppointments,
-            UpcomingCount = data.UpcomingCount,
             TodayCount = data.TodayCount,
-            PendingCount = data.PendingCount,
-            CompletedInPeriodCount = data.CompletedInPeriodCount,
-            CancelledInPeriodCount = data.CancelledInPeriodCount,
-            ExpiredCount = data.ExpiredCount,
-            RescheduleProposalCount = data.RescheduleProposalCount,
+            UpcomingCount = data.UpcomingCount,
             OverdueCount = data.OverdueCount,
-            AverageOverdueAgeHours = Hours(data.OverdueAging.AverageAgeHours),
-            OldestOverdueAgeHours = Hours(data.OverdueAging.OldestAgeHours),
-            CurrentStatusDistribution = Distribution<AppointmentStatus>(data.CurrentStatuses),
-            AppointmentTypeDistribution = Distribution<AppointmentType>(data.Types),
-            ScheduledSeries = Series(data.ScheduledDaily, period),
-            OverdueAgingDistribution = Aging(data.OverdueAging)
+            RescheduleProposalCount = data.RescheduleProposalCount,
+            CurrentStatusDistribution = Distribution<AppointmentStatus>(data.CurrentStatuses)
+                .Where(x => x.Key != nameof(AppointmentStatus.Proposed)).ToArray(),
+            AppointmentTypeDistribution = Distribution<AppointmentType>(data.ScheduledTypes),
+            AppointmentTypeSeries = Buckets(period).Select(bucket => new AppointmentTypeSeriesPoint(
+                bucket.From,
+                bucket.To,
+                data.ScheduledTypesDaily.Where(x => x.Type == (int)AppointmentType.Inspection
+                    && DateOnly.FromDateTime(x.Date) >= bucket.From
+                    && DateOnly.FromDateTime(x.Date) < bucket.To).Sum(x => x.Count),
+                data.ScheduledTypesDaily.Where(x => x.Type == (int)AppointmentType.Collection
+                    && DateOnly.FromDateTime(x.Date) >= bucket.From
+                    && DateOnly.FromDateTime(x.Date) < bucket.To).Sum(x => x.Count))).ToArray(),
+            Outcome = new AppointmentOutcomeSummary
+            {
+                FinalizedCount = finalizedCount,
+                SuccessfulCount = successfulCount,
+                FailedCount = failedCount,
+                SuccessRate = Percent(successfulCount, finalizedCount),
+                FailureRate = Percent(failedCount, finalizedCount)
+            },
+            OutcomeByType = Enum.GetValues<AppointmentType>().Select(type =>
+            {
+                var row = data.OutcomesByType.FirstOrDefault(x => x.Type == (int)type);
+                var successful = row?.SuccessfulCount ?? 0;
+                var failed = row?.FailedCount ?? 0;
+                var finalized = successful + failed;
+                return new AppointmentOutcomeByTypeItem
+                {
+                    AppointmentType = type.ToString(),
+                    FinalizedCount = finalized,
+                    SuccessfulCount = successful,
+                    FailedCount = failed,
+                    SuccessRate = Percent(successful, finalized),
+                    FailureRate = Percent(failed, finalized)
+                };
+            }).ToArray(),
+            InspectionCheckIn = new InspectionCheckInSummary
+            {
+                EligibleInspectionCount = eligibleCount,
+                ExpectedParticipantCheckIns = expectedParticipantCheckIns,
+                SuccessfulParticipantCheckIns = successfulParticipantCheckIns,
+                ParticipantCheckInRate = Percent(successfulParticipantCheckIns, expectedParticipantCheckIns),
+                FullyCheckedInAppointmentCount = data.InspectionCheckIn.FullyCheckedInAppointmentCount,
+                PartialCheckInAppointmentCount = data.InspectionCheckIn.PartialCheckInAppointmentCount,
+                NoCheckInAppointmentCount = data.InspectionCheckIn.NoCheckInAppointmentCount,
+                FullCheckInRate = Percent(data.InspectionCheckIn.FullyCheckedInAppointmentCount, eligibleCount)
+            },
+            CheckInByParticipant =
+            [
+                new CheckInParticipantItem
+                {
+                    ParticipantType = "Buyer",
+                    EligibleCount = eligibleCount,
+                    CheckedInCount = buyerCheckInCount,
+                    MissingCount = eligibleCount - buyerCheckInCount,
+                    CheckInRate = Percent(buyerCheckInCount, eligibleCount)
+                },
+                new CheckInParticipantItem
+                {
+                    ParticipantType = "Seller",
+                    EligibleCount = eligibleCount,
+                    CheckedInCount = sellerCheckInCount,
+                    MissingCount = eligibleCount - sellerCheckInCount,
+                    CheckInRate = Percent(sellerCheckInCount, eligibleCount)
+                }
+            ]
         };
     }
 
