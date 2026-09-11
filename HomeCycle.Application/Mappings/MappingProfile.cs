@@ -23,12 +23,14 @@ using HomeCycle.Application.DTOs.Responses.Messages;
 using HomeCycle.Application.DTOs.Responses.Negotiations;
 using HomeCycle.Application.DTOs.Responses.Offers;
 using HomeCycle.Application.DTOs.Responses.Orders;
+using HomeCycle.Application.DTOs.Responses.Payments;
 using HomeCycle.Application.DTOs.Responses.PlatformPolicies;
 using HomeCycle.Application.DTOs.Responses.Posts;
 using HomeCycle.Application.DTOs.Responses.Products;
 using HomeCycle.Application.DTOs.Responses.Profiles;
 using HomeCycle.Application.DTOs.Responses.Shipments;
 using HomeCycle.Application.DTOs.Responses.Users;
+using HomeCycle.Application.DTOs.Responses.Wallets;
 using HomeCycle.Domain.Entities;
 using HomeCycle.Domain.Enums;
 using System;
@@ -608,6 +610,151 @@ namespace HomeCycle.Application.Mappings
                 .ForMember(dest => dest.RefundedAmount, opt => opt.Ignore());
 
 
+            // ==================== MODERATOR MANAGEMENT READ MODEL ====================
+            // Mapping phục vụ các màn hình quản lý/điều tra read-only của Moderator.
+            // Không dùng các action mang ngữ nghĩa Buyer/Seller.
+
+            // ----- Moderator Order -----
+
+            CreateMap<ModeratorOrderReadModel, ModeratorOrderListItemDto>()
+                .ForMember(dest => dest.OrderStatus,
+                    opt => opt.MapFrom(src => src.OrderStatus.HasValue
+                        ? (OrderStatus?)src.OrderStatus.Value
+                        : null))
+                .ForMember(dest => dest.PaymentStatus,
+                    opt => opt.MapFrom(src => src.PaymentStatus.HasValue
+                        ? (PaymentStatus?)src.PaymentStatus.Value
+                        : null))
+                .ForMember(dest => dest.LatestDisputeStatus,
+                    opt => opt.MapFrom(src => src.LatestDisputeStatus.HasValue
+                        ? (DisputeStatus?)src.LatestDisputeStatus.Value
+                        : null))
+                .ForMember(dest => dest.Buyer,
+                    opt => opt.MapFrom(src => new ModeratorOrderPartyDto
+                    {
+                        UserId = src.BuyerId,
+                        Username = src.BuyerUsername,
+                        PhoneNumber = src.BuyerPhoneNumber,
+                        AvatarUrl = src.BuyerAvatarUrl
+                    }))
+                .ForMember(dest => dest.Seller,
+                    opt => opt.MapFrom(src => new ModeratorOrderPartyDto
+                    {
+                        UserId = src.SellerId,
+                        Username = src.SellerUsername,
+                        PhoneNumber = src.SellerPhoneNumber,
+                        AvatarUrl = src.SellerAvatarUrl
+                    }));
+
+            CreateMap<OrderDetailDto, ModeratorOrderDetailDto>()
+                .ForMember(dest => dest.Buyer, opt => opt.Ignore())
+                .ForMember(dest => dest.Seller, opt => opt.Ignore());
+
+            CreateMap<wallet_transaction, OrderFinancialEventDto>()
+                .ForMember(dest => dest.TransactionType,
+                    opt => opt.MapFrom(src => src.TransactionType.HasValue
+                        ? (TransactionType?)src.TransactionType.Value
+                        : null))
+                .ForMember(dest => dest.Status,
+                    opt => opt.MapFrom(src => src.WalletTransactionStatus.HasValue
+                        ? (WalletTransactionStatus?)src.WalletTransactionStatus.Value
+                        : null))
+                .ForMember(dest => dest.Amount,
+                    opt => opt.MapFrom(src => src.Amount ?? 0m));
+
+
+            // ----- Moderator Appointment -----
+
+            CreateMap<ModeratorAppointmentReadModel, ModeratorAppointmentListItemDto>()
+                .ForMember(dest => dest.AppointmentType,
+                    opt => opt.MapFrom(src => src.AppointmentType.HasValue
+                        ? (AppointmentType?)src.AppointmentType.Value
+                        : null))
+                .ForMember(dest => dest.AppointmentStatus,
+                    opt => opt.MapFrom(src => src.AppointmentStatus.HasValue
+                        ? (AppointmentStatus?)src.AppointmentStatus.Value
+                        : null))
+                .ForMember(dest => dest.InspectionStatus,
+                    opt => opt.MapFrom(src => src.InspectionStatus.HasValue
+                        ? (InspectionStatus?)src.InspectionStatus.Value
+                        : null))
+                .ForMember(dest => dest.InspectionConclusion,
+                    opt => opt.MapFrom(src => src.InspectionConclusion.HasValue
+                        ? (InspectionConclusion?)src.InspectionConclusion.Value
+                        : null))
+                .ForMember(dest => dest.Buyer,
+                    opt => opt.MapFrom(src => new ModeratorAppointmentPartyDto
+                    {
+                        UserId = src.BuyerId,
+                        Username = src.BuyerUsername,
+                        AvatarUrl = src.BuyerAvatarUrl
+                    }))
+                .ForMember(dest => dest.Seller,
+                    opt => opt.MapFrom(src => new ModeratorAppointmentPartyDto
+                    {
+                        UserId = src.SellerId,
+                        Username = src.SellerUsername,
+                        AvatarUrl = src.SellerAvatarUrl
+                    }));
+
+
+            // ----- Moderator Withdrawal -----
+
+            CreateMap<WithdrawalReadModel, ModeratorWithdrawalListItemDto>()
+                .ForMember(dest => dest.User, opt => opt.MapFrom(src => src))
+                .ForMember(dest => dest.MaskedAccountNumber,
+                    opt => opt.MapFrom(src =>
+                        string.IsNullOrWhiteSpace(src.AccountNumber)
+                            ? src.AccountNumber
+                            : src.AccountNumber.Length <= 4
+                                ? src.AccountNumber
+                                : $"****{src.AccountNumber.Substring(src.AccountNumber.Length - 4)}"))
+                .ForMember(dest => dest.Actions, opt => opt.Ignore());
+
+            CreateMap<WithdrawalReadModel, ModeratorWithdrawalDetailDto>()
+                .ForMember(dest => dest.User, opt => opt.MapFrom(src => src))
+                .ForMember(dest => dest.BankAccount, opt => opt.MapFrom(src => src))
+                .ForMember(dest => dest.ProcessedBy, opt => opt.Ignore())
+                .ForMember(dest => dest.FinancialEvents, opt => opt.Ignore())
+                .ForMember(dest => dest.Actions, opt => opt.Ignore());
+
+
+            // ==================== WITHDRAWAL READ MODEL ====================
+            // Mapping dùng chung cho lịch sử Withdrawal của User và dữ liệu liên quan đến Withdrawal.
+
+            CreateMap<WithdrawalReadModel, WithdrawalUserSummaryDto>();
+
+            CreateMap<WithdrawalReadModel, WithdrawalBankAccountDto>()
+                .ForMember(dest => dest.VerifyStatus,
+                    opt => opt.MapFrom(src => src.BankVerifyStatus));
+
+            CreateMap<WithdrawalReadModel, WithdrawalListItemDto>()
+                .ForMember(dest => dest.MaskedAccountNumber,
+                    opt => opt.MapFrom(src =>
+                        string.IsNullOrWhiteSpace(src.AccountNumber)
+                            ? src.AccountNumber
+                            : src.AccountNumber.Length <= 4
+                                ? src.AccountNumber
+                                : $"****{src.AccountNumber.Substring(src.AccountNumber.Length - 4)}"));
+
+            CreateMap<WithdrawalReadModel, WithdrawalDetailDto>()
+                .ForMember(dest => dest.BankAccount, opt => opt.MapFrom(src => src))
+                .ForMember(dest => dest.FinancialEvents, opt => opt.Ignore());
+
+            CreateMap<wallet_transaction, WithdrawalFinancialEventDto>()
+                .ForMember(dest => dest.TransactionType,
+                    opt => opt.MapFrom(src => src.TransactionType.HasValue
+                        ? (TransactionType?)src.TransactionType.Value
+                        : null))
+                .ForMember(dest => dest.Status,
+                    opt => opt.MapFrom(src => src.WalletTransactionStatus.HasValue
+                        ? (WalletTransactionStatus?)src.WalletTransactionStatus.Value
+                        : null))
+                .ForMember(dest => dest.Amount,
+                    opt => opt.MapFrom(src => src.Amount ?? 0m));
+
+
+
             // ==================== DISPUTE ====================
             CreateMap<user, DisputeUserSummaryDto>();
 
@@ -630,6 +777,8 @@ namespace HomeCycle.Application.Mappings
             // ==================== SHIPMENT ====================
 
             CreateMap<shipment, ShipmentSellerReadyResponseDto>();
+
+            
         }
     }
 }

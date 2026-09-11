@@ -145,6 +145,30 @@ namespace HomeCycle.Infrastructure.Repositories.Disputes
             return entity?.ToDomain();
         }
 
+        public async Task<IReadOnlyList<Guid>> GetBuyerReturnTimeoutCandidateIdsAsync(
+            DateTime nowUtc,
+            int limit,
+            CancellationToken cancellationToken = default)
+        {
+            return await _db.Disputes
+                .AsNoTracking()
+                .Where(d =>
+                    d.DisputeStatus == (int)DisputeStatus.AwaitingReturn &&
+                    d.ResolutionOutcome == (int)DisputeResolutionOutcome.BuyerFavored &&
+                    d.Order != null &&
+                    d.Order.OrderStatus == (int)OrderStatus.Disputing &&
+                    d.Order.CompletedAt != null &&
+                    d.Order.BuyerReturnConfirmedAt == null &&
+                    d.Order.SellerReturnReceivedAt == null &&
+                    d.Order.ReturnDueAt != null &&
+                    d.Order.ReturnDueAt < nowUtc)
+                .OrderBy(d => d.Order!.ReturnDueAt)
+                .ThenBy(d => d.CreatedAt)
+                .Select(d => d.DisputeId)
+                .Take(limit)
+                .ToListAsync(cancellationToken);
+        }
+
         private static IQueryable<Dispute> ApplyFilters(
            IQueryable<Dispute> query,
            DisputeSearchRequest request)

@@ -233,6 +233,11 @@ namespace HomeCycle.Infrastructure.UnitOfWorks
             _afterRollbackActions.Add(action);
         }
 
+        public void ClearTrackedEntities()
+        {
+            _db.ChangeTracker.Clear();
+        }
+
         private async Task DisposeCurrentTransactionAsync()
         {
             if (_currentTransaction is null)
