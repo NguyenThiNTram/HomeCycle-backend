@@ -14,14 +14,14 @@ namespace HomeCycle.Application.DTOs.Requests.GHN
         public GhnContactSnapshotDto? Sender { get; init; }
         public GhnContactSnapshotDto? Receiver { get; init; }
 
-        // 2 = một kiện dưới 20kg; 5 = từ 20kg hoặc nhiều kiện.
+        // 2 = một kiện dưới 20kg; 5 = từ 20kg hoặc nhiều kiện
         public int ServiceTypeId { get; init; } = 2;
 
         public string? RequiredNote { get; init; }
 
         public string? Content { get; init; }
 
-        // Số kiện đóng gói thực tế, không phải số lượng sản phẩm.
+        // Số kiện đóng gói thực tế, không phải số lượng sản phẩm
         public int ParcelCount { get; init; } = 1;
 
         // WeightGram phải bằng tổng cân Items. Không suy từ Product/Agreement quantity.
@@ -37,8 +37,6 @@ namespace HomeCycle.Application.DTOs.Requests.GHN
     }
     public sealed class GhnLeadtimeRequest
     {
-        // Standalone leadtime is informational, never a quote/payment/create proof.
-        // Internal callers pass the type already validated from confirmed physical parcels.
         public HomeCycle.Domain.Enums.AgreementType? AgreementType { get; init; }
         public HomeCycle.Domain.Enums.DeliveryMethod? DeliveryMethod { get; init; }
         public int? FromDistrictId { get; init; }

@@ -110,7 +110,6 @@ namespace HomeCycle.API.Controllers
         }
 
         [HttpPost("create-order")]
-        [Authorize(Roles = "Admin")]
         [SwaggerOperation(
         Summary = "Tạo đơn hàng GHN")]
         [ProducesResponseType(typeof(GhnCreateOrderResponse), StatusCodes.Status200OK)]

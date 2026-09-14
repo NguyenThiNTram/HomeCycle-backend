@@ -25,7 +25,7 @@ namespace HomeCycle.Application.DTOs.Requests.GHN
         public int? WidthCm { get; init; }
         public int? HeightCm { get; init; }
 
-        // HomeCycle: 1..N kiện vật lý, Items.Count = ParcelCount; bắt buộc cả type 2 và 5.
+        // theo kiện vật lý
         public IReadOnlyList<CalculateGhnFeeItemRequest> Items { get; init; }
             = Array.Empty<CalculateGhnFeeItemRequest>();
     }
@@ -34,7 +34,7 @@ namespace HomeCycle.Application.DTOs.Requests.GHN
     {
         public required string Name { get; init; }
         public string? Code { get; init; }
-        // HomeCycle convention: always 1 physical parcel; unrelated to Product/Agreement quantity.
+        // unrelated to Product/Agreement quantity
         public int Quantity { get; init; }
 
         public int WeightGram { get; init; }

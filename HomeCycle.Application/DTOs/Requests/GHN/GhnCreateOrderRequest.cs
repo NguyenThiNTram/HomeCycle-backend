@@ -42,13 +42,12 @@ namespace HomeCycle.Application.DTOs.Requests.GHN
         public string? Note { get; init; }
         public string? Content { get; init; }
 
-        // Thông số đóng gói cấp đơn, bắt buộc cho cả type 2 và 5.
+        // Thông số đóng gói cấp đơn, bắt buộc cho cả type 2 và 5
         public int? WeightGram { get; init; }
         public int? LengthCm { get; init; }
         public int? WidthCm { get; init; }
         public int? HeightCm { get; init; }
 
-        // HomeCycle: bắt buộc cả type 2 và 5; mỗi item là một kiện vật lý đã xác nhận.
         public IReadOnlyList<GhnCreateOrderItemRequest> Items { get; init; }
             = Array.Empty<GhnCreateOrderItemRequest>();
     }
@@ -57,8 +56,7 @@ namespace HomeCycle.Application.DTOs.Requests.GHN
     {
         public required string Name { get; init; }
         public string? Code { get; init; }
-        // HomeCycle mapping convention: always 1, never Agreement.Quantity.
-        public int Quantity { get; init; }
+        public int Quantity { get; init; } // unrelated to Product/Agreement quantity
         public int WeightGram { get; init; }
         public int LengthCm { get; init; }
         public int WidthCm { get; init; }
