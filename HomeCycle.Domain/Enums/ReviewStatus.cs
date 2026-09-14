@@ -9,6 +9,8 @@ namespace HomeCycle.Domain.Enums
     public enum ReviewStatus
     {
         Active = 1,
-        Edited = 2
+        Edited = 2,
+        Hidden = 3,
+        Removed = 4
     }
 }

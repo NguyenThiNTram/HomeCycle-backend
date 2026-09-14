@@ -39,6 +39,7 @@ namespace HomeCycle.Application.Interfaces.Services.Disputes
         public Guid? OrderId { get; init; }
 
         public Guid? ReviewId { get; init; }
+        public Guid? PostId { get; init; }
 
         public DateTime? DisputeDeadlineUtc { get; init; }
     }

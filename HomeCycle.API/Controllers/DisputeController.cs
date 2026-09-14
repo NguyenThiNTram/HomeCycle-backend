@@ -34,6 +34,15 @@ namespace HomeCycle.API.Controllers
                 result.Data);
         }
 
+        /// <summary>Loại nội dung và lý do báo cáo Post/Review cho form tạo dispute.</summary>
+        [HttpGet("options")]
+        [ProducesResponseType(typeof(HomeCycle.Application.DTOs.Responses.Disputes.DisputeOptionsResponse), StatusCodes.Status200OK)]
+        public IActionResult GetOptions([FromQuery] HomeCycle.Domain.Enums.DisputeTargetType? targetType)
+        {
+            var result = _disputeService.GetContentOptions(targetType);
+            return result.IsSuccess ? Ok(result.Data) : BadRequest(result.Error);
+        }
+
         [HttpGet]
         public async Task<IActionResult> GetForCurrentUser(
             [FromQuery] DisputeSearchRequest request,

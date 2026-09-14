@@ -13,6 +13,12 @@ namespace HomeCycle.Application.Interfaces.Repositories.Disputes
 {
     public interface IDisputeRepository
     {
+        Task<bool> HasOpenDuplicateAsync(Guid senderId, DisputeTargetType targetType,
+            Guid targetId, CancellationToken cancellationToken = default);
+
+        Task<bool> HasConfirmedContentViolationAsync(DisputeTargetType targetType,
+            Guid targetId, CancellationToken cancellationToken = default);
+
         Task AddAsync(
             dispute dispute,
             CancellationToken cancellationToken = default);

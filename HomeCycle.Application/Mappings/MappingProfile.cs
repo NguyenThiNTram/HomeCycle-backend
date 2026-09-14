@@ -541,6 +541,8 @@ namespace HomeCycle.Application.Mappings
             CreateMap<OrderPolicyConfigDto, OrderPolicyConfigDto>();
 
             CreateMap<UpdateDisputePolicyRequest, DisputePolicyConfigDto>()
+                .ForMember(d => d.PostViolationPenaltyPoints, o => o.PreCondition(s => s.PostViolationPenaltyPoints.HasValue))
+                .ForMember(d => d.ReviewViolationPenaltyPoints, o => o.PreCondition(s => s.ReviewViolationPenaltyPoints.HasValue))
                 .ForAllMembers(opt => opt.Condition(
                     (src, dest, srcMember) => srcMember != null));
 
@@ -768,6 +770,13 @@ namespace HomeCycle.Application.Mappings
             CreateMap<user, DisputeUserSummaryDto>();
 
             CreateMap<dispute, DisputeDecisionResponse>()
+                .ForMember(dest => dest.TargetType, opt => opt.MapFrom(src => (DisputeTargetType?)src.DisputeTargetType))
+                .ForMember(dest => dest.TargetId, opt => opt.MapFrom(src =>
+                    src.DisputeTargetType == (int)DisputeTargetType.Post ? src.PostId :
+                    src.DisputeTargetType == (int)DisputeTargetType.Review ? src.ReviewId : src.OrderId))
+                .ForMember(dest => dest.PostStatus, opt => opt.Ignore())
+                .ForMember(dest => dest.ReviewStatus, opt => opt.Ignore())
+                .ForMember(dest => dest.PenaltyPointsApplied, opt => opt.Ignore())
                 .ForMember(dest => dest.Status,
                     opt => opt.MapFrom(src => (DisputeStatus)src.DisputeStatus!.Value))
                 .ForMember(dest => dest.ResolutionOutcome,

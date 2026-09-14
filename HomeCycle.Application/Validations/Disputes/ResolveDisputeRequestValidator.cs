@@ -13,7 +13,8 @@ namespace HomeCycle.Application.Validations.Disputes
         public ResolveDisputeRequestValidator()
         {
             RuleFor(x => x.ResolutionOutcome)
-                .IsInEnum()
+                .Must(x => x is HomeCycle.Domain.Enums.DisputeResolutionOutcome.BuyerFavored
+                    or HomeCycle.Domain.Enums.DisputeResolutionOutcome.SellerFavored)
                 .WithMessage("Kết quả giải quyết tranh chấp không hợp lệ.");
 
             RuleFor(x => x.ModeratorNote)

@@ -1,4 +1,4 @@
-﻿using HomeCycle.Application.Commons.Results;
+using HomeCycle.Application.Commons.Results;
 using HomeCycle.Domain.Enums;
 using System;
 using System.Collections.Generic;
@@ -249,6 +249,19 @@ namespace HomeCycle.Application.Commons.Errors
                    $"Quantity ({requested}) exceeds the remaining quantity ({remaining}).");
 
         public static readonly Error Forbidden = new("CART_FORBIDDEN", "You do not have permission to access this cart item.");
+    }
+
+    public static class ContentDisputeErrors
+    {
+        public static readonly Error DuplicateOpenReport = new("DISPUTE_DUPLICATE_OPEN_REPORT",
+            "Bạn đã có báo cáo đang chờ xử lý hoặc đang được xem xét cho nội dung này.");
+        public static readonly Error SelfReportNotAllowed = new("DISPUTE_SELF_REPORT_NOT_ALLOWED",
+            "Không thể báo cáo nội dung do chính bạn tạo.");
+        public static readonly Error InvalidCategory = new("DISPUTE_INVALID_CONTENT_CATEGORY",
+            "Lý do báo cáo không phù hợp với loại nội dung.");
+        public static readonly Error TargetUnavailable = new("DISPUTE_CONTENT_UNAVAILABLE",
+            "Nội dung đã bị xóa, ẩn hoặc đình chỉ và không thể báo cáo.");
+        public static readonly Error ReviewNotFound = new("Review.NotFound", "Không tìm thấy đánh giá.");
     }
 
     public static class DisputeErrors

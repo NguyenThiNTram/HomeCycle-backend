@@ -1,4 +1,4 @@
-﻿using HomeCycle.Application.Interfaces.Services.GHN;
+using HomeCycle.Application.Interfaces.Services.GHN;
 using HomeCycle.Application.Interfaces.Repositories.Posts;
 using AutoMapper;
 using FluentValidation;
@@ -15,6 +15,8 @@ using HomeCycle.Application.Interfaces.Repositories.Agreements;
 using HomeCycle.Application.Interfaces.Repositories.Disputes;
 using HomeCycle.Application.Interfaces.Repositories.Orders;
 using HomeCycle.Application.Interfaces.Repositories.Profiles;
+using HomeCycle.Application.Interfaces.Repositories.Reviews;
+using HomeCycle.Application.Interfaces.Repositories.Offers;
 using HomeCycle.Application.Interfaces.Repositories.Shipments;
 using HomeCycle.Application.Interfaces.Repositories.Users;
 using HomeCycle.Application.Interfaces.Services.Disputes;
@@ -41,6 +43,8 @@ namespace HomeCycle.Application.Services.Disputes
         private readonly IDisputeRepository _disputeRepository;
         private readonly IOrderRepository _orderRepository;
         private readonly IPostRepository _postRepo;
+        private readonly IReviewRepository _reviewRepository;
+        private readonly IOfferRepository _contentOfferRepository;
         private readonly IAgreementFormRepository _agreementRepository;
         private readonly IBusinessProfileRepository _businessProfileRepository;
         private readonly IPersonalProfileRepository _personalProfileRepository;
@@ -63,6 +67,8 @@ namespace HomeCycle.Application.Services.Disputes
             IDisputeRepository disputeRepository,
             IOrderRepository orderRepository,
             IPostRepository postRepo,
+            IReviewRepository reviewRepository,
+            IOfferRepository contentOfferRepository,
             IAgreementFormRepository agreementRepository,
             IBusinessProfileRepository businessProfileRepository,
             IPersonalProfileRepository personalProfileRepository,
@@ -85,6 +91,8 @@ namespace HomeCycle.Application.Services.Disputes
             _disputeRepository = disputeRepository;
             _orderRepository = orderRepository;
             _postRepo = postRepo;
+            _reviewRepository = reviewRepository;
+            _contentOfferRepository = contentOfferRepository;
             _agreementRepository = agreementRepository;
             _businessProfileRepository = businessProfileRepository;
             _personalProfileRepository = personalProfileRepository;
@@ -104,6 +112,260 @@ namespace HomeCycle.Application.Services.Disputes
             _targetHandlers = targetHandlers
                 .GroupBy(x => x.TargetType)
                 .ToDictionary(x => x.Key, x => x.First());
+        }
+
+        public async Task<Result<DisputeDecisionResponse>> ResolveByModeratorAsync(
+            Guid disputeId, Guid moderatorId, ResolveDisputeRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            var existing = await _disputeRepository.GetByIdAsync(disputeId, cancellationToken);
+            if (existing == null)
+                return Result<DisputeDecisionResponse>.Fail(DisputeErrors.NotFound);
+            if (IsContentDispute(existing))
+            {
+                if (request.ResolutionOutcome.HasValue &&
+                    request.ResolutionOutcome != DisputeResolutionOutcome.ViolationConfirmed)
+                    return Result<DisputeDecisionResponse>.Fail(ValidationErrors.InvalidRequest(
+                        "Báo cáo nội dung chỉ chấp nhận kết quả ViolationConfirmed khi giải quyết."));
+                return await DecideContentDisputeAsync(disputeId, moderatorId, new()
+                {
+                    ModeratorNote = request.ModeratorNote
+                }, true, cancellationToken);
+            }
+            return await ResolveOrderDisputeAsync(disputeId, moderatorId, request, cancellationToken);
+        }
+
+        public async Task<Result<DisputeDecisionResponse>> RejectByModeratorAsync(
+            Guid disputeId, Guid moderatorId, DisputeModeratorDecisionRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            var existing = await _disputeRepository.GetByIdAsync(disputeId, cancellationToken);
+            if (existing == null)
+                return Result<DisputeDecisionResponse>.Fail(DisputeErrors.NotFound);
+            return IsContentDispute(existing)
+                ? await DecideContentDisputeAsync(disputeId, moderatorId, request, false, cancellationToken)
+                : await RejectOrderDisputeAsync(disputeId, moderatorId, request, cancellationToken);
+        }
+
+        private static bool IsContentDispute(dispute dispute) =>
+            dispute.DisputeTargetType is (int)DisputeTargetType.Post or (int)DisputeTargetType.Review;
+
+        private async Task<Result<DisputeDecisionResponse>> DecideContentDisputeAsync(
+            Guid disputeId, Guid moderatorId, DisputeModeratorDecisionRequest request,
+            bool confirmed, CancellationToken ct)
+        {
+            var validation = await _moderatorDecisionValidator.ValidateAsync(request, ct);
+            if (!validation.IsValid)
+                return Result<DisputeDecisionResponse>.Fail(ValidationErrors.InvalidRequest(
+                    string.Join("\n", validation.Errors.Select(x => x.ErrorMessage))));
+
+            await _unitOfWork.BeginTransactionAsync(ct);
+            try
+            {
+                var snapshot = await _disputeRepository.GetByIdAsync(disputeId, ct);
+                var initialError = ValidateModeratorDecisionState(snapshot, moderatorId);
+                if (initialError != null)
+                    return await RollbackContentDecisionAsync(initialError, ct);
+                if (!IsContentDispute(snapshot!))
+                    return await RollbackContentDecisionAsync(DisputeErrors.MissingTarget, ct);
+
+                var targetType = (DisputeTargetType)snapshot!.DisputeTargetType!.Value;
+                var targetId = targetType == DisputeTargetType.Post ? snapshot.PostId : snapshot.ReviewId;
+                if (!targetId.HasValue)
+                    return await RollbackContentDecisionAsync(DisputeErrors.MissingTarget, ct);
+
+                // Content first, then dispute: the same order as creation. This serializes
+                // decisions across separate reports so one item incurs at most one penalty.
+                post? post = null;
+                review? review = null;
+                if (confirmed)
+                {
+                    if (targetType == DisputeTargetType.Post)
+                        post = await _postRepo.GetByIdForUpdateAsync(targetId.Value, ct);
+                    else
+                        review = await _reviewRepository.GetByIdForUpdateAsync(targetId.Value, ct);
+                    if (post == null && review == null)
+                        return await RollbackContentDecisionAsync(targetType == DisputeTargetType.Post
+                            ? PostErrors.NotFound : ContentDisputeErrors.ReviewNotFound, ct);
+                }
+
+                var dispute = await _disputeRepository.GetByIdForUpdateAsync(disputeId, ct);
+                var stateError = ValidateModeratorDecisionState(dispute, moderatorId);
+                if (stateError != null)
+                    return await RollbackContentDecisionAsync(stateError, ct);
+
+                var now = DateTime.UtcNow;
+                var penaltyApplied = 0;
+                if (confirmed)
+                {
+                    if (post?.Status == PostStatus.Deleted || review?.ReviewStatus == (int)ReviewStatus.Removed)
+                        return await RollbackContentDecisionAsync(ContentDisputeErrors.TargetUnavailable, ct);
+
+                    var alreadyConfirmed = await _disputeRepository.HasConfirmedContentViolationAsync(
+                        targetType, targetId.Value, ct);
+                    var policy = await _platformPolicyProvider.GetDisputeConfigAsync(ct);
+                    var penalty = alreadyConfirmed ? 0 : targetType == DisputeTargetType.Post
+                        ? policy.PostViolationPenaltyPoints : policy.ReviewViolationPenaltyPoints;
+                    var ownerId = post?.OwnerId ?? review!.ReviewerId;
+                    dispute!.TargetUserId = ownerId;
+
+                    if (post != null)
+                    {
+                        // Change only moderation fields; do not overwrite stock/product data.
+                        await _postRepo.UpdateStatusAsync(post.PostId, PostStatus.Suspended, ct);
+                        await _contentOfferRepository.ClosePendingByPostAsync(post.PostId, OfferStatus.Closed, ct);
+                    }
+                    else
+                    {
+                        review!.ReviewStatus = (int)ReviewStatus.Hidden;
+                        review.UpdatedAt = now;
+                        await _reviewRepository.UpdateAsync(review, ct);
+                    }
+                    // Rating queries below must see the Hidden status inside this transaction.
+                    await _unitOfWork.SaveChangesAsync(ct);
+                    var profileResult = await ApplyContentProfileChangesAsync(
+                        ownerId, penalty, review?.RevieweeId, now, ct);
+                    if (!profileResult.IsSuccess)
+                        return await RollbackContentDecisionAsync(profileResult.Error!, ct);
+                    penaltyApplied = profileResult.Data;
+                }
+
+                dispute!.DisputeStatus = (int)(confirmed ? DisputeStatus.Resolved : DisputeStatus.Rejected);
+                dispute.ResolutionOutcome = (int)(confirmed
+                    ? DisputeResolutionOutcome.ViolationConfirmed : DisputeResolutionOutcome.NoViolation);
+                dispute.ModeratorNote = request.ModeratorNote.Trim();
+                dispute.UpdatedAt = now;
+                dispute.ResolvedAt = now;
+                await _disputeRepository.UpdateAsync(dispute, ct);
+
+                var notifications = new List<notification>
+                {
+                    await _notificationService.AddPendingAsync(new CreateNotificationCommand(
+                        dispute.SenderId, confirmed ? "Báo cáo đã được xử lý" : "Báo cáo bị từ chối",
+                        confirmed ? $"Báo cáo của bạn được xác nhận vi phạm. {dispute.ModeratorNote}"
+                            : $"Moderator đã từ chối báo cáo. {dispute.ModeratorNote}",
+                        NotificationTargetType.Dispute, disputeId), ct)
+                };
+                if (confirmed && dispute.TargetUserId is Guid owner && owner != dispute.SenderId)
+                {
+                    var action = targetType == DisputeTargetType.Post ? "Bài đăng bị đình chỉ" : "Đánh giá bị ẩn";
+                    notifications.Add(await _notificationService.AddPendingAsync(new CreateNotificationCommand(
+                        owner, action,
+                        $"{action} do vi phạm ({(DisputeCategory?)dispute.DisputeCategory}). " +
+                        $"Điểm uy tín bị trừ trong lần xử lý này: {penaltyApplied}. {dispute.ModeratorNote}",
+                        NotificationTargetType.Dispute, disputeId), ct));
+                }
+                await _unitOfWork.SaveChangesAsync(ct);
+                await _unitOfWork.CommitTransactionAsync(ct);
+                foreach (var notification in notifications)
+                    await _notificationService.PublishCreatedSafelyAsync(notification);
+
+                return Result<DisputeDecisionResponse>.Success(new()
+                {
+                    DisputeId = disputeId, TargetType = targetType, TargetId = targetId,
+                    Status = (DisputeStatus)dispute.DisputeStatus.Value,
+                    ModeratorId = moderatorId, ModeratorNote = dispute.ModeratorNote,
+                    ResolutionOutcome = (DisputeResolutionOutcome?)dispute.ResolutionOutcome,
+                    ResolvedAt = now, PenaltyPointsApplied = penaltyApplied,
+                    PostStatus = confirmed && post != null ? Domain.Enums.PostStatus.Suspended : null,
+                    ReviewStatus = confirmed && review != null ? Domain.Enums.ReviewStatus.Hidden : null
+                });
+            }
+            catch
+            {
+                await _unitOfWork.RollbackTransactionAsync(ct);
+                throw;
+            }
+        }
+
+        private async Task<Result<DisputeDecisionResponse>> RollbackContentDecisionAsync(Error error, CancellationToken ct)
+        {
+            await _unitOfWork.RollbackTransactionAsync(ct);
+            return Result<DisputeDecisionResponse>.Fail(error);
+        }
+
+        private async Task<Result<int>> ApplyContentProfileChangesAsync(
+            Guid ownerId, int penalty, Guid? revieweeId, DateTime now, CancellationToken ct)
+        {
+            var applied = 0;
+            // Stable profile lock order also handles two users reporting each other's reviews.
+            var userIds = new[] { ownerId, revieweeId ?? ownerId }.Distinct().OrderBy(x => x);
+            foreach (var userId in userIds)
+            {
+                var user = await _userRepository.GetByIdAsync(userId, ct);
+                if (user == null)
+                    return Result<int>.Fail(ProfileErrors.UserNotFound);
+                if (user.Role == UserRole.Business)
+                {
+                    var profile = await _businessProfileRepository.GetByUserIdForUpdateAsync(userId, ct);
+                    if (profile == null)
+                        return Result<int>.Fail(ProfileErrors.ProfileNotFound);
+                    if (userId == ownerId)
+                    {
+                        var next = ReputationScoreCalculator.ApplyDelta(profile.ReputationScore, -penalty);
+                        applied = profile.ReputationScore - next;
+                        profile.ReputationScore = next;
+                    }
+                    if (userId == revieweeId)
+                        profile.DisplayStarRating = ReputationScoreCalculator.CalculateDisplayStarRating(
+                            await _reviewRepository.GetValidReviewsByRevieweeAsync(userId, ct));
+                    profile.UpdatedAt = now;
+                    _businessProfileRepository.Update(profile);
+                }
+                else if (user.Role == UserRole.Personal)
+                {
+                    var profile = await _personalProfileRepository.GetByUserIdForUpdateAsync(userId, ct);
+                    if (profile == null)
+                        return Result<int>.Fail(ProfileErrors.ProfileNotFound);
+                    if (userId == ownerId)
+                    {
+                        var next = ReputationScoreCalculator.ApplyDelta(profile.ReputationScore, -penalty);
+                        applied = profile.ReputationScore - next;
+                        profile.ReputationScore = next;
+                    }
+                    if (userId == revieweeId)
+                        profile.DisplayStarRating = ReputationScoreCalculator.CalculateDisplayStarRating(
+                            await _reviewRepository.GetValidReviewsByRevieweeAsync(userId, ct));
+                    await _personalProfileRepository.UpdateAsync(profile, ct);
+                }
+                else
+                    return Result<int>.Fail(ProfileErrors.ProfileNotFound);
+            }
+            return Result<int>.Success(applied);
+        }
+
+        // Metadata for content reports. Order categories retain their existing contextual policy.
+        public Result<DisputeOptionsResponse> GetContentOptions(DisputeTargetType? targetType)
+        {
+            if (targetType.HasValue && targetType is not (DisputeTargetType.Post or DisputeTargetType.Review))
+                return Result<DisputeOptionsResponse>.Fail(DisputeErrors.UnsupportedTarget(targetType.Value));
+            var types = targetType.HasValue
+                ? new[] { targetType.Value } : new[] { DisputeTargetType.Post, DisputeTargetType.Review };
+            return Result<DisputeOptionsResponse>.Success(new()
+            {
+                TargetTypes = types.Select(type => new DisputeTargetOptionResponse
+                {
+                    Value = type, Name = type.ToString(),
+                    DisplayName = type == DisputeTargetType.Post ? "Bài đăng" : "Đánh giá",
+                    Categories = (type == DisputeTargetType.Post
+                        ? PostDisputeCategoryPolicy.BuildAllowedCategories()
+                        : ReviewDisputeCategoryPolicy.BuildAllowedCategories())
+                        .Select(category => new DisputeCategoryOptionResponse
+                        {
+                            Value = category, Name = category.ToString(), DisplayName = category switch
+                            {
+                                DisputeCategory.MisleadingPost => "Thông tin bài đăng sai lệch",
+                                DisputeCategory.ProhibitedItem => "Sản phẩm bị cấm",
+                                DisputeCategory.Spam => "Nội dung rác hoặc quảng cáo lặp lại",
+                                DisputeCategory.InappropriateContent => "Nội dung không phù hợp",
+                                DisputeCategory.FraudOrScam => "Dấu hiệu lừa đảo",
+                                DisputeCategory.AbusiveReview => "Đánh giá mang tính xúc phạm",
+                                DisputeCategory.Harassment => "Quấy rối",
+                                _ => "Lý do khác"
+                            }
+                        }).ToArray()
+                }).ToArray()
+            });
         }
 
         public async Task<Result<CreateDisputeResponse>> CreateAsync(
@@ -151,6 +413,7 @@ namespace HomeCycle.Application.Services.Disputes
                     ModeratorId = null,
                     OrderId = target.OrderId,
                     ReviewId = target.ReviewId,
+                    PostId = target.PostId,
                     DisputeTargetType = (int)target.TargetType,
                     DisputeCategory = (int)request.Category,
                     Description = request.Description.Trim(),
@@ -515,7 +778,7 @@ namespace HomeCycle.Application.Services.Disputes
             }
         }
 
-        public async Task<Result<DisputeDecisionResponse>> ResolveByModeratorAsync(
+        private async Task<Result<DisputeDecisionResponse>> ResolveOrderDisputeAsync(
             Guid disputeId,
             Guid moderatorId,
             ResolveDisputeRequest request,
@@ -764,7 +1027,7 @@ namespace HomeCycle.Application.Services.Disputes
             }
         }
 
-        public async Task<Result<DisputeDecisionResponse>> RejectByModeratorAsync(
+        private async Task<Result<DisputeDecisionResponse>> RejectOrderDisputeAsync(
             Guid disputeId,
             Guid moderatorId,
             DisputeModeratorDecisionRequest request,

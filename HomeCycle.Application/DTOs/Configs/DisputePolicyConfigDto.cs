@@ -17,5 +17,9 @@ namespace HomeCycle.Application.DTOs.Configs
         public int ReturnWindowDays { get; set; }
 
         public int DisputeLossPenaltyPoints { get; set; }
+
+        // Defaults also apply to existing policy JSON that predates content reporting.
+        public int PostViolationPenaltyPoints { get; set; } = 10;
+        public int ReviewViolationPenaltyPoints { get; set; } = 5;
     }
 }

@@ -167,6 +167,9 @@ namespace HomeCycle.Application.Services.Reviews
             if (review.ReviewerId != currentUserId)
                 return Result<ReviewResponseDto>.Fail(new Error("Auth.Forbidden", "Bạn chỉ có thể chỉnh sửa đánh giá của chính mình."));
 
+            if (review.ReviewStatus is not ((int)ReviewStatus.Active or (int)ReviewStatus.Edited))
+                return Result<ReviewResponseDto>.Fail(new Error("Review.NotVisible", "Không thể chỉnh sửa đánh giá đã bị ẩn hoặc xóa."));
+
             if (DateTime.UtcNow > review.CreatedAt.Add(EditWindow))
                 return Result<ReviewResponseDto>.Fail(new Error("Review.EditWindowExpired", "Đánh giá chỉ có thể chỉnh sửa trong 3 ngày kể từ khi gửi."));
 
@@ -178,7 +181,11 @@ namespace HomeCycle.Application.Services.Reviews
             await _unitOfWork.BeginTransactionAsync(ct);
             try
             {
-                await _reviewRepo.UpdateAsync(review, ct);
+                if (!await _reviewRepo.TryUpdateVisibleAsync(review, ct))
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    return Result<ReviewResponseDto>.Fail(new Error("Review.NotVisible", "Đánh giá đã bị ẩn hoặc xóa."));
+                }
                 await _unitOfWork.SaveChangesAsync(ct);
 
                 await RecalculateDisplayStarRatingAsync(review.RevieweeId, ct);
@@ -197,7 +204,7 @@ namespace HomeCycle.Application.Services.Reviews
         public async Task<Result<ReviewResponseDto>> GetByIdAsync(Guid reviewId, CancellationToken ct = default)
         {
             var review = await _reviewRepo.GetByIdAsync(reviewId, ct);
-            if (review == null)
+            if (review == null || review.ReviewStatus is not ((int)ReviewStatus.Active or (int)ReviewStatus.Edited))
                 return Result<ReviewResponseDto>.Fail(new Error("Review.NotFound", "Không tìm thấy đánh giá."));
 
             return Result<ReviewResponseDto>.Success(await BuildResponseAsync(review, ct));
@@ -327,7 +334,8 @@ namespace HomeCycle.Application.Services.Reviews
                 ReviewStatus = review.ReviewStatus,
                 CreatedAt = review.CreatedAt,
                 UpdatedAt = review.UpdatedAt,
-                CanEdit = DateTime.UtcNow <= review.CreatedAt.Add(EditWindow),
+                CanEdit = review.ReviewStatus is ((int)ReviewStatus.Active or (int)ReviewStatus.Edited)
+                    && DateTime.UtcNow <= review.CreatedAt.Add(EditWindow),
                 ReviewerName = reviewer?.Username,
                 ReviewerAvatarUrl = reviewer?.AvatarUrl,
                 RevieweeName = reviewee?.Username,

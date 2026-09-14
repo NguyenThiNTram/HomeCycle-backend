@@ -13,6 +13,7 @@ public class dispute
     public Guid? TargetUserId { get; set; }
     public Guid? ModeratorId { get; set; }
     public Guid? ReviewId { get; set; }
+    public Guid? PostId { get; set; }
     public Guid? OrderId { get; set; }
 
     public int? DisputeTargetType { get; set; }
