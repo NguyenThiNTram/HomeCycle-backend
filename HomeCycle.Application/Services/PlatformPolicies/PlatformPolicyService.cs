@@ -32,6 +32,7 @@ namespace HomeCycle.Application.Services.PlatformPolicies
         private readonly IValidator<FileUploadPolicyConfigDto> _fileUploadPolicyValidator;
         private readonly IValidator<UpdatePaymentPolicyRequest> _paymentValidator;
         private readonly IValidator<UpdateOrderPolicyRequest> _orderValidator;
+        private readonly IValidator<UpdateWithdrawalPolicyRequest> _withdrawalValidator;
 
         public PlatformPolicyService(
             IPlatformPolicyRepository policyRepository,
@@ -42,7 +43,8 @@ namespace HomeCycle.Application.Services.PlatformPolicies
             IValidator<UpdateFileUploadPolicyRequest> fileUploadRequestValidator,
             IValidator<FileUploadPolicyConfigDto> fileUploadPolicyValidator,
             IValidator<UpdatePaymentPolicyRequest> paymentValidator,
-            IValidator<UpdateOrderPolicyRequest> orderValidator)
+            IValidator<UpdateOrderPolicyRequest> orderValidator,
+            IValidator<UpdateWithdrawalPolicyRequest> withdrawalValidator)
         {
             _policyRepository = policyRepository;
             _unitOfWork = unitOfWork;
@@ -53,6 +55,7 @@ namespace HomeCycle.Application.Services.PlatformPolicies
             _fileUploadPolicyValidator = fileUploadPolicyValidator;
             _paymentValidator = paymentValidator;
             _orderValidator = orderValidator;
+            _withdrawalValidator = withdrawalValidator;
         }
 
         public async Task<Result<IReadOnlyList<PlatformPolicySummaryResponseDto>>> GetAllActiveAsync(
@@ -1058,8 +1061,140 @@ namespace HomeCycle.Application.Services.PlatformPolicies
             return result.Data.Config;
         }
 
+        public async Task<Result<PlatformPolicyResponseDto<WithdrawalPolicyConfigDto>>> GetWithdrawalPolicyAsync(CancellationToken cancellationToken = default)
+        {
+            var policy = await _policyRepository.GetActiveAsync(PlatformPolicyType.Withdrawal, cancellationToken);
+
+            if (policy == null)
+                return Result<PlatformPolicyResponseDto<WithdrawalPolicyConfigDto>>
+                    .Fail(PlatformPolicyErrors.ActiveNotFound(PlatformPolicyType.Withdrawal));
+
+            if (!TryDeserialize(policy.Content, out WithdrawalPolicyConfigDto? config) || !IsValidWithdrawalConfig(config!))
+                return Result<PlatformPolicyResponseDto<WithdrawalPolicyConfigDto>>
+                    .Fail(PlatformPolicyErrors.InvalidContent(PlatformPolicyType.Withdrawal));
+
+            var response = _mapper.Map<PlatformPolicyResponseDto<WithdrawalPolicyConfigDto>>(policy);
+            response.Config = config!;
+
+            return Result<PlatformPolicyResponseDto<WithdrawalPolicyConfigDto>>.Success(response);
+        }
+
+
+        public async Task<Result<PlatformPolicyResponseDto<WithdrawalPolicyConfigDto>>> UpdateWithdrawalPolicyAsync(Guid adminId, UpdateWithdrawalPolicyRequest request, CancellationToken cancellationToken = default)
+        {
+            var validation = await _withdrawalValidator.ValidateAsync(request, cancellationToken);
+            if (!validation.IsValid)
+            {
+                var message = string.Join("\n", validation.Errors.Select(x => x.ErrorMessage));
+                return Result<PlatformPolicyResponseDto<WithdrawalPolicyConfigDto>>
+                    .Fail(ValidationErrors.InvalidRequest(message));
+            }
+
+            await _unitOfWork.BeginTransactionAsync(cancellationToken);
+
+            try
+            {
+                var current = await _policyRepository.GetActiveForUpdateAsync(PlatformPolicyType.Withdrawal, cancellationToken);
+                if (current == null)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<PlatformPolicyResponseDto<WithdrawalPolicyConfigDto>>
+                        .Fail(PlatformPolicyErrors.ActiveNotFound(PlatformPolicyType.Withdrawal));
+                }
+
+                if (!TryDeserialize(current.Content, out WithdrawalPolicyConfigDto? currentConfig) || !IsValidWithdrawalConfig(currentConfig!))
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<PlatformPolicyResponseDto<WithdrawalPolicyConfigDto>>
+                        .Fail(PlatformPolicyErrors.InvalidContent(PlatformPolicyType.Withdrawal));
+                }
+
+                var config = _mapper.Map<WithdrawalPolicyConfigDto>(currentConfig);
+                _mapper.Map(request, config);
+
+                if (!IsValidWithdrawalConfig(config))
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<PlatformPolicyResponseDto<WithdrawalPolicyConfigDto>>
+                        .Fail(PlatformPolicyErrors.InvalidWithdrawalPolicy);
+                }
+
+                if (SameWithdrawalConfig(currentConfig!, config))
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    var currentResponse = _mapper.Map<PlatformPolicyResponseDto<WithdrawalPolicyConfigDto>>(current);
+                    currentResponse.Config = currentConfig;
+                    return Result<PlatformPolicyResponseDto<WithdrawalPolicyConfigDto>>.Success(currentResponse);
+                }
+
+                var now = DateTime.UtcNow;
+                var nextVersion = await _policyRepository.GetNextVersionAsync(PlatformPolicyType.Withdrawal, cancellationToken);
+
+                current.IsActive = false;
+                current.UpdatedAt = now;
+                await _policyRepository.UpdateAsync(current, cancellationToken);
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+                var newPolicy = new platform_policy
+                {
+                    PolicyId = Guid.NewGuid(),
+                    PolicyType = PlatformPolicyType.Withdrawal,
+                    Title = string.IsNullOrWhiteSpace(current.Title) ? "Withdrawal Policy" : current.Title,
+                    Content = JsonSerializer.Serialize(config, JsonOptions),
+                    Version = nextVersion,
+                    IsActive = true,
+                    CreatedAt = now,
+                    CreatedBy = adminId,
+                    UpdatedAt = now
+                };
+
+                await _policyRepository.AddAsync(newPolicy, cancellationToken);
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+                await _unitOfWork.CommitTransactionAsync(cancellationToken);
+
+                var response = _mapper.Map<PlatformPolicyResponseDto<WithdrawalPolicyConfigDto>>(newPolicy);
+                response.Config = config;
+
+                return Result<PlatformPolicyResponseDto<WithdrawalPolicyConfigDto>>.Success(response);
+            }
+            catch
+            {
+                await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                throw;
+            }
+        }
+
+        public async Task<WithdrawalPolicyConfigDto> GetWithdrawalConfigAsync(CancellationToken cancellationToken = default)
+        {
+            var result = await GetWithdrawalPolicyAsync(cancellationToken);
+
+            if (!result.IsSuccess || result.Data == null)
+                throw new InvalidOperationException(result.Error?.Message ?? "Withdrawal policy configuration is unavailable.");
+
+            return result.Data.Config;
+        }
+
 
         // ================= HELPER ====================
+
+        #region
+
+        private static bool IsValidWithdrawalConfig(WithdrawalPolicyConfigDto config)
+        {
+            return config.MinimumWithdrawalAmount > 0
+                && config.MinimumWithdrawalAmount == decimal.Truncate(config.MinimumWithdrawalAmount)
+                && config.MaximumWithdrawalAmount >= config.MinimumWithdrawalAmount
+                && config.MaximumWithdrawalAmount == decimal.Truncate(config.MaximumWithdrawalAmount)
+                && config.DailyWithdrawalLimit >= config.MaximumWithdrawalAmount
+                && config.DailyWithdrawalLimit == decimal.Truncate(config.DailyWithdrawalLimit);
+        }
+
+        private static bool SameWithdrawalConfig(WithdrawalPolicyConfigDto current, WithdrawalPolicyConfigDto updated)
+        {
+            return current.MinimumWithdrawalAmount == updated.MinimumWithdrawalAmount
+                && current.MaximumWithdrawalAmount == updated.MaximumWithdrawalAmount
+                && current.DailyWithdrawalLimit == updated.DailyWithdrawalLimit;
+        }
 
         private static bool TryDeserialize<T>(
             string? content,
@@ -1231,6 +1366,10 @@ namespace HomeCycle.Application.Services.PlatformPolicies
         {
             switch (policyType)
             {
+                case PlatformPolicyType.Withdrawal:
+                    return TryDeserialize(content, out WithdrawalPolicyConfigDto? withdrawalConfig)
+                        && IsValidWithdrawalConfig(withdrawalConfig!);
+
                 case PlatformPolicyType.Payment:
                     return TryDeserialize(
                                content,
@@ -1273,7 +1412,8 @@ namespace HomeCycle.Application.Services.PlatformPolicies
                 PlatformPolicyType.Appointment or
                 PlatformPolicyType.FileUpload or
                 PlatformPolicyType.Payment or
-                PlatformPolicyType.Order;
+                PlatformPolicyType.Order or
+                PlatformPolicyType.Withdrawal;
         }
 
         private static bool IsValidJsonObject(string? content)
@@ -1293,5 +1433,7 @@ namespace HomeCycle.Application.Services.PlatformPolicies
                 return false;
             }
         }
+
+        #endregion
     }
 }

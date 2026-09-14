@@ -142,6 +142,21 @@ namespace HomeCycle.API.Controllers
             return Ok(result.Data);
         }
 
+        [HttpGet("withdrawals/quota")]
+        [SwaggerOperation(
+            Summary = "Lấy hạn mức rút tiền hiện tại",
+            Description = "Trả cấu hình min/max, hạn mức ngày, số đã hoàn tất hôm nay, khoản đang reserve và hạn mức còn lại theo UTC+7.")]
+        public async Task<IActionResult> GetWithdrawalQuota(CancellationToken cancellationToken)
+        {
+            var userId = GetCurrentUserId();
+            var result = await _withdrawalService.GetMyWithdrawalQuotaAsync(userId, cancellationToken);
+
+            if (!result.IsSuccess)
+                return BadRequest(result.Error);
+
+            return Ok(result.Data);
+        }
+
         private WalletTypeEnum ResolveWalletType()
         {
             var roleClaim = User.FindFirst(ClaimTypes.Role)?.Value;

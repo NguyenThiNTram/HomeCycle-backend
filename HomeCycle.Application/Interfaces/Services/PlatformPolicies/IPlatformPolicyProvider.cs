@@ -18,6 +18,6 @@ namespace HomeCycle.Application.Interfaces.Services.PlatformPolicies
         Task<PaymentPolicyConfigDto> GetPaymentConfigAsync(CancellationToken cancellationToken = default);
 
         Task<OrderPolicyConfigDto> GetOrderConfigAsync(CancellationToken cancellationToken = default);
-
+        Task<WithdrawalPolicyConfigDto> GetWithdrawalConfigAsync(CancellationToken cancellationToken = default);
     }
 }

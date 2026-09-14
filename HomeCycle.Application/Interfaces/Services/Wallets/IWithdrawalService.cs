@@ -42,6 +42,7 @@ namespace HomeCycle.Application.Interfaces.Services.Wallets
             Guid moderatorId,
             Guid withdrawalId,
             CancellationToken ct = default);
+        Task<Result<WithdrawalQuotaResponseDto>> GetMyWithdrawalQuotaAsync(Guid userId, CancellationToken ct = default);
     }
 
 }

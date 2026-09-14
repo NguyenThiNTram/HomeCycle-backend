@@ -579,7 +579,10 @@ namespace HomeCycle.Application.Mappings
                         !src.IsActive &&
                         (src.PolicyType == PlatformPolicyType.Dispute ||
                          src.PolicyType == PlatformPolicyType.Appointment ||
-                         src.PolicyType == PlatformPolicyType.FileUpload)));
+                         src.PolicyType == PlatformPolicyType.FileUpload ||
+                         src.PolicyType == PlatformPolicyType.Payment ||
+                         src.PolicyType == PlatformPolicyType.Order ||
+                         src.PolicyType == PlatformPolicyType.Withdrawal)));
 
             CreateMap<platform_policy, PlatformPolicyVersionDetailDto>()
                 .ForMember(
@@ -596,7 +599,8 @@ namespace HomeCycle.Application.Mappings
                          src.PolicyType == PlatformPolicyType.Appointment ||
                          src.PolicyType == PlatformPolicyType.FileUpload ||
                          src.PolicyType == PlatformPolicyType.Payment ||
-                         src.PolicyType == PlatformPolicyType.Order)));
+                         src.PolicyType == PlatformPolicyType.Order ||
+                         src.PolicyType == PlatformPolicyType.Withdrawal)));
 
             CreateMap<platform_policy, PlatformPolicyResponseDto<DisputePolicyConfigDto>>()
                 .ForMember(dest => dest.Config, opt => opt.Ignore());
@@ -636,6 +640,14 @@ namespace HomeCycle.Application.Mappings
             CreateMap<UpdateOrderPolicyRequest, OrderPolicyConfigDto>()
                 .ForAllMembers(opt => opt.Condition(
                     (src, dest, srcMember) => srcMember != null));
+
+            CreateMap<platform_policy, PlatformPolicyResponseDto<WithdrawalPolicyConfigDto>>()
+                .ForMember(dest => dest.Config, opt => opt.Ignore());
+
+            CreateMap<WithdrawalPolicyConfigDto, WithdrawalPolicyConfigDto>();
+
+            CreateMap<UpdateWithdrawalPolicyRequest, WithdrawalPolicyConfigDto>()
+                .ForAllMembers(opt => opt.Condition((src, dest, srcMember) => srcMember != null));
 
             // ==================== ORDER / APPOINTMENT READ MODEL ====================
 

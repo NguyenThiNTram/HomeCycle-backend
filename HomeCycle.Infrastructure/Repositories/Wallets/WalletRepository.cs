@@ -39,6 +39,9 @@ namespace HomeCycle.Infrastructure.Repositories.Wallets
 
         public async Task<wallet?> GetUserWalletForUpdateAsync(Guid userId, CancellationToken ct = default)
         {
+            if (_db.Database.CurrentTransaction == null)
+                throw new InvalidOperationException("FOR UPDATE requires an active database transaction.");
+
             var entity = await _db.Wallets
                 .FromSqlInterpolated($"SELECT * FROM public.\"Wallet\" WHERE \"UserId\" = {userId} FOR UPDATE")
                 .AsNoTracking()
@@ -46,6 +49,7 @@ namespace HomeCycle.Infrastructure.Repositories.Wallets
 
             return entity?.ToDomain();
         }
+
 
         public async Task<wallet?> GetSystemWalletForUpdateAsync(SystemWalletPurpose purpose, CancellationToken ct = default)
         {

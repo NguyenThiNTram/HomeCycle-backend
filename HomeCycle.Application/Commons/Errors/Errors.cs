@@ -383,6 +383,9 @@ namespace HomeCycle.Application.Commons.Errors
 
         public static Error UnsupportedType(string policyType) =>
             new("PlatformPolicy.UnsupportedType", $"Policy type '{policyType}' không được hệ thống hỗ trợ.");
+
+        public static readonly Error InvalidWithdrawalPolicy =
+            new("PlatformPolicy.InvalidWithdrawalPolicy", "Withdrawal Policy không hợp lệ. Yêu cầu MinimumWithdrawalAmount <= MaximumWithdrawalAmount <= DailyWithdrawalLimit.");
     }
 
     public static class AgreementErrors

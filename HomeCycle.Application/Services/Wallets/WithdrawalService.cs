@@ -11,6 +11,7 @@ using HomeCycle.Application.Interfaces.Generics;
 using HomeCycle.Application.Interfaces.Repositories.Banks;
 using HomeCycle.Application.Interfaces.Repositories.Wallets;
 using HomeCycle.Application.Interfaces.Services.Notifications;
+using HomeCycle.Application.Interfaces.Services.PlatformPolicies;
 using HomeCycle.Application.Interfaces.Services.Wallets;
 using HomeCycle.Domain.Entities;
 using HomeCycle.Domain.Enums;
@@ -25,6 +26,8 @@ namespace HomeCycle.Application.Services.Wallets
 {
     public class WithdrawalService : IWithdrawalService
     {
+        private static readonly TimeSpan VietnamOffset = TimeSpan.FromHours(7);
+
         private readonly IUnitOfWork _unitOfWork;
         private readonly IBankAccountRepository _bankAccountRepo;
         private readonly IPayoutGatewayService _payoutGateway;
@@ -33,6 +36,8 @@ namespace HomeCycle.Application.Services.Wallets
         private readonly IWalletLedgerRepository _ledgerRepo;
         private readonly IWithdrawalRepository _withdrawalRepo;
         private readonly INotificationService _notificationService;
+        private readonly IPlatformPolicyProvider _platformPolicyProvider;
+        private readonly TimeProvider _clock;
         private readonly ILogger<WithdrawalService> _logger;
         private readonly IValidator<CreateWithdrawalRequest> _createValidator;
         private readonly IValidator<RejectWithdrawalRequest> _rejectValidator;
@@ -47,6 +52,8 @@ namespace HomeCycle.Application.Services.Wallets
             IWalletLedgerRepository ledgerRepo,
             IWithdrawalRepository withdrawalRepo,
             INotificationService notificationService,
+            IPlatformPolicyProvider platformPolicyProvider,
+            TimeProvider clock,
             ILogger<WithdrawalService> logger,
             IValidator<CreateWithdrawalRequest> createValidator,
             IValidator<RejectWithdrawalRequest> rejectValidator,
@@ -60,6 +67,8 @@ namespace HomeCycle.Application.Services.Wallets
             _ledgerRepo = ledgerRepo;
             _withdrawalRepo = withdrawalRepo;
             _notificationService = notificationService;
+            _platformPolicyProvider = platformPolicyProvider;
+            _clock = clock;
             _createValidator = createValidator;
             _rejectValidator = rejectValidator;
             _logger = logger;
@@ -67,17 +76,27 @@ namespace HomeCycle.Application.Services.Wallets
         }
 
 
-        public async Task<Result<Guid>> CreateWithdrawalRequestAsync(
-            Guid userId, CreateWithdrawalRequest request, CancellationToken ct = default)
+        public async Task<Result<Guid>> CreateWithdrawalRequestAsync(Guid userId, CreateWithdrawalRequest request, CancellationToken ct = default)
         {
-            var validationResult = await _createValidator.ValidateAsync(request, ct);
-            if (!validationResult.IsValid)
+            var validation = await _createValidator.ValidateAsync(request, ct);
+            if (!validation.IsValid)
             {
-                var errors = string.Join(", ", validationResult.Errors.Select(x => x.ErrorMessage));
+                var errors = string.Join(", ", validation.Errors.Select(x => x.ErrorMessage));
                 return Result<Guid>.Fail(new Error("Withdrawal.InvalidRequest", errors));
             }
 
+            var policy = await _platformPolicyProvider.GetWithdrawalConfigAsync(ct);
             var amount = request.Amount;
+
+            if (amount < policy.MinimumWithdrawalAmount)
+                return Result<Guid>.Fail(new Error(
+                    "Withdrawal.BelowMinimum",
+                    $"Số tiền rút tối thiểu là {policy.MinimumWithdrawalAmount:N0} VNĐ."));
+
+            if (amount > policy.MaximumWithdrawalAmount)
+                return Result<Guid>.Fail(new Error(
+                    "Withdrawal.AboveMaximum",
+                    $"Số tiền rút tối đa mỗi lần là {policy.MaximumWithdrawalAmount:N0} VNĐ."));
 
             var bankAccount = await _bankAccountRepo.GetByUserIdAsync(userId, ct);
             if (bankAccount == null || bankAccount.VerifyStatus != VerifyStatus.Verified)
@@ -85,17 +104,42 @@ namespace HomeCycle.Application.Services.Wallets
                     "Withdrawal.BankAccountNotVerified",
                     "Vui lòng thêm và xác thực tài khoản ngân hàng trước khi rút tiền."));
 
-            var wallet = await _walletRepo.GetByUserIdAndTypeAsync(userId, WalletTypeEnum.Personal, ct);
-            if (wallet == null || wallet.AvailableBalance < amount)
-                return Result<Guid>.Fail(new Error("Wallet.InsufficientBalance", "Số dư khả dụng không đủ."));
-
             await _unitOfWork.BeginTransactionAsync(ct);
+
             try
             {
-                var now = DateTime.UtcNow;
+                var wallet = await _walletRepo.GetUserWalletForUpdateAsync(userId, ct);
+                if (wallet == null)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    return Result<Guid>.Fail(new Error("Wallet.NotFound", "Không tìm thấy ví của người dùng."));
+                }
+
+                if (wallet.AvailableBalance < amount)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    return Result<Guid>.Fail(new Error("Wallet.InsufficientBalance", "Số dư khả dụng không đủ."));
+                }
+
+                var window = GetVietnamDayWindow(_clock.GetUtcNow());
+                var completedToday = await _withdrawalRepo.GetCompletedAmountAsync(userId, window.FromUtc, window.ToUtc, ct);
+                var activeReserved = await _withdrawalRepo.GetActiveReservedAmountAsync(userId, ct);
+                var usedLimit = completedToday + activeReserved;
+
+                if (usedLimit + amount > policy.DailyWithdrawalLimit)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    var remaining = Math.Max(policy.DailyWithdrawalLimit - usedLimit, 0);
+
+                    return Result<Guid>.Fail(new Error(
+                        "Withdrawal.DailyLimitExceeded",
+                        $"Hạn mức rút còn lại hôm nay là {remaining:N0} VNĐ."));
+                }
+
+                var now = _clock.GetUtcNow().UtcDateTime;
                 var withdrawalId = Guid.NewGuid();
 
-                var withdrawalEntity = new withdrawal
+                var withdrawal = new withdrawal
                 {
                     WithdrawalId = withdrawalId,
                     WalletId = wallet.WalletId,
@@ -104,22 +148,21 @@ namespace HomeCycle.Application.Services.Wallets
                     WithdrawalStatus = (int)WithdrawalStatus.Pending,
                     RequestedAt = now
                 };
-                await _withdrawalRepo.AddAsync(withdrawalEntity, ct);
 
                 var walletTx = new wallet_transaction
                 {
                     WalletTransactionId = Guid.NewGuid(),
+                    FromWalletId = wallet.WalletId,
                     ToWalletId = wallet.WalletId,
                     ReferenceId = withdrawalId,
                     ReferenceType = (int)ReferenceType.Withdrawal,
                     TransactionType = (int)TransactionType.Withdrawal_Lock,
-                    Amount = -amount,
+                    Amount = amount,
                     WalletTransactionStatus = (int)WalletTransactionStatus.Completed,
                     CreatedAt = now
                 };
-                await _walletTxRepo.AddAsync(walletTx, ct);
 
-                var ledgerOut = new wallet_ledger
+                var availableOut = new wallet_ledger
                 {
                     LedgerId = Guid.NewGuid(),
                     WalletTransactionId = walletTx.WalletTransactionId,
@@ -134,9 +177,8 @@ namespace HomeCycle.Application.Services.Wallets
                     Description = $"Khoa tien cho yeu cau rut {withdrawalId}",
                     CreatedAt = now
                 };
-                await _ledgerRepo.AddAsync(ledgerOut, ct);
 
-                var ledgerIn = new wallet_ledger
+                var holdIn = new wallet_ledger
                 {
                     LedgerId = Guid.NewGuid(),
                     WalletTransactionId = walletTx.WalletTransactionId,
@@ -151,11 +193,15 @@ namespace HomeCycle.Application.Services.Wallets
                     Description = $"Khoa tien cho yeu cau rut {withdrawalId}",
                     CreatedAt = now
                 };
-                await _ledgerRepo.AddAsync(ledgerIn, ct);
 
                 wallet.AvailableBalance -= amount;
                 wallet.HoldBalance += amount;
                 wallet.UpdatedAt = now;
+
+                await _withdrawalRepo.AddAsync(withdrawal, ct);
+                await _walletTxRepo.AddAsync(walletTx, ct);
+                await _ledgerRepo.AddAsync(availableOut, ct);
+                await _ledgerRepo.AddAsync(holdIn, ct);
                 await _walletRepo.UpdateAsync(wallet, ct);
 
                 await _unitOfWork.SaveChangesAsync(ct);
@@ -165,9 +211,11 @@ namespace HomeCycle.Application.Services.Wallets
             }
             catch (Exception ex)
             {
-                await _unitOfWork.RollbackTransactionAsync(ct);
+                await _unitOfWork.RollbackTransactionAsync(CancellationToken.None);
                 _logger.LogError(ex, "Lỗi tạo yêu cầu rút tiền cho user {UserId}", userId);
-                return Result<Guid>.Fail(new Error("Withdrawal.CreateFailed", "Không thể tạo yêu cầu rút tiền."));
+
+                return Result<Guid>.Fail(
+                    new Error("Withdrawal.CreateFailed", "Không thể tạo yêu cầu rút tiền."));
             }
         }
 
@@ -827,8 +875,40 @@ namespace HomeCycle.Application.Services.Wallets
             return Result<bool>.Success(true);
         }
 
+        public async Task<Result<WithdrawalQuotaResponseDto>> GetMyWithdrawalQuotaAsync(Guid userId, CancellationToken ct = default)
+        {
+            var policy = await _platformPolicyProvider.GetWithdrawalConfigAsync(ct);
+            var window = GetVietnamDayWindow(_clock.GetUtcNow());
+
+            var completedToday = await _withdrawalRepo.GetCompletedAmountAsync(userId, window.FromUtc, window.ToUtc, ct);
+            var activeReserved = await _withdrawalRepo.GetActiveReservedAmountAsync(userId, ct);
+            var used = completedToday + activeReserved;
+            var remaining = Math.Max(policy.DailyWithdrawalLimit - used, 0);
+
+            return Result<WithdrawalQuotaResponseDto>.Success(new WithdrawalQuotaResponseDto
+            {
+                MinimumWithdrawalAmount = policy.MinimumWithdrawalAmount,
+                MaximumWithdrawalAmount = policy.MaximumWithdrawalAmount,
+                DailyWithdrawalLimit = policy.DailyWithdrawalLimit,
+                CompletedTodayAmount = completedToday,
+                ActiveReservedAmount = activeReserved,
+                UsedDailyLimitAmount = used,
+                RemainingDailyLimitAmount = remaining,
+                ResetAt = window.ResetAt
+            });
+        }
+
 
         // ================== HELPERS DÙNG CHUNG ==================
+
+        private static (DateTime FromUtc, DateTime ToUtc, DateTimeOffset ResetAt) GetVietnamDayWindow(DateTimeOffset nowUtc)
+        {
+            var localNow = nowUtc.ToOffset(VietnamOffset);
+            var startLocal = new DateTimeOffset(localNow.Year, localNow.Month, localNow.Day, 0, 0, 0, VietnamOffset);
+            var resetAt = startLocal.AddDays(1);
+
+            return (startLocal.UtcDateTime, resetAt.UtcDateTime, resetAt);
+        }
 
         private async Task FinalizeSuccessAsync(
             withdrawal withdrawalEntity,
