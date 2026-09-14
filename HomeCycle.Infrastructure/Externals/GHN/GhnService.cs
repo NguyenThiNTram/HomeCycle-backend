@@ -743,8 +743,8 @@ namespace HomeCycle.Infrastructure.Externals.GHN
             if (request.WeightGram is null or < 1 or > 50_000 || request.LengthCm is null or < 1 or > 200 ||
                 request.WidthCm is null or < 1 or > 200 || request.HeightCm is null or < 1 or > 200 || request.ParcelCount < 1)
                 throw new ArgumentException("Thiếu hoặc sai thông số đóng gói cấp đơn (1–50.000g, 1–200cm).");
-            if (request.PaymentTypeId != 1 || request.CodAmount != 0)
-                throw new ArgumentException("HomeCycle dùng shop trả phí và COD = 0.");
+            if (request.PaymentTypeId is not (1 or 2) || request.CodAmount != 0)
+                throw new ArgumentException("PaymentTypeId chỉ nhận 1 hoặc 2; COD phải bằng 0.");
             if (request.InsuranceValue is < 0 or > 5_000_000 || request.Note?.Length > 5000 || request.Content?.Length > 2000)
                 throw new ArgumentException("Khai giá, note hoặc content vượt giới hạn GHN.");
             var note = Required(request.RequiredNote, 30, nameof(request.RequiredNote)).ToUpperInvariant();
@@ -768,7 +768,7 @@ namespace HomeCycle.Infrastructure.Externals.GHN
                 ToAddress = Required(request.ToAddress,1024,"ToAddress"), ToWardName = Required(request.ToWardName,1024,"ToWardName"),
                 ToDistrictName = Required(request.ToDistrictName,1024,"ToDistrictName"), ToProvinceName = Required(request.ToProvinceName,1024,"ToProvinceName"),
                 ToDistrictId = request.ToDistrictId, ToWardCode = Required(request.ToWardCode,1024,"ToWardCode"),
-                ServiceTypeId = request.ServiceTypeId, PaymentTypeId = 1, CodAmount = 0, InsuranceValue = request.InsuranceValue,
+                ServiceTypeId = request.ServiceTypeId, PaymentTypeId = request.PaymentTypeId, CodAmount = 0, InsuranceValue = request.InsuranceValue,
                 RequiredNote = note, Note = request.Note?.Trim(), Content = request.Content?.Trim(),
                 WeightGram = request.WeightGram.Value, LengthCm = request.LengthCm, WidthCm = request.WidthCm, HeightCm = request.HeightCm,
                 Items = mapped

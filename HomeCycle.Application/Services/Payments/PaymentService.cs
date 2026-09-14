@@ -144,6 +144,52 @@ namespace HomeCycle.Application.Services.Payments
             _mapper = mapper;
         }
 
+        public async Task<Result<PaymentQuoteResponseDto>> GetPaymentQuoteAsync(
+            Guid agreementId,
+            Guid userId,
+            CancellationToken ct = default)
+        {
+            var agreement = await _agreementRepo.GetByIdAsync(agreementId, ct);
+            if (agreement == null)
+                return Result<PaymentQuoteResponseDto>.Fail(
+                    new Error("Agreement.NotFound", "Không tìm thấy thỏa thuận."));
+
+            if (agreement.BuyerId != userId)
+                return Result<PaymentQuoteResponseDto>.Fail(
+                    new Error("Auth.Forbidden", "Chỉ người mua mới có quyền xem báo giá thanh toán."));
+
+            AgreementDetailsDto? details;
+            try
+            {
+                details = ParseAgreementDetails(agreement, agreementId);
+            }
+            catch (JsonException)
+            {
+                return Result<PaymentQuoteResponseDto>.Fail(
+                    new Error("Data.InvalidFormat", "Dữ liệu JSONB cấu hình thỏa thuận bị lỗi."));
+            }
+
+            var paymentPolicy = await _platformPolicyProvider.GetPaymentConfigAsync(ct);
+            var calc = CalculatePaymentAmount(
+                agreement,
+                details,
+                paymentPolicy.DepositRatePercent / 100m);
+
+            if (calc.BasePrice <= 0 || calc.AmountToPay <= 0)
+                return Result<PaymentQuoteResponseDto>.Fail(
+                    new Error("Payment.InvalidAmount", "Số tiền thanh toán không hợp lệ."));
+
+            return Result<PaymentQuoteResponseDto>.Success(new PaymentQuoteResponseDto
+            {
+                AgreementId = agreement.AgreementId,
+                PaymentType = (PaymentType)calc.PaymentType,
+                DepositRatePercent = paymentPolicy.DepositRatePercent,
+                BaseAmount = calc.BasePrice,
+                ShippingFee = calc.ShippingFee,
+                AmountToPay = calc.AmountToPay
+            });
+        }
+
         public async Task<Result<string>> GeneratePayOSCheckoutUrlAsync(Guid agreementId, Guid payerId, string returnUrl, string cancelUrl, CancellationToken ct = default)
         {
             var urlValidation = await _payOSCheckoutValidator.ValidateAsync(
@@ -2349,42 +2395,9 @@ namespace HomeCycle.Application.Services.Payments
                     !ValidGhnRequiredNotes.Contains(ghnInfo.RequiredNote.Trim()))
                     throw new InvalidOperationException("RequiredNote GHN không hợp lệ.");
 
-                // Hàng nhẹ (2) dùng LightParcel; hàng nặng (5) bắt buộc có Items.
-                if (ghnInfo.ServiceTypeId == 2)
-                {
-                    var parcel = ghnInfo.LightParcel;
-                    if (parcel is null)
-                        throw new InvalidOperationException("Agreement thiếu thông tin kiện hàng nhẹ GHN (LightParcel).");
-
-                    ValidateGhnParcel(
-                        parcel.WeightGram, parcel.LengthCm, parcel.WidthCm, parcel.HeightCm,
-                        "kiện hàng nhẹ");
-                }
-
-                if (ghnInfo.ServiceTypeId == 5)
-                {
-                    if (ghnInfo.Items == null || ghnInfo.Items.Count == 0)
-                        throw new InvalidOperationException("Agreement chưa có thông tin kiện hàng GHN.");
-
-                    long totalWeight = 0;
-                    foreach (var item in ghnInfo.Items)
-                    {
-                        if (string.IsNullOrWhiteSpace(item.Name))
-                            throw new InvalidOperationException("Kiện hàng GHN thiếu tên sản phẩm.");
-
-                        if (item.Quantity <= 0)
-                            throw new InvalidOperationException($"Kiện hàng '{item.Name}' phải có số lượng > 0.");
-
-                        ValidateGhnParcel(
-                            item.WeightGram, item.LengthCm, item.WidthCm, item.HeightCm,
-                            $"kiện hàng '{item.Name}'");
-
-                        totalWeight += (long)item.WeightGram * item.Quantity;
-                    }
-
-                    if (totalWeight is < 1 or > GhnMaxWeightGram)
-                        throw new InvalidOperationException("Tổng khối lượng hàng nặng GHN không hợp lệ.");
-                }
+                // Validate confirmed physical parcels consistently with preview and creation.
+                // LightParcel is a legacy projection, not the source of shipping data.
+                HomeCycle.Application.Commons.Helpers.GhnShippingCalculationHelper.GetConfirmedParcel(ghnInfo);
 
                 if (details?.EstimatedShippingFee is null or < 0)
                     throw new InvalidOperationException("Agreement chưa có phí GHN hợp lệ.");

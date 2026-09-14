@@ -18,6 +18,24 @@ namespace HomeCycle.API.Controllers
             _paymentService = paymentService;
         }
 
+        [HttpGet("{agreementId:guid}/quote")]
+        [Authorize]
+        public async Task<IActionResult> GetPaymentQuote([FromRoute] Guid agreementId, CancellationToken ct)
+        {
+            var userId = GetUserIdFromToken();
+            var result = await _paymentService.GetPaymentQuoteAsync(agreementId, userId, ct);
+
+            if (!result.IsSuccess)
+            {
+                if (result.Error?.Code == "Auth.Forbidden") return Forbid(result.Error.Message);
+                if (result.Error?.Code == "Agreement.NotFound") return NotFound(result.Error.Message);
+
+                return BadRequest(result.Error);
+            }
+
+            return Ok(result.Data);
+        }
+
         [HttpPost("payos/checkout/{agreementId}")]
         [Authorize]
         public async Task<IActionResult> CreatePayOSCheckout([FromRoute] Guid agreementId, [FromBody] PayOSCheckoutRequest request, CancellationToken ct)
