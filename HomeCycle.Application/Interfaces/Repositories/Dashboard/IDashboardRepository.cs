@@ -36,4 +36,7 @@ public interface IDashboardRepository
         DashboardPeriod period,
         DateTime nowUtc,
         CancellationToken ct);
+    Task<IReadOnlyList<FinanceTypeAmountRow>> GetFinanceRevenueAsync(
+        DashboardPeriod period,
+        CancellationToken ct);
 }

@@ -124,6 +124,20 @@ public sealed class DashboardController(IDashboardService service) : ControllerB
         return Ok(result);
     }
 
+    [HttpGet("finance/revenue")]
+    [SwaggerOperation(
+    Summary = "Doanh thu thực tế của nền tảng",
+    Description =
+        "Chỉ tính các WalletTransaction Completed thuộc Commission_Fee hoặc Subscription_Fee " +
+        "đã chảy vào Platform_Revenue wallet. " +
+        "Không tính GHN shipping escrow, payout release, refund hoặc toàn bộ số dư System Wallet.")]
+    public async Task<ActionResult<FinanceRevenueResponse>> GetFinanceRevenue(
+    [FromQuery] DashboardPeriodRequest request,
+    CancellationToken ct)
+    {
+        var result = await service.GetFinanceRevenueAsync(request, ct);
+        return Ok(result);
+    }
 
     [HttpGet("finance/payment-status")]
     [SwaggerOperation(
