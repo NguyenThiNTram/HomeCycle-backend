@@ -215,26 +215,263 @@ namespace HomeCycle.Application.Services.Wallets
             return Result<bool>.Success(true);
         }
 
+        //public async Task<Result<bool>> RejectWithdrawalAsync(
+        //    Guid moderatorId, Guid withdrawalId, RejectWithdrawalRequest request, CancellationToken ct = default)
+        //{
+        //    var validationResult = await _rejectValidator.ValidateAsync(request, ct);
+        //    if (!validationResult.IsValid)
+        //    {
+        //        var errors = string.Join(", ", validationResult.Errors.Select(x => x.ErrorMessage));
+        //        return Result<bool>.Fail(new Error("Withdrawal.InvalidRequest", errors));
+        //    }
+
+        //    var withdrawalEntity = await _withdrawalRepo.GetByIdAsync(withdrawalId, ct);
+        //    if (withdrawalEntity == null)
+        //        return Result<bool>.Fail(new Error("Withdrawal.NotFound", "Không tìm thấy yêu cầu rút tiền."));
+
+        //    if (withdrawalEntity.WithdrawalStatus != (int)WithdrawalStatus.Pending)
+        //        return Result<bool>.Fail(new Error("Withdrawal.InvalidStatus", "Yêu cầu không ở trạng thái chờ duyệt."));
+
+        //    withdrawalEntity.RejectReason = request.Reason;
+        //    withdrawalEntity.ProcessedBy = moderatorId;
+        //    await RevertHoldToAvailableAsync(withdrawalEntity, WithdrawalStatus.Rejected, request.Reason, ct);
+
+        //    return Result<bool>.Success(true);
+        //}
+
         public async Task<Result<bool>> RejectWithdrawalAsync(
-            Guid moderatorId, Guid withdrawalId, RejectWithdrawalRequest request, CancellationToken ct = default)
+            Guid moderatorId,
+            Guid withdrawalId,
+            RejectWithdrawalRequest request,
+            CancellationToken ct = default)
         {
-            var validationResult = await _rejectValidator.ValidateAsync(request, ct);
+            var validationResult =
+                await _rejectValidator.ValidateAsync(
+                    request,
+                    ct);
+
             if (!validationResult.IsValid)
             {
-                var errors = string.Join(", ", validationResult.Errors.Select(x => x.ErrorMessage));
-                return Result<bool>.Fail(new Error("Withdrawal.InvalidRequest", errors));
+                var errors = string.Join(
+                    ", ",
+                    validationResult.Errors
+                        .Select(x => x.ErrorMessage));
+
+                return Result<bool>.Fail(
+                    new Error(
+                        "Withdrawal.InvalidRequest",
+                        errors));
             }
 
-            var withdrawalEntity = await _withdrawalRepo.GetByIdAsync(withdrawalId, ct);
-            if (withdrawalEntity == null)
-                return Result<bool>.Fail(new Error("Withdrawal.NotFound", "Không tìm thấy yêu cầu rút tiền."));
+            notification? rejectedNotification = null;
 
-            if (withdrawalEntity.WithdrawalStatus != (int)WithdrawalStatus.Pending)
-                return Result<bool>.Fail(new Error("Withdrawal.InvalidStatus", "Yêu cầu không ở trạng thái chờ duyệt."));
+            await _unitOfWork.BeginTransactionAsync(ct);
 
-            withdrawalEntity.RejectReason = request.Reason;
-            withdrawalEntity.ProcessedBy = moderatorId;
-            await RevertHoldToAvailableAsync(withdrawalEntity, WithdrawalStatus.Rejected, request.Reason, ct);
+            try
+            {
+                var withdrawal =
+                    await _withdrawalRepo.GetByIdForUpdateAsync(
+                        withdrawalId,
+                        ct);
+
+                if (withdrawal == null)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+
+                    return Result<bool>.Fail(
+                        new Error(
+                            "Withdrawal.NotFound",
+                            "Không tìm thấy yêu cầu rút tiền."));
+                }
+
+                if (withdrawal.WithdrawalStatus !=
+                    (int)WithdrawalStatus.Pending)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+
+                    return Result<bool>.Fail(
+                        new Error(
+                            "Withdrawal.AlreadyProcessed",
+                            "Yêu cầu rút tiền đã được xử lý bởi Moderator khác."));
+                }
+
+                var wallet =
+                    await _walletRepo.GetByIdForUpdateAsync(
+                        withdrawal.WalletId,
+                        ct);
+
+                if (wallet?.UserId is not Guid recipientId)
+                {
+                    throw new InvalidOperationException(
+                        "Không tìm thấy người sở hữu ví.");
+                }
+
+                var amount = withdrawal.Amount ?? 0;
+
+                if (amount <= 0)
+                {
+                    throw new InvalidOperationException(
+                        "Số tiền rút không hợp lệ.");
+                }
+
+                if (wallet.HoldBalance < amount)
+                {
+                    throw new InvalidOperationException(
+                        "Số dư Hold không đủ để hoàn lại yêu cầu rút tiền.");
+                }
+
+                var now = DateTime.UtcNow;
+
+                var walletTransaction =
+                    new wallet_transaction
+                    {
+                        WalletTransactionId = Guid.NewGuid(),
+
+                        FromWalletId = wallet.WalletId,
+                        ToWalletId = wallet.WalletId,
+
+                        ReferenceId =
+                            withdrawal.WithdrawalId,
+
+                        ReferenceType =
+                            (int)ReferenceType.Withdrawal,
+
+                        TransactionType =
+                            (int)TransactionType.Withdrawal_Revert,
+
+                        Amount = amount,
+
+                        WalletTransactionStatus =
+                            (int)WalletTransactionStatus.Completed,
+
+                        CreatedAt = now
+                    };
+
+                var holdOut = new wallet_ledger
+                {
+                    LedgerId = Guid.NewGuid(),
+
+                    WalletTransactionId =
+                        walletTransaction.WalletTransactionId,
+
+                    WalletId = wallet.WalletId,
+
+                    Direction = (int)LedgerDirection.Out,
+                    BalanceType = (int)BalanceType.Hold,
+
+                    Amount = amount,
+
+                    BalanceBefore = wallet.HoldBalance,
+                    BalanceAfter = wallet.HoldBalance - amount,
+
+                    ReferenceType =
+                        (int)ReferenceType.Withdrawal,
+
+                    ReferenceId =
+                        withdrawal.WithdrawalId,
+
+                    Description =
+                        $"Hoan tien withdrawal bi tu choi: {request.Reason}",
+
+                    CreatedAt = now
+                };
+
+                var availableIn = new wallet_ledger
+                {
+                    LedgerId = Guid.NewGuid(),
+
+                    WalletTransactionId =
+                        walletTransaction.WalletTransactionId,
+
+                    WalletId = wallet.WalletId,
+
+                    Direction = (int)LedgerDirection.In,
+                    BalanceType = (int)BalanceType.Available,
+
+                    Amount = amount,
+
+                    BalanceBefore = wallet.AvailableBalance,
+                    BalanceAfter = wallet.AvailableBalance + amount,
+
+                    ReferenceType =
+                        (int)ReferenceType.Withdrawal,
+
+                    ReferenceId =
+                        withdrawal.WithdrawalId,
+
+                    Description =
+                        $"Hoan tien withdrawal bi tu choi: {request.Reason}",
+
+                    CreatedAt = now
+                };
+
+                wallet.HoldBalance -= amount;
+                wallet.AvailableBalance += amount;
+                wallet.UpdatedAt = now;
+
+                withdrawal.WithdrawalStatus =
+                    (int)WithdrawalStatus.Rejected;
+
+                withdrawal.RejectReason =
+                    request.Reason;
+
+                withdrawal.ProcessedBy =
+                    moderatorId;
+
+                withdrawal.ProcessedAt =
+                    now;
+
+                await _walletTxRepo.AddAsync(
+                    walletTransaction,
+                    ct);
+
+                await _ledgerRepo.AddAsync(
+                    holdOut,
+                    ct);
+
+                await _ledgerRepo.AddAsync(
+                    availableIn,
+                    ct);
+
+                await _walletRepo.UpdateAsync(
+                    wallet,
+                    ct);
+
+                await _withdrawalRepo.UpdateAsync(
+                    withdrawal,
+                    ct);
+
+                rejectedNotification =
+                    await _notificationService.AddPendingAsync(
+                        new CreateNotificationCommand(
+                            recipientId,
+                            "Yêu cầu rút tiền bị từ chối",
+                            $"Yêu cầu rút tiền đã bị từ chối. Lý do: {request.Reason}",
+                            NotificationTargetType.Withdrawal,
+                            withdrawal.WithdrawalId),
+                        ct);
+
+                await _unitOfWork.SaveChangesAsync(ct);
+                await _unitOfWork.CommitTransactionAsync(ct);
+            }
+            catch (Exception ex)
+            {
+                await _unitOfWork.RollbackTransactionAsync(
+                    CancellationToken.None);
+
+                _logger.LogError(
+                    ex,
+                    "Lỗi từ chối Withdrawal {WithdrawalId}",
+                    withdrawalId);
+
+                return Result<bool>.Fail(
+                    new Error(
+                        "Withdrawal.RejectFailed",
+                        "Không thể từ chối yêu cầu rút tiền."));
+            }
+
+            await _notificationService.PublishCreatedSafelyAsync(
+                rejectedNotification);
 
             return Result<bool>.Success(true);
         }
@@ -413,6 +650,181 @@ namespace HomeCycle.Application.Services.Wallets
             };
 
             return Result<ModeratorWithdrawalDetailDto>.Success(response);
+        }
+
+
+        public async Task<Result<bool>> ApproveSimulatedWithdrawalAsync(
+            Guid moderatorId,
+            Guid withdrawalId,
+            CancellationToken ct = default)
+        {
+            notification? completedNotification = null;
+
+            await _unitOfWork.BeginTransactionAsync(ct);
+
+            try
+            {
+                var withdrawal =
+                    await _withdrawalRepo.GetByIdForUpdateAsync(
+                        withdrawalId,
+                        ct);
+
+                if (withdrawal == null)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+
+                    return Result<bool>.Fail(
+                        new Error(
+                            "Withdrawal.NotFound",
+                            "Không tìm thấy yêu cầu rút tiền."));
+                }
+
+                if (withdrawal.WithdrawalStatus !=
+                    (int)WithdrawalStatus.Pending)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+
+                    return Result<bool>.Fail(
+                        new Error(
+                            "Withdrawal.AlreadyProcessed",
+                            "Yêu cầu rút tiền đã được xử lý bởi Moderator khác."));
+                }
+
+                var wallet =
+                    await _walletRepo.GetByIdForUpdateAsync(
+                        withdrawal.WalletId,
+                        ct);
+
+                if (wallet?.UserId is not Guid recipientId)
+                {
+                    throw new InvalidOperationException(
+                        "Không tìm thấy người sở hữu ví.");
+                }
+
+                var amount = withdrawal.Amount ?? 0;
+
+                if (amount <= 0)
+                {
+                    throw new InvalidOperationException(
+                        "Số tiền rút không hợp lệ.");
+                }
+
+                if (wallet.HoldBalance < amount)
+                {
+                    throw new InvalidOperationException(
+                        "Số dư Hold không đủ để hoàn tất yêu cầu rút tiền.");
+                }
+
+                var now = DateTime.UtcNow;
+
+                var walletTransaction = new wallet_transaction
+                {
+                    WalletTransactionId = Guid.NewGuid(),
+
+                    FromWalletId = wallet.WalletId,
+                    ToWalletId = null,
+
+                    ReferenceId = withdrawal.WithdrawalId,
+                    ReferenceType = (int)ReferenceType.Withdrawal,
+
+                    TransactionType =
+                        (int)TransactionType.Withdrawal_Success,
+
+                    Amount = -amount,
+
+                    WalletTransactionStatus =
+                        (int)WalletTransactionStatus.Completed,
+
+                    CreatedAt = now
+                };
+
+                var ledger = new wallet_ledger
+                {
+                    LedgerId = Guid.NewGuid(),
+
+                    WalletTransactionId =
+                        walletTransaction.WalletTransactionId,
+
+                    WalletId = wallet.WalletId,
+
+                    Direction = (int)LedgerDirection.Out,
+                    BalanceType = (int)BalanceType.Hold,
+
+                    Amount = amount,
+
+                    BalanceBefore = wallet.HoldBalance,
+                    BalanceAfter = wallet.HoldBalance - amount,
+
+                    ReferenceType =
+                        (int)ReferenceType.Withdrawal,
+
+                    ReferenceId =
+                        withdrawal.WithdrawalId,
+
+                    Description =
+                        $"Hoan tat yeu cau rut tien {withdrawal.WithdrawalId}",
+
+                    CreatedAt = now
+                };
+
+                wallet.HoldBalance -= amount;
+                wallet.UpdatedAt = now;
+
+                withdrawal.WithdrawalStatus =
+                    (int)WithdrawalStatus.Completed;
+
+                withdrawal.ProcessedBy = moderatorId;
+                withdrawal.ProcessedAt = now;
+
+                await _walletTxRepo.AddAsync(
+                    walletTransaction,
+                    ct);
+
+                await _ledgerRepo.AddAsync(
+                    ledger,
+                    ct);
+
+                await _walletRepo.UpdateAsync(
+                    wallet,
+                    ct);
+
+                await _withdrawalRepo.UpdateAsync(
+                    withdrawal,
+                    ct);
+
+                completedNotification =
+                    await _notificationService.AddPendingAsync(
+                        new CreateNotificationCommand(
+                            recipientId,
+                            "Yêu cầu rút tiền đã hoàn tất",
+                            "Yêu cầu rút tiền của bạn đã được xử lý hoàn tất trên hệ thống.",
+                            NotificationTargetType.Withdrawal,
+                            withdrawal.WithdrawalId),
+                        ct);
+
+                await _unitOfWork.SaveChangesAsync(ct);
+                await _unitOfWork.CommitTransactionAsync(ct);
+            }
+            catch (Exception ex)
+            {
+                await _unitOfWork.RollbackTransactionAsync(
+                    CancellationToken.None);
+
+                _logger.LogError(
+                    ex,
+                    "Lỗi xử lý simulated withdrawal {WithdrawalId}",
+                    withdrawalId);
+
+                return Result<bool>.Fail(
+                    new Error(
+                        "Withdrawal.CompleteFailed",
+                        "Không thể hoàn tất yêu cầu rút tiền."));
+            }
+
+            await _notificationService.PublishCreatedSafelyAsync(
+                completedNotification);
+
+            return Result<bool>.Success(true);
         }
 
 

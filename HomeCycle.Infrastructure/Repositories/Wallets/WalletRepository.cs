@@ -78,5 +78,27 @@ namespace HomeCycle.Infrastructure.Repositories.Wallets
             return entities.Select(x => x.ToDomain()).ToList();
         }
 
+
+        public async Task<wallet?> GetByIdForUpdateAsync(
+            Guid walletId,
+            CancellationToken ct = default)
+        {
+            if (_db.Database.CurrentTransaction == null)
+            {
+                throw new InvalidOperationException(
+                    "FOR UPDATE requires an active database transaction.");
+            }
+
+            var entity = await _db.Wallets
+                .FromSqlInterpolated($@"
+            SELECT *
+            FROM public.""Wallet""
+            WHERE ""WalletId"" = {walletId}
+            FOR UPDATE")
+                .AsNoTracking()
+                .SingleOrDefaultAsync(ct);
+
+            return entity?.ToDomain();
+        }
     }
 }

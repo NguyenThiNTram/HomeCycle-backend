@@ -41,17 +41,17 @@ namespace HomeCycle.API.Controllers
         }
 
         // User (hoặc FE tự động) chủ động đồng bộ trạng thái 1 yêu cầu rút tiền đang Processing.
-        [HttpPost("withdrawals/{withdrawalId:guid}/sync")]
-        public async Task<IActionResult> SyncWithdrawalStatus(
-            Guid withdrawalId, CancellationToken cancellationToken)
-        {
-            var result = await _withdrawalService.SyncWithdrawalStatusAsync(withdrawalId, cancellationToken);
+        //[HttpPost("withdrawals/{withdrawalId:guid}/sync")]
+        //public async Task<IActionResult> SyncWithdrawalStatus(
+        //    Guid withdrawalId, CancellationToken cancellationToken)
+        //{
+        //    var result = await _withdrawalService.SyncWithdrawalStatusAsync(withdrawalId, cancellationToken);
 
-            if (!result.IsSuccess)
-                return BadRequest(result.Error);
+        //    if (!result.IsSuccess)
+        //        return BadRequest(result.Error);
 
-            return Ok(result.Data);
-        }
+        //    return Ok(result.Data);
+        //}
 
         [HttpGet("me")]
         public async Task<IActionResult> GetMyWallet(CancellationToken ct)

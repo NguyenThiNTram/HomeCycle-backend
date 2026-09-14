@@ -20,5 +20,8 @@ namespace HomeCycle.Application.Interfaces.Repositories.Wallets
         Task<wallet?> GetSystemWalletForUpdateAsync(SystemWalletPurpose purpose, CancellationToken ct = default);
         Task<wallet?> GetByIdAsync(Guid walletId, CancellationToken ct = default);
         Task<List<wallet>> GetAllSystemWalletsAsync(CancellationToken ct = default);
+        Task<wallet?> GetByIdForUpdateAsync(
+            Guid walletId,
+            CancellationToken ct = default);
     }
 }

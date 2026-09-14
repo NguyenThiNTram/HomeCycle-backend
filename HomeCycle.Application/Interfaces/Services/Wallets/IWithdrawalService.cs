@@ -38,6 +38,10 @@ namespace HomeCycle.Application.Interfaces.Services.Wallets
         Task<Result<ModeratorWithdrawalDetailDto>> GetDetailForModeratorAsync(
             Guid withdrawalId,
             CancellationToken ct = default);
+        Task<Result<bool>> ApproveSimulatedWithdrawalAsync(
+            Guid moderatorId,
+            Guid withdrawalId,
+            CancellationToken ct = default);
     }
 
 }
