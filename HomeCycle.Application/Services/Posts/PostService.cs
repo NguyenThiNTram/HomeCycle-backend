@@ -203,6 +203,10 @@ namespace HomeCycle.Application.Services.Posts
                     existing.Status = PostStatus.Closed;
                     await _offerRepository.ClosePendingByPostAsync(postId, OfferStatus.Closed, cancellationToken);
                 }
+                else if (existing.Status == PostStatus.Closed && existing.Quantity > previousQuantity)
+                {
+                    existing.Status = PostStatus.Active;
+                }
                 await _postRepository.UpdateAsync(existing, cancellationToken);
 
                 var productResult = await _productService.PrepareForUpdateAsync(postId, request.Product, cancellationToken);
@@ -584,7 +588,8 @@ namespace HomeCycle.Application.Services.Posts
             if (existing.PostType != postType)
                 return PostErrors.InvalidPostType;
 
-            if (existing.Status is PostStatus.Deleted or PostStatus.Closed or PostStatus.Suspended)
+            if (existing.Status is PostStatus.Deleted or PostStatus.Suspended ||
+                (existing.Status == PostStatus.Closed && newQuantity <= existing.Quantity))
                 return PostErrors.PostAlreadyClosedOrDeleted;
 
             // Spec: "Sửa hoặc xóa tin trong thời hạn cho phép"

@@ -12,6 +12,9 @@ namespace HomeCycle.Application.DTOs.Responses.GHN
     // Thông tin kiện hàng do server tự điền từ Product (bước "get info" trước khi tính phí)
     public sealed class GhnParcelInfoResponse
     {
+        // Estimate only: never overwrites or constrains confirmed physical parcels.
+        public long? EstimatedTotalWeightGram { get; init; }
+        public bool EstimatedOverLimit { get; init; }
         public GhnContactSnapshotDto? Sender { get; init; }
         public GhnContactSnapshotDto? Receiver { get; init; }
         public Guid NegotiationId { get; init; }
@@ -22,7 +25,7 @@ namespace HomeCycle.Application.DTOs.Responses.GHN
 
         public GhnLightParcelSnapshotDto? LightParcel { get; init; }
 
-        // Hàng nặng: server tự dựng 1 kiện từ Product (số lượng theo Offer).
+        // Optional prefill for a single product. User must confirm actual packaging; Quantity = 1.
         public IReadOnlyList<GhnItemSnapshotDto> Items { get; init; }
             = Array.Empty<GhnItemSnapshotDto>();
 

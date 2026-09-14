@@ -54,7 +54,8 @@ public partial class PostService
             if (current == null) return Result<PostResponse>.Fail(PostErrors.NotFound);
             if (current.OwnerId != ownerId) return Result<PostResponse>.Fail(PostErrors.Forbidden);
             if (current.PostType != PostType.Buy) return Result<PostResponse>.Fail(PostErrors.InvalidPostType);
-            if (current.Status is PostStatus.Deleted or PostStatus.Suspended or PostStatus.Closed)
+            if (current.Status is PostStatus.Deleted or PostStatus.Suspended ||
+                (current.Status == PostStatus.Closed && (request.Quantity ?? current.Quantity) <= current.Quantity))
                 return Result<PostResponse>.Fail(PostErrors.PostAlreadyClosedOrDeleted);
             if (current.ExpiryDate <= DateTime.UtcNow) return Result<PostResponse>.Fail(PostErrors.PostExpired);
             if (current.Product == null) return Result<PostResponse>.Fail(ProductErrors.ProductNotFound);
@@ -95,6 +96,8 @@ public partial class PostService
             current.StreetAddress = merged.StreetAddress; current.Ward = merged.Ward; current.City = merged.City;
             current.PriorityLevel = merged.PriorityLevel; current.ExpiryDate = merged.ExpiryDate?.ToUniversalTime(); current.UpdatedAt = DateTime.UtcNow;
             if (current.RemainingQuantity == 0) current.Status = PostStatus.Closed;
+            else if (current.Status == PostStatus.Closed && current.Quantity > previousQuantity)
+                current.Status = PostStatus.Active;
             await _postRepository.UpdateAsync(current, cancellationToken);
             var requirement = _mapper.Map<ProductRequirementRequest>(merged); requirement.ProductName = merged.Title.Trim();
             // Merge preserved attributes above, so this operation always saves the complete final requirement.

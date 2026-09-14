@@ -674,6 +674,9 @@ namespace HomeCycle.Application.Services.Payments
 
                 await _notificationService.PublishCreatedSafelyAsync(sellerNotification);
 
+                foreach (var postNotification in fulfillment.PostNotifications)
+                    await _notificationService.PublishCreatedSafelyAsync(postNotification);
+
                 return Result<PaymentStatusResponseDto>.Success(
                     new PaymentStatusResponseDto
                     {
@@ -2035,6 +2038,9 @@ namespace HomeCycle.Application.Services.Payments
                 await _notificationService.PublishCreatedSafelyAsync(sellerNotification);
                 await _notificationService.PublishCreatedSafelyAsync(buyerNotification);
 
+                foreach (var postNotification in fulfillment.PostNotifications)
+                    await _notificationService.PublishCreatedSafelyAsync(postNotification);
+
             }
             catch (Exception ex)
             {
@@ -2146,6 +2152,8 @@ namespace HomeCycle.Application.Services.Payments
             public ghn_shipment? GhnShipment { get; init; } //mới thêm
 
             public post? Post { get; init; }
+            public IReadOnlyList<post> UpdatedPosts { get; init; } = Array.Empty<post>();
+            public IReadOnlyList<notification> PostNotifications { get; init; } = Array.Empty<notification>();
         }
 
         private async Task<FulfillmentResult> FulfillAgreementAsync(
@@ -2482,6 +2490,8 @@ namespace HomeCycle.Application.Services.Payments
             var capacityError = await _postRepo.ValidateCapacityAsync(trade, agreement.Quantity, agreement.NegotiationId, false, ct);
             if (capacityError != null) throw new InvalidOperationException(capacityError.Message);
             post? postForUpdate = null;
+            var updatedPosts = new List<post>();
+            var postNotifications = new List<notification>();
             foreach (var id in new Guid?[] { trade.PostId, trade.BuyPostId }.Where(x => x.HasValue).Select(x => x!.Value).Distinct().OrderBy(x => x))
             {
                 var relatedPost = await _postRepo.GetByIdForUpdateAsync(id, ct)
@@ -2494,6 +2504,25 @@ namespace HomeCycle.Application.Services.Payments
                     await _procurementOffers.ClosePendingByPostAsync(id, OfferStatus.Closed, ct);
                 }
                 await _postRepo.UpdateAsync(relatedPost, ct);
+                updatedPosts.Add(relatedPost);
+
+                var postDetails = id == agreement.PostId
+                    ? postSnapshot
+                    : await _postRepo.GetByIdAsync(id, ct);
+                var postName = postDetails?.Product?.ProductName ?? relatedPost.PostId.ToString();
+                var exhausted = relatedPost.RemainingQuantity == 0;
+                var message = $"Thanh toán đơn hàng {order.OrderCode} thành công. " +
+                    $"Số lượng bài đăng \"{postName}\" đã giảm {agreement.Quantity}, còn lại {relatedPost.RemainingQuantity}.";
+                if (exhausted)
+                    message += " Bài đăng đã hết số lượng và được HomeCycle tự động khóa, không còn hoạt động. Vui lòng bổ sung thêm số lượng hoặc xóa bài đăng khi các giao dịch đã hoàn tất.";
+
+                postNotifications.Add(await AddPaymentNotificationPendingAsync(
+                    relatedPost.OwnerId,
+                    exhausted ? "Bài đăng đã hết số lượng và bị khóa" : "Số lượng bài đăng đã giảm",
+                    message,
+                    NotificationTargetType.Post,
+                    relatedPost.PostId,
+                    ct));
                 if (id == agreement.PostId) postForUpdate = relatedPost;
             }
 
@@ -2510,7 +2539,9 @@ namespace HomeCycle.Application.Services.Payments
                 Shipment = localShipment,
                 GhnShipment = localGhnShipment,
 
-                Post = postForUpdate
+                Post = postForUpdate,
+                UpdatedPosts = updatedPosts,
+                PostNotifications = postNotifications
             };
         }
 

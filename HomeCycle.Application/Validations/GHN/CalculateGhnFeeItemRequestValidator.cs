@@ -10,18 +10,19 @@ namespace HomeCycle.Application.Validations.GHN
 {
     public sealed class CalculateGhnFeeItemRequestValidator : AbstractValidator<CalculateGhnFeeItemRequest>
     {
-        private const int MaxWeightGram = 1_600_000;
+        private const int MaxWeightGram = HomeCycle.Application.Commons.Helpers.GhnShippingCalculationHelper.MaxShipmentWeightGram;
         private const int MaxDimensionCm = 200;
 
         public CalculateGhnFeeItemRequestValidator()
         {
             RuleFor(x => x.Name)
                 .NotEmpty()
-                .WithMessage("Tên kiện hàng không được để trống.");
+                .WithMessage("Tên kiện hàng không được để trống.")
+                .MaximumLength(512);
 
             RuleFor(x => x.Quantity)
-                .GreaterThan(0)
-                .WithMessage("Số lượng kiện hàng phải lớn hơn 0.");
+                .Equal(1)
+                .WithMessage("Mỗi item là một kiện vật lý theo quy ước HomeCycle; Quantity phải bằng 1.");
 
             RuleFor(x => x.WeightGram)
                 .InclusiveBetween(1, MaxWeightGram)

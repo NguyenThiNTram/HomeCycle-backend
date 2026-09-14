@@ -25,7 +25,7 @@ namespace HomeCycle.Application.DTOs.Requests.GHN
         public int? WidthCm { get; init; }
         public int? HeightCm { get; init; }
 
-        // ServiceTypeId = 5
+        // theo kiện vật lý
         public IReadOnlyList<CalculateGhnFeeItemRequest> Items { get; init; }
             = Array.Empty<CalculateGhnFeeItemRequest>();
     }
@@ -34,6 +34,7 @@ namespace HomeCycle.Application.DTOs.Requests.GHN
     {
         public required string Name { get; init; }
         public string? Code { get; init; }
+        // unrelated to Product/Agreement quantity
         public int Quantity { get; init; }
 
         public int WeightGram { get; init; }
