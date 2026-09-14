@@ -19,6 +19,10 @@ namespace HomeCycle.Application.DTOs.Responses.Wallets
         public Guid? ReferenceId { get; set; }
         public ReferenceType? ReferenceType { get; set; }
         public TransactionType? TransactionType { get; set; }
+        public WalletFinancePartyDto? From { get; set; }
+        public WalletFinancePartyDto? To { get; set; }
+        public PaymentMethod? PaymentMethod { get; set; }
+        public string? ReferenceCode { get; set; }
 
         public decimal? Amount { get; set; }
         public WalletTransactionStatus? Status { get; set; }

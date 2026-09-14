@@ -235,24 +235,6 @@ namespace HomeCycle.API.Controllers
         }
 
 
-        [HttpGet("finance/releases")]
-        [Authorize(Roles = nameof(UserRole.Moderator) + "," + nameof(UserRole.Admin))]
-        [SwaggerOperation(
-            Summary = "Lấy lịch sử payout release",
-            Description = "Trả về các wallet transactions có TransactionType = Payout_Release."
-        )]
-        public async Task<IActionResult> GetPayoutReleases(
-            [FromQuery] PaginationRequest request,
-            CancellationToken ct)
-        {
-            var result = await _walletService.GetPayoutReleasesAsync(request, ct);
-
-            if (!result.IsSuccess)
-                return BadRequest(result.Error);
-
-            return Ok(result.Data);
-        }
-
         private WalletTypeEnum ResolveWalletType()
         {
             var roleClaim = User.FindFirst(ClaimTypes.Role)?.Value;

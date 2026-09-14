@@ -104,8 +104,16 @@ namespace HomeCycle.Application.Services.Wallets
                     : null
             }).ToList();
 
-            var totalUserAvailable = userWallets.Sum(x => x.AvailableBalance);
-            var totalUserHold = userWallets.Sum(x => x.HoldBalance);
+            var personalWallets = userWallets.Where(x => x.WalletType == (int)WalletTypeEnum.Personal);
+            var businessWallets = userWallets.Where(x => x.WalletType == (int)WalletTypeEnum.Business);
+
+            var totalPersonalAvailable = personalWallets.Sum(x => x.AvailableBalance);
+            var totalPersonalHold = personalWallets.Sum(x => x.HoldBalance);
+            var totalBusinessAvailable = businessWallets.Sum(x => x.AvailableBalance);
+            var totalBusinessHold = businessWallets.Sum(x => x.HoldBalance);
+
+            var totalUserAvailable = totalPersonalAvailable + totalBusinessAvailable;
+            var totalUserHold = totalPersonalHold + totalBusinessHold;
             var totalSystemAvailable = systemWallets.Sum(x => x.AvailableBalance);
             var totalSystemHold = systemWallets.Sum(x => x.HoldBalance);
 
@@ -113,6 +121,10 @@ namespace HomeCycle.Application.Services.Wallets
             {
                 TotalUserAvailable = totalUserAvailable,
                 TotalUserHold = totalUserHold,
+                TotalPersonalAvailable = totalPersonalAvailable,
+                TotalPersonalHold = totalPersonalHold,
+                TotalBusinessAvailable = totalBusinessAvailable,
+                TotalBusinessHold = totalBusinessHold,
                 TotalSystemAvailable = totalSystemAvailable,
                 TotalSystemHold = totalSystemHold,
                 TotalRecordedBalance =
@@ -154,15 +166,6 @@ namespace HomeCycle.Application.Services.Wallets
             }
 
             return Result<WalletTransactionDetailDto>.Success(transaction);
-        }
-
-        public async Task<Result<PagedResult<WalletReleaseListItemDto>>> GetPayoutReleasesAsync(
-            PaginationRequest request,
-            CancellationToken ct = default)
-        {
-            var result = await _walletTxRepo.GetPagedReleasesAsync(request, ct);
-
-            return Result<PagedResult<WalletReleaseListItemDto>>.Success(result);
         }
     }
 }

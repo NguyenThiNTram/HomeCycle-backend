@@ -10,10 +10,10 @@ namespace HomeCycle.Application.DTOs.Responses.Wallets
     public class WalletActiveHoldDto
     {
         public Guid WalletId { get; set; }
-
+        public WalletFinancePartyDto Owner { get; set; } = null!;
         public ReferenceType? ReferenceType { get; set; }
         public Guid? ReferenceId { get; set; }
-
+        public string? ReferenceCode { get; set; }
         public decimal HoldAmount { get; set; }
     }
 }

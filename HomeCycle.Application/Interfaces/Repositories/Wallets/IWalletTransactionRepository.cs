@@ -24,8 +24,5 @@ namespace HomeCycle.Application.Interfaces.Repositories.Wallets
         Task<WalletTransactionDetailDto?> GetDetailAsync(
             Guid walletTransactionId,
             CancellationToken ct = default);
-        Task<PagedResult<WalletReleaseListItemDto>> GetPagedReleasesAsync(
-            PaginationRequest request,
-            CancellationToken ct = default);
     }
 }

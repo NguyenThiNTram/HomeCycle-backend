@@ -13,6 +13,11 @@ namespace HomeCycle.Application.DTOs.Responses.Wallets
 
         public Guid? FromWalletId { get; set; }
         public Guid? ToWalletId { get; set; }
+        public WalletFinancePartyDto? From { get; set; }
+        public WalletFinancePartyDto? To { get; set; }
+        public Guid? PaymentId { get; set; }
+        public PaymentMethod? PaymentMethod { get; set; }
+        public string? ReferenceCode { get; set; }
 
         public TransactionType? TransactionType { get; set; }
         public ReferenceType? ReferenceType { get; set; }
