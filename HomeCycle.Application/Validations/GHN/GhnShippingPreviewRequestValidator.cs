@@ -8,6 +8,13 @@ public sealed class GhnShippingPreviewRequestValidator : AbstractValidator<GhnSh
 {
     public GhnShippingPreviewRequestValidator()
     {
+        RuleFor(x => x).Custom((request, context) =>
+        {
+            var error = HomeCycle.Application.Commons.Helpers.GhnShippingCalculationHelper.ValidatePhysicalParcels(
+                HomeCycle.Application.Commons.Helpers.GhnShippingCalculationHelper.ToParcelItems(request.Items),
+                request.ParcelCount, request.WeightGram, request.ServiceTypeId);
+            if (error != null) context.AddFailure(new FluentValidation.Results.ValidationFailure("Items", error.Message) { ErrorCode = error.Code });
+        });
         RuleFor(x => x.Sender).NotNull().SetValidator(new ContactValidator()!);
         RuleFor(x => x.Receiver).NotNull().SetValidator(new ContactValidator()!);
         RuleFor(x => x.ServiceTypeId).Must(x => x is 2 or 5)
@@ -22,23 +29,7 @@ public sealed class GhnShippingPreviewRequestValidator : AbstractValidator<GhnSh
         RuleFor(x => x.WidthCm).Must(x => x is null or (>= 1 and <= 200));
         RuleFor(x => x.HeightCm).Must(x => x is null or (>= 1 and <= 200));
         RuleFor(x => x.Items).NotNull();
-        When(x => x.Items != null, () =>
-        {
-            RuleForEach(x => x.Items).NotNull();
-            RuleForEach(x => x.Items).ChildRules(item =>
-            {
-                item.RuleFor(x => x.Name).NotEmpty().MaximumLength(512);
-                item.RuleFor(x => x.Quantity).GreaterThan(0);
-                item.RuleFor(x => x.WeightGram).GreaterThanOrEqualTo(0);
-                item.RuleFor(x => x.LengthCm).InclusiveBetween(0, 200);
-                item.RuleFor(x => x.WidthCm).InclusiveBetween(0, 200);
-                item.RuleFor(x => x.HeightCm).InclusiveBetween(0, 200);
-            });
-        });
-        When(x => x.ServiceTypeId == 5 && x.Items != null, () =>
-        {
-            RuleForEach(x => x.Items).SetValidator(new CalculateGhnFeeItemRequestValidator());
-        });
+        RuleForEach(x => x.Items).NotNull().SetValidator(new CalculateGhnFeeItemRequestValidator());
         When(x => x.ServiceTypeId == 2, () =>
         {
             RuleFor(x => x.ParcelCount).Equal(1).WithMessage("Nhiều kiện phải dùng ServiceTypeId = 5.");

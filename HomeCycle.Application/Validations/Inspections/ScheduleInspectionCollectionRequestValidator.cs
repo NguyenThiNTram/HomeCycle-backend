@@ -48,6 +48,13 @@ namespace HomeCycle.Application.Validations.Inspections
 
                 When(x => x.GhnInfo != null, () =>
                 {
+                    RuleFor(x => x).Custom((request, context) =>
+                    {
+                        var info = request.GhnInfo!;
+                        var error = HomeCycle.Application.Commons.Helpers.GhnShippingCalculationHelper.ValidatePhysicalParcels(
+                            info.Items, info.ParcelCount, info.WeightGram, info.ServiceTypeId);
+                        if (error != null) context.AddFailure(new FluentValidation.Results.ValidationFailure("GhnInfo", error.Message) { ErrorCode = error.Code });
+                    });
                     RuleFor(x => x.GhnInfo!.PaymentTypeId)
                         .Null()
                         .WithMessage("PaymentTypeId GHN do hệ thống cấu hình.");

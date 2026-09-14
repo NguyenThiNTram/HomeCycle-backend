@@ -69,34 +69,68 @@ namespace HomeCycle.Application.Commons.Helpers
 
         private sealed record PreviewProof(string Scope, string Hash, GhnQuoteSnapshotDto Quote);
 
+        public const int HeavyThresholdGram = 20_000;
+        public const int MaxShipmentWeightGram = 50_000;
+
+        // HomeCycle mapping convention: one item is ONE physical parcel, never Product quantity.
+        public static int DetermineServiceType(long totalWeight, int parcelCount) =>
+            totalWeight >= HeavyThresholdGram || parcelCount > 1 ? 5 : 2;
+
+        public static IReadOnlyList<GhnItemSnapshotDto>? ToParcelItems(IReadOnlyList<CalculateGhnFeeItemRequest>? items) =>
+            items?.Select(x => x == null ? null! : new GhnItemSnapshotDto
+            {
+                Name = x.Name, Code = x.Code, Quantity = x.Quantity, WeightGram = x.WeightGram,
+                LengthCm = x.LengthCm, WidthCm = x.WidthCm, HeightCm = x.HeightCm
+            }).ToArray();
+
+        public static Error? ValidatePhysicalParcels(IReadOnlyList<GhnItemSnapshotDto>? items,
+            int parcelCount, int? rootWeight, int? serviceType)
+        {
+            if (items == null || items.Count == 0 || parcelCount < 1)
+                return new Error("Ghn.InvalidParcel", "Cần ít nhất một kiện vật lý.");
+            if (parcelCount != items.Count)
+                return new Error("Ghn.ParcelCountMismatch", "Số kiện phải bằng số phần tử Items.");
+            if (items.Any(x => x == null || string.IsNullOrWhiteSpace(x.Name) || x.Name.Length > 512 ||
+                x.Quantity != 1 || x.WeightGram <= 0 || x.LengthCm is < 1 or > 200 ||
+                x.WidthCm is < 1 or > 200 || x.HeightCm is < 1 or > 200))
+                return new Error("Ghn.InvalidParcel", "Mỗi kiện cần tên, Quantity = 1, cân nặng > 0 và mỗi chiều từ 1 đến 200cm.");
+            long total = items.Sum(x => (long)x.WeightGram);
+            var expectedType = DetermineServiceType(total, parcelCount);
+            if (total > MaxShipmentWeightGram)
+                return new Error("Ghn.WeightLimitExceeded", $"Tổng khối lượng các kiện là {total / 1000m}kg, thuộc Type 5 nhưng vượt giới hạn 50kg của HomeCycle. Vui lòng chọn Người bán giao hoặc Người mua tự lấy.");
+            if (!rootWeight.HasValue || rootWeight != total)
+                return new Error("Ghn.TotalWeightMismatch", "Root WeightGram phải bằng tổng khối lượng các kiện.");
+            if (serviceType != expectedType)
+                return new Error("Ghn.InvalidServiceType", $"Thông tin kiện yêu cầu ServiceTypeId = {expectedType}.");
+            return null;
+        }
+
+        public static Error ParcelError(ArgumentException ex) =>
+            new Error(ex.ParamName?.StartsWith("Ghn.", StringComparison.Ordinal) == true
+                ? ex.ParamName : "Ghn.InvalidParcel", ex.Message);
+
         public static GhnLightParcelSnapshotDto GetConfirmedParcel(GhnShippingInfo info)
         {
             ArgumentNullException.ThrowIfNull(info);
-            if (info.Items == null || info.Items.Any(x => x == null))
-                throw new ArgumentException("Danh sách kiện không hợp lệ.");
-            var legacy = info.ServiceTypeId == 2 ? info.LightParcel : null;
-            var single = info.Items is { Count: 1 } && info.Items[0].Quantity == 1 ? info.Items[0] : null;
-            var weight = info.WeightGram ?? legacy?.WeightGram ?? single?.WeightGram;
-            var length = info.LengthCm ?? legacy?.LengthCm ?? single?.LengthCm;
-            var width = info.WidthCm ?? legacy?.WidthCm ?? single?.WidthCm;
-            var height = info.HeightCm ?? legacy?.HeightCm ?? single?.HeightCm;
-            if (weight is null or < 1 or > 50_000 || length is null or < 1 or > 200 ||
-                width is null or < 1 or > 200 || height is null or < 1 or > 200 || info.ParcelCount < 1)
-                throw new ArgumentException("Cần thông số đóng gói đã xác nhận: weight 1–50.000g, mỗi chiều 1–200cm.");
-            var expectedType = weight >= 20_000 || info.ParcelCount > 1 ? 5 : 2;
-            if (info.ServiceTypeId != expectedType)
-                throw new ArgumentException("ServiceTypeId không khớp tổng cân/số kiện đã xác nhận.");
-            if (expectedType == 5)
+            var error = ValidatePhysicalParcels(info.Items, info.ParcelCount, info.WeightGram, info.ServiceTypeId);
+            if (error != null) throw new ArgumentException(error.Message, error.Code);
+
+            // TODO: Verify GHN staging root dimensions for multiple physical parcels.
+            // Never invent aggregation or accept caller-supplied dimensions as verified policy.
+            if (info.ParcelCount > 1)
+                throw new ArgumentException("Root dimensions cho nhiều kiện cần được xác minh GHN Staging trước khi gọi tính phí/preview/create.",
+                    "Ghn.MultiParcelDimensionsUnverified");
+
+            var single = info.Items[0];
+            var length = info.LengthCm ?? single.LengthCm;
+            var width = info.WidthCm ?? single.WidthCm;
+            var height = info.HeightCm ?? single.HeightCm;
+            if (length != single.LengthCm || width != single.WidthCm || height != single.HeightCm)
+                throw new ArgumentException("Kích thước cấp đơn phải khớp kiện vật lý duy nhất.", "Ghn.ParcelDimensionsMismatch");
+            return new GhnLightParcelSnapshotDto
             {
-                if (info.Items is not { Count: > 0 } || info.Items.Any(x => x.Quantity < 1 || x.WeightGram < 1 ||
-                    string.IsNullOrWhiteSpace(x.Name) || x.Name.Length > 512 || x.LengthCm is < 1 or > 200 ||
-                    x.WidthCm is < 1 or > 200 || x.HeightCm is < 1 or > 200))
-                    throw new ArgumentException("Hàng nặng cần thông tin từng kiện.");
-                var total = info.Items.Aggregate(0L, (sum, x) => checked(sum + (long)x.WeightGram * x.Quantity));
-                if (total != weight) throw new ArgumentException("Tổng khối lượng không khớp items.");
-            }
-            return new GhnLightParcelSnapshotDto { WeightGram = weight.Value, LengthCm = length.Value,
-                WidthCm = width.Value, HeightCm = height.Value };
+                WeightGram = single.WeightGram, LengthCm = length, WidthCm = width, HeightCm = height
+            };
         }
 
         private static readonly HashSet<string> ValidRequiredNotes = new(StringComparer.OrdinalIgnoreCase)
@@ -173,7 +207,8 @@ namespace HomeCycle.Application.Commons.Helpers
             }
             catch (Exception ex) when (ex is ArgumentException or OverflowException)
             {
-                return Result<CalculateGhnFeeRequest>.Fail(new Error("Ghn.ParcelInformationRequired", ex.Message));
+                return Result<CalculateGhnFeeRequest>.Fail(ex is ArgumentException argument
+                    ? ParcelError(argument) : new Error("Ghn.WeightLimitExceeded", "Tổng cân kiện vượt phạm vi hỗ trợ."));
             }
         }
     }

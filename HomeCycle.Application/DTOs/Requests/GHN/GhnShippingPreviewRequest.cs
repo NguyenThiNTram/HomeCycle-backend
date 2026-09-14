@@ -24,19 +24,21 @@ namespace HomeCycle.Application.DTOs.Requests.GHN
         // Số kiện đóng gói thực tế, không phải số lượng sản phẩm.
         public int ParcelCount { get; init; } = 1;
 
-        // Thông số cấp đơn sau đóng gói. Null: suy từ Product khi có đủ dữ liệu;
-        // nhiều sản phẩm/kiện cần cung cấp kích thước đóng gói thực tế.
+        // WeightGram phải bằng tổng cân Items. Không suy từ Product/Agreement quantity.
+        // Một kiện: kích thước root khớp kiện; nhiều kiện chờ xác minh GHN Staging.
         public int? WeightGram { get; init; }
         public int? LengthCm { get; init; }
         public int? WidthCm { get; init; }
         public int? HeightCm { get; init; }
 
-        // Type 5 cần thông số từng item. Nếu rỗng, dựng danh sách từ Product và số lượng mua.
+        // HomeCycle: mỗi item là một kiện vật lý, Quantity = 1; bắt buộc cả type 2 và 5.
         public IReadOnlyList<CalculateGhnFeeItemRequest> Items { get; init; }
             = Array.Empty<CalculateGhnFeeItemRequest>();
     }
     public sealed class GhnLeadtimeRequest
     {
+        // Standalone leadtime is informational, never a quote/payment/create proof.
+        // Internal callers pass the type already validated from confirmed physical parcels.
         public HomeCycle.Domain.Enums.AgreementType? AgreementType { get; init; }
         public HomeCycle.Domain.Enums.DeliveryMethod? DeliveryMethod { get; init; }
         public int? FromDistrictId { get; init; }
