@@ -12,7 +12,7 @@ namespace HomeCycle.Application.DTOs.Requests.Disputes
     {
         public DisputeStatus? Status { get; set; }
 
-        public DisputeCategory? Category { get; set; }
+        public int? DisputeCategoryId { get; set; }
 
         public DisputeTargetType? TargetType { get; set; }
 

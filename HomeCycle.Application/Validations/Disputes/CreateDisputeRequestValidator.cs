@@ -22,9 +22,9 @@ namespace HomeCycle.Application.Validations.Disputes
                 .NotEmpty()
                 .WithMessage("TargetId không được để trống.");
 
-            RuleFor(x => x.Category)
-                .IsInEnum()
-                .WithMessage("Loại tranh chấp không hợp lệ.");
+            RuleFor(x => x.DisputeCategoryId)
+                .GreaterThan(0)
+                .WithMessage("DisputeCategoryId không hợp lệ.");
 
             RuleFor(x => x.Description)
                 .NotEmpty()

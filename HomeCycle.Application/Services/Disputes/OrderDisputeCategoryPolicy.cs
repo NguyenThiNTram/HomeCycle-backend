@@ -9,48 +9,23 @@ namespace HomeCycle.Application.Services.Disputes
 {
     public static class OrderDisputeCategoryPolicy
     {
-        public static IReadOnlyList<DisputeCategory> BuildAllowedCategories(
-                bool hasAppointments,
-                DeliveryMethod? deliveryMethod)
+        public static bool IsAllowed(string code, bool hasAppointments, DeliveryMethod? deliveryMethod)
         {
-            var categories = new List<DisputeCategory>();
+            var normalizedCode = code.Trim().ToUpperInvariant();
 
-            if (hasAppointments)
+            return normalizedCode switch
             {
-                categories.Add(DisputeCategory.NoShow);
-            }
+                "NO_SHOW" => hasAppointments,
 
-            categories.Add(DisputeCategory.ItemMismatch);
+                "SELLER_NOT_SHIPPED" or
+                "DAMAGED_OR_LOST" or
+                "ITEM_NOT_RECEIVED"
+                    => deliveryMethod == DeliveryMethod.GhnDelivery,
 
-            if (deliveryMethod == DeliveryMethod.GhnDelivery)
-            {
-                categories.Add(DisputeCategory.SellerNotShipped);
+                "ABUSIVE_REVIEW" => false,
 
-                categories.Add(DisputeCategory.DamagedOrLost);
-
-                categories.Add(DisputeCategory.ItemNotReceived);
-            }
-
-            categories.Add(DisputeCategory.FraudOrScam);
-
-            categories.Add(DisputeCategory.PaymentNotCompleted);
-
-            categories.Add(DisputeCategory.CommitmentViolation);
-
-            categories.Add(DisputeCategory.Other);
-
-            return categories;
-        }
-
-        public static bool IsAllowed(
-            DisputeCategory category,
-            bool hasAppointments,
-            DeliveryMethod? deliveryMethod)
-        {
-            return BuildAllowedCategories(
-                    hasAppointments,
-                    deliveryMethod)
-                .Contains(category);
+                _ => true
+            };
         }
     }
 }

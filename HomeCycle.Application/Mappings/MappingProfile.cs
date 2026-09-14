@@ -5,6 +5,7 @@ using HomeCycle.Application.DTOs.Requests.Auths;
 using HomeCycle.Application.DTOs.Requests.Banks;
 using HomeCycle.Application.DTOs.Requests.Brands;
 using HomeCycle.Application.DTOs.Requests.Categories;
+using HomeCycle.Application.DTOs.Requests.Disputes;
 using HomeCycle.Application.DTOs.Requests.Media;
 using HomeCycle.Application.DTOs.Requests.Offers;
 using HomeCycle.Application.DTOs.Requests.PlatformPolicies;
@@ -875,6 +876,26 @@ namespace HomeCycle.Application.Mappings
                 .ForMember(dest => dest.RefundedAmount, opt => opt.Ignore())
                 .ForMember(dest => dest.ReturnDueAt, opt => opt.Ignore());
 
+
+            // =============== DISPUTE CATEGORY =============== 
+            CreateMap<dispute_category, DisputeCategoryResponseDto>();
+            CreateMap<dispute_category, DisputeCategoryOptionDto>();
+
+            CreateMap<CreateDisputeCategoryRequest, dispute_category>()
+                .ForMember(dest => dest.DisputeCategoryId, opt => opt.Ignore())
+                .ForMember(dest => dest.IsActive, opt => opt.Ignore())
+                .ForMember(dest => dest.CreatedAt, opt => opt.Ignore())
+                .ForMember(dest => dest.UpdatedAt, opt => opt.Ignore())
+                .ForMember(dest => dest.CreatedBy, opt => opt.Ignore());
+
+            CreateMap<UpdateDisputeCategoryRequest, dispute_category>()
+                .ForMember(dest => dest.DisputeCategoryId, opt => opt.Ignore())
+                .ForMember(dest => dest.Code, opt => opt.Ignore())
+                .ForMember(dest => dest.IsActive, opt => opt.Ignore())
+                .ForMember(dest => dest.CreatedAt, opt => opt.Ignore())
+                .ForMember(dest => dest.UpdatedAt, opt => opt.Ignore())
+                .ForMember(dest => dest.CreatedBy, opt => opt.Ignore())
+                .ForAllMembers(opt => opt.Condition((src, dest, srcMember) => srcMember != null));
 
             // ==================== SHIPMENT ====================
 

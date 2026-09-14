@@ -4,6 +4,7 @@ using HomeCycle.Application.Commons.Paginations;
 using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Requests.Agreements;
 using HomeCycle.Application.DTOs.Requests.Orders;
+using HomeCycle.Application.DTOs.Responses.Disputes;
 using HomeCycle.Application.DTOs.Responses.Notifications;
 using HomeCycle.Application.DTOs.Responses.Orders;
 using HomeCycle.Application.Interfaces.Generics;
@@ -45,6 +46,7 @@ namespace HomeCycle.Application.Services.Orders
         private readonly IInspectionFormRepository _inspectionFormRepo;
         private readonly IInspectionAppointmentRepository _inspectionAppointmentRepo;
         private readonly IDisputeRepository _disputeRepo;
+        private readonly IDisputeCategoryRepository _disputeCategoryRepo;
         private readonly IPaymentService _paymentService;
         private readonly IPlatformPolicyProvider _platformPolicyProvider;
         private readonly INotificationService _notificationService;
@@ -64,6 +66,7 @@ namespace HomeCycle.Application.Services.Orders
             IInspectionFormRepository inspectionFormRepo,
             IInspectionAppointmentRepository inspectionAppointmentRepo,
             IDisputeRepository disputeRepo,
+            IDisputeCategoryRepository disputeCategoryRepo,
             IPaymentService paymentService,
             IPlatformPolicyProvider platformPolicyProvider,
             INotificationService notificationService,
@@ -82,6 +85,7 @@ namespace HomeCycle.Application.Services.Orders
             _inspectionFormRepo = inspectionFormRepo;
             _inspectionAppointmentRepo = inspectionAppointmentRepo;
             _disputeRepo = disputeRepo;
+            _disputeCategoryRepo = disputeCategoryRepo;
             _paymentService = paymentService;
             _platformPolicyProvider = platformPolicyProvider;
             _notificationService = notificationService;
@@ -1659,6 +1663,13 @@ namespace HomeCycle.Application.Services.Orders
                 isAwaitingReturn &&
                 !detail.SellerReturnReceivedAt.HasValue;
 
+            var allowedDisputeCategories =
+                canDispute
+                    ? await BuildAllowedDisputeCategoriesAsync(
+                        detail,
+                        ct)
+                    : Array.Empty<DisputeCategoryOptionDto>();
+
             return new OrderActionDto
             {
                 CanConfirmSellerReady = canConfirmSellerReady,
@@ -1669,44 +1680,30 @@ namespace HomeCycle.Application.Services.Orders
                 CanDispute = canDispute,
                 CanConfirmReturn = canConfirmReturn,
                 CanConfirmReturnReceived = canConfirmReturnReceived,
-                AllowedDisputeCategories =
-                    canDispute
-                        ? BuildAllowedDisputeCategories(detail)
-                        : Array.Empty<DisputeCategory>()
+                AllowedDisputeCategories = allowedDisputeCategories
             };
         }
 
-        private static IReadOnlyList<DisputeCategory> BuildAllowedDisputeCategories(OrderDetailDto detail)
+        private async Task<IReadOnlyList<DisputeCategoryOptionDto>> BuildAllowedDisputeCategoriesAsync(
+            OrderDetailDto detail,
+            CancellationToken ct)
         {
-            return OrderDisputeCategoryPolicy
-                .BuildAllowedCategories(
-                    detail.Appointments.Count > 0,
-                    detail.DeliveryMethod);
+            var categories =
+                await _disputeCategoryRepo
+                    .GetActiveByTargetTypeAsync(
+                        DisputeTargetType.Order,
+                        ct);
+
+            return categories
+                .Where(x =>
+                    OrderDisputeCategoryPolicy.IsAllowed(
+                        x.Code,
+                        detail.Appointments.Count > 0,
+                        detail.DeliveryMethod))
+                .Select(x =>
+                    _mapper.Map<DisputeCategoryOptionDto>(x))
+                .ToArray();
         }
-
-        //private static IReadOnlyList<DisputeCategory> BuildAllowedDisputeCategories(OrderDetailDto detail)
-        //{
-        //    var categories = new List<DisputeCategory>();
-
-        //    if (detail.Appointments.Count > 0)
-        //        categories.Add(DisputeCategory.NoShow);
-
-        //    categories.Add(DisputeCategory.ItemMismatch);
-
-        //    if (detail.DeliveryMethod == DeliveryMethod.GhnDelivery)
-        //    {
-        //        categories.Add(DisputeCategory.SellerNotShipped);
-        //        categories.Add(DisputeCategory.DamagedOrLost);
-        //        categories.Add(DisputeCategory.ItemNotReceived);
-        //    }
-
-        //    categories.Add(DisputeCategory.FraudOrScam);
-        //    categories.Add(DisputeCategory.PaymentNotCompleted);
-        //    categories.Add(DisputeCategory.CommitmentViolation);
-        //    categories.Add(DisputeCategory.Other);
-
-        //    return categories;
-        //}
 
         private static Result<DeliveryMethod> ResolveDeliveryMethod(agreement_form agreement)
         {

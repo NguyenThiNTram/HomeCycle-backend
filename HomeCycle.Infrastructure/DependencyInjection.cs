@@ -223,6 +223,7 @@ namespace HomeCycle.Infrastructure
             services.AddScoped<IInspectionFormRepository, InspectionFormRepository>();
             services.AddScoped<INotificationRepository, NotificationRepository>();
             services.AddScoped<IConversationRepository, ConversationRepository>();
+            services.AddScoped<IDisputeCategoryRepository, DisputeCategoryRepository>();
 
             // register Services
             services.AddScoped<IAuthService, AuthService>();
@@ -271,6 +272,7 @@ namespace HomeCycle.Infrastructure
             services.AddScoped<IInspectionCollectionService, InspectionCollectionService>();
             services.AddScoped<IConversationService, ConversationService>();
             services.AddScoped<IFileValidationService, FileValidationService>();
+            services.AddScoped<IDisputeCategoryService, DisputeCategoryService>();
 
 
             services.AddScoped<INotificationService, NotificationService>();

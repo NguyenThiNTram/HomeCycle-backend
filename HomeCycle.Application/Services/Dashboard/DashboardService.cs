@@ -3,12 +3,13 @@ using HomeCycle.Application.DTOs.Requests.Dashboard;
 using HomeCycle.Application.DTOs.Responses.Auths;
 using HomeCycle.Application.DTOs.Responses.Dashboard;
 using HomeCycle.Application.Interfaces.Repositories.Dashboard;
+using HomeCycle.Application.Interfaces.Repositories.Disputes;
 using HomeCycle.Application.Interfaces.Services.Dashboard;
 using HomeCycle.Domain.Enums;
 
 namespace HomeCycle.Application.Services.Dashboard;
 
-public sealed class DashboardService(IDashboardRepository repository, TimeProvider clock) : IDashboardService
+public sealed class DashboardService(IDashboardRepository repository, IDisputeCategoryRepository disputeCategoryRepository, TimeProvider clock) : IDashboardService
 {
     private DashboardPeriod ResolvePeriod(DashboardPeriodRequest request)
     {
@@ -210,17 +211,42 @@ public sealed class DashboardService(IDashboardRepository repository, TimeProvid
     {
         var period = ResolvePeriod(request);
         var data = await repository.GetDisputesAsync(request, period, ct);
-        var categories = Distribution<DisputeCategory>(data.Types);
-        var used = categories.Where(x => x.Key != "Unspecified" && x.Count > 0).ToArray();
-        return new()
+        var categoryDefinitions = await disputeCategoryRepository.GetAllAsync(null, ct);
+        var totalCategoryCount = data.Types.Sum(x => x.Count);
+
+        var categories = categoryDefinitions
+            .Where(x => x.IsActive || data.Types.Any(row => row.Code == x.DisputeCategoryId && row.Count > 0))
+            .Select(x =>
+            {
+                var count = data.Types.Where(row => row.Code == x.DisputeCategoryId).Sum(row => row.Count);
+                return new DistributionItem(x.DisputeCategoryId.ToString(), x.Name, count, Percent(count, totalCategoryCount));
+            })
+            .OrderByDescending(x => x.Count)
+            .ThenBy(x => x.Label)
+            .ToList();
+
+        var knownCategoryIds = categoryDefinitions.Select(x => x.DisputeCategoryId).ToHashSet();
+        var unknownCategoryCount = data.Types
+            .Where(x => !x.Code.HasValue || !knownCategoryIds.Contains(x.Code.Value))
+            .Sum(x => x.Count);
+
+        if (unknownCategoryCount > 0)
+            categories.Add(new DistributionItem("Unspecified", "Unknown / invalid value", unknownCategoryCount, Percent(unknownCategoryCount, totalCategoryCount)));
+
+        var usedCategories = categories.Where(x => x.Key != "Unspecified" && x.Count > 0).ToArray();
+
+        return new DisputeDashboardResponse
         {
-            GeneratedAtUtc = clock.GetUtcNow().UtcDateTime, Period = period,
-            TotalCount = data.TotalCount, PeriodCount = data.Daily.Sum(x => x.Count),
-            ByCategory = categories, ByStatus = Distribution<DisputeStatus>(data.Statuses),
-            MostSelectedCategories = used.Where(x => x.Count == used.Max(y => y.Count)).Select(x => x.Key).ToArray(),
-            LeastSelectedUsedCategories = used.Where(x => x.Count == used.Min(y => y.Count)).Select(x => x.Key).ToArray(),
-            UnselectedCategories = categories.Where(x => x.Count == 0).Select(x => x.Key).ToArray(),
-            UnknownCategoryCount = categories.Where(x => x.Key == "Unspecified").Sum(x => x.Count)
+            GeneratedAtUtc = clock.GetUtcNow().UtcDateTime,
+            Period = period,
+            TotalCount = data.TotalCount,
+            PeriodCount = data.Daily.Sum(x => x.Count),
+            ByCategory = categories,
+            ByStatus = Distribution<DisputeStatus>(data.Statuses),
+            MostSelectedCategories = usedCategories.Length == 0 ? Array.Empty<string>() : usedCategories.Where(x => x.Count == usedCategories.Max(y => y.Count)).Select(x => x.Label).ToArray(),
+            LeastSelectedUsedCategories = usedCategories.Length == 0 ? Array.Empty<string>() : usedCategories.Where(x => x.Count == usedCategories.Min(y => y.Count)).Select(x => x.Label).ToArray(),
+            UnselectedCategories = categories.Where(x => x.Key != "Unspecified" && x.Count == 0).Select(x => x.Label).ToArray(),
+            UnknownCategoryCount = unknownCategoryCount
         };
     }
 

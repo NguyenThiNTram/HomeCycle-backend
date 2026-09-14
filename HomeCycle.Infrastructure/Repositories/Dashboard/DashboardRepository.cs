@@ -92,7 +92,12 @@ public sealed class DashboardRepository(HomeCycleDbContext db) : IDashboardRepos
     {
         var query = db.Disputes.AsNoTracking();
         if (request.Status.HasValue) query = query.Where(x => x.DisputeStatus == (int)request.Status.Value);
-        if (request.Category.HasValue) query = query.Where(x => x.DisputeCategory == (int)request.Category.Value);
+        if (request.DisputeCategoryId.HasValue)
+        {
+            query = query.Where(
+                x => x.DisputeCategory ==
+                    request.DisputeCategoryId.Value);
+        }
         if (request.TargetType.HasValue) query = query.Where(x => x.DisputeTargetType == (int)request.TargetType.Value);
         var data = await AggregateActivityAsync(query.Select(x => new ActivityRow
         { CreatedAt = x.CreatedAt, Status = x.DisputeStatus, Type = x.DisputeCategory }), period, ct, includeType: true);
