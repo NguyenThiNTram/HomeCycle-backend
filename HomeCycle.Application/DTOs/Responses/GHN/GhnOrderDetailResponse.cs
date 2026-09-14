@@ -18,6 +18,7 @@ namespace HomeCycle.Application.DTOs.Responses.GHN
 
         public int? WeightGram { get; init; }
         public int? ConvertedWeightGram { get; init; }
+        public int? CalculateWeightGram { get; init; }
 
         public int? LengthCm { get; init; }
         public int? WidthCm { get; init; }

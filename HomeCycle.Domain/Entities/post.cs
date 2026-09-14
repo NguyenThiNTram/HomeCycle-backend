@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
@@ -17,6 +17,7 @@ public class post
     public int RemainingQuantity { get; set; }
     public PostType? PostType { get; set; }
     public decimal? BasePrice { get; set; }
+    public decimal? MinExpectedPrice { get; set; }
     public string? StreetAddress { get; set; }
     public string? Ward { get; set; }
     public string? City { get; set; }

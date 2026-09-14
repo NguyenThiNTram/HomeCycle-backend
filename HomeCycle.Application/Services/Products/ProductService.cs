@@ -1,4 +1,4 @@
-﻿using AutoMapper;
+using AutoMapper;
 using FluentValidation;
 using HomeCycle.Application.Commons.Errors;
 using HomeCycle.Application.Commons.Results;
@@ -219,7 +219,7 @@ namespace HomeCycle.Application.Services.Products
                         string.Join("\n", validation.Errors.Select(x => x.ErrorMessage))));
             }
 
-            var referenceError = await ValidateProductDataAsync(
+            var referenceError = await ValidateRequirementDataAsync(
                 request.CategoryId, request.ProductTypeId, request.BrandId, request.AttributeValues, cancellationToken);
             if (referenceError is not null)
                 return Result<product>.Fail(referenceError);
@@ -257,7 +257,7 @@ namespace HomeCycle.Application.Services.Products
             if (existing is null)
                 return Result<product>.Fail(ProductErrors.ProductNotFound);
 
-            var referenceError = await ValidateProductDataAsync(
+            var referenceError = await ValidateRequirementDataAsync(
                  request.CategoryId, request.ProductTypeId, request.BrandId, request.AttributeValues, cancellationToken);
             if (referenceError is not null)
                 return Result<product>.Fail(referenceError);
@@ -304,7 +304,7 @@ namespace HomeCycle.Application.Services.Products
             return Result<ProductResponse>.Success(response);
         }
 
-        private static Error? ValidateAttributeValues(product_type productType, IEnumerable<ProductAttributeValueRequest>? attributeValues)
+        private static Error? ValidateAttributeValues(product_type productType, IEnumerable<ProductAttributeValueRequest>? attributeValues, bool requireAll = true)
         {
             var requests = attributeValues?.ToList()
                 ?? new List<ProductAttributeValueRequest>();
@@ -346,7 +346,7 @@ namespace HomeCycle.Application.Services.Products
                     !providedAttributeIds.Contains(x.AttributeId))
                 .ToList();
 
-            if (missingRequiredAttributes.Count > 0)
+            if (requireAll && missingRequiredAttributes.Count > 0)
             {
                 var missingNames = string.Join(
                     ", ",
@@ -483,6 +483,21 @@ namespace HomeCycle.Application.Services.Products
 
             // 3. Kiểm tra toàn bộ AttributeValue
             return ValidateAttributeValues(productType, attributeValues);
+        }
+
+        private async Task<Error?> ValidateRequirementDataAsync(Guid? categoryId, Guid? productTypeId,
+            Guid? brandId, IEnumerable<ProductAttributeValueRequest>? values, CancellationToken ct)
+        {
+            if (categoryId.HasValue && await _categoryRepository.GetByIdAsync(categoryId.Value, ct) is null)
+                return ProductErrors.InvalidCategory;
+            if (brandId.HasValue && await _brandRepository.GetByIdAsync(brandId.Value, ct) is null)
+                return ProductErrors.InvalidBrand;
+            if (!productTypeId.HasValue)
+                return values?.Any() == true ? ProductErrors.InvalidProductType : null;
+            var type = await _productTypeRepository.GetWithAttributesAndOptionsAsync(productTypeId.Value, ct);
+            if (type is null || !categoryId.HasValue || type.CategoryId != categoryId)
+                return ProductErrors.InvalidProductType;
+            return ValidateAttributeValues(type, values, requireAll: false);
         }
 
         // Lưu tập thuộc tính động của sản phẩm

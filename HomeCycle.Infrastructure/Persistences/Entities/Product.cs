@@ -1,4 +1,4 @@
-﻿using HomeCycle.Infrastructure.Persistences.Entities;
+using HomeCycle.Infrastructure.Persistences.Entities;
 using Microsoft.EntityFrameworkCore;
 using System;
 using System.Collections.Generic;
@@ -16,9 +16,9 @@ public partial class Product
 
     public Guid PostId { get; set; }
 
-    public Guid CategoryId { get; set; }
+    public Guid? CategoryId { get; set; }
 
-    public Guid ProductTypeId { get; set; }
+    public Guid? ProductTypeId { get; set; }
 
     public Guid? BrandId { get; set; }
 
@@ -57,7 +57,7 @@ public partial class Product
 
     [ForeignKey("CategoryId")]
     [InverseProperty("Products")]
-    public virtual Category Category { get; set; } = null!;
+    public virtual Category? Category { get; set; } = null!;
 
     [ForeignKey("PostId")]
     [InverseProperty("Product")]
@@ -65,7 +65,7 @@ public partial class Product
 
     [ForeignKey("ProductTypeId")]
     [InverseProperty("Products")]
-    public virtual Product_Type ProductType { get; set; } = null!;
+    public virtual Product_Type? ProductType { get; set; } = null!;
 
     [InverseProperty("Product")]
     public virtual ICollection<Product_Attribute_Value> Product_Attribute_Values { get; set; } = new List<Product_Attribute_Value>();

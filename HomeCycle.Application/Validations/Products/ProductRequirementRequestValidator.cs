@@ -1,4 +1,4 @@
-﻿using FluentValidation;
+using FluentValidation;
 using HomeCycle.Application.DTOs.Requests.Products;
 using System;
 using System.Collections.Generic;
@@ -12,25 +12,18 @@ namespace HomeCycle.Application.Validations.Products
     {
         public ProductRequirementRequestValidator()
         {
-            RuleFor(x => x.CategoryId)
-                .NotEmpty()
-                .WithMessage("Mã danh mục (CategoryId) không được để trống.");
-
-            RuleFor(x => x.ProductTypeId)
-                .NotEmpty()
-                .WithMessage("Mã loại sản phẩm (ProductTypeId) không được để trống.");
+            RuleFor(x => x.CategoryId).NotEmpty().When(x => x.CategoryId.HasValue);
+            RuleFor(x => x.ProductTypeId).NotEmpty().When(x => x.ProductTypeId.HasValue);
+            RuleFor(x => x.CategoryId).NotNull().When(x => x.ProductTypeId.HasValue);
+            RuleFor(x => x.ProductTypeId).NotNull().When(x => x.AttributeValues != null && x.AttributeValues.Count > 0);
 
             RuleFor(x => x.BrandId)
                 .NotEmpty()
                 .When(x => x.BrandId.HasValue)
                 .WithMessage("Mã thương hiệu (BrandId) không hợp lệ.");
 
-            RuleFor(x => x.ExpectedPrice)
-                .GreaterThanOrEqualTo(0)
-                .When(x => x.ExpectedPrice.HasValue)
-                .WithMessage("Mức giá mong muốn phải lớn hơn hoặc bằng 0.");
-
             RuleFor(x => x.ProductName)
+                .NotEmpty()
                 .MaximumLength(255)
                 .WithMessage("Tên sản phẩm mong muốn không được vượt quá 255 ký tự.");
 

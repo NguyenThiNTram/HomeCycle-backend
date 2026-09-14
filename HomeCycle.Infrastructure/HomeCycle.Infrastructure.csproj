@@ -13,6 +13,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="HomeCycle.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Folder Include="DbContexts\" />
     <Folder Include="Repositories\Generics\" />
   </ItemGroup>

@@ -1,4 +1,4 @@
-﻿using HomeCycle.Application.Commons.Paginations;
+using HomeCycle.Application.Commons.Paginations;
 using HomeCycle.Application.Interfaces.Repositories.Offers;
 using HomeCycle.Domain.Entities;
 using HomeCycle.Domain.Enums;
@@ -21,6 +21,9 @@ namespace HomeCycle.Infrastructure.Repositories.Offers
         {
             _db = db;
         }
+
+        public Task<bool> HasAgreementAsync(Guid negotiationId, CancellationToken cancellationToken = default) =>
+            _db.Agreement_Forms.AnyAsync(a => a.NegotiationId == negotiationId, cancellationToken);
 
         public async Task<negotiation?> GetByOfferIdAsync(Guid offerId, CancellationToken cancellationToken = default)
         {
@@ -94,7 +97,7 @@ namespace HomeCycle.Infrastructure.Repositories.Offers
             };
         }
 
-        public Task<bool> ExistsActiveByPostAndParticipantsAsync(Guid postId, Guid sellerId, Guid buyerId, CancellationToken cancellationToken = default)
+        public Task<bool> ExistsActiveByPostAndParticipantsAsync(Guid postId, Guid sellerId, Guid buyerId, CancellationToken cancellationToken = default, Guid? buyPostId = null)
         {
             var open = (int)NegotiationStatus.Open;
             var agreed = (int)NegotiationStatus.Agreed;
@@ -107,7 +110,8 @@ namespace HomeCycle.Infrastructure.Repositories.Offers
                     x =>
                         x.PostId == postId &&
                         x.SellerId == sellerId &&
-                        x.BuyerId == buyerId &&
+                        x.BuyerId == buyerId && x.Offer.BuyPostId == buyPostId &&
+                        (x.Agreement_Form == null || x.Agreement_Form.AgreementStatus == (int)AgreementStatus.Pending || x.Agreement_Form.AgreementStatus == (int)AgreementStatus.Awaiting_Payment) &&
                         (
                             x.NegotiationStatus == null ||
                             x.NegotiationStatus == open ||

@@ -1,4 +1,4 @@
-﻿using HomeCycle.Application.DTOs.Responses.Media;
+using HomeCycle.Application.DTOs.Responses.Media;
 using HomeCycle.Domain.Enums;
 using System;
 using System.Collections.Generic;
@@ -43,6 +43,9 @@ namespace HomeCycle.Application.DTOs.Responses.Posts
         public PostType? PostType { get; set; }
 
         public decimal? BasePrice { get; set; }
+        public decimal? PriceFrom { get; set; }
+        public decimal? PriceTo { get; set; }
+        public bool IsExpired => ExpiryDate.HasValue && ExpiryDate.Value <= DateTime.UtcNow;
 
         public DeliveryMethod? DeliveryMethod { get; set; }
 

@@ -39,9 +39,6 @@ namespace HomeCycle.Application.Services.Negotiates
         private readonly IUnitOfWork _unitOfWork;
         private readonly IChatRealtimePublisher _realtimePublisher;
 
-        private const decimal MinPriceFactor = 0.2m;
-        private const decimal MaxPriceFactor = 3m;
-
         public NegotiationService(
             INegotiationRepository negotiationRepository,
             IOfferRepository offerRepository,
@@ -153,6 +150,8 @@ namespace HomeCycle.Application.Services.Negotiates
             try
             {
                 // Khóa Negotiation: serialize 2 counter đồng thời trong cùng một negotiation
+                var contextSnapshot = await _negotiationRepository.GetByIdAsync(negotiationId, cancellationToken);
+                if (contextSnapshot != null) await _postRepository.LockAsync(contextSnapshot.PostId, contextSnapshot.Offer?.BuyPostId, cancellationToken);
                 var negotiation = await _negotiationRepository.GetByIdForUpdateAsync(negotiationId, cancellationToken);
 
                 if (negotiation is null)
@@ -193,7 +192,7 @@ namespace HomeCycle.Application.Services.Negotiates
                     return Result<NegotiationActionResponse>.Fail(OfferErrors.PostNotFound);
                 }
 
-                if (post.Status != PostStatus.Active)
+                if (post.Status is PostStatus.Deleted or PostStatus.Suspended)
                 {
                     await _unitOfWork.RollbackTransactionAsync(cancellationToken);
                     return Result<NegotiationActionResponse>.Fail(OfferErrors.PostNotActive);
@@ -208,7 +207,8 @@ namespace HomeCycle.Application.Services.Negotiates
                             post.RemainingQuantity));
                 }
 
-                var priceError = ValidatePriceRange(post.BasePrice, request.OfferPrice);
+                var priceError = await _postRepository.ValidateCapacityAsync(negotiation.Offer!, request.OfferQuantity, negotiationId, false, cancellationToken)
+                    ?? new HomeCycle.Application.Services.Offers.OfferTermsPolicy().Validate(post, request.OfferPrice, request.OfferQuantity, negotiation.Offer?.BuyPostId != null);
                 if (priceError is not null)
                 {
                     await _unitOfWork.RollbackTransactionAsync(cancellationToken);
@@ -368,6 +368,8 @@ namespace HomeCycle.Application.Services.Negotiates
             try
             {
                 // Khóa dòng Negotiation: chống accept 2 lần trên cùng negotiation (2 lần trừ tồn kho).
+                var contextSnapshot = await _negotiationRepository.GetByIdAsync(negotiationId, cancellationToken);
+                if (contextSnapshot != null) await _postRepository.LockAsync(contextSnapshot.PostId, contextSnapshot.Offer?.BuyPostId, cancellationToken);
                 var negotiation = await _negotiationRepository.GetByIdForUpdateAsync(
                     negotiationId,
                     cancellationToken);
@@ -440,7 +442,7 @@ namespace HomeCycle.Application.Services.Negotiates
                     return Result<NegotiationActionResponse>.Fail(OfferErrors.PostNotFound);
                 }
 
-                if (post.Status != PostStatus.Active)
+                if (post.Status is PostStatus.Deleted or PostStatus.Suspended)
                 {
                     await _unitOfWork.RollbackTransactionAsync(cancellationToken);
                     return Result<NegotiationActionResponse>.Fail(OfferErrors.PostNotActive);
@@ -464,6 +466,13 @@ namespace HomeCycle.Application.Services.Negotiates
                     return Result<NegotiationActionResponse>.Fail(OfferErrors.NotFound);
                 }
 
+                var capacityError = await _postRepository.ValidateCapacityAsync(offer, proposal.OfferQuantity, negotiationId, false, cancellationToken)
+                    ?? new HomeCycle.Application.Services.Offers.OfferTermsPolicy().Validate(post, proposal.OfferPrice!.Value, proposal.OfferQuantity, offer.BuyPostId.HasValue);
+                if (capacityError != null)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<NegotiationActionResponse>.Fail(capacityError);
+                }
                 var now = DateTime.UtcNow;
 
                 var proposalUpdated =
@@ -581,6 +590,8 @@ namespace HomeCycle.Application.Services.Negotiates
             try
             {
                 // serialize reject/counter/accept cùng lúc
+                var contextSnapshot = await _negotiationRepository.GetByIdAsync(negotiationId, cancellationToken);
+                if (contextSnapshot != null) await _postRepository.LockAsync(contextSnapshot.PostId, contextSnapshot.Offer?.BuyPostId, cancellationToken);
                 var negotiation = await _negotiationRepository.GetByIdForUpdateAsync(
                     negotiationId,
                     cancellationToken);
@@ -736,6 +747,8 @@ namespace HomeCycle.Application.Services.Negotiates
 
             try
             {
+                var contextSnapshot = await _negotiationRepository.GetByIdAsync(negotiationId, cancellationToken);
+                if (contextSnapshot != null) await _postRepository.LockAsync(contextSnapshot.PostId, contextSnapshot.Offer?.BuyPostId, cancellationToken);
                 var negotiation = await _negotiationRepository.GetByIdForUpdateAsync(negotiationId, cancellationToken);
 
                 if (negotiation is null)
@@ -753,7 +766,8 @@ namespace HomeCycle.Application.Services.Negotiates
                 var conversationId = RequireConversationId(negotiation);
 
                 // Chỉ được hủy khi hai bên vẫn đang thương lượng
-                if (negotiation.NegotiationStatus != NegotiationStatus.Open)
+                if (negotiation.NegotiationStatus is not (NegotiationStatus.Open or NegotiationStatus.Agreed) ||
+                    await _negotiationRepository.HasAgreementAsync(negotiationId, cancellationToken))
                 {
                     await _unitOfWork.RollbackTransactionAsync(cancellationToken);
                     return Result<NegotiationActionResponse>.Fail(NegotiationErrors.NotOpen);
@@ -872,6 +886,8 @@ namespace HomeCycle.Application.Services.Negotiates
 
             try
             {
+                var contextSnapshot = await _negotiationRepository.GetByIdAsync(negotiationId, cancellationToken);
+                if (contextSnapshot != null) await _postRepository.LockAsync(contextSnapshot.PostId, contextSnapshot.Offer?.BuyPostId, cancellationToken);
                 var negotiation = await _negotiationRepository.GetByIdForUpdateAsync(
                     negotiationId,
                     cancellationToken);
@@ -980,19 +996,6 @@ namespace HomeCycle.Application.Services.Negotiates
         private static bool IsParticipant(negotiation negotiation, Guid userId)
         {
             return negotiation.BuyerId == userId || negotiation.SellerId == userId;
-        }
-
-        private Error? ValidatePriceRange(decimal? basePrice, decimal offerPrice)
-        {
-            if (!basePrice.HasValue)
-                return OfferErrors.PriceOutOfRange(0, 0);
-
-            var minPrice = basePrice.Value * MinPriceFactor;
-            var maxPrice = basePrice.Value * MaxPriceFactor;
-
-            return offerPrice < minPrice || offerPrice > maxPrice
-                ? OfferErrors.PriceOutOfRange(minPrice, maxPrice)
-                : null;
         }
 
         private static Error ToValidationError(FluentValidation.Results.ValidationResult validation)

@@ -39,6 +39,10 @@ namespace HomeCycle.Infrastructure.Externals.GHN
         [JsonPropertyName("converted_weight")]
         [JsonNumberHandling(JsonNumberHandling.AllowReadingFromString)]
         public int? ConvertedWeightGram { get; init; }
+        [JsonPropertyName("calculate_weight")]
+        public int? CalculateWeightGram { get; init; }
+        [JsonPropertyName("created_date")]
+        public DateTimeOffset? CreatedDate { get; init; }
 
         [JsonPropertyName("length")]
         [JsonNumberHandling(JsonNumberHandling.AllowReadingFromString)]
@@ -89,6 +93,6 @@ namespace HomeCycle.Infrastructure.Externals.GHN
         public string Status { get; init; } = string.Empty;
 
         [JsonPropertyName("updated_date")]
-        public DateTimeOffset UpdatedDate { get; init; }
+        public DateTimeOffset? UpdatedDate { get; init; }
     }
 }

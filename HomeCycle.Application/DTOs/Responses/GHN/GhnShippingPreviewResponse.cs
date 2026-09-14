@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -12,24 +12,35 @@ namespace HomeCycle.Application.DTOs.Responses.GHN
     // Thông tin kiện hàng do server tự điền từ Product (bước "get info" trước khi tính phí)
     public sealed class GhnParcelInfoResponse
     {
+        // Estimate only: never overwrites or constrains confirmed physical parcels.
+        public long? EstimatedTotalWeightGram { get; init; }
+        public bool EstimatedOverLimit { get; init; }
+        public GhnContactSnapshotDto? Sender { get; init; }
+        public GhnContactSnapshotDto? Receiver { get; init; }
         public Guid NegotiationId { get; init; }
 
-        // 2 = Hàng nhẹ, 5 = Hàng nặng 
+        // 2 = Hàng nhẹ, 5 = Hàng nặng
         //public int ServiceTypeId { get; init; } = 2; //mặc định Hàng nhẹ
-        public int ServiceTypeId { get; init; } 
+        public int ServiceTypeId { get; init; }
 
         public GhnLightParcelSnapshotDto? LightParcel { get; init; }
 
-        // Hàng nặng: server tự dựng 1 kiện từ Product (số lượng theo Offer).
+        // Optional prefill for a single product. User must confirm actual packaging; Quantity = 1.
         public IReadOnlyList<GhnItemSnapshotDto> Items { get; init; }
             = Array.Empty<GhnItemSnapshotDto>();
 
         public bool HasProductDimensions { get; init; }
+
+        // Kích thước product không đủ mô tả kiện đóng gói khi có nhiều sản phẩm.
+        public bool RequiresPackagingDimensions { get; init; }
     }
 
     // Kết quả tính phí GHN (không kèm breakdown phí)
     public sealed class GhnShippingPreviewResponse
     {
+        public GhnShippingInfo? ShippingInfo { get; set; }
+        public string? PreviewToken { get; set; }
+        public DateTimeOffset? ExpiresAt { get; set; }
         public Guid NegotiationId { get; init; }
         public int ServiceTypeId { get; init; }
 
@@ -37,10 +48,19 @@ namespace HomeCycle.Application.DTOs.Responses.GHN
 
         public DateTimeOffset? ExpectedDeliveryAt { get; init; }
 
+        // Thông số cấp đơn thực tế dùng cho preview, kể cả hàng nặng.
+        public int WeightGram { get; init; }
+        public int LengthCm { get; init; }
+        public int WidthCm { get; init; }
+        public int HeightCm { get; init; }
+        public int ParcelCount { get; init; }
+
         // Giá trị thực tế đã dùng để gọi GHN (sau khi merge ghi đè của FE).
         public GhnLightParcelSnapshotDto? LightParcel { get; init; }
 
         public IReadOnlyList<GhnItemSnapshotDto> Items { get; init; }
             = Array.Empty<GhnItemSnapshotDto>();
     }
+    public sealed record GhnLeadtimeResponse(DateTimeOffset ExpectedDeliveryAt,
+        DateTimeOffset? FromEstimateDate, DateTimeOffset? ToEstimateDate);
 }

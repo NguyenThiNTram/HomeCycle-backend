@@ -130,13 +130,26 @@ namespace HomeCycle.Infrastructure.Externals.GHN
                     "Không tìm thấy Shipment tương ứng."));
             }
 
+            var expected = GhnStateVersion.Capture(ghnShipment);
+            if (!GhnStatusMapper.CanApply(ghnShipment.GHNStatusCode, carrierStatus))
+                return Result.Success();
+            // LastSyncedAt là thời điểm quan sát local, không phải timestamp sự kiện GHN.
+            // Xác minh callback có vẻ cũ thay vì bỏ nhầm callback đến chậm nhưng hợp lệ.
+            if (!string.IsNullOrWhiteSpace(ghnShipment.GHNOrderCode) && carrierStatus != ghnShipment.GHNStatusCode &&
+                (!request.Time.HasValue || ghnShipment.LastSyncedAt.HasValue && request.Time.Value.UtcDateTime < ghnShipment.LastSyncedAt.Value))
+            {
+                var current = await _ghnService.GetOrderDetailAsync(orderCode, cancellationToken);
+                if (!string.Equals(current.CarrierStatus, carrierStatus, StringComparison.OrdinalIgnoreCase))
+                    return Result.Success();
+            }
+            var previousCarrierStatus = ghnShipment.GHNStatusCode;
             // Chụp các mốc timeline trước khi cập nhật.
             var previousShipmentStatus = shipment.ShipmentStatus;
             var previousPickedUpAt = shipment.PickedUpAt;
             var previousDeliveredAt = shipment.DeliveredAt;
 
             var now = DateTime.UtcNow;
-            var eventTime = request.Time?.UtcDateTime ?? now;
+            var eventTime = request.Time?.UtcDateTime;
 
             // Dùng trực tiếp status GHN gửi qua webhook.
             var mappedStatus = GhnStatusMapper.Map(carrierStatus);
@@ -145,42 +158,29 @@ namespace HomeCycle.Infrastructure.Externals.GHN
             ghnShipment.GHNStatusCode = carrierStatus;
             ghnShipment.CreationStatus = GHNCreationStatus.Success;
             ghnShipment.LastSyncedAt = now;
-            ghnShipment.LastErrorCode = null;
+            if (ghnShipment.LastErrorCode?.StartsWith("CANCEL:") != true || carrierStatus == "cancel") ghnShipment.LastErrorCode = null;
 
-            await _ghnShipmentRepository.UpdateAsync(
-                ghnShipment,
-                cancellationToken);
+
 
             if (mappedStatus.HasValue)
             {
                 shipment.ShipmentStatus = mappedStatus.Value;
                 shipment.UpdatedAt = now;
 
-                // Tên biến này có nghĩa shipment đã đi qua mốc GHN lấy hàng,
-                // không có nghĩa GHN vẫn đang giữ hàng tại thời điểm hiện tại.
-                var carrierHasPickedUp =
-                    mappedStatus.Value == ShipmentStatus.Delivering ||
-                    mappedStatus.Value == ShipmentStatus.Delivered ||
-                    mappedStatus.Value == ShipmentStatus.Returning ||
-                    mappedStatus.Value == ShipmentStatus.Returned ||
-                    mappedStatus.Value == ShipmentStatus.Damage_Lost;
-
-                if (carrierHasPickedUp &&
+                if (carrierStatus == "picked" && eventTime.HasValue &&
                     (!shipment.PickedUpAt.HasValue ||
                      eventTime < shipment.PickedUpAt.Value))
                 {
                     shipment.PickedUpAt = eventTime;
                 }
 
-                if (mappedStatus.Value == ShipmentStatus.Delivered &&
+                if (mappedStatus.Value == ShipmentStatus.Delivered && eventTime.HasValue &&
                     shipment.DeliveredAt is null)
                 {
                     shipment.DeliveredAt = eventTime;
                 }
 
-                await _shipmentRepository.UpdateAsync(
-                    shipment,
-                    cancellationToken);
+
             }
             else
             {
@@ -191,9 +191,11 @@ namespace HomeCycle.Infrastructure.Externals.GHN
                     SanitizeForLog(orderCode));
             }
 
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            if (!await _ghnShipmentRepository.TrySaveCarrierStateAsync(ghnShipment, shipment, expected, cancellationToken))
+                return Result.Fail(new Error("GhnWebhook.ConcurrentUpdate", "Trạng thái vừa thay đổi; GHN cần gửi lại callback."));
 
             var trackingChanged =
+                previousCarrierStatus != ghnShipment.GHNStatusCode ||
                 previousShipmentStatus != shipment.ShipmentStatus ||
                 previousPickedUpAt != shipment.PickedUpAt ||
                 previousDeliveredAt != shipment.DeliveredAt;
@@ -235,9 +237,7 @@ namespace HomeCycle.Infrastructure.Externals.GHN
             // Không cập nhật LastSyncedAt vì lần đồng bộ này thất bại.
             ghnShipment.LastErrorCode = errorCode;
 
-            await _ghnShipmentRepository.UpdateAsync(
-                ghnShipment,
-                cancellationToken);
+
 
             await _unitOfWork.SaveChangesAsync(cancellationToken);
         }

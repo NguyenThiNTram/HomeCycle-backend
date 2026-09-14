@@ -210,6 +210,7 @@ namespace HomeCycle.API.Controllers
                 return Conflict(error);
             }
 
+            if (error.Code is "Ghn.CancellationPending" or "Ghn.CancellationRefused") return Conflict(error);
             return BadRequest(error);
         }
         private IActionResult MapTrackingError(Error? error)
@@ -229,7 +230,8 @@ namespace HomeCycle.API.Controllers
                         StatusCodes.Status403Forbidden,
                         error),
 
-                "Shipment.GhnRecordNotFound"
+                "Ghn.TrackingChanged"
+                    or "Shipment.GhnRecordNotFound"
                     or "Shipment.GhnOrderCodeMissing"
                     => Conflict(error),
 

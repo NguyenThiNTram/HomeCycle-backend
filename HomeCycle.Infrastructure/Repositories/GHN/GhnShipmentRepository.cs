@@ -45,6 +45,33 @@ namespace HomeCycle.Infrastructure.Repositories.GHN
             return entity?.ToDomain();
         }
 
+        public async Task<bool> TrySaveCarrierStateAsync(ghn_shipment row, shipment shipment, GhnStateVersion expected, CancellationToken cancellationToken = default)
+        {
+            var ownsTransaction = _db.Database.CurrentTransaction == null;
+            await using var transaction = ownsTransaction ? await _db.Database.BeginTransactionAsync(cancellationToken) : null;
+            var changed = await _db.GHN_Shipments.Where(x => x.GHNShipmentId == row.GHNShipmentId &&
+                    x.LastSyncedAt == expected.SyncedAt && x.GHNOrderCode == expected.OrderCode &&
+                    x.GHNStatusCode == expected.Status && x.CreationStatus == (int)expected.CreationStatus)
+                .ExecuteUpdateAsync(s => s.SetProperty(x => x.GHNOrderCode, row.GHNOrderCode)
+                    .SetProperty(x => x.GHNStatusCode, row.GHNStatusCode)
+                    .SetProperty(x => x.CreationStatus, (int)row.CreationStatus)
+                    .SetProperty(x => x.LastSyncedAt, row.LastSyncedAt)
+                    .SetProperty(x => x.LastErrorCode, row.LastErrorCode)
+                    .SetProperty(x => x.ExpectedDeliveryAt, row.ExpectedDeliveryAt), cancellationToken);
+            if (changed == 0) return false;
+            await _db.Shipments.Where(x => x.ShipmentId == shipment.ShipmentId)
+                .ExecuteUpdateAsync(s => s.SetProperty(x => x.ShipmentStatus, (int)shipment.ShipmentStatus)
+                    .SetProperty(x => x.PickedUpAt, shipment.PickedUpAt)
+                    .SetProperty(x => x.DeliveredAt, shipment.DeliveredAt)
+                    .SetProperty(x => x.UpdatedAt, shipment.UpdatedAt), cancellationToken);
+            if (transaction != null) await transaction.CommitAsync(cancellationToken);
+            return true;
+        }
+        public async Task<IReadOnlyList<ghn_shipment>> GetAllByOrderIdAsync(Guid orderId, CancellationToken cancellationToken = default)
+        {
+            var rows = await _db.GHN_Shipments.AsNoTracking().Where(x => x.Shipment.OrderId == orderId).ToListAsync(cancellationToken);
+            return rows.Select(x => x.ToDomain()).ToArray();
+        }
         public async Task<ghn_shipment?> GetByOrderIdAsync(Guid orderId, CancellationToken cancellationToken)
         {
             var entity = await(
@@ -69,6 +96,42 @@ namespace HomeCycle.Infrastructure.Repositories.GHN
             return entity?.ToDomain();
         }
 
+        public async Task<IReadOnlyList<ghn_shipment>> GetCancellationCandidatesAsync(int limit, CancellationToken cancellationToken = default)
+        {
+
+            var rows = await _db.GHN_Shipments.AsNoTracking()
+                .Where(x => x.Shipment.Order.OrderStatus == (int)OrderStatus.Cancelled &&
+                    x.Shipment.DeliveryMethod == (int)DeliveryMethod.GhnDelivery &&
+                    (x.GHNStatusCode == null || x.GHNStatusCode != "cancel") &&
+                    (x.LastErrorCode == null || x.LastErrorCode != "CANCEL:REFUSED") &&
+
+                    (x.GHNOrderCode != null || x.Shipment.ShipmentStatus != (int)ShipmentStatus.Cancelled))
+                .OrderBy(x => x.LastSyncedAt).Take(limit).ToListAsync(cancellationToken);
+            return rows.Select(x => x.ToDomain()).ToArray();
+        }
+
+        public async Task SaveCreationFailureAsync(ghn_shipment expected, GHNCreationStatus status, string errorCode, CancellationToken cancellationToken = default)
+        {
+            await _db.GHN_Shipments.Where(x => x.GHNShipmentId == expected.GHNShipmentId && x.GHNOrderCode == null &&
+                    x.CreationStatus == (int)expected.CreationStatus && x.LastCreateAttemptAt == expected.LastCreateAttemptAt)
+                .ExecuteUpdateAsync(s => s.SetProperty(x => x.CreationStatus, (int)status)
+                    .SetProperty(x => x.LastErrorCode, errorCode)
+                    .SetProperty(x => x.LastSyncedAt, DateTime.UtcNow), cancellationToken);
+        }
+        public async Task SaveCreationResultAsync(Guid shipmentId, HomeCycle.Application.DTOs.Responses.GHN.GhnCreateOrderResponse response, CancellationToken cancellationToken = default)
+        {
+            // Chỉ cập nhật kết quả create; không ghi đè trạng thái/time của webhook chạy đồng thời.
+            var count = await _db.GHN_Shipments.Where(x => x.ShipmentId == shipmentId &&
+                (x.GHNOrderCode == null || x.GHNOrderCode == response.OrderCode))
+                .ExecuteUpdateAsync(s => s.SetProperty(x => x.GHNOrderCode, response.OrderCode)
+                    .SetProperty(x => x.CreationStatus, (int)GHNCreationStatus.Success)
+                    .SetProperty(x => x.GHNServiceFee, response.ServiceFee)
+                    .SetProperty(x => x.GHNCodFee, response.CodFee)
+                    .SetProperty(x => x.GHNTotalFee, response.TotalFee)
+                    .SetProperty(x => x.LastErrorCode, x => x.LastErrorCode != null && x.LastErrorCode.StartsWith("CANCEL:") ? x.LastErrorCode : null)
+                    .SetProperty(x => x.ExpectedDeliveryAt, x => x.ExpectedDeliveryAt ?? (response.ExpectedDeliveryAt.HasValue ? response.ExpectedDeliveryAt.Value.UtcDateTime : (DateTime?)null)), cancellationToken);
+            if (count != 1) throw new InvalidOperationException("Mã vận đơn create không khớp shipment hiện có.");
+        }
         public async Task<IReadOnlyList<ghn_shipment>> GetCreationCandidatesAsync(
             int limit,
             TimeSpan reclaimProcessingAfter,
@@ -92,7 +155,8 @@ namespace HomeCycle.Infrastructure.Repositories.GHN
                     x.Shipment.Order.OrderStatus == (int)OrderStatus.Processing &&
                     (
                         x.CreationStatus == (int)GHNCreationStatus.Pending ||
-                        x.CreationStatus == (int)GHNCreationStatus.Failed ||
+                        (x.CreationStatus == (int)GHNCreationStatus.Failed && (x.LastErrorCode == null || !x.LastErrorCode.StartsWith("PERMANENT:"))) ||
+                        (x.CreationStatus == (int)GHNCreationStatus.Uncertain && (x.LastCreateAttemptAt == null || x.LastCreateAttemptAt < staleCutoff)) ||
                         // Claim lại đơn Processing đã mắc kẹt quá lâu (LastCreateAttemptAt cũ)
                         (x.CreationStatus == (int)GHNCreationStatus.Processing &&
                          (x.LastCreateAttemptAt == null || x.LastCreateAttemptAt < staleCutoff))
@@ -148,7 +212,8 @@ namespace HomeCycle.Infrastructure.Repositories.GHN
                     x.Shipment.Order.OrderStatus == (int)OrderStatus.Processing &&
                     (
                         x.CreationStatus == (int)GHNCreationStatus.Pending ||
-                        x.CreationStatus == (int)GHNCreationStatus.Failed ||
+                        (x.CreationStatus == (int)GHNCreationStatus.Failed && (x.LastErrorCode == null || !x.LastErrorCode.StartsWith("PERMANENT:"))) ||
+                        (x.CreationStatus == (int)GHNCreationStatus.Uncertain && (x.LastCreateAttemptAt == null || x.LastCreateAttemptAt < staleCutoff)) ||
                         // Claim lại đơn Processing mắc kẹt (LastCreateAttemptAt quá cũ)
                         (x.CreationStatus == (int)GHNCreationStatus.Processing &&
                          (x.LastCreateAttemptAt == null || x.LastCreateAttemptAt < staleCutoff))

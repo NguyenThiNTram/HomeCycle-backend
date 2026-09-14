@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
@@ -11,6 +11,7 @@ public class offer
 {
     public Guid OfferId { get; set; }
     public Guid PostId { get; set; }
+    public Guid? BuyPostId { get; set; }
     public Guid SenderId { get; set; }
     public Guid ReceiverId { get; set; }
 
@@ -22,6 +23,7 @@ public class offer
 
     public DateTime CreatedAt { get; set; }
 
+    public virtual post? BuyPost { get; set; }
     public virtual post? Post { get; set; } = null!;
 
     public virtual user? Sender { get; set; } = null!;

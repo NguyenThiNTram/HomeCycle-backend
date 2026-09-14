@@ -122,11 +122,14 @@ namespace HomeCycle.Infrastructure.Externals.GHN
 
             try
             {
+                var expected = GhnStateVersion.Capture(ghnShipment);
                 var detail = await _ghnService.GetOrderDetailAsync(
                     ghnShipment.GHNOrderCode,
                     cancellationToken);
 
                 // Chụp các mốc timeline trước khi cập nhật.
+                var previousCarrierStatus = ghnShipment.GHNStatusCode;
+                var previousEta = ghnShipment.ExpectedDeliveryAt;
                 var previousShipmentStatus = shipment.ShipmentStatus;
                 var previousPickedUpAt = shipment.PickedUpAt;
                 var previousDeliveredAt = shipment.DeliveredAt;
@@ -134,7 +137,7 @@ namespace HomeCycle.Infrastructure.Externals.GHN
 
                 var syncedAt = DateTime.UtcNow;
 
-                if (!string.IsNullOrWhiteSpace(detail.CarrierStatus))
+                if (!string.IsNullOrWhiteSpace(detail.CarrierStatus) && GhnStatusMapper.CanApply(ghnShipment.GHNStatusCode, detail.CarrierStatus))
                 {
                     ghnShipment.GHNStatusCode = detail.CarrierStatus
                         .Trim()
@@ -158,22 +161,18 @@ namespace HomeCycle.Infrastructure.Externals.GHN
 
                         if (carrierHasPickedUp)
                         {
-                            // Lấy mốc đầu tiên trong lịch sử GHN đã đi qua trạng thái Delivering.
+                            // Chỉ dùng sự kiện lấy hàng thật, không suy thời điểm lấy từ các chặng sau.
                             var pickedUpLog = detail.Timeline
                                 .Where(x =>
                                     x.OccurredAt.HasValue &&
-                                    GhnStatusMapper.Map(x.Status) ==
-                                        ShipmentStatus.Delivering)
+                                    x.Status == "picked")
                                 .OrderBy(x => x.OccurredAt)
                                 .FirstOrDefault();
 
-                            var detectedPickedUpAt =
-                                pickedUpLog?.OccurredAt?.UtcDateTime ??
-                                detail.CarrierUpdatedAt?.UtcDateTime ??
-                                syncedAt;
+                            var detectedPickedUpAt = pickedUpLog?.OccurredAt?.UtcDateTime;
 
-                            if (!shipment.PickedUpAt.HasValue ||
-                                detectedPickedUpAt < shipment.PickedUpAt.Value)
+                            if (detectedPickedUpAt.HasValue && (!shipment.PickedUpAt.HasValue ||
+                                detectedPickedUpAt < shipment.PickedUpAt.Value))
                             {
                                 shipment.PickedUpAt = detectedPickedUpAt;
                             }
@@ -184,29 +183,21 @@ namespace HomeCycle.Infrastructure.Externals.GHN
                 if (detail.ExpectedDeliveryAt.HasValue)
                     ghnShipment.ExpectedDeliveryAt = detail.ExpectedDeliveryAt.Value.UtcDateTime;
 
-                if (detail.FinishedAt.HasValue)
+                if (detail.FinishedAt.HasValue && detail.CarrierStatus == "delivered" && shipment.ShipmentStatus == ShipmentStatus.Delivered)
                     shipment.DeliveredAt = detail.FinishedAt.Value.UtcDateTime;
 
                 // Nếu trước đó là Uncertain nhưng Detail đọc được thành công,
                 // có thể khẳng định vận đơn tồn tại trên GHN.
                 ghnShipment.CreationStatus = GHNCreationStatus.Success;
                 ghnShipment.LastSyncedAt = syncedAt;
-                ghnShipment.LastErrorCode = null;
+                if (ghnShipment.LastErrorCode?.StartsWith("CANCEL:") != true) ghnShipment.LastErrorCode = null;
 
                 shipment.UpdatedAt = syncedAt;
 
-                await _ghnShipmentRepo.UpdateAsync(
-                    ghnShipment,
-                    cancellationToken);
-
-                await _shipmentRepo.UpdateAsync(
-                    shipment,
-                    cancellationToken);
-
-                // Một SaveChanges cập nhật hai bảng trong cùng transaction EF.
-                await _unitOfWork.SaveChangesAsync(cancellationToken);
-
+                if (!await _ghnShipmentRepo.TrySaveCarrierStateAsync(ghnShipment, shipment, expected, cancellationToken))
+                    return Result<ShipmentTrackingResponse>.Fail(new Error("Ghn.TrackingChanged", "Trạng thái vừa thay đổi, vui lòng tải lại."));
                 var trackingChanged =
+                    previousCarrierStatus != ghnShipment.GHNStatusCode || previousEta != ghnShipment.ExpectedDeliveryAt ||
                     previousShipmentStatus != shipment.ShipmentStatus ||
                     previousPickedUpAt != shipment.PickedUpAt ||
                     previousDeliveredAt != shipment.DeliveredAt;
@@ -256,15 +247,9 @@ namespace HomeCycle.Infrastructure.Externals.GHN
                 orderId,
                 ghnShipment.GHNOrderCode);
 
-            // Không thay đổi LastSyncedAt vì lần này đồng bộ thất bại.
-            ghnShipment.LastErrorCode = errorCode;
-
-            await _ghnShipmentRepo.UpdateAsync(
-                ghnShipment,
-                cancellationToken);
-
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
-
+            // Không ghi toàn bộ bản cũ sau lỗi mạng: webhook có thể đã cập nhật trong lúc chờ.
+            ghnShipment = await _ghnShipmentRepo.GetByShipmentIdAsync(shipment.ShipmentId, cancellationToken) ?? ghnShipment;
+            shipment = await _shipmentRepo.GetByIdAsync(shipment.ShipmentId, cancellationToken) ?? shipment;
             return Result<ShipmentTrackingResponse>.Success(
                 BuildResponse(
                     orderId,
@@ -284,6 +269,8 @@ namespace HomeCycle.Infrastructure.Externals.GHN
                 CreationStatus = ghnShipment.CreationStatus,
                 TrackingCode = ghnShipment.GHNOrderCode,
                 CarrierStatus = ghnShipment.GHNStatusCode,
+                IsTerminal = GhnStatusMapper.IsTerminal(ghnShipment.GHNStatusCode),
+                CarrierOperationError = ghnShipment.LastErrorCode,
                 ShipmentStatus = shipment.ShipmentStatus,
                 ExpectedDeliveryAt = ghnShipment.ExpectedDeliveryAt,
                 DeliveredAt = shipment.DeliveredAt,
@@ -347,6 +334,7 @@ namespace HomeCycle.Infrastructure.Externals.GHN
 
                 "lost" => "Hàng hóa được GHN ghi nhận bị thất lạc.",
 
+                "scrap" => "Hàng hóa đã được GHN ghi nhận tiêu hủy.",
                 "exception" => "Vận đơn đang được GHN xử lý ngoại lệ.",
 
                 _ => "Trạng thái vận chuyển vừa được cập nhật."

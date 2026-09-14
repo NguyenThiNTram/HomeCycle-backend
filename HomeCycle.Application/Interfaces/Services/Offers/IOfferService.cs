@@ -13,6 +13,7 @@ namespace HomeCycle.Application.Interfaces.Services.Offers
 {
     public interface IOfferService
     {
+        Task<Result<OfferResponse>> CreateSellerRequestAsync(Guid userId, Guid buyPostId, CreateSellerRequest request, CancellationToken cancellationToken = default);
         Task<Result<OfferResponse>> CreateAsync(Guid userId, CreateOfferRequest request, CancellationToken cancellationToken = default);
 
         Task<Result<OfferResponse>> UpdateAsync(Guid userId, Guid offerId, UpdateOfferRequest request, CancellationToken cancellationToken = default);
@@ -31,8 +32,8 @@ namespace HomeCycle.Application.Interfaces.Services.Offers
 
         Task<Result<OfferDetailResponse>> GetByIdAsync(Guid userId, Guid offerId, CancellationToken cancellationToken = default);
 
-        Task<Result<PagedResult<OfferListItem>>> GetSentAsync(Guid userId, PaginationRequest request, CancellationToken cancellationToken = default);
+        Task<Result<PagedResult<OfferListItem>>> GetSentAsync(Guid userId, OfferSearchRequest request, CancellationToken cancellationToken = default);
 
-        Task<Result<PagedResult<OfferListItem>>> GetReceivedAsync(Guid userId, PaginationRequest request, CancellationToken cancellationToken = default);
+        Task<Result<PagedResult<OfferListItem>>> GetReceivedAsync(Guid userId, OfferSearchRequest request, CancellationToken cancellationToken = default);
     }
 }

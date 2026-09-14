@@ -9,7 +9,12 @@ namespace HomeCycle.Application.Services.GHN
 {
     public static class GhnStatusMapper
     {
-        // Chuyển mã trạng thái GHN thành trạng thái nghiệp vụ 
+        public static bool IsTerminal(string? status) => status?.Trim().ToLowerInvariant() is
+            "delivered" or "returned" or "cancel" or "exception" or "lost" or "damage" or "scrap";
+
+        public static bool CanApply(string? previous, string? incoming) =>
+            !IsTerminal(previous) || string.Equals(previous, incoming, StringComparison.OrdinalIgnoreCase);
+        // Chuyển mã trạng thái GHN thành trạng thái nghiệp vụ
         // Trả null nếu GHN gửi trạng thái chưa được hệ thống hỗ trợ
         public static ShipmentStatus? Map(string? ghnStatusCode)
         {
@@ -57,7 +62,7 @@ namespace HomeCycle.Application.Services.GHN
                     or "lost"
                     => ShipmentStatus.Damage_Lost,
 
-                "exception"
+                "exception" or "scrap"
                     => ShipmentStatus.Exception,
 
                 _ => null

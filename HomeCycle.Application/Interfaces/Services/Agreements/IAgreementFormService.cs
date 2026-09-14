@@ -15,6 +15,7 @@ namespace HomeCycle.Application.Interfaces.Services.Agreements
 {
     public interface IAgreementFormService
     {
+        Task<Result<GhnLeadtimeResponse>> GetGhnLeadtimeAsync(Guid negotiationId, Guid userId, GhnLeadtimeRequest request, CancellationToken cancellationToken = default);
         Task<Result<AgreementPreviewResponse>> GetPreviewAsync(Guid negotiationId, Guid currentUserId, CancellationToken cancellationToken = default);
         Task<Result<Guid>> CreateAgreementAsync(CreateAgreementFormRequest request, Guid currentUserId, CancellationToken cancellationToken = default);
         Task<Result<AgreementDetailResponse>> GetDetailAsync(Guid agreementId, Guid currentUserId, CancellationToken cancellationToken = default);

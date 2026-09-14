@@ -37,6 +37,18 @@ namespace HomeCycle.Infrastructure.Externals.GHN
         [JsonPropertyName("to_address")]
         public required string ToAddress { get; init; }
 
+        [JsonPropertyName("to_ward_name")]
+        public required string ToWardName { get; init; }
+
+        [JsonPropertyName("to_district_name")]
+        public required string ToDistrictName { get; init; }
+
+        [JsonPropertyName("to_province_name")]
+        public required string ToProvinceName { get; init; }
+
+        [JsonPropertyName("content")]
+        public required string Content { get; init; }
+
         [JsonPropertyName("to_ward_code")]
         public required string ToWardCode { get; init; }
 
@@ -93,4 +105,18 @@ namespace HomeCycle.Infrastructure.Externals.GHN
     }
 
 
+    internal sealed class GhnLeadtimeData
+    {
+        [JsonPropertyName("leadtime")]
+        public long? Leadtime { get; init; }
+        [JsonPropertyName("leadtime_order")]
+        public GhnLeadtimeRange? Range { get; init; }
+    }
+    internal sealed class GhnLeadtimeRange
+    {
+        [JsonPropertyName("from_estimate_date")]
+        public DateTimeOffset? From { get; init; }
+        [JsonPropertyName("to_estimate_date")]
+        public DateTimeOffset? To { get; init; }
+    }
 }

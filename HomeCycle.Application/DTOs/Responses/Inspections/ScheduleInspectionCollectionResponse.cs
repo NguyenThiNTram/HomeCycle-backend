@@ -9,6 +9,10 @@ namespace HomeCycle.Application.DTOs.Responses.Inspections
 {
     public sealed class ScheduleInspectionCollectionResponse
     {
+        public bool IsPreview { get; set; }
+        public string? PreviewToken { get; set; }
+        public DateTimeOffset? ExpiresAt { get; set; }
+        public DateTimeOffset? ExpectedDeliveryAt { get; set; }
         public Guid InspectionFormId { get; set; }
         public int Revision { get; set; }
         public Guid OrderId { get; set; }

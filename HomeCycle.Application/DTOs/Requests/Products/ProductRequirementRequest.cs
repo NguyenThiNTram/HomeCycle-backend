@@ -1,4 +1,4 @@
-﻿using HomeCycle.Domain.Enums;
+using HomeCycle.Domain.Enums;
 using Microsoft.EntityFrameworkCore.Metadata.Internal;
 using System;
 using System.Collections.Generic;
@@ -12,13 +12,13 @@ namespace HomeCycle.Application.DTOs.Requests.Products
 {
     public class ProductRequirementRequest
     {
-        public Guid CategoryId { get; set; }
+        public Guid? CategoryId { get; set; }
 
-        public Guid ProductTypeId { get; set; }
+        public Guid? ProductTypeId { get; set; }
 
         public Guid? BrandId { get; set; }
 
-        public decimal? ExpectedPrice { get; set; }
+
 
         public string? ProductName { get; set; }
 

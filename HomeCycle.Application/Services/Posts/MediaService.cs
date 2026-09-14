@@ -341,10 +341,10 @@ namespace HomeCycle.Application.Services.Posts
                     _unitOfWork.RegisterAfterRollback(
                         () => DeleteFilesSafelyAsync(rollbackUrls));
 
-                    await _mediaRepository.AddRangeAsync(uploadedMedia, cancellationToken);
-
                     uploadedMedia.Add(mediaEntity);
                 }
+
+                await _mediaRepository.AddRangeAsync(uploadedMedia, cancellationToken);
 
                 var response = _mapper.Map<IReadOnlyList<MediaResponse>>(uploadedMedia);
 

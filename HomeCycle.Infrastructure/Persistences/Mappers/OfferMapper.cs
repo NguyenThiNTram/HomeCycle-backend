@@ -1,4 +1,4 @@
-﻿using HomeCycle.Domain.Entities;
+using HomeCycle.Domain.Entities;
 using HomeCycle.Domain.Enums;
 using System;
 using System.Collections.Generic;
@@ -17,6 +17,7 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
             {
                 OfferId = entity.OfferId,
                 PostId = entity.PostId,
+                BuyPostId = entity.BuyPostId,
 
                 SenderId = entity.SenderId,
                 ReceiverId = entity.ReceiverId,
@@ -28,6 +29,7 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 CreatedAt = entity.CreatedAt,
 
                 Post = entity.Post?.ToDomain(),
+                BuyPost = entity.BuyPost?.ToDomain(),
                 Sender = entity.Sender?.ToDomain(),
                 Receiver = entity.Receiver?.ToDomain()
             };
@@ -39,6 +41,7 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
             {
                 OfferId = entity.OfferId,
                 PostId = entity.PostId,
+                BuyPostId = entity.BuyPostId,
                 SenderId = entity.SenderId,
                 ReceiverId = entity.ReceiverId,
                 OfferPrice = entity.OfferPrice,
