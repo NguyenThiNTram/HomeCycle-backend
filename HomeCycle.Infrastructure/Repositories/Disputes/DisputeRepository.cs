@@ -104,6 +104,7 @@ namespace HomeCycle.Infrastructure.Repositories.Disputes
                 .Include(x => x.Sender)
                 .Include(x => x.TargetUser)
                 .Include(x => x.Order)
+                .Include(x => x.DisputeCategoryNavigation)
                 .Where(x => x.SenderId == userId || x.TargetUserId == userId)
                 .AsQueryable();
 
@@ -121,6 +122,7 @@ namespace HomeCycle.Infrastructure.Repositories.Disputes
                 .Include(x => x.Sender)
                 .Include(x => x.TargetUser)
                 .Include(x => x.Order)
+                .Include(x => x.DisputeCategoryNavigation)
                 .AsQueryable();
 
             query = ApplyFilters(query, request);
@@ -176,8 +178,8 @@ namespace HomeCycle.Infrastructure.Repositories.Disputes
             if (request.Status.HasValue)
                 query = query.Where(x => x.DisputeStatus == (int)request.Status.Value);
 
-            if (request.Category.HasValue)
-                query = query.Where(x => x.DisputeCategory == (int)request.Category.Value);
+            if (request.DisputeCategoryId.HasValue)
+                query = query.Where(x => x.DisputeCategory == request.DisputeCategoryId.Value);
 
             if (request.TargetType.HasValue)
                 query = query.Where(x => x.DisputeTargetType == (int)request.TargetType.Value);
@@ -240,9 +242,22 @@ namespace HomeCycle.Infrastructure.Repositories.Disputes
                     : null,
                 TargetId = entity.OrderId ?? entity.ReviewId,
                 OrderCode = entity.Order?.OrderCode,
-                Category = entity.DisputeCategory.HasValue
-                    ? (DisputeCategory?)entity.DisputeCategory.Value
-                    : null,
+                Category = entity.DisputeCategoryNavigation == null
+                    ? null
+                    : new DisputeCategoryOptionDto
+                    {
+                        DisputeCategoryId =
+                            entity.DisputeCategoryNavigation.DisputeCategoryId,
+
+                        Code =
+                            entity.DisputeCategoryNavigation.Code,
+
+                        Name =
+                            entity.DisputeCategoryNavigation.Name,
+
+                        Description =
+                            entity.DisputeCategoryNavigation.Description
+                    },
                 Status = entity.DisputeStatus.HasValue
                     ? (DisputeStatus?)entity.DisputeStatus.Value
                     : null,

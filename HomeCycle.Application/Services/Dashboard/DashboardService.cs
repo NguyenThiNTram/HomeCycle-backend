@@ -3,12 +3,13 @@ using HomeCycle.Application.DTOs.Requests.Dashboard;
 using HomeCycle.Application.DTOs.Responses.Auths;
 using HomeCycle.Application.DTOs.Responses.Dashboard;
 using HomeCycle.Application.Interfaces.Repositories.Dashboard;
+using HomeCycle.Application.Interfaces.Repositories.Disputes;
 using HomeCycle.Application.Interfaces.Services.Dashboard;
 using HomeCycle.Domain.Enums;
 
 namespace HomeCycle.Application.Services.Dashboard;
 
-public sealed class DashboardService(IDashboardRepository repository, TimeProvider clock) : IDashboardService
+public sealed class DashboardService(IDashboardRepository repository, IDisputeCategoryRepository disputeCategoryRepository, TimeProvider clock) : IDashboardService
 {
     private DashboardPeriod ResolvePeriod(DashboardPeriodRequest request)
     {
@@ -342,8 +343,34 @@ public sealed class DashboardService(IDashboardRepository repository, TimeProvid
         var period = ResolvePeriod(request);
         var nowUtc = clock.GetUtcNow().UtcDateTime;
         var data = await repository.GetDisputesAsync(request, period, nowUtc, ct);
-        var categories = Distribution<DisputeCategory>(data.Categories)
-            .OrderByDescending(x => x.Count).ThenBy(x => x.Key).ToArray();
+        var categoryDefinitions = await disputeCategoryRepository.GetAllAsync(null, ct);
+
+        IReadOnlyList<DistributionItem> BuildCategoryDistribution(IEnumerable<DashboardCodeCount> counts)
+        {
+            var rows = counts.ToList();
+            var total = rows.Sum(x => x.Count);
+            var knownCategoryIds = categoryDefinitions.Select(x => x.DisputeCategoryId).ToHashSet();
+
+            var result = categoryDefinitions
+                .Where(x => x.IsActive || rows.Any(row => row.Code == x.DisputeCategoryId && row.Count > 0))
+                .Select(x =>
+                {
+                    var count = rows.Where(row => row.Code == x.DisputeCategoryId).Sum(row => row.Count);
+                    return new DistributionItem(x.DisputeCategoryId.ToString(), x.Name, count, Percent(count, total));
+                })
+                .ToList();
+
+            var unknownCount = rows.Where(x => !x.Code.HasValue || !knownCategoryIds.Contains(x.Code.Value)).Sum(x => x.Count);
+
+            if (unknownCount > 0)
+                result.Add(new DistributionItem("Unspecified", "Unknown / invalid value", unknownCount, Percent(unknownCount, total)));
+
+            return result.OrderByDescending(x => x.Count).ThenBy(x => x.Key).ToArray();
+        }
+
+        var categories = BuildCategoryDistribution(data.Categories);
+        var unresolvedCategories = BuildCategoryDistribution(data.UnresolvedCategories);
+
         return new()
         {
             GeneratedAtUtc = nowUtc,
@@ -355,16 +382,13 @@ public sealed class DashboardService(IDashboardRepository repository, TimeProvid
             OldestUnresolvedAgeHours = Hours(data.UnresolvedAging.OldestAgeHours),
             CurrentStatusDistribution = Distribution<DisputeStatus>(data.CurrentStatuses),
             CategoryDistribution = categories,
-            UnresolvedByCategory = Distribution<DisputeCategory>(data.UnresolvedCategories)
-                .OrderByDescending(x => x.Count).ThenBy(x => x.Key).ToArray(),
+            UnresolvedByCategory = unresolvedCategories,
             UnresolvedAgingDistribution = Aging(data.UnresolvedAging),
             OpenedVsResolvedSeries = Buckets(period).Select(bucket => new DisputeFlowSeriesPoint(
                 bucket.From,
                 bucket.To,
-                data.OpenedDaily.Where(x => DateOnly.FromDateTime(x.Date) >= bucket.From
-                    && DateOnly.FromDateTime(x.Date) < bucket.To).Sum(x => x.Count),
-                data.ResolvedDaily.Where(x => DateOnly.FromDateTime(x.Date) >= bucket.From
-                    && DateOnly.FromDateTime(x.Date) < bucket.To).Sum(x => x.Count))).ToArray(),
+                data.OpenedDaily.Where(x => DateOnly.FromDateTime(x.Date) >= bucket.From && DateOnly.FromDateTime(x.Date) < bucket.To).Sum(x => x.Count),
+                data.ResolvedDaily.Where(x => DateOnly.FromDateTime(x.Date) >= bucket.From && DateOnly.FromDateTime(x.Date) < bucket.To).Sum(x => x.Count))).ToArray(),
             UnknownCategoryCount = categories.Where(x => x.Key == "Unspecified").Sum(x => x.Count)
         };
     }

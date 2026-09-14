@@ -111,7 +111,7 @@ namespace HomeCycle.API.Controllers
             Summary = "Lấy lịch sử phiên bản của một policy",
             Description =
                 "Dùng cho màn hình lịch sử cấu hình của Admin. " +
-                "PolicyType hỗ trợ: Dispute, Appointment và FileUpload.")]
+                "PolicyType hỗ trợ: Dispute, Appointment, FileUpload, Payment, Order và Withdrawal.")]
         public async Task<IActionResult> GetVersions(string policyType, CancellationToken cancellationToken)
         {
             if (!TryParsePolicyType(policyType, out var type))
@@ -337,6 +337,30 @@ namespace HomeCycle.API.Controllers
             return Guid.TryParse(userIdClaim, out var userId) ? userId : Guid.Empty;
         }
 
+        [HttpGet("withdrawal")]
+        [SwaggerOperation(
+            Summary = "Lấy cấu hình rút tiền hiện hành",
+            Description = "Trả giới hạn tối thiểu, tối đa mỗi lần và hạn mức rút mỗi ngày của một user.")]
+        public async Task<IActionResult> GetWithdrawalPolicy(CancellationToken cancellationToken)
+        {
+            var result = await _platformPolicyService.GetWithdrawalPolicyAsync(cancellationToken);
+            return result.IsSuccess ? Ok(result) : BadRequest(result);
+        }
+
+        [HttpPatch("withdrawal")]
+        [SwaggerOperation(
+            Summary = "Cập nhật cấu hình rút tiền",
+            Description = "Admin có thể cập nhật số tiền tối thiểu, tối đa mỗi lần hoặc hạn mức rút mỗi ngày. Mỗi thay đổi tạo một policy version mới.")]
+        public async Task<IActionResult> UpdateWithdrawalPolicy(
+            [FromBody] UpdateWithdrawalPolicyRequest request, CancellationToken cancellationToken)
+        {
+            var adminId = GetCurrentUserId();
+            if (adminId == Guid.Empty) return Unauthorized();
+
+            var result = await _platformPolicyService.UpdateWithdrawalPolicyAsync(adminId, request, cancellationToken);
+            return result.IsSuccess ? Ok(result) : BadRequest(result);
+        }
+
         private static bool TryParsePolicyType(string policyType, out PlatformPolicyType type)
         {
             type = default;
@@ -365,6 +389,10 @@ namespace HomeCycle.API.Controllers
 
                 case "order":
                     type = PlatformPolicyType.Order;
+                    return true;
+
+                case "withdrawal":
+                    type = PlatformPolicyType.Withdrawal;
                     return true;
 
                 default:

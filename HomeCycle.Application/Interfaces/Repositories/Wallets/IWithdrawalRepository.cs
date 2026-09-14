@@ -25,5 +25,7 @@ namespace HomeCycle.Application.Interfaces.Repositories.Wallets
         Task<WithdrawalReadModel?> GetReadModelByIdAsync(
             Guid withdrawalId,
             CancellationToken ct = default);
+        Task<decimal> GetCompletedAmountAsync(Guid userId, DateTime fromUtc, DateTime toUtc, CancellationToken ct = default);
+        Task<decimal> GetActiveReservedAmountAsync(Guid userId, CancellationToken ct = default);
     }
 }

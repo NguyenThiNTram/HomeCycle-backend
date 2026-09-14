@@ -58,6 +58,7 @@ namespace HomeCycle.Application.Services.Disputes
         private readonly IValidator<ResolveDisputeRequest> _resolveValidator;
         private readonly IValidator<VerifyDisputeReturnRequest> _returnVerificationValidator;
         private readonly IReadOnlyDictionary<DisputeTargetType, IDisputeTargetHandler> _targetHandlers;
+        private readonly IDisputeCategoryRepository _disputeCategoryRepository;
 
         public DisputeService(IGhnShipmentCreationService ghnLifecycle,
             IDisputeRepository disputeRepository,
@@ -79,7 +80,8 @@ namespace HomeCycle.Application.Services.Disputes
             IValidator<DisputeModeratorDecisionRequest> moderatorDecisionValidator,
             IValidator<ResolveDisputeRequest> resolveValidator,
             IValidator<VerifyDisputeReturnRequest> returnVerificationValidator,
-            IEnumerable<IDisputeTargetHandler> targetHandlers)
+            IEnumerable<IDisputeTargetHandler> targetHandlers,
+            IDisputeCategoryRepository disputeCategoryRepository)
         {
             _ghnLifecycle = ghnLifecycle;
             _disputeRepository = disputeRepository;
@@ -104,6 +106,7 @@ namespace HomeCycle.Application.Services.Disputes
             _targetHandlers = targetHandlers
                 .GroupBy(x => x.TargetType)
                 .ToDictionary(x => x.Key, x => x.First());
+            _disputeCategoryRepository = disputeCategoryRepository;
         }
 
         public async Task<Result<CreateDisputeResponse>> CreateAsync(
@@ -128,10 +131,30 @@ namespace HomeCycle.Application.Services.Disputes
 
             try
             {
+                var category = await _disputeCategoryRepository.GetByIdForUpdateAsync(request.DisputeCategoryId, cancellationToken);
+
+                if (category == null)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<CreateDisputeResponse>.Fail(DisputeCategoryErrors.NotFound);
+                }
+
+                if (!category.IsActive)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<CreateDisputeResponse>.Fail(DisputeCategoryErrors.Inactive);
+                }
+
+                if (!category.TargetTypes.Contains(request.TargetType))
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<CreateDisputeResponse>.Fail(DisputeCategoryErrors.TargetNotAllowed);
+                }
+
                 var targetResult = await targetHandler.PrepareCreateAsync(
                     senderId,
                     request.TargetId,
-                    request.Category,
+                    category.Code,
                     now,
                     cancellationToken);
 
@@ -152,7 +175,7 @@ namespace HomeCycle.Application.Services.Disputes
                     OrderId = target.OrderId,
                     ReviewId = target.ReviewId,
                     DisputeTargetType = (int)target.TargetType,
-                    DisputeCategory = (int)request.Category,
+                    DisputeCategory = request.DisputeCategoryId,
                     Description = request.Description.Trim(),
                     DisputeStatus = (int)DisputeStatus.Pending,
                     ModeratorNote = null,
@@ -1285,15 +1308,30 @@ namespace HomeCycle.Application.Services.Disputes
                 orderSummary.ReturnDueAt != null &&
                 DateTime.UtcNow >= orderSummary.ReturnDueAt.Value;
 
+            DisputeCategoryOptionDto? category = null;
+
+            if (dispute.DisputeCategory.HasValue)
+            {
+                var categoryEntity =
+                    await _disputeCategoryRepository.GetByIdAsync(
+                        dispute.DisputeCategory.Value,
+                        cancellationToken);
+
+                if (categoryEntity != null)
+                {
+                    category =
+                        _mapper.Map<DisputeCategoryOptionDto>(
+                            categoryEntity);
+                }
+            }
+
             var response = new DisputeDetailResponse
             {
                 DisputeId = dispute.DisputeId,
                 Sender = _mapper.Map<DisputeUserSummaryDto>(sender),
                 TargetUser = targetUser == null ? null : _mapper.Map<DisputeUserSummaryDto>(targetUser),
                 Target = targetSummaryResult.Data,
-                Category = dispute.DisputeCategory.HasValue
-                    ? (DisputeCategory?)dispute.DisputeCategory.Value
-                    : null,
+                Category = category,
                 Description = dispute.Description,
                 Status = disputeStatus,
                 ResolutionOutcome = dispute.ResolutionOutcome.HasValue

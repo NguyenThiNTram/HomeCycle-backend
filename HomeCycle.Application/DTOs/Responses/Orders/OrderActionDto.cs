@@ -1,4 +1,5 @@
-﻿using HomeCycle.Domain.Enums;
+﻿using HomeCycle.Application.DTOs.Responses.Disputes;
+using HomeCycle.Domain.Enums;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -17,6 +18,9 @@ namespace HomeCycle.Application.DTOs.Responses.Orders
         public bool CanDispute { get; set; }
         public bool CanConfirmReturn { get; set; }
         public bool CanConfirmReturnReceived { get; set; }
-        public IReadOnlyList<DisputeCategory> AllowedDisputeCategories { get; set; } = Array.Empty<DisputeCategory>();
+
+        public IReadOnlyList<DisputeCategoryOptionDto>
+            AllowedDisputeCategories { get; set; }
+            = Array.Empty<DisputeCategoryOptionDto>();
     }
 }

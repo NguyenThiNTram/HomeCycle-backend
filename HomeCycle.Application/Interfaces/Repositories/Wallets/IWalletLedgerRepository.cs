@@ -19,5 +19,6 @@ namespace HomeCycle.Application.Interfaces.Repositories.Wallets
             Guid walletId,
             Guid orderId,
             CancellationToken ct = default);
+        Task<IReadOnlyList<WalletActiveHoldDto>> GetActiveHoldsAsync(CancellationToken ct = default);
     }
 }

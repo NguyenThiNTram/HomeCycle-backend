@@ -16,7 +16,7 @@ namespace HomeCycle.Application.DTOs.Requests.Disputes
        
         public Guid TargetId { get; set; }
 
-        public DisputeCategory Category { get; set; }
+        public int DisputeCategoryId { get; set; }
 
         public string Description { get; set; } = string.Empty;
 

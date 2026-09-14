@@ -245,10 +245,24 @@ namespace HomeCycle.API.Controllers
             if (moderatorId == Guid.Empty)
                 return Unauthorized(new { success = false, message = "Phiên làm việc không hợp lệ." });
 
-            var result = await _withdrawalService.ApproveWithdrawalAsync(moderatorId, withdrawalId, cancellationToken);
+            var result = await _withdrawalService.ApproveSimulatedWithdrawalAsync(
+                moderatorId,
+                withdrawalId,
+                cancellationToken);
 
             if (!result.IsSuccess)
             {
+                if (result.Error.Code ==
+                    "Withdrawal.AlreadyProcessed")
+                {
+                    return Conflict(new
+                    {
+                        success = false,
+                        code = result.Error.Code,
+                        message = result.Error.Message
+                    });
+                }
+
                 return BadRequest(new
                 {
                     success = false,
@@ -257,7 +271,7 @@ namespace HomeCycle.API.Controllers
                 });
             }
 
-            return Ok(new { success = true, message = "Đã duyệt yêu cầu rút tiền, đang chuyển tiền." });
+            return Ok(new { success = true, message = "Đã duyệt và hoàn tất yêu cầu rút tiền trên hệ thống." });
         }
 
         [HttpPost("withdrawals/{withdrawalId:guid}/reject")]
@@ -275,6 +289,17 @@ namespace HomeCycle.API.Controllers
 
             if (!result.IsSuccess)
             {
+                if (result.Error.Code ==
+                    "Withdrawal.AlreadyProcessed")
+                {
+                    return Conflict(new
+                    {
+                        success = false,
+                        code = result.Error.Code,
+                        message = result.Error.Message
+                    });
+                }
+
                 return BadRequest(new
                 {
                     success = false,

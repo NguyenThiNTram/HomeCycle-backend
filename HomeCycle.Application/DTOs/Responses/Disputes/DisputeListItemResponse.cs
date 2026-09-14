@@ -25,7 +25,7 @@ namespace HomeCycle.Application.DTOs.Responses.Disputes
 
         public string? OrderCode { get; set; }
 
-        public DisputeCategory? Category { get; set; }
+        public DisputeCategoryOptionDto? Category { get; set; }
 
         public DisputeStatus? Status { get; set; }
 

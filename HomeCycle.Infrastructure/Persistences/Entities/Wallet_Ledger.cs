@@ -9,6 +9,7 @@ namespace HomeCycle.Infrastructure;
 [Table("Wallet_Ledger")]
 [Index("WalletTransactionId", Name = "idx_wallet_ledger_transaction")]
 [Index("WalletId", Name = "idx_wallet_ledger_wallet")]
+[Index("WalletTransactionId", "WalletId", "BalanceType", IsUnique = true, Name = "UQ_WalletLedger_TxId_WalletId_BalanceType")]
 public partial class Wallet_Ledger
 {
     [Key]

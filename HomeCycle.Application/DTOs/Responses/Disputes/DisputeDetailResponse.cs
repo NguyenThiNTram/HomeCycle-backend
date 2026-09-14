@@ -18,7 +18,7 @@ namespace HomeCycle.Application.DTOs.Responses.Disputes
 
         public DisputeTargetSummaryDto Target { get; set; } = null!;
 
-        public DisputeCategory? Category { get; set; }
+        public DisputeCategoryOptionDto? Category { get; set; }
 
         public string? Description { get; set; }
 
