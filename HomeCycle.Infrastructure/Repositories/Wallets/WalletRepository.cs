@@ -104,5 +104,15 @@ namespace HomeCycle.Infrastructure.Repositories.Wallets
 
             return entity?.ToDomain();
         }
+
+        public async Task<List<wallet>> GetAllUserWalletsAsync(CancellationToken ct = default)
+        {
+            var entities = await _db.Wallets
+                .AsNoTracking()
+                .Where(x => x.WalletType != (int)WalletTypeEnum.System)
+                .ToListAsync(ct);
+
+            return entities.Select(x => x.ToDomain()).ToList();
+        }
     }
 }

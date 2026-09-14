@@ -157,6 +157,102 @@ namespace HomeCycle.API.Controllers
             return Ok(result.Data);
         }
 
+        [HttpGet("finance/funds")]
+        [Authorize(Roles = nameof(UserRole.Admin))]
+        [SwaggerOperation(
+            Summary = "Lấy tổng quan số dư tài chính",
+            Description = "Trả về tổng Available/Hold của user wallets và system wallets."
+        )]
+        public async Task<IActionResult> GetFinanceFunds(CancellationToken ct)
+        {
+            var result = await _walletService.GetFinanceFundsAsync(ct);
+
+            if (!result.IsSuccess)
+                return BadRequest(result.Error);
+
+            return Ok(result.Data);
+        }
+
+
+        [HttpGet("finance/holds")]
+        [Authorize(Roles = nameof(UserRole.Moderator) + "," + nameof(UserRole.Admin))]
+        [SwaggerOperation(
+            Summary = "Lấy các khoản tiền đang được hold",
+            Description = "Trả về các khoản hold có giá trị ròng lớn hơn 0 theo wallet và reference."
+        )]
+        public async Task<IActionResult> GetActiveHolds(CancellationToken ct)
+        {
+            var result = await _walletService.GetActiveHoldsAsync(ct);
+
+            if (!result.IsSuccess)
+                return BadRequest(result.Error);
+
+            return Ok(result.Data);
+        }
+
+        [HttpGet("finance/transactions")]
+        [Authorize(Roles = nameof(UserRole.Moderator) + "," + nameof(UserRole.Admin))]
+        [SwaggerOperation(
+            Summary = "Lấy danh sách financial transactions",
+            Description = "Hỗ trợ lọc theo transaction type, reference type, status, khoảng thời gian và phân trang."
+        )]
+        public async Task<IActionResult> GetFinanceTransactions(
+            [FromQuery] WalletTransactionSearchRequest request,
+            CancellationToken ct)
+        {
+            var result = await _walletService.GetFinanceTransactionsAsync(request, ct);
+
+            if (!result.IsSuccess)
+                return BadRequest(result.Error);
+
+            return Ok(result.Data);
+        }
+
+
+        [HttpGet("finance/transactions/{walletTransactionId:guid}")]
+        [Authorize(Roles = nameof(UserRole.Moderator) + "," + nameof(UserRole.Admin))]
+        [SwaggerOperation(
+            Summary = "Lấy chi tiết financial transaction",
+            Description = "Trả về transaction header và toàn bộ wallet ledger entries liên quan."
+        )]
+        public async Task<IActionResult> GetFinanceTransactionDetail(
+            Guid walletTransactionId,
+            CancellationToken ct)
+        {
+            var result = await _walletService.GetFinanceTransactionDetailAsync(
+                walletTransactionId,
+                ct);
+
+            if (!result.IsSuccess)
+            {
+                if (result.Error?.Code == "WalletTransaction.NotFound")
+                    return NotFound(result.Error);
+
+                return BadRequest(result.Error);
+            }
+
+            return Ok(result.Data);
+        }
+
+
+        [HttpGet("finance/releases")]
+        [Authorize(Roles = nameof(UserRole.Moderator) + "," + nameof(UserRole.Admin))]
+        [SwaggerOperation(
+            Summary = "Lấy lịch sử payout release",
+            Description = "Trả về các wallet transactions có TransactionType = Payout_Release."
+        )]
+        public async Task<IActionResult> GetPayoutReleases(
+            [FromQuery] PaginationRequest request,
+            CancellationToken ct)
+        {
+            var result = await _walletService.GetPayoutReleasesAsync(request, ct);
+
+            if (!result.IsSuccess)
+                return BadRequest(result.Error);
+
+            return Ok(result.Data);
+        }
+
         private WalletTypeEnum ResolveWalletType()
         {
             var roleClaim = User.FindFirst(ClaimTypes.Role)?.Value;

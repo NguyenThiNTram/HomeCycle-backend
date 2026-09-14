@@ -23,5 +23,6 @@ namespace HomeCycle.Application.Interfaces.Repositories.Wallets
         Task<wallet?> GetByIdForUpdateAsync(
             Guid walletId,
             CancellationToken ct = default);
+        Task<List<wallet>> GetAllUserWalletsAsync(CancellationToken ct = default);
     }
 }

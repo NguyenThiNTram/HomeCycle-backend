@@ -18,12 +18,14 @@ namespace HomeCycle.Application.Services.Wallets
     {
         private readonly IWalletRepository _walletRepo;
         private readonly IWalletLedgerRepository _ledgerRepo;
+        private readonly IWalletTransactionRepository _walletTxRepo;
         private readonly ILogger<WalletService> _logger;
 
-        public WalletService(IWalletRepository walletRepo, IWalletLedgerRepository ledgerRepo, ILogger<WalletService> logger)
+        public WalletService(IWalletRepository walletRepo, IWalletLedgerRepository ledgerRepo, IWalletTransactionRepository walletTxRepo, ILogger<WalletService> logger)
         {
             _walletRepo = walletRepo;
             _ledgerRepo = ledgerRepo;
+            _walletTxRepo = walletTxRepo;
             _logger = logger;
         }
 
@@ -85,5 +87,82 @@ namespace HomeCycle.Application.Services.Wallets
             return Result<SystemWalletSummaryDto>.Success(summary);
         }
 
+
+        public async Task<Result<WalletFinanceFundsDto>> GetFinanceFundsAsync(CancellationToken ct = default)
+        {
+            var userWallets = await _walletRepo.GetAllUserWalletsAsync(ct);
+            var systemWallets = await _walletRepo.GetAllSystemWalletsAsync(ct);
+
+            var systemWalletDtos = systemWallets.Select(w => new WalletInfoDto
+            {
+                WalletId = w.WalletId,
+                WalletType = (WalletTypeEnum)w.WalletType,
+                AvailableBalance = w.AvailableBalance,
+                HoldBalance = w.HoldBalance,
+                Purpose = w.Purpose.HasValue
+                    ? (SystemWalletPurpose)w.Purpose.Value
+                    : null
+            }).ToList();
+
+            var totalUserAvailable = userWallets.Sum(x => x.AvailableBalance);
+            var totalUserHold = userWallets.Sum(x => x.HoldBalance);
+            var totalSystemAvailable = systemWallets.Sum(x => x.AvailableBalance);
+            var totalSystemHold = systemWallets.Sum(x => x.HoldBalance);
+
+            return Result<WalletFinanceFundsDto>.Success(new WalletFinanceFundsDto
+            {
+                TotalUserAvailable = totalUserAvailable,
+                TotalUserHold = totalUserHold,
+                TotalSystemAvailable = totalSystemAvailable,
+                TotalSystemHold = totalSystemHold,
+                TotalRecordedBalance =
+                    totalUserAvailable +
+                    totalUserHold +
+                    totalSystemAvailable +
+                    totalSystemHold,
+                SystemWallets = systemWalletDtos
+            });
+        }
+
+        public async Task<Result<IReadOnlyList<WalletActiveHoldDto>>> GetActiveHoldsAsync(CancellationToken ct = default)
+        {
+            var result = await _ledgerRepo.GetActiveHoldsAsync(ct);
+            return Result<IReadOnlyList<WalletActiveHoldDto>>.Success(result);
+        }
+
+        public async Task<Result<PagedResult<WalletTransactionListItemDto>>> GetFinanceTransactionsAsync(
+            WalletTransactionSearchRequest request,
+            CancellationToken ct = default)
+        {
+            var result = await _walletTxRepo.GetPagedAsync(request, ct);
+
+            return Result<PagedResult<WalletTransactionListItemDto>>.Success(result);
+        }
+
+        public async Task<Result<WalletTransactionDetailDto>> GetFinanceTransactionDetailAsync(
+            Guid walletTransactionId,
+            CancellationToken ct = default)
+        {
+            var transaction = await _walletTxRepo.GetDetailAsync(walletTransactionId, ct);
+
+            if (transaction == null)
+            {
+                return Result<WalletTransactionDetailDto>.Fail(
+                    new Error(
+                        "WalletTransaction.NotFound",
+                        "Không tìm thấy wallet transaction."));
+            }
+
+            return Result<WalletTransactionDetailDto>.Success(transaction);
+        }
+
+        public async Task<Result<PagedResult<WalletReleaseListItemDto>>> GetPayoutReleasesAsync(
+            PaginationRequest request,
+            CancellationToken ct = default)
+        {
+            var result = await _walletTxRepo.GetPagedReleasesAsync(request, ct);
+
+            return Result<PagedResult<WalletReleaseListItemDto>>.Success(result);
+        }
     }
 }

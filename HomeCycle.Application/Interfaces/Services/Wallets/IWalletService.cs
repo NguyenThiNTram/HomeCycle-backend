@@ -17,7 +17,17 @@ namespace HomeCycle.Application.Interfaces.Services.Wallets
         Task<Result<PagedResult<WalletLedgerResponseDto>>> GetWalletStatementAsync(Guid userId, WalletTypeEnum walletType, WalletLedgerSearchRequest request, CancellationToken ct = default);
 
         Task<Result<SystemWalletSummaryDto>> GetSystemWalletSummaryAsync(CancellationToken ct = default);
-
+        Task<Result<WalletFinanceFundsDto>> GetFinanceFundsAsync(CancellationToken ct = default);
+        Task<Result<IReadOnlyList<WalletActiveHoldDto>>> GetActiveHoldsAsync(CancellationToken ct = default);
+        Task<Result<PagedResult<WalletTransactionListItemDto>>> GetFinanceTransactionsAsync(
+            WalletTransactionSearchRequest request,
+            CancellationToken ct = default);
+        Task<Result<WalletTransactionDetailDto>> GetFinanceTransactionDetailAsync(
+            Guid walletTransactionId,
+            CancellationToken ct = default);
+        Task<Result<PagedResult<WalletReleaseListItemDto>>> GetPayoutReleasesAsync(
+            PaginationRequest request,
+            CancellationToken ct = default);
     }
 
 }

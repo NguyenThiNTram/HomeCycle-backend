@@ -99,5 +99,34 @@ namespace HomeCycle.Infrastructure.Repositories.Wallets
 
             return amount ?? 0;
         }
+
+        public async Task<IReadOnlyList<WalletActiveHoldDto>> GetActiveHoldsAsync(CancellationToken ct = default)
+        {
+            return await _db.Wallet_Ledgers
+                .AsNoTracking()
+                .Where(x =>
+                    x.BalanceType == (int)BalanceType.Hold &&
+                    x.ReferenceType != null &&
+                    x.ReferenceId != null)
+                .GroupBy(x => new
+                {
+                    x.WalletId,
+                    x.ReferenceType,
+                    x.ReferenceId
+                })
+                .Select(g => new WalletActiveHoldDto
+                {
+                    WalletId = g.Key.WalletId,
+                    ReferenceType = (ReferenceType?)g.Key.ReferenceType,
+                    ReferenceId = g.Key.ReferenceId,
+                    HoldAmount = g.Sum(x =>
+                        x.Direction == (int)LedgerDirection.In
+                            ? x.Amount
+                            : -x.Amount)
+                })
+                .Where(x => x.HoldAmount > 0)
+                .OrderByDescending(x => x.HoldAmount)
+                .ToListAsync(ct);
+        }
     }
 }
