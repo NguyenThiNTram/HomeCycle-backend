@@ -795,6 +795,36 @@ public sealed class DashboardRepository(HomeCycleDbContext db) : IDashboardRepos
         };
     }
 
+    public async Task<IReadOnlyList<FinanceTypeAmountRow>> GetFinanceRevenueAsync(
+        DashboardPeriod period,
+        CancellationToken ct)
+    {
+        var from = period.FromUtc;
+        var to = period.EndUtc;
+
+        var revenueTypes = new[]
+        {
+        (int)TransactionType.Commission_Fee,
+        (int)TransactionType.Subscription_Fee
+    };
+
+        return await db.Wallet_Transactions
+            .AsNoTracking()
+            .Where(x =>
+                x.WalletTransactionStatus == (int)WalletTransactionStatus.Completed &&
+                x.CreatedAt >= from &&
+                x.CreatedAt < to &&
+                x.ToWallet != null &&
+                x.ToWallet.WalletType == (int)WalletTypeEnum.System &&
+                x.ToWallet.Purpose == (int)SystemWalletPurpose.Platform_Revenue &&
+                x.TransactionType.HasValue &&
+                revenueTypes.Contains(x.TransactionType.Value))
+            .GroupBy(x => x.TransactionType)
+            .Select(g => new FinanceTypeAmountRow(
+                g.Key,
+                g.Sum(x => Math.Abs(x.Amount ?? 0))))
+            .ToListAsync(ct);
+    }
 
     public async Task<FinancePaymentStatusData> GetFinancePaymentStatusAsync(
         DashboardPeriod period,

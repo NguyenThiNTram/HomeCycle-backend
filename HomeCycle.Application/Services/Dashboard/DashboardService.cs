@@ -651,6 +651,46 @@ public sealed class DashboardService(IDashboardRepository repository, IDisputeCa
         };
     }
 
+
+    public async Task<FinanceRevenueResponse> GetFinanceRevenueAsync(
+        DashboardPeriodRequest request,
+        CancellationToken ct)
+    {
+        var period = ResolvePeriod(request);
+        var rows = await repository.GetFinanceRevenueAsync(period, ct);
+
+        var revenueTypes = new[]
+        {
+        TransactionType.Commission_Fee,
+        TransactionType.Subscription_Fee
+    };
+
+        var totalRevenue = rows.Sum(x => x.Amount);
+
+        var sources = revenueTypes
+            .Select(type =>
+            {
+                var amount = rows
+                    .Where(x => x.TransactionType == (int)type)
+                    .Sum(x => x.Amount);
+
+                return new FinanceAmountBreakdownItem(
+                    type.ToString(),
+                    FinanceTransactionLabel(type),
+                    amount,
+                    AmountPercent(amount, totalRevenue));
+            })
+            .ToArray();
+
+        return new FinanceRevenueResponse
+        {
+            GeneratedAtUtc = clock.GetUtcNow().UtcDateTime,
+            Period = period,
+            TotalRevenue = totalRevenue,
+            Sources = sources
+        };
+    }
+
     public async Task<FinancePaymentStatusResponse> GetFinancePaymentStatusAsync(
         DashboardPeriodRequest request,
         CancellationToken ct)

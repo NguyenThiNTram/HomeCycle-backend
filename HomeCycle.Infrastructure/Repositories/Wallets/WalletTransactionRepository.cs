@@ -110,6 +110,8 @@ namespace HomeCycle.Infrastructure.Repositories.Wallets
                         ? (PaymentMethod?)x.Payment.PaymentMethod.Value
                         : null,
                     WalletTransactionId = x.WalletTransactionId,
+                    FromWalletId = x.FromWalletId,
+                    ToWalletId = x.ToWalletId,
                     From = x.FromWallet == null ? null : new WalletFinancePartyDto
                     {
                         WalletId = x.FromWallet.WalletId,

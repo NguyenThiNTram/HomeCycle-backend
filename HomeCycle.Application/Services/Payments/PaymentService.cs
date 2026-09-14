@@ -214,24 +214,6 @@ namespace HomeCycle.Application.Services.Payments
             if (agreement.AgreementStatus != (int)AgreementStatus.Awaiting_Payment)
                 return Result<string>.Fail(new Error("Agreement.InvalidStatus", "Thỏa thuận không ở trạng thái chờ thanh toán."));
 
-            // Tái sử dụng payment Pending còn hạn thay vì tạo mới liên tục.
-            var existingPending = await _paymentRepo.GetLatestPendingByAgreementAsync(agreementId, ct);
-            if (existingPending != null)
-            {
-                if (existingPending.ExpiredAt.HasValue && existingPending.ExpiredAt.Value > DateTime.UtcNow)
-                {
-                    var existingTx = await _paymentTxRepo.GetLatestByPaymentIdAsync(existingPending.PaymentId, ct);
-                    if (existingTx != null && !string.IsNullOrEmpty(existingTx.CheckoutUrl))
-                        return Result<string>.Success(existingTx.CheckoutUrl);
-                }
-                else
-                {
-                    // Hết hạn -> đánh dấu Expired để mở đường tạo payment mới.
-                    existingPending.PaymentStatus = (int)PaymentStatus.Expired;
-                    await _paymentRepo.UpdateAsync(existingPending, ct);
-                }
-            }
-
             AgreementDetailsDto? details;
             try
             {
@@ -268,7 +250,84 @@ namespace HomeCycle.Application.Services.Payments
 
             agreement.PaymentType = calc.PaymentType;
 
-            long orderCode = 0;
+            await _unitOfWork.BeginTransactionAsync(ct);
+
+            try
+            {
+                var lockedAgreement =
+                    await _agreementRepo.GetByIdForUpdateAsync(
+                        agreementId,
+                        ct);
+
+                if (lockedAgreement == null)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+
+                    return Result<string>.Fail(
+                        new Error(
+                            "Agreement.NotFound",
+                            "Không tìm thấy thỏa thuận."));
+                }
+
+                if (lockedAgreement.BuyerId != payerId)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+
+                    return Result<string>.Fail(
+                        new Error(
+                            "Auth.Forbidden",
+                            "Chỉ người mua mới có quyền thanh toán thỏa thuận này."));
+                }
+
+                if (lockedAgreement.AgreementStatus !=
+                    (int)AgreementStatus.Awaiting_Payment)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+
+                    return Result<string>.Fail(
+                        new Error(
+                            "Agreement.InvalidStatus",
+                            "Thỏa thuận không ở trạng thái chờ thanh toán."));
+                }
+
+                agreement = lockedAgreement;
+                agreement.PaymentType = calc.PaymentType;
+
+                var now = DateTime.UtcNow;
+
+                var existingPending =
+                    await _paymentRepo.GetLatestPendingByAgreementAsync(
+                        agreementId,
+                        ct);
+
+                if (existingPending != null)
+                {
+                    var existingTx =
+                        await _paymentTxRepo.GetLatestByPaymentIdAsync(
+                            existingPending.PaymentId,
+                            ct);
+
+                    if ((!existingPending.ExpiredAt.HasValue ||
+                         existingPending.ExpiredAt.Value > now) &&
+                        existingTx != null &&
+                        !string.IsNullOrWhiteSpace(existingTx.CheckoutUrl))
+                    {
+                        await _unitOfWork.CommitTransactionAsync(ct);
+
+                        return Result<string>.Success(
+                            existingTx.CheckoutUrl);
+                    }
+
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+
+                    return Result<string>.Fail(
+                        new Error(
+                            "Payment.ActiveCheckoutExists",
+                            "Phiên thanh toán trước đang chờ đồng bộ trạng thái."));
+                }
+
+
+                long orderCode = 0;
             const int maxOrderCodeAttempts = 5;
             for (int attempt = 0; attempt < maxOrderCodeAttempts; attempt++)
             {
@@ -276,11 +335,13 @@ namespace HomeCycle.Application.Services.Payments
                 if (!await _paymentTxRepo.ExistsByPayOSOrderCodeAsync(orderCode.ToString(), ct))
                     break;
                 if (attempt == maxOrderCodeAttempts - 1)
-                    return Result<string>.Fail(new Error("Payment.OrderCodeConflict", "Không thể khởi tạo mã đơn hàng, vui lòng thử lại."));
+                    {
+                        await _unitOfWork.RollbackTransactionAsync(ct);
+                        return Result<string>.Fail(new Error("Payment.OrderCodeConflict", "Không thể khởi tạo mã đơn hàng, vui lòng thử lại."));
+                    }
                 await Task.Delay(5, ct); // đẩy timestamp sang millisecond khác
             }
 
-            var now = DateTime.UtcNow;
             var expiresAt = now.AddMinutes(paymentPolicy.PaymentExpiryMinutes);
             var payOsExpiredAt = new DateTimeOffset(expiresAt).ToUnixTimeSeconds();
 
@@ -297,11 +358,17 @@ namespace HomeCycle.Application.Services.Payments
             };
 
             var gatewayResult = await _gatewayService.CreatePaymentLinkAsync(gatewayRequest, ct);
+
             if (!gatewayResult.IsSuccess)
+            {
+                await _unitOfWork.RollbackTransactionAsync(ct);
                 return Result<string>.Fail(gatewayResult.Error);
+            }
+
 
             if (gatewayResult.Data == null || string.IsNullOrWhiteSpace(gatewayResult.Data.CheckoutUrl))
             {
+                await _unitOfWork.RollbackTransactionAsync(ct);
                 return Result<string>.Fail(new Error(
                     "Payment.InvalidGatewayResponse",
                     "PayOS không trả về đường dẫn thanh toán hợp lệ."));
@@ -336,9 +403,6 @@ namespace HomeCycle.Application.Services.Payments
                 UpdatedAt = now
             };
 
-            await _unitOfWork.BeginTransactionAsync();
-            try
-            {
                 await _agreementRepo.UpdateAsync(agreement, ct);
                 await _paymentRepo.AddAsync(payment, ct);
                 await _paymentTxRepo.AddAsync(paymentTx, ct);
@@ -468,6 +532,23 @@ namespace HomeCycle.Application.Services.Payments
                     return Result<PaymentStatusResponseDto>.Fail(new Error("Agreement.InvalidStatus", "Thỏa thuận không ở trạng thái chờ thanh toán."));
                 }
 
+                var now = DateTime.UtcNow;
+
+                var existingPending =
+                    await _paymentRepo.GetLatestPendingByAgreementAsync(
+                        agreementId,
+                        ct);
+
+                if (existingPending != null)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+
+                    return Result<PaymentStatusResponseDto>.Fail(
+                        new Error(
+                            "Payment.ActiveCheckoutExists",
+                            "Phiên thanh toán PayOS trước đang chờ đồng bộ trạng thái."));
+                }
+
                 agreement = lockedAgreement;
                 details = ParseAgreementDetails(agreement, agreementId);
 
@@ -535,7 +616,7 @@ namespace HomeCycle.Application.Services.Payments
 
                 var paymentId = Guid.NewGuid();
                 var orderId = Guid.NewGuid();
-                var now = DateTime.UtcNow;
+                //var now = DateTime.UtcNow;
 
 
                 // HẠCH TOÁN 1: TIỀN VỀ NGƯỜI BÁN (Goods / Goods + Shipping)
