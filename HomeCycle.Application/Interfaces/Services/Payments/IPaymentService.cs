@@ -13,6 +13,7 @@ namespace HomeCycle.Application.Interfaces.Services.Payments
 {
     public interface IPaymentService
     {
+        Task<Result<PaymentQuoteResponseDto>> GetPaymentQuoteAsync(Guid agreementId, Guid userId, CancellationToken ct = default);
         Task<Result<string>> GeneratePayOSCheckoutUrlAsync(Guid agreementId, Guid payerId, string returnUrl, string cancelUrl, CancellationToken ct = default);
         Task<Result<bool>> HandlePaymentWebhookAsync(string webhookBody, CancellationToken ct = default);
         Task<Result<PaymentStatusResponseDto>> ExecuteWalletPaymentAsync(Guid agreementId, Guid payerId, CancellationToken ct = default);
