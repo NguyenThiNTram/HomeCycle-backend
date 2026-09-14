@@ -43,6 +43,9 @@ public partial class HomeCycleDbContext : DbContext
 
     public virtual DbSet<Dispute> Disputes { get; set; }
 
+    public virtual DbSet<Dispute_Category> Dispute_Categories { get; set; }
+    public virtual DbSet<Dispute_Category_Target> Dispute_Category_Targets { get; set; }
+
     public virtual DbSet<GHN_Shipment> GHN_Shipments { get; set; }
 
     public virtual DbSet<Inspection_Appointment> Inspection_Appointments { get; set; }
@@ -427,6 +430,41 @@ public partial class HomeCycleDbContext : DbContext
                 .HasConstraintName("fk_dispute_senderid");
 
             entity.HasOne(d => d.TargetUser).WithMany(p => p.DisputeTargetUsers).HasConstraintName("fk_dispute_targetuserid");
+
+            entity.HasOne(x => x.DisputeCategoryNavigation)
+                .WithMany(x => x.Disputes)
+                .HasForeignKey(x => x.DisputeCategory)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("fk_dispute_category");
+        });
+
+        modelBuilder.Entity<Dispute_Category>(entity =>
+        {
+            entity.HasKey(x => x.DisputeCategoryId);
+            entity.Property(x => x.DisputeCategoryId).ValueGeneratedOnAdd();
+            entity.Property(x => x.Code).HasMaxLength(100).IsRequired();
+            entity.Property(x => x.Name).HasMaxLength(200).IsRequired();
+            entity.Property(x => x.IsActive).HasDefaultValue(true);
+            entity.Property(x => x.CreatedAt).HasDefaultValueSql("now()");
+            entity.Property(x => x.UpdatedAt).HasDefaultValueSql("now()");
+            entity.HasIndex(x => x.Code).IsUnique().HasDatabaseName("uq_dispute_category_code");
+
+            entity.HasOne<User>()
+                .WithMany()
+                .HasForeignKey(x => x.CreatedBy)
+                .OnDelete(DeleteBehavior.SetNull)
+                .HasConstraintName("fk_dispute_category_created_by");
+        });
+
+        modelBuilder.Entity<Dispute_Category_Target>(entity =>
+        {
+            entity.HasKey(x => new { x.DisputeCategoryId, x.TargetType }).HasName("pk_dispute_category_target");
+
+            entity.HasOne(x => x.Category)
+                .WithMany(x => x.Targets)
+                .HasForeignKey(x => x.DisputeCategoryId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("fk_dispute_category_target_category");
         });
 
         modelBuilder.Entity<GHN_Shipment>(entity =>

@@ -49,7 +49,7 @@ namespace HomeCycle.Application.Services.Disputes
         public async Task<Result<DisputeTargetCreateContext>> PrepareCreateAsync(
             Guid senderId,
             Guid targetId,
-            DisputeCategory category,
+            string categoryCode,
             DateTime nowUtc,
             CancellationToken cancellationToken = default)
         {
@@ -83,8 +83,8 @@ namespace HomeCycle.Application.Services.Disputes
 
             var deliveryMethod = TryResolveDeliveryMethod(agreement);
 
-            if (!OrderDisputeCategoryPolicy.IsAllowed(category, appointments.Count > 0, deliveryMethod))
-                return Result<DisputeTargetCreateContext>.Fail(DisputeErrors.InvalidCategory(category));
+            if (!OrderDisputeCategoryPolicy.IsAllowed(categoryCode, appointments.Count > 0, deliveryMethod))
+                return Result<DisputeTargetCreateContext>.Fail(DisputeErrors.InvalidCategory(categoryCode));
 
             // Order đã được lock trước khi check duplicate nên 2 request tạo dispute song song
             // trên cùng Order không thể cùng thay đổi state thành công.

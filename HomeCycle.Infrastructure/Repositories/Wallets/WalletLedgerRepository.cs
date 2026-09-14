@@ -99,5 +99,48 @@ namespace HomeCycle.Infrastructure.Repositories.Wallets
 
             return amount ?? 0;
         }
+
+        public async Task<IReadOnlyList<WalletActiveHoldDto>> GetActiveHoldsAsync(CancellationToken ct = default)
+        {
+            return await _db.Wallet_Ledgers
+                .AsNoTracking()
+                .Where(x =>
+                    x.BalanceType == (int)BalanceType.Hold &&
+                    x.ReferenceType != null &&
+                    x.ReferenceId != null)
+                .GroupBy(x => new
+                {
+                    x.WalletId,
+                    x.Wallet.WalletType,
+                    x.Wallet.Purpose,
+                    x.Wallet.UserId,
+                    Username = x.Wallet.UserId.HasValue ? x.Wallet.User.Username : null,
+                    UserRole = x.Wallet.UserId.HasValue ? (int?)x.Wallet.User.Role : null,
+                    x.ReferenceType,
+                    x.ReferenceId
+                })
+                .Select(g => new WalletActiveHoldDto
+                {
+                    WalletId = g.Key.WalletId,
+                    Owner = new WalletFinancePartyDto
+                    {
+                        WalletId = g.Key.WalletId,
+                        UserId = g.Key.UserId,
+                        Username = g.Key.Username,
+                        Role = g.Key.UserRole.HasValue ? (UserRole?)g.Key.UserRole.Value : null,
+                        WalletType = (WalletTypeEnum)g.Key.WalletType,
+                        SystemPurpose = g.Key.Purpose.HasValue ? (SystemWalletPurpose?)g.Key.Purpose.Value : null
+                    },
+                    ReferenceType = (ReferenceType?)g.Key.ReferenceType,
+                    ReferenceId = g.Key.ReferenceId,
+                    ReferenceCode = g.Key.ReferenceType == (int)ReferenceType.Order && g.Key.ReferenceId.HasValue
+                        ? _db.Orders.Where(o => o.OrderId == g.Key.ReferenceId.Value).Select(o => o.OrderCode).FirstOrDefault()
+                        : null,
+                    HoldAmount = g.Sum(x => x.Direction == (int)LedgerDirection.In ? x.Amount : -x.Amount)
+                })
+                .Where(x => x.HoldAmount > 0)
+                .OrderByDescending(x => x.HoldAmount)
+                .ToListAsync(ct);
+        }
     }
 }

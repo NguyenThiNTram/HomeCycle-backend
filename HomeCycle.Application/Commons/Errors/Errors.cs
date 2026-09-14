@@ -287,8 +287,8 @@ namespace HomeCycle.Application.Commons.Errors
         public static Error UnsupportedTarget(DisputeTargetType targetType) =>
             new("DISPUTE_TARGET_NOT_SUPPORTED", $"Loại đối tượng tranh chấp '{targetType}' hiện chưa được hỗ trợ.");
 
-        public static Error InvalidCategory(DisputeCategory category) =>
-            new("DISPUTE_INVALID_CATEGORY", $"Loại tranh chấp '{category}' không phù hợp với tranh chấp đơn hàng.");
+        public static Error InvalidCategory(string code) =>
+            new("DISPUTE_INVALID_CATEGORY", $"Loại tranh chấp '{code}' không phù hợp với ngữ cảnh đơn hàng hiện tại.");
 
         public static readonly Error CloseNotAllowed =
             new("DISPUTE_CLOSE_NOT_ALLOWED", "Chỉ có thể đóng tranh chấp đang ở trạng thái chờ xử lý.");
@@ -396,6 +396,9 @@ namespace HomeCycle.Application.Commons.Errors
 
         public static Error UnsupportedType(string policyType) =>
             new("PlatformPolicy.UnsupportedType", $"Policy type '{policyType}' không được hệ thống hỗ trợ.");
+
+        public static readonly Error InvalidWithdrawalPolicy =
+            new("PlatformPolicy.InvalidWithdrawalPolicy", "Withdrawal Policy không hợp lệ. Yêu cầu MinimumWithdrawalAmount <= MaximumWithdrawalAmount <= DailyWithdrawalLimit.");
     }
 
     public static class AgreementErrors
@@ -632,5 +635,20 @@ namespace HomeCycle.Application.Commons.Errors
 
         public static readonly Error AlreadyExists =
             new("Shipment.AlreadyExists", "Đơn hàng đã có thông tin giao nhận.");
+    }
+
+    public static class DisputeCategoryErrors
+    {
+        public static readonly Error NotFound =
+            new("DisputeCategory.NotFound", "Không tìm thấy loại tranh chấp.");
+
+        public static readonly Error CodeAlreadyExists =
+            new("DisputeCategory.CodeAlreadyExists", "Code của loại tranh chấp đã tồn tại.");
+
+        public static readonly Error Inactive =
+            new("DisputeCategory.Inactive", "Loại tranh chấp này hiện đã bị vô hiệu hóa.");
+
+        public static readonly Error TargetNotAllowed =
+            new("DisputeCategory.TargetNotAllowed", "Loại tranh chấp không áp dụng cho đối tượng này.");
     }
 }

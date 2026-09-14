@@ -34,4 +34,7 @@ public interface IDashboardService
     Task<FinanceHealthResponse> GetFinanceHealthAsync(
         DashboardPeriodRequest request,
         CancellationToken ct);
+    Task<FinanceRevenueResponse> GetFinanceRevenueAsync(
+        DashboardPeriodRequest request,
+        CancellationToken ct);
 }

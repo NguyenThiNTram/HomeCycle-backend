@@ -39,6 +39,9 @@ namespace HomeCycle.Infrastructure.Repositories.Wallets
 
         public async Task<wallet?> GetUserWalletForUpdateAsync(Guid userId, CancellationToken ct = default)
         {
+            if (_db.Database.CurrentTransaction == null)
+                throw new InvalidOperationException("FOR UPDATE requires an active database transaction.");
+
             var entity = await _db.Wallets
                 .FromSqlInterpolated($"SELECT * FROM public.\"Wallet\" WHERE \"UserId\" = {userId} FOR UPDATE")
                 .AsNoTracking()
@@ -46,6 +49,7 @@ namespace HomeCycle.Infrastructure.Repositories.Wallets
 
             return entity?.ToDomain();
         }
+
 
         public async Task<wallet?> GetSystemWalletForUpdateAsync(SystemWalletPurpose purpose, CancellationToken ct = default)
         {
@@ -78,5 +82,37 @@ namespace HomeCycle.Infrastructure.Repositories.Wallets
             return entities.Select(x => x.ToDomain()).ToList();
         }
 
+
+        public async Task<wallet?> GetByIdForUpdateAsync(
+            Guid walletId,
+            CancellationToken ct = default)
+        {
+            if (_db.Database.CurrentTransaction == null)
+            {
+                throw new InvalidOperationException(
+                    "FOR UPDATE requires an active database transaction.");
+            }
+
+            var entity = await _db.Wallets
+                .FromSqlInterpolated($@"
+            SELECT *
+            FROM public.""Wallet""
+            WHERE ""WalletId"" = {walletId}
+            FOR UPDATE")
+                .AsNoTracking()
+                .SingleOrDefaultAsync(ct);
+
+            return entity?.ToDomain();
+        }
+
+        public async Task<List<wallet>> GetAllUserWalletsAsync(CancellationToken ct = default)
+        {
+            var entities = await _db.Wallets
+                .AsNoTracking()
+                .Where(x => x.WalletType != (int)WalletTypeEnum.System)
+                .ToListAsync(ct);
+
+            return entities.Select(x => x.ToDomain()).ToList();
+        }
     }
 }

@@ -54,6 +54,17 @@ namespace HomeCycle.Application.DTOs.Responses.Dashboard
         public IReadOnlyList<FinanceAmountBreakdownItem> InternalMovements { get; init; } = [];
     }
 
+    public sealed class FinanceRevenueResponse
+    {
+        public DateTime GeneratedAtUtc { get; init; }
+
+        public DashboardPeriod Period { get; init; } = new();
+
+        public decimal TotalRevenue { get; init; }
+
+        public IReadOnlyList<FinanceAmountBreakdownItem> Sources { get; init; } = [];
+    }
+
     public sealed record FinanceCashFlowTotals(
         decimal ExternalInflow,
         decimal ExternalOutflow,

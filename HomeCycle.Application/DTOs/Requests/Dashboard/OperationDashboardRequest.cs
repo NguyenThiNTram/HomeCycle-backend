@@ -20,7 +20,12 @@ public sealed class AppointmentDashboardRequest : DashboardPeriodRequest
 }
 public sealed class DisputeDashboardRequest : DashboardPeriodRequest
 {
-    [EnumDataType(typeof(DisputeStatus))] public DisputeStatus? Status { get; set; }
-    [EnumDataType(typeof(DisputeTargetType))] public DisputeTargetType? TargetType { get; set; }
-    [EnumDataType(typeof(DisputeCategory))] public DisputeCategory? Category { get; set; }
+    [EnumDataType(typeof(DisputeStatus))]
+    public DisputeStatus? Status { get; set; }
+
+    [EnumDataType(typeof(DisputeTargetType))]
+    public DisputeTargetType? TargetType { get; set; }
+
+    [Range(1, int.MaxValue)]
+    public int? DisputeCategoryId { get; set; }
 }

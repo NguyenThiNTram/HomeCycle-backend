@@ -12,6 +12,7 @@ namespace HomeCycle.Domain.Enums
         Appointment = 2,
         FileUpload = 3,
         Payment = 4,
-        Order = 5
+        Order = 5,
+        Withdrawal = 6
     }
 }

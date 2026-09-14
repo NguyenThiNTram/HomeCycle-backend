@@ -46,5 +46,8 @@ namespace HomeCycle.Application.Interfaces.Services.PlatformPolicies
             Guid adminId,
             UpdateOrderPolicyRequest request,
             CancellationToken cancellationToken = default);
+        Task<Result<PlatformPolicyResponseDto<WithdrawalPolicyConfigDto>>> GetWithdrawalPolicyAsync(CancellationToken cancellationToken = default);
+        Task<Result<PlatformPolicyResponseDto<WithdrawalPolicyConfigDto>>> UpdateWithdrawalPolicyAsync(
+            Guid adminId, UpdateWithdrawalPolicyRequest request, CancellationToken cancellationToken = default);
     }
 }

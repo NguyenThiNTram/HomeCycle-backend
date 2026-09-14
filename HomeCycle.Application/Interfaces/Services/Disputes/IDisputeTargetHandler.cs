@@ -18,7 +18,7 @@ namespace HomeCycle.Application.Interfaces.Services.Disputes
             PrepareCreateAsync(
                 Guid senderId,
                 Guid targetId,
-                DisputeCategory category,
+                string categoryCode,
                 DateTime nowUtc,
                 CancellationToken cancellationToken = default);
 

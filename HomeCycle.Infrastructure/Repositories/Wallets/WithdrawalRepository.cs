@@ -127,6 +127,36 @@ namespace HomeCycle.Infrastructure.Repositories.Wallets
             return ProjectWithdrawalReadModels(query).FirstOrDefaultAsync(ct);
         }
 
+        public async Task<decimal> GetCompletedAmountAsync(Guid userId, DateTime fromUtc, DateTime toUtc, CancellationToken ct = default)
+        {
+            return await _db.Withdrawals
+                .AsNoTracking()
+                .Where(x => x.Wallet.UserId == userId
+                    && x.WithdrawalStatus == (int)WithdrawalStatus.Completed
+                    && x.ProcessedAt >= fromUtc
+                    && x.ProcessedAt < toUtc)
+                .Select(x => (decimal?)(x.Amount ?? 0))
+                .SumAsync(ct) ?? 0;
+        }
+
+        public async Task<decimal> GetActiveReservedAmountAsync(Guid userId, CancellationToken ct = default)
+        {
+            var activeStatuses = new[]
+            {
+                (int)WithdrawalStatus.Pending,
+                (int)WithdrawalStatus.Approved,
+                (int)WithdrawalStatus.Processing
+            };
+
+            return await _db.Withdrawals
+                .AsNoTracking()
+                .Where(x => x.Wallet.UserId == userId
+                    && x.WithdrawalStatus.HasValue
+                    && activeStatuses.Contains(x.WithdrawalStatus.Value))
+                .Select(x => (decimal?)(x.Amount ?? 0))
+                .SumAsync(ct) ?? 0;
+        }
+
         private static IQueryable<WithdrawalReadModel> ProjectWithdrawalReadModels(IQueryable<Withdrawal> query)
         {
             return query.Select(x => new WithdrawalReadModel

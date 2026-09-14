@@ -5,6 +5,7 @@ using HomeCycle.Application.DTOs.Requests.Auths;
 using HomeCycle.Application.DTOs.Requests.Banks;
 using HomeCycle.Application.DTOs.Requests.Brands;
 using HomeCycle.Application.DTOs.Requests.Categories;
+using HomeCycle.Application.DTOs.Requests.Disputes;
 using HomeCycle.Application.DTOs.Requests.Media;
 using HomeCycle.Application.DTOs.Requests.Offers;
 using HomeCycle.Application.DTOs.Requests.PlatformPolicies;
@@ -498,7 +499,10 @@ namespace HomeCycle.Application.Mappings
                         !src.IsActive &&
                         (src.PolicyType == PlatformPolicyType.Dispute ||
                          src.PolicyType == PlatformPolicyType.Appointment ||
-                         src.PolicyType == PlatformPolicyType.FileUpload)));
+                         src.PolicyType == PlatformPolicyType.FileUpload ||
+                         src.PolicyType == PlatformPolicyType.Payment ||
+                         src.PolicyType == PlatformPolicyType.Order ||
+                         src.PolicyType == PlatformPolicyType.Withdrawal)));
 
             CreateMap<platform_policy, PlatformPolicyVersionDetailDto>()
                 .ForMember(
@@ -515,7 +519,8 @@ namespace HomeCycle.Application.Mappings
                          src.PolicyType == PlatformPolicyType.Appointment ||
                          src.PolicyType == PlatformPolicyType.FileUpload ||
                          src.PolicyType == PlatformPolicyType.Payment ||
-                         src.PolicyType == PlatformPolicyType.Order)));
+                         src.PolicyType == PlatformPolicyType.Order ||
+                         src.PolicyType == PlatformPolicyType.Withdrawal)));
 
             CreateMap<platform_policy, PlatformPolicyResponseDto<DisputePolicyConfigDto>>()
                 .ForMember(dest => dest.Config, opt => opt.Ignore());
@@ -557,6 +562,14 @@ namespace HomeCycle.Application.Mappings
             CreateMap<UpdateOrderPolicyRequest, OrderPolicyConfigDto>()
                 .ForAllMembers(opt => opt.Condition(
                     (src, dest, srcMember) => srcMember != null));
+
+            CreateMap<platform_policy, PlatformPolicyResponseDto<WithdrawalPolicyConfigDto>>()
+                .ForMember(dest => dest.Config, opt => opt.Ignore());
+
+            CreateMap<WithdrawalPolicyConfigDto, WithdrawalPolicyConfigDto>();
+
+            CreateMap<UpdateWithdrawalPolicyRequest, WithdrawalPolicyConfigDto>()
+                .ForAllMembers(opt => opt.Condition((src, dest, srcMember) => srcMember != null));
 
             // ==================== ORDER / APPOINTMENT READ MODEL ====================
 
@@ -791,6 +804,26 @@ namespace HomeCycle.Application.Mappings
                 .ForMember(dest => dest.RefundedAmount, opt => opt.Ignore())
                 .ForMember(dest => dest.ReturnDueAt, opt => opt.Ignore());
 
+
+            // =============== DISPUTE CATEGORY =============== 
+            CreateMap<dispute_category, DisputeCategoryResponseDto>();
+            CreateMap<dispute_category, DisputeCategoryOptionDto>();
+
+            CreateMap<CreateDisputeCategoryRequest, dispute_category>()
+                .ForMember(dest => dest.DisputeCategoryId, opt => opt.Ignore())
+                .ForMember(dest => dest.IsActive, opt => opt.Ignore())
+                .ForMember(dest => dest.CreatedAt, opt => opt.Ignore())
+                .ForMember(dest => dest.UpdatedAt, opt => opt.Ignore())
+                .ForMember(dest => dest.CreatedBy, opt => opt.Ignore());
+
+            CreateMap<UpdateDisputeCategoryRequest, dispute_category>()
+                .ForMember(dest => dest.DisputeCategoryId, opt => opt.Ignore())
+                .ForMember(dest => dest.Code, opt => opt.Ignore())
+                .ForMember(dest => dest.IsActive, opt => opt.Ignore())
+                .ForMember(dest => dest.CreatedAt, opt => opt.Ignore())
+                .ForMember(dest => dest.UpdatedAt, opt => opt.Ignore())
+                .ForMember(dest => dest.CreatedBy, opt => opt.Ignore())
+                .ForAllMembers(opt => opt.Condition((src, dest, srcMember) => srcMember != null));
 
             // ==================== SHIPMENT ====================
 

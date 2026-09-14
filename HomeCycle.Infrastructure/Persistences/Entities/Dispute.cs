@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using HomeCycle.Infrastructure.Persistences.Entities;
 using Microsoft.EntityFrameworkCore;
 
 namespace HomeCycle.Infrastructure;
@@ -69,4 +70,7 @@ public partial class Dispute
     [ForeignKey("TargetUserId")]
     [InverseProperty("DisputeTargetUsers")]
     public virtual User? TargetUser { get; set; }
+
+    [ForeignKey(nameof(DisputeCategory))]
+    public virtual Dispute_Category? DisputeCategoryNavigation { get; set; }
 }
