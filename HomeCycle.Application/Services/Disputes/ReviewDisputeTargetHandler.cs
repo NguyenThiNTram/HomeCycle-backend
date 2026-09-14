@@ -16,7 +16,7 @@ public sealed class ReviewDisputeTargetHandler(
     public DisputeTargetType TargetType => DisputeTargetType.Review;
 
     public async Task<Result<DisputeTargetCreateContext>> PrepareCreateAsync(
-        Guid senderId, Guid targetId, DisputeCategory category, DateTime nowUtc,
+        Guid senderId, Guid targetId, string categoryCode, DateTime nowUtc,
         CancellationToken cancellationToken = default)
     {
         var review = await reviews.GetByIdForUpdateAsync(targetId, cancellationToken);
@@ -26,7 +26,7 @@ public sealed class ReviewDisputeTargetHandler(
             return Result<DisputeTargetCreateContext>.Fail(ContentDisputeErrors.SelfReportNotAllowed);
         if (review.ReviewStatus is not ((int)ReviewStatus.Active or (int)ReviewStatus.Edited))
             return Result<DisputeTargetCreateContext>.Fail(ContentDisputeErrors.TargetUnavailable);
-        if (!ReviewDisputeCategoryPolicy.IsAllowed(category))
+        if (!ReviewDisputeCategoryPolicy.IsAllowed(categoryCode))
             return Result<DisputeTargetCreateContext>.Fail(ContentDisputeErrors.InvalidCategory);
         if (await disputes.HasOpenDuplicateAsync(senderId, TargetType, targetId, cancellationToken))
             return Result<DisputeTargetCreateContext>.Fail(ContentDisputeErrors.DuplicateOpenReport);

@@ -16,7 +16,7 @@ public sealed class PostDisputeTargetHandler(
     public DisputeTargetType TargetType => DisputeTargetType.Post;
 
     public async Task<Result<DisputeTargetCreateContext>> PrepareCreateAsync(
-        Guid senderId, Guid targetId, DisputeCategory category, DateTime nowUtc,
+        Guid senderId, Guid targetId, string categoryCode, DateTime nowUtc,
         CancellationToken cancellationToken = default)
     {
         // CreateAsync owns the transaction. Serialize duplicate checks on the content row.
@@ -27,7 +27,7 @@ public sealed class PostDisputeTargetHandler(
             return Result<DisputeTargetCreateContext>.Fail(ContentDisputeErrors.TargetUnavailable);
         if (post.OwnerId == senderId)
             return Result<DisputeTargetCreateContext>.Fail(ContentDisputeErrors.SelfReportNotAllowed);
-        if (!PostDisputeCategoryPolicy.IsAllowed(category))
+        if (!PostDisputeCategoryPolicy.IsAllowed(categoryCode))
             return Result<DisputeTargetCreateContext>.Fail(ContentDisputeErrors.InvalidCategory);
         if (await disputes.HasOpenDuplicateAsync(senderId, TargetType, targetId, cancellationToken))
             return Result<DisputeTargetCreateContext>.Fail(ContentDisputeErrors.DuplicateOpenReport);

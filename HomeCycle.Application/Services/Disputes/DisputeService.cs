@@ -479,10 +479,21 @@ namespace HomeCycle.Application.Services.Disputes
                         cancellationToken);
                 }
 
+                var moderatorNotifications =
+                    await _notificationService.AddPendingForActiveModeratorsAsync(
+                        "Có tranh chấp mới cần xử lý",
+                        $"Một tranh chấp mới về {request.TargetType} vừa được gửi và đang chờ xử lý.",
+                        NotificationTargetType.Dispute,
+                        dispute.DisputeId,
+                        cancellationToken);
+
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync(cancellationToken);
                 if (disputeNotification != null)
                     await _notificationService.PublishCreatedSafelyAsync(disputeNotification);
+
+                await Task.WhenAll(moderatorNotifications.Select(
+                    _notificationService.PublishCreatedSafelyAsync));
 
                 if (dispute.OrderId.HasValue)
                 {

@@ -10,4 +10,16 @@ public static class PostDisputeCategoryPolicy
          DisputeCategory.FraudOrScam, DisputeCategory.Other];
 
     public static bool IsAllowed(DisputeCategory category) => BuildAllowedCategories().Contains(category);
+
+    public static bool IsAllowed(string code)
+    {
+        var normalizedCode = code.Trim().ToUpperInvariant();
+        return normalizedCode is
+            "MISLEADING_POST" or
+            "PROHIBITED_ITEM" or
+            "SPAM" or
+            "INAPPROPRIATE_CONTENT" or
+            "FRAUD_OR_SCAM" or
+            "OTHER";
+    }
 }

@@ -2,6 +2,7 @@
 using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Responses.Notifications;
 using HomeCycle.Domain.Entities;
+using HomeCycle.Domain.Enums;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -13,6 +14,13 @@ namespace HomeCycle.Application.Interfaces.Services.Notifications
     public interface INotificationService
     {
         Task<notification> AddPendingAsync(CreateNotificationCommand command, CancellationToken cancellationToken = default);
+
+        Task<IReadOnlyList<notification>> AddPendingForActiveModeratorsAsync(
+            string title,
+            string message,
+            NotificationTargetType targetType,
+            Guid targetId,
+            CancellationToken cancellationToken = default);
 
         // Chỉ gọi sau khi transaction đã commit
         Task PublishCreatedSafelyAsync(notification notification);

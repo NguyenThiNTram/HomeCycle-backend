@@ -11,6 +11,7 @@ using HomeCycle.Application.Interfaces.Repositories.Banks;
 using HomeCycle.Application.Interfaces.Repositories.Users;
 using HomeCycle.Application.Interfaces.Services.Configs;
 using HomeCycle.Application.Interfaces.Services.Externals;
+using HomeCycle.Application.Interfaces.Services.Notifications;
 using HomeCycle.Application.Interfaces.Services.Users;
 using HomeCycle.Domain.Entities;
 using HomeCycle.Domain.Enums;
@@ -34,6 +35,7 @@ namespace HomeCycle.Application.Services.Personals
         private readonly ILogger<PersonalProfileService> _logger;
         private readonly IFileStorageService _fileStorageService;
         private readonly IFileValidationService _fileValidationService;
+        private readonly INotificationService _notificationService;
 
         private readonly IValidator<UpdatePersonalProfileRequest> _updateProfileValidator;
         private readonly IValidator<UpdateAvatarRequest> _updateAvatarValidator;
@@ -49,6 +51,7 @@ namespace HomeCycle.Application.Services.Personals
             ILogger<PersonalProfileService> logger,
             IFileStorageService fileStorageService,
             IFileValidationService fileValidationService,
+            INotificationService notificationService,
             IValidator<UpdatePersonalProfileRequest> updateProfileValidator,
             IValidator<UpdateAvatarRequest> updateAvatarValidator,
             IValidator<UpdateIdCardRequest> updateIdCardValidator,
@@ -66,6 +69,7 @@ namespace HomeCycle.Application.Services.Personals
             _updateBankAccountValidator = updateBankAccountValidator;
             _fileStorageService = fileStorageService;
             _fileValidationService = fileValidationService;
+            _notificationService = notificationService;
         }
 
         public async Task<Result<PersonalProfileResponse>> GetMyProfileAsync(Guid userId, CancellationToken cancellationToken = default)
@@ -273,7 +277,19 @@ namespace HomeCycle.Application.Services.Personals
             _logger.LogInformation("Front={Front}, Back={Back}", profile.FrontIDCardImage, profile.BackIDCardImage);
 
             await _personalProfileRepository.UpdateAsync(profile, cancellationToken);
+
+            var moderatorNotifications =
+                await _notificationService.AddPendingForActiveModeratorsAsync(
+                    "Có yêu cầu xác minh danh tính",
+                    $"Tài khoản {user.Username} vừa cập nhật thông tin căn cước công dân và đang chờ xác minh.",
+                    NotificationTargetType.PersonalProfile,
+                    profile.PersonalProfileId,
+                    cancellationToken);
+
             await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+            await Task.WhenAll(moderatorNotifications.Select(
+                _notificationService.PublishCreatedSafelyAsync));
 
             //var bankAccount = await _bankAccountRepository.GetByUserIdAsync(userId, cancellationToken);
             return Result.Success();
