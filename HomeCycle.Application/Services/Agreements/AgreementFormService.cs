@@ -978,7 +978,7 @@ namespace HomeCycle.Application.Services.Agreements
             var quantity = await GetOfferQuantityAsync(negotiationResult.Data!, cancellationToken);
 
             var totalWeightGram = checked((long)weightGram * quantity);
-            if (quantity <= 0 || totalWeightGram > int.MaxValue)
+            if (quantity <= 0)
                 return Result<GhnParcelInfoResponse>.Fail(new Error("Ghn.ParcelInformationRequired", "Số lượng hoặc tổng khối lượng không hợp lệ."));
 
             var isHeavyParcel =
@@ -990,13 +990,15 @@ namespace HomeCycle.Application.Services.Agreements
 
             var response = new GhnParcelInfoResponse
             {
+                EstimatedTotalWeightGram = weightGram > 0 ? totalWeightGram : null,
+                EstimatedOverLimit = weightGram > 0 && totalWeightGram > GhnShippingCalculationHelper.MaxShipmentWeightGram,
                 Sender = await GetContactDefaultsAsync(negotiationResult.Data!.SellerId, cancellationToken),
                 Receiver = await GetContactDefaultsAsync(negotiationResult.Data!.BuyerId, cancellationToken),
                 NegotiationId = negotiationId,
                 ServiceTypeId = serviceTypeId,
                 HasProductDimensions = hasDimensions,
                 RequiresPackagingDimensions = !hasDimensions || quantity > 1,
-                LightParcel = hasDimensions && !isHeavyParcel ? new GhnLightParcelSnapshotDto
+                LightParcel = hasDimensions && quantity == 1 && !isHeavyParcel ? new GhnLightParcelSnapshotDto
                     {
                         WeightGram = checked((int)totalWeightGram),
                         LengthCm = lengthCm,
@@ -1004,15 +1006,15 @@ namespace HomeCycle.Application.Services.Agreements
                         HeightCm = heightCm
                     }
                     : null,
-                Items = hasDimensions && isHeavyParcel ? new[]
+                Items = hasDimensions && quantity == 1 ? new[]
                     {
                         BuildHeavyItemFromProduct(
                             product,
-                            weightGram,
+                            checked((int)totalWeightGram),
                             lengthCm,
                             widthCm,
                             heightCm,
-                            quantity)
+                            1)
                     }
                     : Array.Empty<GhnItemSnapshotDto>()
                     };
@@ -1035,7 +1037,9 @@ namespace HomeCycle.Application.Services.Agreements
             if (!validationResult.IsValid)
             {
                 var errorMessage = string.Join(", ", validationResult.Errors.Select(e => e.ErrorMessage).Distinct());
-                return Result<GhnShippingPreviewResponse>.Fail(new Error("ShippingFee.InvalidRequest", errorMessage));
+                return Result<GhnShippingPreviewResponse>.Fail(new Error(
+                    validationResult.Errors.FirstOrDefault(x => x.ErrorCode.StartsWith("Ghn."))?.ErrorCode
+                        ?? "ShippingFee.InvalidRequest", errorMessage));
             }
 
             var product = await _productRepo.GetDetailByPostIdAsync(negotiationResult.Data!.PostId, cancellationToken);
@@ -1053,11 +1057,6 @@ namespace HomeCycle.Application.Services.Agreements
             GhnPreviewQuote quote;
             try
             {
-                var services = await _ghnService.GetAvailableServicesAsync(
-                    resolved.Sender!.Address.DistrictId, resolved.Receiver!.Address.DistrictId, cancellationToken);
-                if (!services.Any(x => x.ServiceTypeId == resolved.ServiceTypeId))
-                    return Result<GhnShippingPreviewResponse>.Fail(new Error("Ghn.ServiceUnavailable",
-                        "GHN không có dịch vụ phù hợp với kiện hàng trên tuyến này."));
                 quote = await _ghnService.PreviewOrderAsync(resolved, cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -1066,7 +1065,7 @@ namespace HomeCycle.Application.Services.Agreements
             }
             catch (ArgumentException exception)
             {
-                return Result<GhnShippingPreviewResponse>.Fail(new Error("ShippingFee.InvalidRequest", exception.Message));
+                return Result<GhnShippingPreviewResponse>.Fail(GhnShippingCalculationHelper.ParcelError(exception));
             }
             catch (Exception exception) when (exception is IGhnApiError { CodeMessage: "SHOP_NOT_FOUND" })
             {
@@ -1230,80 +1229,37 @@ namespace HomeCycle.Application.Services.Agreements
             return offer?.OfferQuantity ?? 1;
         }
 
-        private async Task<Result<GhnShippingPreviewRequest>> ResolveParcelAsync(
+        private Task<Result<GhnShippingPreviewRequest>> ResolveParcelAsync(
             GhnShippingPreviewRequest request, product? product, negotiation negotiation,
             CancellationToken cancellationToken)
         {
-            var quantity = await GetOfferQuantityAsync(negotiation, cancellationToken);
-            if (quantity <= 0)
-                return Result<GhnShippingPreviewRequest>.Fail(new Error("ShippingFee.InvalidRequest", "Số lượng sản phẩm phải lớn hơn 0."));
-
-            int productWeight = 0, productLength = 0, productWidth = 0, productHeight = 0;
-            var hasProductDimensions = product != null && TryNormalizeProductMeasurements(
-                product, out productWeight, out productLength, out productWidth, out productHeight);
-            var items = request.Items;
+            cancellationToken.ThrowIfCancellationRequested();
+            // Product is only an estimate/prefill. Confirmed physical parcels own the shipping measurements.
             try
             {
-                if (request.ServiceTypeId == 5 && items.Count == 0)
+                var parcel = GhnShippingCalculationHelper.GetConfirmedParcel(new GhnShippingInfo
                 {
-                    if (!hasProductDimensions)
-                        return Result<GhnShippingPreviewRequest>.Fail(new Error("Ghn.ParcelInformationRequired", "Cần thông số sản phẩm hoặc danh sách kiện hàng."));
-                    items = new[] { new CalculateGhnFeeItemRequest
-                    {
-                        Name = string.IsNullOrWhiteSpace(product!.ProductName) ? "Sản phẩm HomeCycle" : product.ProductName.Trim(),
-                        Quantity = quantity,
-                        WeightGram = productWeight,
-                        LengthCm = productLength,
-                        WidthCm = productWidth,
-                        HeightCm = productHeight
-                    }};
-                }
-
-                long? itemWeight = items.Count > 0 && items.All(x => x.WeightGram > 0)
-                    ? items.Aggregate(0L, (sum, x) => checked(sum + (long)x.WeightGram * x.Quantity))
-                    : null;
-                if (request.ServiceTypeId == 5 && request.WeightGram.HasValue && request.WeightGram.Value != itemWeight)
-                    return Result<GhnShippingPreviewRequest>.Fail(new Error("ShippingFee.InvalidRequest", "Tổng khối lượng phải bằng tổng weight × quantity của các kiện."));
-
-                long? weight = request.WeightGram ?? itemWeight ??
-                    (hasProductDimensions ? checked((long)productWeight * quantity) : (long?)null);
-                // Chỉ suy kích thước từ một đơn vị; nhiều sản phẩm/kiện cần kích thước đóng gói thực tế.
-                var singleItem = items.Count == 1 && items[0].Quantity == 1 ? items[0] : null;
-                int? length = request.LengthCm ?? (singleItem?.LengthCm > 0 ? singleItem.LengthCm :
-                    hasProductDimensions && quantity == 1 && items.Count == 0 ? productLength : (int?)null);
-                int? width = request.WidthCm ?? (singleItem?.WidthCm > 0 ? singleItem.WidthCm :
-                    hasProductDimensions && quantity == 1 && items.Count == 0 ? productWidth : (int?)null);
-                int? height = request.HeightCm ?? (singleItem?.HeightCm > 0 ? singleItem.HeightCm :
-                    hasProductDimensions && quantity == 1 && items.Count == 0 ? productHeight : (int?)null);
-                if (weight is null || length is null || width is null || height is null)
-                    return Result<GhnShippingPreviewRequest>.Fail(new Error("Ghn.ParcelInformationRequired", "Cần đủ tổng khối lượng và kích thước đóng gói cấp đơn; nhiều sản phẩm/kiện cần nhập kích thước thực tế."));
-                if (weight is < 1 or > 50_000)
-                    return Result<GhnShippingPreviewRequest>.Fail(new Error("ShippingFee.InvalidRequest", "Khối lượng preview phải từ 1 đến 50.000 gram."));
-                var expectedType = weight >= HeavyParcelThresholdGram || request.ParcelCount > 1 ? 5 : 2;
-                if (request.ServiceTypeId != expectedType)
-                    return Result<GhnShippingPreviewRequest>.Fail(new Error("ShippingFee.InvalidRequest", $"Thông tin kiện yêu cầu ServiceTypeId = {expectedType}."));
-
-                var content = string.IsNullOrWhiteSpace(request.Content)
-                    ? (string.IsNullOrWhiteSpace(product?.ProductName) ? "Sản phẩm HomeCycle" : product.ProductName.Trim())
-                    : request.Content.Trim();
-                return Result<GhnShippingPreviewRequest>.Success(new GhnShippingPreviewRequest
-                {
-                    Sender = request.Sender,
-                    Receiver = request.Receiver,
-                    ServiceTypeId = request.ServiceTypeId,
-                    RequiredNote = request.RequiredNote,
-                    Content = content,
-                    ParcelCount = request.ParcelCount,
-                    WeightGram = checked((int)weight.Value),
-                    LengthCm = length,
-                    WidthCm = width,
-                    HeightCm = height,
-                    Items = items
+                    Items = GhnShippingCalculationHelper.ToParcelItems(request.Items)!,
+                    ParcelCount = request.ParcelCount, ServiceTypeId = request.ServiceTypeId,
+                    WeightGram = request.WeightGram, LengthCm = request.LengthCm,
+                    WidthCm = request.WidthCm, HeightCm = request.HeightCm
                 });
+                return Task.FromResult(Result<GhnShippingPreviewRequest>.Success(new GhnShippingPreviewRequest
+                {
+                    AgreementType = request.AgreementType, DeliveryMethod = request.DeliveryMethod,
+                    Sender = request.Sender, Receiver = request.Receiver,
+                    ServiceTypeId = request.ServiceTypeId, RequiredNote = request.RequiredNote,
+                    Content = string.IsNullOrWhiteSpace(request.Content)
+                        ? (string.IsNullOrWhiteSpace(product?.ProductName) ? "Sản phẩm HomeCycle" : product.ProductName.Trim())
+                        : request.Content.Trim(),
+                    ParcelCount = request.ParcelCount, Items = request.Items,
+                    WeightGram = parcel.WeightGram, LengthCm = parcel.LengthCm,
+                    WidthCm = parcel.WidthCm, HeightCm = parcel.HeightCm
+                }));
             }
-            catch (OverflowException)
+            catch (ArgumentException ex)
             {
-                return Result<GhnShippingPreviewRequest>.Fail(new Error("ShippingFee.InvalidRequest", "Tổng khối lượng vượt phạm vi cho phép."));
+                return Task.FromResult(Result<GhnShippingPreviewRequest>.Fail(GhnShippingCalculationHelper.ParcelError(ex)));
             }
         }
         private static bool TryNormalizeProductMeasurements(product product, out int weightGram, out int lengthCm, out int widthCm, out int heightCm)
@@ -1313,8 +1269,13 @@ namespace HomeCycle.Application.Services.Agreements
             widthCm = 0;
             heightCm = 0;
 
-            if (product.Weight is null or <= 0 ||
-                product.Length is null or <= 0 ||
+            // Product weight is only an estimate and must survive missing dimensions.
+            if (product.Weight is > 0)
+            {
+                try { weightGram = checked((int)Math.Ceiling(product.Weight.Value * 1000)); }
+                catch (OverflowException) { return false; }
+            }
+            if (weightGram <= 0 || product.Length is null or <= 0 ||
                 product.Width is null or <= 0 ||
                 product.Height is null or <= 0)
             {
@@ -1324,8 +1285,6 @@ namespace HomeCycle.Application.Services.Agreements
             try
             {
                 // Làm tròn lên để không khai thiếu khối lượng/kích thước.
-                weightGram = checked((int)Math.Ceiling(product.Weight.Value * 1000));
-
                 var sides = new[]
                 {
                     checked((int)Math.Ceiling(product.Length.Value)),

@@ -14,24 +14,24 @@ namespace HomeCycle.Application.DTOs.Requests.GHN
         public GhnContactSnapshotDto? Sender { get; init; }
         public GhnContactSnapshotDto? Receiver { get; init; }
 
-        // 2 = một kiện dưới 20kg; 5 = từ 20kg hoặc nhiều kiện.
+        // 2 = một kiện dưới 20kg; 5 = từ 20kg hoặc nhiều kiện
         public int ServiceTypeId { get; init; } = 2;
 
         public string? RequiredNote { get; init; }
 
         public string? Content { get; init; }
 
-        // Số kiện đóng gói thực tế, không phải số lượng sản phẩm.
+        // Số kiện đóng gói thực tế, không phải số lượng sản phẩm
         public int ParcelCount { get; init; } = 1;
 
-        // Thông số cấp đơn sau đóng gói. Null: suy từ Product khi có đủ dữ liệu;
-        // nhiều sản phẩm/kiện cần cung cấp kích thước đóng gói thực tế.
+        // WeightGram phải bằng tổng cân Items. Không suy từ Product/Agreement quantity.
+        // Một kiện: kích thước root khớp kiện; nhiều kiện chờ xác minh GHN Staging.
         public int? WeightGram { get; init; }
         public int? LengthCm { get; init; }
         public int? WidthCm { get; init; }
         public int? HeightCm { get; init; }
 
-        // Type 5 cần thông số từng item. Nếu rỗng, dựng danh sách từ Product và số lượng mua.
+        // HomeCycle: mỗi item là một kiện vật lý, Quantity = 1; bắt buộc cả type 2 và 5.
         public IReadOnlyList<CalculateGhnFeeItemRequest> Items { get; init; }
             = Array.Empty<CalculateGhnFeeItemRequest>();
     }

@@ -1,5 +1,6 @@
 ﻿using HomeCycle.Application.DTOs.Requests.GHN;
 using HomeCycle.Application.DTOs.Responses.GHN;
+using HomeCycle.Application.Commons.Helpers;
 using HomeCycle.Application.Interfaces.Externals;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
@@ -147,6 +148,9 @@ namespace HomeCycle.Infrastructure.Externals.GHN
                 throw new ArgumentException("Thông tin tuyến/thông số leadtime không hợp lệ.");
             if (request.ServiceTypeId == 2 && request.WeightGram >= 20_000)
                 throw new ArgumentException("Hàng từ 20kg phải dùng type 5.");
+            if (request.WeightGram > GhnShippingCalculationHelper.MaxShipmentWeightGram)
+                throw new ArgumentException("Tổng khối lượng shipment vượt 50kg.", "Ghn.WeightLimitExceeded");
+            // Type 5 below 20kg remains valid: upstream resolves type using physical parcel count.
             var body = new Dictionary<string, object> { ["to_district_id"] = request.ToDistrictId, ["to_ward_code"] = request.ToWardCode.Trim() };
             void Add(string key, object? value) { if (value != null) body[key] = value; }
             Add("from_district_id", request.FromDistrictId); Add("from_ward_code", request.FromWardCode?.Trim());
@@ -329,6 +333,9 @@ namespace HomeCycle.Infrastructure.Externals.GHN
             ArgumentNullException.ThrowIfNull(request);
 
             var apiRequest = MapFeeRequest(request);
+            var services = await GetAvailableServicesAsync(request.FromDistrictId, request.ToDistrictId, cancellationToken);
+            if (!services.Any(x => x.ServiceTypeId == request.ServiceTypeId))
+                throw new ArgumentException("Dịch vụ GHN không khả dụng cho tuyến này.", "Ghn.ServiceUnavailable");
 
             // endpoint của GHN tính phí ship: "shipping-order/fee"
             var response = await SendSingleAsync<GhnCalculateFeeData>(
@@ -357,6 +364,13 @@ namespace HomeCycle.Infrastructure.Externals.GHN
 
         private static GhnCalculateFeeApiRequest MapFeeRequest(CalculateGhnFeeRequest request)
         {
+            var parcel = GhnShippingCalculationHelper.GetConfirmedParcel(new GhnShippingInfo
+            {
+                Items = GhnShippingCalculationHelper.ToParcelItems(request.Items)!,
+                ParcelCount = request.ParcelCount, ServiceTypeId = request.ServiceTypeId,
+                WeightGram = request.WeightGram, LengthCm = request.LengthCm,
+                WidthCm = request.WidthCm, HeightCm = request.HeightCm
+            });
             if (request.FromDistrictId <= 0 ||
                 string.IsNullOrWhiteSpace(request.FromWardCode))
             {
@@ -405,9 +419,9 @@ namespace HomeCycle.Infrastructure.Externals.GHN
                 ServiceTypeId = request.ServiceTypeId,
                 WeightGram = request.WeightGram,
 
-                LengthCm = isLight ? request.LengthCm : null,
-                WidthCm = isLight ? request.WidthCm : null,
-                HeightCm = isLight ? request.HeightCm : null,
+                LengthCm = parcel.LengthCm,
+                WidthCm = parcel.WidthCm,
+                HeightCm = parcel.HeightCm,
 
                 InsuranceValue = 0,
                 CodValue = 0,
@@ -425,6 +439,10 @@ namespace HomeCycle.Infrastructure.Externals.GHN
             ArgumentNullException.ThrowIfNull(request);
 
             var apiRequest = MapPreviewRequest(request);
+            var services = await GetAvailableServicesAsync(request.Sender!.Address.DistrictId,
+                request.Receiver!.Address.DistrictId, cancellationToken);
+            if (!services.Any(x => x.ServiceTypeId == request.ServiceTypeId))
+                throw new ArgumentException("Dịch vụ GHN không khả dụng cho tuyến này.", "Ghn.ServiceUnavailable");
 
             // endpoint preview của GHN: "v2/shipping-order/preview"
             var data = await SendSingleAsync<GhnPreviewOrderData>(
@@ -545,15 +563,19 @@ namespace HomeCycle.Infrastructure.Externals.GHN
 
         private static GhnPreviewOrderApiRequest MapPreviewRequest(GhnShippingPreviewRequest request)
         {
+            GhnShippingCalculationHelper.GetConfirmedParcel(new GhnShippingInfo
+            {
+                Items = GhnShippingCalculationHelper.ToParcelItems(request.Items)!,
+                ParcelCount = request.ParcelCount, ServiceTypeId = request.ServiceTypeId,
+                WeightGram = request.WeightGram, LengthCm = request.LengthCm,
+                WidthCm = request.WidthCm, HeightCm = request.HeightCm
+            });
             var validation = new HomeCycle.Application.Validations.GHN.GhnShippingPreviewRequestValidator().Validate(request);
             if (!validation.IsValid)
                 throw new ArgumentException(string.Join(", ", validation.Errors.Select(x => x.ErrorMessage)), nameof(request));
             if (request.WeightGram is null or <= 0 || request.LengthCm is null or <= 0 ||
                 request.WidthCm is null or <= 0 || request.HeightCm is null or <= 0)
                 throw new ArgumentException("Preview phải có đủ khối lượng và kích thước cấp đơn.", nameof(request));
-            if (request.ServiceTypeId == 5 && (request.Items.Count == 0 ||
-                (request.WeightGram < 20_000 && request.ParcelCount == 1)))
-                throw new ArgumentException("Type 5 cần items và tổng cân từ 20kg hoặc nhiều kiện.", nameof(request));
 
             var sender = request.Sender!;
             var receiver = request.Receiver!;
@@ -591,15 +613,7 @@ namespace HomeCycle.Infrastructure.Externals.GHN
         }
         private static GhnApiItemRequest MapPreviewItem(CalculateGhnFeeItemRequest item)
         {
-            // quy ước: cạnh lớn nhất là dài, nhỏ nhất là cao.
-            var sides = new[]
-            {
-                item.LengthCm,
-                item.WidthCm,
-                item.HeightCm
-            }
-            .OrderByDescending(x => x)
-            .ToArray();
+            // Preserve confirmed parcel dimensions exactly, matching create and snapshot.
 
             return new GhnApiItemRequest
             {
@@ -607,9 +621,9 @@ namespace HomeCycle.Infrastructure.Externals.GHN
                 Code = string.IsNullOrWhiteSpace(item.Code) ? null : item.Code.Trim(),
                 Quantity = item.Quantity,
                 WeightGram = item.WeightGram,
-                LengthCm = sides[0],
-                WidthCm = sides[1],
-                HeightCm = sides[2]
+                LengthCm = item.LengthCm,
+                WidthCm = item.WidthCm,
+                HeightCm = item.HeightCm
             };
         }
 
@@ -662,7 +676,7 @@ namespace HomeCycle.Infrastructure.Externals.GHN
             var apiRequest = MapCreateOrderRequest(request);
             var services = await GetAvailableServicesAsync(request.FromDistrictId, request.ToDistrictId, cancellationToken);
             if (!services.Any(x => x.ServiceTypeId == request.ServiceTypeId))
-                throw new ArgumentException("Dịch vụ GHN không khả dụng cho tuyến này.");
+                throw new ArgumentException("Dịch vụ GHN không khả dụng cho tuyến này.", "Ghn.ServiceUnavailable");
 
             var data = await SendSingleAsync<GhnCreateOrderData>(
                 HttpMethod.Post,
@@ -688,16 +702,7 @@ namespace HomeCycle.Infrastructure.Externals.GHN
 
         private static GhnCalculateFeeItemApiRequest MapItem(CalculateGhnFeeItemRequest item)
         {
-            // quy ước: cạnh lớn nhất là dài, nhỏ nhất là cao.
-            var sides = new[]
-            {
-                item.LengthCm,
-                item.WidthCm,
-                item.HeightCm
-            }
-
-            .OrderByDescending(x => x)
-            .ToArray();
+            // Preserve confirmed parcel dimensions exactly, matching create and snapshot.
 
             return new GhnCalculateFeeItemApiRequest
             {
@@ -707,14 +712,25 @@ namespace HomeCycle.Infrastructure.Externals.GHN
                     : item.Code.Trim(),
                 Quantity = item.Quantity,
                 WeightGram = item.WeightGram,
-                LengthCm = sides[0],
-                WidthCm = sides[1],
-                HeightCm = sides[2]
+                LengthCm = item.LengthCm,
+                WidthCm = item.WidthCm,
+                HeightCm = item.HeightCm
             };
         }
 
         private static GhnCreateOrderApiRequest MapCreateOrderRequest(GhnCreateOrderRequest request)
         {
+            GhnShippingCalculationHelper.GetConfirmedParcel(new GhnShippingInfo
+            {
+                Items = request.Items?.Select(x => x == null ? null! : new GhnItemSnapshotDto
+                {
+                    Name = x.Name, Code = x.Code, Quantity = x.Quantity, WeightGram = x.WeightGram,
+                    LengthCm = x.LengthCm, WidthCm = x.WidthCm, HeightCm = x.HeightCm
+                }).ToArray()!,
+                ParcelCount = request.ParcelCount, ServiceTypeId = request.ServiceTypeId,
+                WeightGram = request.WeightGram, LengthCm = request.LengthCm,
+                WidthCm = request.WidthCm, HeightCm = request.HeightCm
+            });
             static string Required(string? value, int max, string name)
             {
                 if (string.IsNullOrWhiteSpace(value) || value.Trim().Length > max)
@@ -727,8 +743,6 @@ namespace HomeCycle.Infrastructure.Externals.GHN
             if (request.WeightGram is null or < 1 or > 50_000 || request.LengthCm is null or < 1 or > 200 ||
                 request.WidthCm is null or < 1 or > 200 || request.HeightCm is null or < 1 or > 200 || request.ParcelCount < 1)
                 throw new ArgumentException("Thiếu hoặc sai thông số đóng gói cấp đơn (1–50.000g, 1–200cm).");
-            var expectedType = request.WeightGram >= 20_000 || request.ParcelCount > 1 ? 5 : 2;
-            if (request.ServiceTypeId != expectedType) throw new ArgumentException("ServiceTypeId không khớp cân nặng/số kiện.");
             if (request.PaymentTypeId != 1 || request.CodAmount != 0)
                 throw new ArgumentException("HomeCycle dùng shop trả phí và COD = 0.");
             if (request.InsuranceValue is < 0 or > 5_000_000 || request.Note?.Length > 5000 || request.Content?.Length > 2000)
@@ -737,21 +751,13 @@ namespace HomeCycle.Infrastructure.Externals.GHN
             if (!new[] { "CHOTHUHANG", "CHOXEMHANGKHONGTHU", "KHONGCHOXEMHANG" }.Contains(note))
                 throw new ArgumentException("RequiredNote không hợp lệ.");
             var items = request.Items ?? Array.Empty<GhnCreateOrderItemRequest>();
-            if ((expectedType == 5 || string.IsNullOrWhiteSpace(request.Content)) && items.Count == 0)
-                throw new ArgumentException("Cần items cho hàng nặng; hàng nhẹ cần content hoặc items.");
-            long total = 0;
+            // Physical parcels and service type have already been validated by the shared helper.
             var mapped = new List<GhnCreateOrderApiItem>();
             foreach (var item in items)
             {
-                if (item == null || item.Quantity < 1 || item.WeightGram < 0 || item.LengthCm < 0 || item.WidthCm < 0 || item.HeightCm < 0)
-                    throw new ArgumentException("Item không hợp lệ.");
-                if (expectedType == 5 && (item.WeightGram < 1 || item.LengthCm is < 1 or > 200 || item.WidthCm is < 1 or > 200 || item.HeightCm is < 1 or > 200))
-                    throw new ArgumentException("Hàng nặng cần thông số từng kiện hợp lệ.");
-                total = checked(total + (long)item.WeightGram * item.Quantity);
                 mapped.Add(new GhnCreateOrderApiItem { Name = Required(item.Name, 512, "Item.Name"), Code = item.Code?.Trim(),
                     Quantity = item.Quantity, WeightGram = item.WeightGram, LengthCm = item.LengthCm, WidthCm = item.WidthCm, HeightCm = item.HeightCm });
             }
-            if (expectedType == 5 && total != request.WeightGram) throw new ArgumentException("Tổng cân không khớp items.");
             return new GhnCreateOrderApiRequest
             {
                 ClientOrderCode = clientCode,

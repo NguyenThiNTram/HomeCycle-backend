@@ -18,10 +18,14 @@ namespace HomeCycle.Application.Validations.GHN
 
         public CalculateGhnFeeRequestValidator()
         {
+            RuleFor(x => x).Custom((request, context) =>
+            {
+                var error = HomeCycle.Application.Commons.Helpers.GhnShippingCalculationHelper.ValidatePhysicalParcels(
+                    HomeCycle.Application.Commons.Helpers.GhnShippingCalculationHelper.ToParcelItems(request.Items),
+                    request.ParcelCount, request.WeightGram, request.ServiceTypeId);
+                if (error != null) context.AddFailure(new FluentValidation.Results.ValidationFailure("Items", error.Message) { ErrorCode = error.Code });
+            });
             RuleFor(x => x.ParcelCount).GreaterThan(0);
-            RuleFor(x => x.ServiceTypeId)
-                .Must((request, type) => type == (request.WeightGram >= 20_000 || request.ParcelCount > 1 ? 5 : 2))
-                .WithMessage("Loại dịch vụ phải khớp tổng khối lượng và số kiện.");
             RuleFor(x => x.FromDistrictId)
                 .GreaterThan(0)
                 .WithMessage("Mã quận/huyện người gửi không hợp lệ.");
@@ -52,7 +56,7 @@ namespace HomeCycle.Application.Validations.GHN
                 //.WithMessage(
                 //    $"Khối lượng phải từ 1 đến {MaxWeightGram} gram.");
                 .GreaterThan(0)
-                .WithMessage("Khối lượng kiện hàng phải lớn hơn 0 gram.");
+                .WithMessage("Tổng khối lượng shipment phải lớn hơn 0 gram.");
 
             RuleFor(x => x.LengthCm)
                 .Must(x => x is null || x > 0)

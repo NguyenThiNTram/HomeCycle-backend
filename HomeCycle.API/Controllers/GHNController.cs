@@ -99,6 +99,10 @@ namespace HomeCycle.API.Controllers
                 var result = await _ghnService.GetShippingFeeAsync(request, cancellationToken);
                 return Ok(result);
             }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(HomeCycle.Application.Commons.Helpers.GhnShippingCalculationHelper.ParcelError(ex));
+            }
             catch (GhnApiException ex)
             {
                 return HandleGhnException(ex);
@@ -118,7 +122,12 @@ namespace HomeCycle.API.Controllers
                 var result = await _ghnService.CreateOrderAsync(request, cancellationToken);
                 return Ok(result);
             }
-            catch (ArgumentException ex) { return BadRequest(new Error("Ghn.InvalidCreateRequest", ex.Message)); }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(ex.ParamName?.StartsWith("Ghn.") == true
+                    ? HomeCycle.Application.Commons.Helpers.GhnShippingCalculationHelper.ParcelError(ex)
+                    : new Error("Ghn.InvalidCreateRequest", ex.Message));
+            }
             catch (GhnApiException ex)
             {
                 return HandleGhnException(ex);

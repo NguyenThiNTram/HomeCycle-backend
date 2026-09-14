@@ -9,9 +9,10 @@ namespace HomeCycle.Application.DTOs.Responses.GHN
     public sealed class GhnItemSnapshotDto
     {
         //Snapshot kiện hàng đã gửi GHN
-        public string Name { get; init; } //product name
+        public string Name { get; init; } // Tên kiện vật lý, không nhất thiết trùng tên Product.
         public string? Code { get; init; }
 
+        // HomeCycle convention: one item = one physical parcel. Always 1, never Agreement.Quantity.
         public int Quantity { get; init; }
 
         // chuẩn hóa đơn vị GHN

@@ -33,7 +33,7 @@ namespace HomeCycle.Application.DTOs.Responses.GHN
         // Chỉ sử dụng khi ServiceTypeId = 2
         public GhnLightParcelSnapshotDto? LightParcel { get; init; }
 
-        // Chỉ sử dụng khi ServiceTypeId = 5
+        // HomeCycle: mỗi item là một kiện vật lý, Quantity = 1, bắt buộc cả type 2 và 5.
         public IReadOnlyList<GhnItemSnapshotDto> Items { get; init; }
             = Array.Empty<GhnItemSnapshotDto>();
 

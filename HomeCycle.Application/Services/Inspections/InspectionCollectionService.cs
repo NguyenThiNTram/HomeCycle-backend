@@ -112,7 +112,7 @@ namespace HomeCycle.Application.Services.Inspections
             {
                 return Result<ScheduleInspectionCollectionResponse>.Fail(
                     new Error(
-                        "Validation.InvalidRequest",
+                        validation.Errors.FirstOrDefault(x => x.ErrorCode.StartsWith("Ghn."))?.ErrorCode ?? "Validation.InvalidRequest",
                         string.Join(" | ", validation.Errors.Select(x => x.ErrorMessage))));
             }
 
@@ -252,9 +252,6 @@ namespace HomeCycle.Application.Services.Inspections
                     }
                     else
                     {
-                    var services = await _ghnService.GetAvailableServicesAsync(feeRequest.FromDistrictId, feeRequest.ToDistrictId, cancellationToken);
-                    if (!services.Any(x => x.ServiceTypeId == ghnInfo.ServiceTypeId))
-                        return Result<ScheduleInspectionCollectionResponse>.Fail(new Error("Ghn.ServiceUnavailable", "GHN không hỗ trợ dịch vụ trên tuyến này."));
                     var quote = await _ghnService.GetShippingFeeAsync(
                         feeRequest,
                         cancellationToken);
