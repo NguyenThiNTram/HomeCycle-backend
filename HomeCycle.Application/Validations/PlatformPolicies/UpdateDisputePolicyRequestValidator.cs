@@ -19,7 +19,9 @@ namespace HomeCycle.Application.Validations.PlatformPolicies
                     x.LowReputationDisputeWindowDays.HasValue ||
                     x.LowReputationThreshold.HasValue ||
                     x.ReturnWindowDays.HasValue ||
-                    x.DisputeLossPenaltyPoints.HasValue)
+                    x.DisputeLossPenaltyPoints.HasValue ||
+                    x.PostViolationPenaltyPoints.HasValue ||
+                    x.ReviewViolationPenaltyPoints.HasValue)
                 .WithMessage("Phải cung cấp ít nhất một cấu hình cần thay đổi.");
 
             RuleFor(x => x.NormalDisputeWindowDays)
@@ -41,6 +43,13 @@ namespace HomeCycle.Application.Validations.PlatformPolicies
             RuleFor(x => x.DisputeLossPenaltyPoints)
                 .Must(x => !x.HasValue || x.Value is >= 1 and <= 100)
                 .WithMessage("DisputeLossPenaltyPoints phải từ 1 đến 100.");
+
+            RuleFor(x => x.PostViolationPenaltyPoints)
+                .Must(x => !x.HasValue || x.Value is >= 1 and <= 100)
+                .WithMessage("PostViolationPenaltyPoints phải từ 1 đến 100.");
+            RuleFor(x => x.ReviewViolationPenaltyPoints)
+                .Must(x => !x.HasValue || x.Value is >= 1 and <= 100)
+                .WithMessage("ReviewViolationPenaltyPoints phải từ 1 đến 100.");
         }
     }
 }

@@ -17,5 +17,7 @@ namespace HomeCycle.Application.DTOs.Requests.PlatformPolicies
         public int? ReturnWindowDays { get; set; }
 
         public int? DisputeLossPenaltyPoints { get; set; }
+        public int? PostViolationPenaltyPoints { get; set; }
+        public int? ReviewViolationPenaltyPoints { get; set; }
     }
 }

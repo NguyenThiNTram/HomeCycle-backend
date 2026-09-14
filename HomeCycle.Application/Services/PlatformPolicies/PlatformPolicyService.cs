@@ -1242,7 +1242,9 @@ namespace HomeCycle.Application.Services.PlatformPolicies
                 && config.LowReputationDisputeWindowDays >= config.NormalDisputeWindowDays
                 && config.LowReputationThreshold is >= 0 and <= 100
                 && config.ReturnWindowDays is >= 1 and <= 30
-                && config.DisputeLossPenaltyPoints is >= 1 and <= 100;
+                && config.DisputeLossPenaltyPoints is >= 1 and <= 100
+                && config.PostViolationPenaltyPoints is >= 1 and <= 100
+                && config.ReviewViolationPenaltyPoints is >= 1 and <= 100;
         }
 
         private static bool IsValidAppointmentConfig(
@@ -1294,7 +1296,9 @@ namespace HomeCycle.Application.Services.PlatformPolicies
                 && current.LowReputationDisputeWindowDays == updated.LowReputationDisputeWindowDays
                 && current.LowReputationThreshold == updated.LowReputationThreshold
                 && current.ReturnWindowDays == updated.ReturnWindowDays
-                && current.DisputeLossPenaltyPoints == updated.DisputeLossPenaltyPoints;
+                && current.DisputeLossPenaltyPoints == updated.DisputeLossPenaltyPoints
+                && current.PostViolationPenaltyPoints == updated.PostViolationPenaltyPoints
+                && current.ReviewViolationPenaltyPoints == updated.ReviewViolationPenaltyPoints;
 
         }
 

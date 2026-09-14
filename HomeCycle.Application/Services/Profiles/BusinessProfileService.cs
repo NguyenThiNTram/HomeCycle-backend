@@ -13,6 +13,7 @@ using HomeCycle.Application.Interfaces.Repositories.Profiles;
 using HomeCycle.Application.Interfaces.Repositories.Users;
 using HomeCycle.Application.Interfaces.Services.Configs;
 using HomeCycle.Application.Interfaces.Services.Externals;
+using HomeCycle.Application.Interfaces.Services.Notifications;
 using HomeCycle.Application.Interfaces.Services.Profiles;
 using HomeCycle.Domain.Entities;
 using HomeCycle.Domain.Enums;
@@ -37,6 +38,7 @@ namespace HomeCycle.Application.Services.Profiles
         private readonly IUserRepository _userRepository;
         private readonly IFileStorageService _fileStorageService;
         private readonly IFileValidationService _fileValidationService;
+        private readonly INotificationService _notificationService;
         private readonly IUnitOfWork _unitOfWork;
         private readonly IMapper _mapper;
         private readonly ILogger<BusinessProfileService> _logger;
@@ -61,6 +63,7 @@ namespace HomeCycle.Application.Services.Profiles
             IBankAccountRepository bankAccountRepository,
             IUserRepository userRepository,
             IFileValidationService fileValidationService,
+            INotificationService notificationService,
             IUnitOfWork unitOfWork,
             IMapper mapper,
             ILogger<BusinessProfileService> logger,
@@ -85,6 +88,7 @@ namespace HomeCycle.Application.Services.Profiles
             _bankAccountRepository = bankAccountRepository;
             _userRepository = userRepository;
             _fileValidationService = fileValidationService;
+            _notificationService = notificationService;
             _unitOfWork = unitOfWork;
             _mapper = mapper;
             _logger = logger;
@@ -271,8 +275,23 @@ namespace HomeCycle.Application.Services.Profiles
                     }
                 }
 
+                var moderatorNotifications =
+                    await _notificationService.AddPendingForActiveModeratorsAsync(
+                        isResubmit
+                            ? "Hồ sơ doanh nghiệp được gửi lại"
+                            : "Có hồ sơ doanh nghiệp mới",
+                        isResubmit
+                            ? $"Hồ sơ doanh nghiệp {request.BusinessName} đã được cập nhật và đang chờ duyệt lại."
+                            : $"Hồ sơ doanh nghiệp {request.BusinessName} vừa được gửi và đang chờ duyệt.",
+                        NotificationTargetType.BusinessProfile,
+                        targetProfileId,
+                        cancellationToken);
+
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync();
+
+                await Task.WhenAll(moderatorNotifications.Select(
+                    _notificationService.PublishCreatedSafelyAsync));
 
                 return Result<string>.Success(existingProfile == null
                     ? "The business registration application has been submitted successfully and is awaiting approval."

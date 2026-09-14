@@ -20,6 +20,27 @@ namespace HomeCycle.Infrastructure.Repositories.Reviews
 
         public ReviewRepository(HomeCycleDbContext db) => _db = db;
 
+        public async Task<review?> GetByIdForUpdateAsync(Guid reviewId, CancellationToken ct = default)
+        {
+            var entity = await _db.Reviews
+                .FromSqlInterpolated($"SELECT * FROM public.\"Review\" WHERE \"ReviewId\" = {reviewId} FOR UPDATE")
+                .AsNoTracking().SingleOrDefaultAsync(ct);
+            return entity?.ToDomain();
+        }
+
+        public async Task<bool> TryUpdateVisibleAsync(review review, CancellationToken ct = default)
+        {
+            // Recheck visibility in SQL so an edit racing moderation cannot unhide the review.
+            var affected = await _db.Reviews.Where(x => x.ReviewId == review.ReviewId &&
+                    (x.ReviewStatus == (int)ReviewStatus.Active || x.ReviewStatus == (int)ReviewStatus.Edited))
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(x => x.Rating, review.Rating)
+                    .SetProperty(x => x.Comment, review.Comment)
+                    .SetProperty(x => x.ReviewStatus, review.ReviewStatus)
+                    .SetProperty(x => x.UpdatedAt, review.UpdatedAt), ct);
+            return affected == 1;
+        }
+
         public async Task<review?> GetByIdAsync(Guid reviewId, CancellationToken ct = default)
         {
             var entity = await _db.Reviews
@@ -67,6 +88,7 @@ namespace HomeCycle.Infrastructure.Repositories.Reviews
             var entities = await _db.Reviews
                 .AsNoTracking()
                 .Where(x => x.RevieweeId == revieweeId)
+                .Where(x => x.ReviewStatus == (int)ReviewStatus.Active || x.ReviewStatus == (int)ReviewStatus.Edited)
                 .ToListAsync(ct);
 
             return entities.Select(x => x.ToDomain()).ToList();
@@ -77,7 +99,8 @@ namespace HomeCycle.Infrastructure.Repositories.Reviews
         {
             var query = _db.Reviews
                 .AsNoTracking()
-                .Where(x => x.RevieweeId == revieweeId);
+                .Where(x => x.RevieweeId == revieweeId &&
+                    (x.ReviewStatus == (int)ReviewStatus.Active || x.ReviewStatus == (int)ReviewStatus.Edited));
 
             var totalCount = await query.CountAsync(ct);
 
@@ -117,7 +140,8 @@ namespace HomeCycle.Infrastructure.Repositories.Reviews
         {
             var query = _db.Reviews
                 .AsNoTracking()
-                .Where(x => x.OrderId == orderId);
+                .Where(x => x.OrderId == orderId &&
+                    (x.ReviewStatus == (int)ReviewStatus.Active || x.ReviewStatus == (int)ReviewStatus.Edited));
 
             var totalCount = await query.CountAsync(ct);
 
@@ -156,7 +180,8 @@ namespace HomeCycle.Infrastructure.Repositories.Reviews
         {
             var query = _db.Reviews
                 .AsNoTracking()
-                .Where(r => r.RevieweeId == revieweeId && r.Rating.HasValue);
+                .Where(r => r.RevieweeId == revieweeId && r.Rating.HasValue &&
+                    (r.ReviewStatus == (int)ReviewStatus.Active || r.ReviewStatus == (int)ReviewStatus.Edited));
 
             var totalReviews = await query.CountAsync(cancellationToken);
 

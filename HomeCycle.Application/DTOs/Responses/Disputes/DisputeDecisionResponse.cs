@@ -10,6 +10,11 @@ namespace HomeCycle.Application.DTOs.Responses.Disputes
     public class DisputeDecisionResponse
     {
         public Guid DisputeId { get; set; }
+        public DisputeTargetType? TargetType { get; set; }
+        public Guid? TargetId { get; set; }
+        public PostStatus? PostStatus { get; set; }
+        public ReviewStatus? ReviewStatus { get; set; }
+        public int? PenaltyPointsApplied { get; set; }
         public DisputeStatus Status { get; set; }
         public Guid ModeratorId { get; set; }
         public string ModeratorNote { get; set; } = string.Empty;
