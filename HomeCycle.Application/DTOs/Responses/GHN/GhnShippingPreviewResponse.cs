@@ -12,15 +12,19 @@ namespace HomeCycle.Application.DTOs.Responses.GHN
     // Thông tin kiện hàng do server tự điền từ Product (bước "get info" trước khi tính phí)
     public sealed class GhnParcelInfoResponse
     {
+        public string? ProductName { get; init; }
+        public int CommercialQuantity { get; init; }
+        public int? ProductWeightGram { get; init; }
+        public int? ProductLengthCm { get; init; }
+        public int? ProductWidthCm { get; init; }
+        public int? ProductHeightCm { get; init; }
+
         // Estimate only: never overwrites or constrains confirmed physical parcels.
         public long? EstimatedTotalWeightGram { get; init; }
         public bool EstimatedOverLimit { get; init; }
         public GhnContactSnapshotDto? Sender { get; init; }
         public GhnContactSnapshotDto? Receiver { get; init; }
         public Guid NegotiationId { get; init; }
-
-        // 2 = Hàng nhẹ, 5 = Hàng nặng
-        //public int ServiceTypeId { get; init; } = 2; //mặc định Hàng nhẹ
         public int ServiceTypeId { get; init; }
 
         public GhnLightParcelSnapshotDto? LightParcel { get; init; }
@@ -31,7 +35,7 @@ namespace HomeCycle.Application.DTOs.Responses.GHN
 
         public bool HasProductDimensions { get; init; }
 
-        // Kích thước product không đủ mô tả kiện đóng gói khi có nhiều sản phẩm.
+        // Requires actual packaging input, not a restriction on using GHN.
         public bool RequiresPackagingDimensions { get; init; }
     }
 
