@@ -224,6 +224,14 @@ namespace HomeCycle.Application.Services.Payments
                 return Result<string>.Fail(new Error("Data.InvalidFormat", "Dữ liệu JSONB cấu hình thỏa thuận bị lỗi."));
             }
 
+            var scheduleError =
+                ValidateAgreementScheduleForPayment(
+                    agreement,
+                    details);
+
+            if (scheduleError != null)
+                return Result<string>.Fail(scheduleError);
+
             if (details?.EstimatedShippingFee is < 0)
                 return Result<string>.Fail(new Error("Payment.InvalidShippingFee", "Phí vận chuyển không được nhỏ hơn 0."));
 
@@ -489,6 +497,15 @@ namespace HomeCycle.Application.Services.Payments
             {
                 return Result<PaymentStatusResponseDto>.Fail(new Error("Data.InvalidFormat", "Dữ liệu JSONB bị lỗi."));
             }
+
+            var scheduleError =
+                ValidateAgreementScheduleForPayment(
+                    agreement,
+                    details);
+
+            if (scheduleError != null)
+                return Result<PaymentStatusResponseDto>.Fail(
+                    scheduleError);
 
             if (details?.EstimatedShippingFee is < 0)
                 return Result<PaymentStatusResponseDto>.Fail(new Error("Payment.InvalidShippingFee", "Phí vận chuyển không được nhỏ hơn 0."));
@@ -1363,6 +1380,23 @@ namespace HomeCycle.Application.Services.Payments
 
         #region HELPER
 
+        private static Error? ValidateAgreementScheduleForPayment(
+            agreement_form agreement,
+            AgreementDetailsDto? details)
+        {
+            var scheduledAt =
+                agreement.AgreementType == (int)AgreementType.Inspection
+                    ? details?.InspectionDate
+                    : details?.CollectionDate;
+
+            if (!scheduledAt.HasValue)
+                return AgreementErrors.AppointmentScheduleMissing;
+
+            if (scheduledAt.Value <= DateTime.UtcNow)
+                return AgreementErrors.AppointmentScheduleExpired;
+
+            return null;
+        }
 
         private async Task<Result<PaymentStatus>> ReconcilePayOsPaymentAsync(
             Guid paymentId,

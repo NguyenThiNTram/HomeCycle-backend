@@ -410,6 +410,12 @@ namespace HomeCycle.Application.Commons.Errors
 
         public static readonly Error OnlySellerCanCreate =
             new("Agreement.OnlySellerCanCreate", "Chỉ người bán mới có quyền tạo thỏa thuận.");
+
+        public static readonly Error AppointmentScheduleMissing =
+            new("Agreement.AppointmentScheduleMissing", "Thỏa thuận chưa có thời gian lịch hẹn hợp lệ.");
+
+        public static readonly Error AppointmentScheduleExpired =
+            new("Agreement.AppointmentScheduleExpired", "Thời gian lịch hẹn của thỏa thuận đã qua. Vui lòng cập nhật lại thỏa thuận.");
     }
 
     public static class AppointmentErrors

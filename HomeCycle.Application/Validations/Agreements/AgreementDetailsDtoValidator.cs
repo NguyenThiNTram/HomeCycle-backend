@@ -1,4 +1,5 @@
 ﻿using FluentValidation;
+using HomeCycle.Application.Commons.Errors;
 using HomeCycle.Application.DTOs.Requests.Agreements;
 using HomeCycle.Domain.Enums;
 using System;
@@ -27,6 +28,12 @@ namespace HomeCycle.Application.Validations.Agreements
                 RuleFor(x => x.DeliveryMethod)
                     .NotNull().WithMessage("Delivery method is required for No_Inspection.")
                     .IsInEnum().WithMessage("Invalid delivery method specified.");
+
+                RuleFor(x => x.CollectionDate)
+                    .NotNull()
+                    .WithMessage(AgreementErrors.AppointmentScheduleMissing.Message)
+                    .GreaterThan(DateTime.UtcNow)
+                    .WithMessage(AgreementErrors.AppointmentScheduleExpired.Message);
             });
 
             // Case 2: Validation địa chỉ nếu có DeliveryMethod
