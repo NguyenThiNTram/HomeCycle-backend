@@ -250,6 +250,32 @@ namespace HomeCycle.Application.Services.Payments
 
             agreement.PaymentType = calc.PaymentType;
 
+            var pendingSnapshot =
+                await _paymentRepo.GetLatestPendingByAgreementAsync(
+                    agreementId,
+                    ct);
+
+            if (pendingSnapshot?.ExpiredAt.HasValue == true &&
+                pendingSnapshot.ExpiredAt.Value <= DateTime.UtcNow)
+            {
+                var reconcileResult =
+                    await ReconcilePayOsPaymentAsync(
+                        pendingSnapshot.PaymentId,
+                        ct);
+
+                if (!reconcileResult.IsSuccess)
+                    return Result<string>.Fail(
+                        reconcileResult.Error!);
+
+                if (reconcileResult.Data == PaymentStatus.Pending)
+                {
+                    return Result<string>.Fail(
+                        new Error(
+                            "Payment.ActiveCheckoutExists",
+                            "Phiên thanh toán hiện tại vẫn đang được PayOS xử lý."));
+                }
+            }
+
             await _unitOfWork.BeginTransactionAsync(ct);
 
             try

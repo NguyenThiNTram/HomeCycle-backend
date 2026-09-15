@@ -27,7 +27,10 @@ namespace HomeCycle.API.Controllers
 
             if (!result.IsSuccess)
             {
-                if (result.Error?.Code == "Auth.Forbidden") return Forbid(result.Error.Message);
+                if (result.Error?.Code == "Auth.Forbidden")
+                    return StatusCode(
+                        StatusCodes.Status403Forbidden,
+                        result.Error);
                 if (result.Error?.Code == "Agreement.NotFound") return NotFound(result.Error.Message);
 
                 return BadRequest(result.Error);
@@ -46,7 +49,10 @@ namespace HomeCycle.API.Controllers
 
             if (!result.IsSuccess)
             {
-                if (result.Error?.Code == "Auth.Forbidden") return Forbid(result.Error.Message);
+                if (result.Error?.Code == "Auth.Forbidden")
+                    return StatusCode(
+                        StatusCodes.Status403Forbidden,
+                        result.Error);
                 if (result.Error?.Code == "Agreement.NotFound") return NotFound(result.Error.Message);
                 if (result.Error?.Code == "Payment.ActiveCheckoutExists")
                     return Conflict(result.Error);
@@ -67,7 +73,10 @@ namespace HomeCycle.API.Controllers
 
             if (!result.IsSuccess)
             {
-                if (result.Error?.Code == "Auth.Forbidden") return Forbid(result.Error.Message);
+                if (result.Error?.Code == "Auth.Forbidden")
+                    return StatusCode(
+                        StatusCodes.Status403Forbidden,
+                        result.Error);
                 if (result.Error?.Code == "Agreement.NotFound") return NotFound(result.Error.Message);
                 if (result.Error?.Code == "Payment.ActiveCheckoutExists")
                     return Conflict(result.Error);
