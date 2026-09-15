@@ -27,6 +27,8 @@ namespace HomeCycle.Application.Services.PlatformPolicies
         private readonly IUnitOfWork _unitOfWork;
         private readonly IMapper _mapper;
         private readonly IValidator<UpdateDisputePolicyRequest> _disputeValidator;
+        private readonly IValidator<UpdateRatingPolicyRequest> _ratingValidator;
+        private readonly IValidator<RatingPolicyConfigDto> _ratingConfigValidator;
         private readonly IValidator<UpdateAppointmentPolicyRequest> _appointmentValidator;
         private readonly IValidator<UpdateFileUploadPolicyRequest> _fileUploadRequestValidator;
         private readonly IValidator<FileUploadPolicyConfigDto> _fileUploadPolicyValidator;
@@ -39,6 +41,8 @@ namespace HomeCycle.Application.Services.PlatformPolicies
             IUnitOfWork unitOfWork,
             IMapper mapper,
             IValidator<UpdateDisputePolicyRequest> disputeValidator,
+            IValidator<UpdateRatingPolicyRequest> ratingValidator,
+            IValidator<RatingPolicyConfigDto> ratingConfigValidator,
             IValidator<UpdateAppointmentPolicyRequest> appointmentValidator,
             IValidator<UpdateFileUploadPolicyRequest> fileUploadRequestValidator,
             IValidator<FileUploadPolicyConfigDto> fileUploadPolicyValidator,
@@ -50,6 +54,8 @@ namespace HomeCycle.Application.Services.PlatformPolicies
             _unitOfWork = unitOfWork;
             _mapper = mapper;
             _disputeValidator = disputeValidator;
+            _ratingValidator = ratingValidator;
+            _ratingConfigValidator = ratingConfigValidator;
             _appointmentValidator = appointmentValidator;
             _fileUploadRequestValidator = fileUploadRequestValidator;
             _fileUploadPolicyValidator = fileUploadPolicyValidator;
@@ -114,6 +120,36 @@ namespace HomeCycle.Application.Services.PlatformPolicies
             response.Config = config!;
 
             return Result<PlatformPolicyResponseDto<AppointmentPolicyConfigDto>>.Success(response);
+        }
+
+        public async Task<Result<PlatformPolicyResponseDto<RatingPolicyConfigDto>>> GetRatingPolicyAsync(
+            CancellationToken cancellationToken = default)
+        {
+            var policy = await _policyRepository.GetActiveAsync(
+                PlatformPolicyType.Rating,
+                cancellationToken);
+
+            if (policy == null)
+            {
+                return Result<PlatformPolicyResponseDto<RatingPolicyConfigDto>>.Success(
+                    new PlatformPolicyResponseDto<RatingPolicyConfigDto>
+                    {
+                        PolicyType = PlatformPolicyType.Rating,
+                        Title = "Rating Policy",
+                        Config = new RatingPolicyConfigDto()
+                    });
+            }
+
+            if (!TryDeserialize(policy.Content, out RatingPolicyConfigDto? config) ||
+                !(await _ratingConfigValidator.ValidateAsync(config!, cancellationToken)).IsValid)
+            {
+                return Result<PlatformPolicyResponseDto<RatingPolicyConfigDto>>
+                    .Fail(PlatformPolicyErrors.InvalidContent(PlatformPolicyType.Rating));
+            }
+
+            var response = _mapper.Map<PlatformPolicyResponseDto<RatingPolicyConfigDto>>(policy);
+            response.Config = config!;
+            return Result<PlatformPolicyResponseDto<RatingPolicyConfigDto>>.Success(response);
         }
 
         public async Task<Result<PlatformPolicyResponseDto<DisputePolicyConfigDto>>> UpdateDisputePolicyAsync(
@@ -218,6 +254,101 @@ namespace HomeCycle.Application.Services.PlatformPolicies
 
                 return Result<PlatformPolicyResponseDto<DisputePolicyConfigDto>>
                     .Success(response);
+            }
+            catch
+            {
+                await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                throw;
+            }
+        }
+
+        public async Task<Result<PlatformPolicyResponseDto<RatingPolicyConfigDto>>> UpdateRatingPolicyAsync(
+            Guid adminId,
+            UpdateRatingPolicyRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            var requestValidation = await _ratingValidator.ValidateAsync(request, cancellationToken);
+            if (!requestValidation.IsValid)
+            {
+                return Result<PlatformPolicyResponseDto<RatingPolicyConfigDto>>.Fail(
+                    ValidationErrors.InvalidRequest(string.Join("\n", requestValidation.Errors.Select(x => x.ErrorMessage))));
+            }
+
+            await _unitOfWork.BeginTransactionAsync(cancellationToken);
+            try
+            {
+                var current = await _policyRepository.GetActiveForUpdateAsync(
+                    PlatformPolicyType.Rating,
+                    cancellationToken);
+
+                RatingPolicyConfigDto currentConfig;
+                if (current == null)
+                {
+                    currentConfig = new RatingPolicyConfigDto();
+                }
+                else if (!TryDeserialize(current.Content, out RatingPolicyConfigDto? parsedConfig) ||
+                    !(await _ratingConfigValidator.ValidateAsync(parsedConfig!, cancellationToken)).IsValid)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<PlatformPolicyResponseDto<RatingPolicyConfigDto>>
+                        .Fail(PlatformPolicyErrors.InvalidContent(PlatformPolicyType.Rating));
+                }
+                else
+                {
+                    currentConfig = parsedConfig!;
+                }
+
+                var config = _mapper.Map<RatingPolicyConfigDto>(currentConfig);
+                _mapper.Map(request, config);
+
+                var configValidation = await _ratingConfigValidator.ValidateAsync(config, cancellationToken);
+                if (!configValidation.IsValid)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<PlatformPolicyResponseDto<RatingPolicyConfigDto>>.Fail(
+                        ValidationErrors.InvalidRequest(string.Join("\n", configValidation.Errors.Select(x => x.ErrorMessage))));
+                }
+
+                if (current != null && SameRatingConfig(currentConfig, config))
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    var currentResponse = _mapper.Map<PlatformPolicyResponseDto<RatingPolicyConfigDto>>(current);
+                    currentResponse.Config = currentConfig;
+                    return Result<PlatformPolicyResponseDto<RatingPolicyConfigDto>>.Success(currentResponse);
+                }
+
+                var now = DateTime.UtcNow;
+                var nextVersion = await _policyRepository.GetNextVersionAsync(
+                    PlatformPolicyType.Rating,
+                    cancellationToken);
+
+                if (current != null)
+                {
+                    current.IsActive = false;
+                    current.UpdatedAt = now;
+                    await _policyRepository.UpdateAsync(current, cancellationToken);
+                }
+
+                var newPolicy = new platform_policy
+                {
+                    PolicyId = Guid.NewGuid(),
+                    PolicyType = PlatformPolicyType.Rating,
+                    Title = string.IsNullOrWhiteSpace(current?.Title) ? "Rating Policy" : current.Title,
+                    Content = JsonSerializer.Serialize(config, JsonOptions),
+                    Version = nextVersion,
+                    IsActive = true,
+                    CreatedAt = now,
+                    CreatedBy = adminId,
+                    UpdatedAt = now
+                };
+
+                await _policyRepository.AddAsync(newPolicy, cancellationToken);
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+                await _unitOfWork.CommitTransactionAsync(cancellationToken);
+
+                var response = _mapper.Map<PlatformPolicyResponseDto<RatingPolicyConfigDto>>(newPolicy);
+                response.Config = config;
+                return Result<PlatformPolicyResponseDto<RatingPolicyConfigDto>>.Success(response);
             }
             catch
             {
@@ -510,6 +641,19 @@ namespace HomeCycle.Application.Services.PlatformPolicies
                 throw new InvalidOperationException(
                     result.Error?.Message
                     ?? "Dispute policy configuration is unavailable.");
+            }
+
+            return result.Data.Config;
+        }
+
+        public async Task<RatingPolicyConfigDto> GetRatingConfigAsync(
+            CancellationToken cancellationToken = default)
+        {
+            var result = await GetRatingPolicyAsync(cancellationToken);
+            if (!result.IsSuccess || result.Data == null)
+            {
+                throw new InvalidOperationException(
+                    result.Error?.Message ?? "Rating policy configuration is unavailable.");
             }
 
             return result.Data.Config;
@@ -1302,6 +1446,22 @@ namespace HomeCycle.Application.Services.PlatformPolicies
 
         }
 
+        private static bool SameRatingConfig(
+            RatingPolicyConfigDto current,
+            RatingPolicyConfigDto updated)
+        {
+            return current.PriorMean == updated.PriorMean
+                && current.PriorWeight == updated.PriorWeight
+                && current.FiveStarPoints == updated.FiveStarPoints
+                && current.FourStarPoints == updated.FourStarPoints
+                && current.ThreeStarPoints == updated.ThreeStarPoints
+                && current.TwoStarPoints == updated.TwoStarPoints
+                && current.OneStarPoints == updated.OneStarPoints
+                && current.MinimumReputationScore == updated.MinimumReputationScore
+                && current.MaximumReputationScore == updated.MaximumReputationScore
+                && current.ReviewEditWindowDays == updated.ReviewEditWindowDays;
+        }
+
         private static bool SameAppointmentConfig(
             AppointmentPolicyConfigDto current,
             AppointmentPolicyConfigDto updated)
@@ -1390,6 +1550,12 @@ namespace HomeCycle.Application.Services.PlatformPolicies
                     return TryDeserialize(content, out DisputePolicyConfigDto? disputeConfig)
                            && IsValidDisputeConfig(disputeConfig!);
 
+                case PlatformPolicyType.Rating:
+                    if (!TryDeserialize(content, out RatingPolicyConfigDto? ratingConfig))
+                        return false;
+                    return (await _ratingConfigValidator.ValidateAsync(
+                        ratingConfig!, cancellationToken)).IsValid;
+
                 case PlatformPolicyType.Appointment:
                     return TryDeserialize(content, out AppointmentPolicyConfigDto? appointmentConfig)
                            && IsValidAppointmentConfig(appointmentConfig!);
@@ -1417,7 +1583,8 @@ namespace HomeCycle.Application.Services.PlatformPolicies
                 PlatformPolicyType.FileUpload or
                 PlatformPolicyType.Payment or
                 PlatformPolicyType.Order or
-                PlatformPolicyType.Withdrawal;
+                PlatformPolicyType.Withdrawal or
+                PlatformPolicyType.Rating;
         }
 
         private static bool IsValidJsonObject(string? content)

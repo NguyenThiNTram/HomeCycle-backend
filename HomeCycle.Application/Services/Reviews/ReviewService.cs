@@ -3,8 +3,10 @@ using HomeCycle.Application.Commons.Errors;
 using HomeCycle.Application.Commons.Helpers;
 using HomeCycle.Application.Commons.Paginations;
 using HomeCycle.Application.Commons.Results;
+using HomeCycle.Application.DTOs.Configs;
 using HomeCycle.Application.DTOs.Requests.Reviews;
 using HomeCycle.Application.DTOs.Responses.Media;
+using HomeCycle.Application.DTOs.Responses.Notifications;
 using HomeCycle.Application.DTOs.Responses.Reviews;
 using HomeCycle.Application.Interfaces.Generics;
 using HomeCycle.Application.Interfaces.Repositories.Agreements;
@@ -13,6 +15,8 @@ using HomeCycle.Application.Interfaces.Repositories.Profiles;
 using HomeCycle.Application.Interfaces.Repositories.Reviews;
 using HomeCycle.Application.Interfaces.Repositories.Users;
 using HomeCycle.Application.Interfaces.Services.Posts;
+using HomeCycle.Application.Interfaces.Services.Notifications;
+using HomeCycle.Application.Interfaces.Services.PlatformPolicies;
 using HomeCycle.Application.Interfaces.Services.Reviews;
 using HomeCycle.Domain.Entities;
 using HomeCycle.Domain.Enums;
@@ -26,8 +30,6 @@ namespace HomeCycle.Application.Services.Reviews
 {
     public class ReviewService : IReviewService
     {
-        private static readonly TimeSpan EditWindow = TimeSpan.FromDays(3);
-
         private const string ReviewMediaTargetType = "Review";
         private const string ReviewMediaFolder = "reviews";
 
@@ -38,6 +40,8 @@ namespace HomeCycle.Application.Services.Reviews
         private readonly IPersonalProfileRepository _personalProfileRepo;
         private readonly IBusinessProfileRepository _businessProfileRepo;
         private readonly IMediaService _mediaService;
+        private readonly INotificationService _notificationService;
+        private readonly IPlatformPolicyProvider _platformPolicyProvider;
         private readonly IUnitOfWork _unitOfWork;
         private readonly IValidator<CreateReviewRequest> _createValidator;
         private readonly IValidator<UpdateReviewRequest> _updateValidator;
@@ -50,6 +54,8 @@ namespace HomeCycle.Application.Services.Reviews
             IPersonalProfileRepository personalProfileRepo,
             IBusinessProfileRepository businessProfileRepo,
             IMediaService mediaService,
+            INotificationService notificationService,
+            IPlatformPolicyProvider platformPolicyProvider,
             IUnitOfWork unitOfWork,
             IValidator<CreateReviewRequest> createValidator,
             IValidator<UpdateReviewRequest> updateValidator)
@@ -61,6 +67,8 @@ namespace HomeCycle.Application.Services.Reviews
             _personalProfileRepo = personalProfileRepo;
             _businessProfileRepo = businessProfileRepo;
             _mediaService = mediaService;
+            _notificationService = notificationService;
+            _platformPolicyProvider = platformPolicyProvider;
             _unitOfWork = unitOfWork;
             _createValidator = createValidator;
             _updateValidator = updateValidator;
@@ -98,6 +106,7 @@ namespace HomeCycle.Application.Services.Reviews
             if (await _reviewRepo.ExistsAsync(orderId, currentUserId, ct))
                 return Result<ReviewResponseDto>.Fail(new Error("Review.AlreadyExists", "Bạn đã đánh giá đơn hàng này."));
 
+            var ratingPolicy = await _platformPolicyProvider.GetRatingConfigAsync(ct);
             var now = DateTime.UtcNow;
             var review = new review
             {
@@ -108,17 +117,42 @@ namespace HomeCycle.Application.Services.Reviews
                 Rating = request.Rating,
                 Comment = string.IsNullOrWhiteSpace(request.Comment) ? null : request.Comment.Trim(),
                 ReviewStatus = (int)ReviewStatus.Active,
+                AppliedReputationDelta = 0,
                 CreatedAt = now,
                 UpdatedAt = now
             };
 
+            notification? pendingNotification = null;
             await _unitOfWork.BeginTransactionAsync(ct);
             try
             {
+                var appliedResult = await ReplaceRatingImpactAsync(
+                    revieweeId,
+                    0,
+                    ReputationScoreCalculator.GetRatingPoints(request.Rating, ratingPolicy),
+                    ratingPolicy,
+                    ct);
+
+                if (!appliedResult.IsSuccess)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    return Result<ReviewResponseDto>.Fail(appliedResult.Error!);
+                }
+
+                review.AppliedReputationDelta = appliedResult.Data;
                 await _reviewRepo.AddAsync(review, ct);
+
+                pendingNotification = await _notificationService.AddPendingAsync(
+                    new CreateNotificationCommand(
+                        revieweeId,
+                        "Bạn vừa nhận được đánh giá mới",
+                        $"Bạn nhận được đánh giá {request.Rating} sao cho một giao dịch đã hoàn thành.",
+                        NotificationTargetType.Review,
+                        review.ReviewId),
+                    ct);
+
                 await _unitOfWork.SaveChangesAsync(ct);
 
-                //if (request.Images != null && request.Images.Any(f => f != null && f.Length > 0))
                 if (request.Images is { Count: > 0 })
                 {
                     var mediaResult = await _mediaService.UploadAndSaveMediaAsync(
@@ -136,7 +170,7 @@ namespace HomeCycle.Application.Services.Reviews
                     }
                 }
 
-                await RecalculateDisplayStarRatingAsync(revieweeId, ct);
+                await RecalculateDisplayStarRatingAsync(revieweeId, ratingPolicy, ct);
 
                 await _unitOfWork.CommitTransactionAsync(ct);
             }
@@ -147,7 +181,8 @@ namespace HomeCycle.Application.Services.Reviews
                 throw;
             }
 
-            return Result<ReviewResponseDto>.Success(await BuildResponseAsync(review, ct));
+            await _notificationService.PublishCreatedSafelyAsync(pendingNotification!);
+            return Result<ReviewResponseDto>.Success(await BuildResponseAsync(review, ratingPolicy, ct));
         }
 
         public async Task<Result<ReviewResponseDto>> UpdateReviewAsync(
@@ -160,35 +195,87 @@ namespace HomeCycle.Application.Services.Reviews
                 return Result<ReviewResponseDto>.Fail(new Error("Validation.InvalidRequest", errorMessage));
             }
 
-            var review = await _reviewRepo.GetByIdAsync(reviewId, ct);
-            if (review == null)
-                return Result<ReviewResponseDto>.Fail(new Error("Review.NotFound", "Không tìm thấy đánh giá."));
-
-            if (review.ReviewerId != currentUserId)
-                return Result<ReviewResponseDto>.Fail(new Error("Auth.Forbidden", "Bạn chỉ có thể chỉnh sửa đánh giá của chính mình."));
-
-            if (review.ReviewStatus is not ((int)ReviewStatus.Active or (int)ReviewStatus.Edited))
-                return Result<ReviewResponseDto>.Fail(new Error("Review.NotVisible", "Không thể chỉnh sửa đánh giá đã bị ẩn hoặc xóa."));
-
-            if (DateTime.UtcNow > review.CreatedAt.Add(EditWindow))
-                return Result<ReviewResponseDto>.Fail(new Error("Review.EditWindowExpired", "Đánh giá chỉ có thể chỉnh sửa trong 3 ngày kể từ khi gửi."));
-
-            review.Rating = request.Rating;
-            review.Comment = string.IsNullOrWhiteSpace(request.Comment) ? null : request.Comment.Trim();
-            review.ReviewStatus = (int)ReviewStatus.Edited;
-            review.UpdatedAt = DateTime.UtcNow;
-
+            var ratingPolicy = await _platformPolicyProvider.GetRatingConfigAsync(ct);
+            review? review = null;
+            notification? pendingNotification = null;
             await _unitOfWork.BeginTransactionAsync(ct);
             try
             {
+                review = await _reviewRepo.GetByIdForUpdateAsync(reviewId, ct);
+                if (review == null)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    return Result<ReviewResponseDto>.Fail(new Error("Review.NotFound", "Không tìm thấy đánh giá."));
+                }
+
+                if (review.ReviewerId != currentUserId)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    return Result<ReviewResponseDto>.Fail(new Error("Auth.Forbidden", "Bạn chỉ có thể chỉnh sửa đánh giá của chính mình."));
+                }
+
+                if (review.ReviewStatus is not ((int)ReviewStatus.Active or (int)ReviewStatus.Edited))
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    return Result<ReviewResponseDto>.Fail(new Error("Review.NotVisible", "Không thể chỉnh sửa đánh giá đã bị ẩn hoặc xóa."));
+                }
+
+                if (DateTime.UtcNow > review.CreatedAt.AddDays(ratingPolicy.ReviewEditWindowDays))
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    return Result<ReviewResponseDto>.Fail(new Error(
+                        "Review.EditWindowExpired",
+                        $"Đánh giá chỉ có thể chỉnh sửa trong {ratingPolicy.ReviewEditWindowDays} ngày kể từ khi gửi."));
+                }
+
+                var oldRating = review.Rating ?? 0;
+                var ratingChanged = oldRating != request.Rating;
+
+                if (ratingChanged)
+                {
+                    var appliedResult = await ReplaceRatingImpactAsync(
+                        review.RevieweeId,
+                        review.AppliedReputationDelta,
+                        ReputationScoreCalculator.GetRatingPoints(request.Rating, ratingPolicy),
+                        ratingPolicy,
+                        ct);
+
+                    if (!appliedResult.IsSuccess)
+                    {
+                        await _unitOfWork.RollbackTransactionAsync(ct);
+                        return Result<ReviewResponseDto>.Fail(appliedResult.Error!);
+                    }
+
+                    review.AppliedReputationDelta = appliedResult.Data;
+                }
+
+                review.Rating = request.Rating;
+                review.Comment = string.IsNullOrWhiteSpace(request.Comment) ? null : request.Comment.Trim();
+                review.ReviewStatus = (int)ReviewStatus.Edited;
+                review.UpdatedAt = DateTime.UtcNow;
+
                 if (!await _reviewRepo.TryUpdateVisibleAsync(review, ct))
                 {
                     await _unitOfWork.RollbackTransactionAsync(ct);
                     return Result<ReviewResponseDto>.Fail(new Error("Review.NotVisible", "Đánh giá đã bị ẩn hoặc xóa."));
                 }
+
+                if (ratingChanged)
+                {
+                    pendingNotification = await _notificationService.AddPendingAsync(
+                        new CreateNotificationCommand(
+                            review.RevieweeId,
+                            "Đánh giá bạn nhận được đã thay đổi",
+                            $"Đánh giá đã được cập nhật từ {oldRating} lên {request.Rating} sao.",
+                            NotificationTargetType.Review,
+                            review.ReviewId),
+                        ct);
+                }
+
                 await _unitOfWork.SaveChangesAsync(ct);
 
-                await RecalculateDisplayStarRatingAsync(review.RevieweeId, ct);
+                if (ratingChanged)
+                    await RecalculateDisplayStarRatingAsync(review.RevieweeId, ratingPolicy, ct);
 
                 await _unitOfWork.CommitTransactionAsync(ct);
             }
@@ -198,7 +285,10 @@ namespace HomeCycle.Application.Services.Reviews
                 throw;
             }
 
-            return Result<ReviewResponseDto>.Success(await BuildResponseAsync(review, ct));
+            if (pendingNotification != null)
+                await _notificationService.PublishCreatedSafelyAsync(pendingNotification);
+
+            return Result<ReviewResponseDto>.Success(await BuildResponseAsync(review!, ratingPolicy, ct));
         }
         
         public async Task<Result<ReviewResponseDto>> GetByIdAsync(Guid reviewId, CancellationToken ct = default)
@@ -207,7 +297,8 @@ namespace HomeCycle.Application.Services.Reviews
             if (review == null || review.ReviewStatus is not ((int)ReviewStatus.Active or (int)ReviewStatus.Edited))
                 return Result<ReviewResponseDto>.Fail(new Error("Review.NotFound", "Không tìm thấy đánh giá."));
 
-            return Result<ReviewResponseDto>.Success(await BuildResponseAsync(review, ct));
+            var ratingPolicy = await _platformPolicyProvider.GetRatingConfigAsync(ct);
+            return Result<ReviewResponseDto>.Success(await BuildResponseAsync(review, ratingPolicy, ct));
         }
 
         public async Task<Result<ReviewResponseDto>> GetMyReviewForOrderAsync(
@@ -217,14 +308,16 @@ namespace HomeCycle.Application.Services.Reviews
             if (review == null)
                 return Result<ReviewResponseDto>.Fail(new Error("Review.NotFound", "Bạn chưa đánh giá đơn hàng này."));
 
-            return Result<ReviewResponseDto>.Success(await BuildResponseAsync(review, ct));
+            var ratingPolicy = await _platformPolicyProvider.GetRatingConfigAsync(ct);
+            return Result<ReviewResponseDto>.Success(await BuildResponseAsync(review, ratingPolicy, ct));
         }
 
         public async Task<Result<PagedResult<ReviewResponseDto>>> GetReviewsByUserAsync(
             Guid userId, int pageNumber, int pageSize, CancellationToken ct = default)
         {
             var paged = await _reviewRepo.GetPagedByRevieweeAsync(userId, pageNumber, pageSize, ct);
-            MarkCanEdit(paged.Items);
+            var ratingPolicy = await _platformPolicyProvider.GetRatingConfigAsync(ct);
+            MarkCanEdit(paged.Items, ratingPolicy.ReviewEditWindowDays);
             await AttachImagesAsync(paged.Items, ct);
             return Result<PagedResult<ReviewResponseDto>>.Success(paged);
         }
@@ -244,13 +337,17 @@ namespace HomeCycle.Application.Services.Reviews
                 return Result<PagedResult<ReviewResponseDto>>.Fail(new Error("Auth.Forbidden", "Bạn không thuộc phiên giao dịch này."));
 
             var paged = await _reviewRepo.GetPagedByOrderAsync(orderId, pageNumber, pageSize, ct);
-            MarkCanEdit(paged.Items);
+            var ratingPolicy = await _platformPolicyProvider.GetRatingConfigAsync(ct);
+            MarkCanEdit(paged.Items, ratingPolicy.ReviewEditWindowDays);
             await AttachImagesAsync(paged.Items, ct);
             return Result<PagedResult<ReviewResponseDto>>.Success(paged);
         }
 
 
-        private async Task RecalculateDisplayStarRatingAsync(Guid userId, CancellationToken ct)
+        private async Task RecalculateDisplayStarRatingAsync(
+            Guid userId,
+            RatingPolicyConfigDto ratingPolicy,
+            CancellationToken ct)
         {
             var user = await _userRepo.GetByIdAsync(userId, ct);
 
@@ -269,7 +366,7 @@ namespace HomeCycle.Application.Services.Reviews
                 return;
 
             var validReviews = await _reviewRepo.GetValidReviewsByRevieweeAsync(userId, ct);
-            var displayStarRating = ReputationScoreCalculator.CalculateDisplayStarRating(validReviews);
+            var displayStarRating = ReputationScoreCalculator.CalculateDisplayStarRating(validReviews, ratingPolicy);
 
             if (businessProfile != null)
             {
@@ -318,7 +415,10 @@ namespace HomeCycle.Application.Services.Reviews
         //    await _unitOfWork.SaveChangesAsync(ct);
         //}
 
-        private async Task<ReviewResponseDto> BuildResponseAsync(review review, CancellationToken ct)
+        private async Task<ReviewResponseDto> BuildResponseAsync(
+            review review,
+            RatingPolicyConfigDto ratingPolicy,
+            CancellationToken ct)
         {
             var reviewer = await _userRepo.GetByIdAsync(review.ReviewerId, ct);
             var reviewee = await _userRepo.GetByIdAsync(review.RevieweeId, ct);
@@ -335,7 +435,7 @@ namespace HomeCycle.Application.Services.Reviews
                 CreatedAt = review.CreatedAt,
                 UpdatedAt = review.UpdatedAt,
                 CanEdit = review.ReviewStatus is ((int)ReviewStatus.Active or (int)ReviewStatus.Edited)
-                    && DateTime.UtcNow <= review.CreatedAt.Add(EditWindow),
+                    && DateTime.UtcNow <= review.CreatedAt.AddDays(ratingPolicy.ReviewEditWindowDays),
                 ReviewerName = reviewer?.Username,
                 ReviewerAvatarUrl = reviewer?.AvatarUrl,
                 RevieweeName = reviewee?.Username,
@@ -371,10 +471,50 @@ namespace HomeCycle.Application.Services.Reviews
             }
         }
 
-        private void MarkCanEdit(IEnumerable<ReviewResponseDto> items)
+        private void MarkCanEdit(IEnumerable<ReviewResponseDto> items, int editWindowDays)
         {
             foreach (var item in items)
-                item.CanEdit = DateTime.UtcNow <= item.CreatedAt.Add(EditWindow);
+                item.CanEdit = DateTime.UtcNow <= item.CreatedAt.AddDays(editWindowDays);
+        }
+
+        private async Task<Result<int>> ReplaceRatingImpactAsync(
+            Guid userId,
+            int oldAppliedDelta,
+            int requestedDelta,
+            RatingPolicyConfigDto ratingPolicy,
+            CancellationToken ct)
+        {
+            var user = await _userRepo.GetByIdAsync(userId, ct);
+            if (user == null)
+                return Result<int>.Fail(ProfileErrors.UserNotFound);
+
+            if (user.Role == UserRole.Business)
+            {
+                var profile = await _businessProfileRepo.GetByUserIdForUpdateAsync(userId, ct);
+                if (profile == null)
+                    return Result<int>.Fail(ProfileErrors.ProfileNotFound);
+
+                var baseScore = profile.ReputationScore - oldAppliedDelta;
+                var result = ReputationScoreCalculator.ApplyRatingDelta(baseScore, requestedDelta, ratingPolicy);
+                profile.ReputationScore = result.Score;
+                _businessProfileRepo.Update(profile);
+                return Result<int>.Success(result.AppliedDelta);
+            }
+
+            if (user.Role == UserRole.Personal)
+            {
+                var profile = await _personalProfileRepo.GetByUserIdForUpdateAsync(userId, ct);
+                if (profile == null)
+                    return Result<int>.Fail(ProfileErrors.ProfileNotFound);
+
+                var baseScore = profile.ReputationScore - oldAppliedDelta;
+                var result = ReputationScoreCalculator.ApplyRatingDelta(baseScore, requestedDelta, ratingPolicy);
+                profile.ReputationScore = result.Score;
+                await _personalProfileRepo.UpdateAsync(profile, ct);
+                return Result<int>.Success(result.AppliedDelta);
+            }
+
+            return Result<int>.Fail(ProfileErrors.ProfileNotFound);
         }
 
         //private async Task<(personal_profile? Personal, business_profile? Business)> GetReputationProfileForUpdateAsync(

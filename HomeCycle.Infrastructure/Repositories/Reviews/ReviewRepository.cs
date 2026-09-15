@@ -37,6 +37,7 @@ namespace HomeCycle.Infrastructure.Repositories.Reviews
                     .SetProperty(x => x.Rating, review.Rating)
                     .SetProperty(x => x.Comment, review.Comment)
                     .SetProperty(x => x.ReviewStatus, review.ReviewStatus)
+                    .SetProperty(x => x.AppliedReputationDelta, review.AppliedReputationDelta)
                     .SetProperty(x => x.UpdatedAt, review.UpdatedAt), ct);
             return affected == 1;
         }
@@ -89,6 +90,7 @@ namespace HomeCycle.Infrastructure.Repositories.Reviews
                 .AsNoTracking()
                 .Where(x => x.RevieweeId == revieweeId)
                 .Where(x => x.ReviewStatus == (int)ReviewStatus.Active || x.ReviewStatus == (int)ReviewStatus.Edited)
+                .Where(x => x.Rating.HasValue && x.Rating.Value >= 1 && x.Rating.Value <= 5)
                 .ToListAsync(ct);
 
             return entities.Select(x => x.ToDomain()).ToList();
