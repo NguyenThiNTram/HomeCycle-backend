@@ -281,7 +281,7 @@ namespace HomeCycle.API.Controllers
         [HttpDelete("delete/{id:guid}")]
         [SwaggerOperation(
             Summary = "Xóa bài đăng",
-            Description = "Admin xóa bài đăng của người dùng hiện tại khỏi hệ thống."
+            Description = "Admin xóa bài đăng của người dùng khỏi hệ thống."
         )]
         [Authorize(Roles = "Admin")]
         [ProducesResponseType(StatusCodes.Status200OK)]
@@ -289,7 +289,7 @@ namespace HomeCycle.API.Controllers
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
         {
-            var result = await _postService.DeleteAsync(CurrentUserId, id, cancellationToken);
+            var result = await _postService.DeleteAsync(id, cancellationToken);
 
             if (!result.IsSuccess)
                 return MapErrorToResponse(result.Error!);
