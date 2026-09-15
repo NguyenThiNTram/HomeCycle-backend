@@ -27,8 +27,6 @@ public sealed class PostDisputeTargetHandler(
             return Result<DisputeTargetCreateContext>.Fail(ContentDisputeErrors.TargetUnavailable);
         if (post.OwnerId == senderId)
             return Result<DisputeTargetCreateContext>.Fail(ContentDisputeErrors.SelfReportNotAllowed);
-        if (!PostDisputeCategoryPolicy.IsAllowed(categoryCode))
-            return Result<DisputeTargetCreateContext>.Fail(ContentDisputeErrors.InvalidCategory);
         if (await disputes.HasOpenDuplicateAsync(senderId, TargetType, targetId, cancellationToken))
             return Result<DisputeTargetCreateContext>.Fail(ContentDisputeErrors.DuplicateOpenReport);
 
