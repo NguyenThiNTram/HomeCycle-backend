@@ -115,6 +115,32 @@ public partial class PostService
     public Task<Result<bool>> DeleteBuyPostAsync(Guid ownerId, Guid postId, CancellationToken cancellationToken = default) =>
         ChangeLifecycleAsync(ownerId, postId, PostStatus.Deleted, true, cancellationToken);
 
+    private async Task<Result<bool>> DeleteBuyPostAsAdminAsync(Guid postId, CancellationToken cancellationToken)
+    {
+        await _unitOfWork.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            var post = await _postRepository.GetByIdForUpdateAsync(postId, cancellationToken);
+            if (post is null || post.Status == PostStatus.Deleted)
+                return Result<bool>.Fail(PostErrors.NotFound);
+
+            if (await _postRepository.HasUnfinishedTransactionsAsync(postId, cancellationToken))
+                return Result<bool>.Fail(ValidationErrors.InvalidRequest("Bài đăng đang có giao dịch chưa hoàn tất."));
+
+            post.Status = PostStatus.Deleted;
+            post.UpdatedAt = DateTime.UtcNow;
+            await _postRepository.UpdateAsync(post, cancellationToken);
+            await _offerRepository.ClosePendingByPostAsync(postId, OfferStatus.Closed, cancellationToken);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            await _unitOfWork.CommitTransactionAsync(cancellationToken);
+            return Result<bool>.Success(true);
+        }
+        finally
+        {
+            await _unitOfWork.RollbackTransactionAsync(CancellationToken.None);
+        }
+    }
+
     private async Task<Result<bool>> ChangeLifecycleAsync(Guid ownerId, Guid postId, PostStatus status, bool buyOnly, CancellationToken ct)
     {
         await _unitOfWork.BeginTransactionAsync(ct);

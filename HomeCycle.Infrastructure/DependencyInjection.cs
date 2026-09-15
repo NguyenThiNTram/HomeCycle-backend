@@ -87,6 +87,7 @@ using HomeCycle.Application.Validations.Auths;
 using HomeCycle.Application.Validations.Users;
 using HomeCycle.Infrastructure.DbContexts;
 using HomeCycle.Infrastructure.Externals;
+using HomeCycle.Infrastructure.Externals.Gemini;
 using HomeCycle.Infrastructure.Externals.GHN;
 using HomeCycle.Infrastructure.Externals.PayOS;
 using HomeCycle.Infrastructure.Externals.PayOS;
@@ -159,6 +160,20 @@ namespace HomeCycle.Infrastructure
 
             //register AutoMapper
             services.AddAutoMapper(cfg => cfg.AddMaps(typeof(MappingProfile).Assembly));
+
+            //gemini
+            services.Configure<GeminiOptions>(configuration.GetSection("Gemini"));
+
+            services.AddSingleton(sp =>
+            {
+                var settings = sp.GetRequiredService<IOptions<GeminiOptions>>().Value;
+
+                if (string.IsNullOrWhiteSpace(settings.ApiKey))
+                    throw new InvalidOperationException("Gemini:ApiKey chưa được cấu hình.");
+
+                return new Google.GenAI.Client(apiKey: settings.ApiKey);
+            });
+            services.AddSingleton<GeminiRequestService>();
 
             // register FluentValidation
             // do nằm chung 1 application nên chỉ cần gọi 1 lần là đủ, không cần gọi nhiều lần
