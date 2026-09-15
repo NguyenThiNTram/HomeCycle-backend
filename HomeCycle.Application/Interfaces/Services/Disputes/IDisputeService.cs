@@ -12,6 +12,8 @@ namespace HomeCycle.Application.Interfaces.Services.Disputes
 {
     public interface IDisputeService
     {
+        Result<DisputeOptionsResponse> GetContentOptions(HomeCycle.Domain.Enums.DisputeTargetType? targetType);
+
         Task<Result<CreateDisputeResponse>>
             CreateAsync(
                 Guid senderId,

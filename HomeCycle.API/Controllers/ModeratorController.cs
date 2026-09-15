@@ -386,7 +386,7 @@ namespace HomeCycle.API.Controllers
         [HttpPost("disputes/{disputeId:guid}/resolve")]
         [SwaggerOperation(
             Summary = "Moderator giải quyết tranh chấp",
-            Description = "Kết luận BuyerFavored hoặc SellerFavored và thực hiện xử lý nền tảng tương ứng."
+            Description = "Order yêu cầu BuyerFavored hoặc SellerFavored. Báo cáo Post/Review chỉ cần ModeratorNote: hệ thống xác nhận vi phạm, đình chỉ bài đăng hoặc ẩn review và trừ uy tín theo policy nội dung."
         )]
         [ProducesResponseType(typeof(DisputeDecisionResponse), StatusCodes.Status200OK)]
         public async Task<IActionResult> ResolveDispute(
@@ -415,7 +415,7 @@ namespace HomeCycle.API.Controllers
         [HttpPost("disputes/{disputeId:guid}/reject")]
         [SwaggerOperation(
             Summary = "Moderator từ chối tranh chấp",
-            Description = "Kết thúc tranh chấp do không hợp lệ hoặc không đủ căn cứ và khôi phục trạng thái Order trước khi tranh chấp."
+            Description = "Order: khôi phục trạng thái trước tranh chấp. Post/Review: từ chối báo cáo, không thay đổi nội dung hoặc điểm uy tín."
         )]
         [ProducesResponseType(typeof(DisputeDecisionResponse), StatusCodes.Status200OK)]
         public async Task<IActionResult> RejectDispute(

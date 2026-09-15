@@ -9,7 +9,8 @@ namespace HomeCycle.Application.DTOs.Requests.Disputes
 {
     public class ResolveDisputeRequest
     {
-        public DisputeResolutionOutcome ResolutionOutcome { get; set; }
+        // Required for Order; content reports are resolved as ViolationConfirmed by the server.
+        public DisputeResolutionOutcome? ResolutionOutcome { get; set; }
         public string ModeratorNote { get; set; } = string.Empty;
     }
 }

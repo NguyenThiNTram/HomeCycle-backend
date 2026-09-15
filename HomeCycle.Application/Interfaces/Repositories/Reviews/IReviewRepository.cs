@@ -11,6 +11,10 @@ namespace HomeCycle.Application.Interfaces.Repositories.Reviews
 {
     public interface IReviewRepository
     {
+        Task<review?> GetByIdForUpdateAsync(Guid reviewId, CancellationToken ct = default);
+
+        Task<bool> TryUpdateVisibleAsync(review review, CancellationToken ct = default);
+
         Task<review?> GetByIdAsync(Guid reviewId, CancellationToken ct = default);
 
         Task<review?> GetByOrderAndReviewerAsync(Guid orderId, Guid reviewerId, CancellationToken ct = default);

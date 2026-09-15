@@ -265,6 +265,8 @@ namespace HomeCycle.Infrastructure
             services.AddScoped<IDisputeService, DisputeService>();
             services.AddScoped<IDisputeWindowPolicy, DisputeWindowPolicy>();
             services.AddScoped<IDisputeTargetHandler, OrderDisputeTargetHandler>();
+            services.AddScoped<IDisputeTargetHandler, PostDisputeTargetHandler>();
+            services.AddScoped<IDisputeTargetHandler, ReviewDisputeTargetHandler>();
             services.AddScoped<PlatformPolicyService>();
             services.AddScoped<IPlatformPolicyService>(sp => sp.GetRequiredService<PlatformPolicyService>());
             services.AddScoped<IPlatformPolicyProvider>(sp => sp.GetRequiredService<PlatformPolicyService>());

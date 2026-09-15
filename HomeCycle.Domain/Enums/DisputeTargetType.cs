@@ -6,5 +6,5 @@ using System.Threading.Tasks;
 
 namespace HomeCycle.Domain.Enums
 {
-    public enum DisputeTargetType { Appointment = 1, Order = 2, Review = 3 }
+    public enum DisputeTargetType { Appointment = 1, Order = 2, Review = 3, Post = 4 }
 }

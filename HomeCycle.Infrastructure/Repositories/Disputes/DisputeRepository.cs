@@ -24,6 +24,32 @@ namespace HomeCycle.Infrastructure.Repositories.Disputes
             _db = db;
         }
 
+        public Task<bool> HasOpenDuplicateAsync(Guid senderId, DisputeTargetType targetType,
+            Guid targetId, CancellationToken cancellationToken = default)
+        {
+            var query = ContentTargetQuery(targetType, targetId).Where(x => x.SenderId == senderId &&
+                (x.DisputeStatus == (int)DisputeStatus.Pending ||
+                 x.DisputeStatus == (int)DisputeStatus.UnderReview));
+            return query.AnyAsync(cancellationToken);
+        }
+
+        public Task<bool> HasConfirmedContentViolationAsync(DisputeTargetType targetType,
+            Guid targetId, CancellationToken cancellationToken = default) =>
+            ContentTargetQuery(targetType, targetId).AnyAsync(x =>
+                x.DisputeStatus == (int)DisputeStatus.Resolved &&
+                x.ResolutionOutcome == (int)DisputeResolutionOutcome.ViolationConfirmed, cancellationToken);
+
+        private IQueryable<Dispute> ContentTargetQuery(DisputeTargetType targetType, Guid targetId)
+        {
+            var query = _db.Disputes.AsNoTracking().Where(x => x.DisputeTargetType == (int)targetType);
+            return targetType switch
+            {
+                DisputeTargetType.Post => query.Where(x => x.PostId == targetId),
+                DisputeTargetType.Review => query.Where(x => x.ReviewId == targetId),
+                _ => query.Where(x => false)
+            };
+        }
+
         public async Task AddAsync(
             dispute dispute,
             CancellationToken cancellationToken = default)
@@ -184,6 +210,12 @@ namespace HomeCycle.Infrastructure.Repositories.Disputes
             if (request.TargetType.HasValue)
                 query = query.Where(x => x.DisputeTargetType == (int)request.TargetType.Value);
 
+            if (request.TargetId.HasValue)
+                query = query.Where(x =>
+                    (x.DisputeTargetType == (int)DisputeTargetType.Post && x.PostId == request.TargetId) ||
+                    (x.DisputeTargetType == (int)DisputeTargetType.Review && x.ReviewId == request.TargetId) ||
+                    (x.DisputeTargetType == (int)DisputeTargetType.Order && x.OrderId == request.TargetId));
+
             if (request.FromDate.HasValue)
                 query = query.Where(x => x.CreatedAt >= request.FromDate.Value);
 
@@ -240,7 +272,12 @@ namespace HomeCycle.Infrastructure.Repositories.Disputes
                 TargetType = entity.DisputeTargetType.HasValue
                     ? (DisputeTargetType?)entity.DisputeTargetType.Value
                     : null,
-                TargetId = entity.OrderId ?? entity.ReviewId,
+                TargetId = (DisputeTargetType?)entity.DisputeTargetType switch
+                {
+                    DisputeTargetType.Post => entity.PostId,
+                    DisputeTargetType.Review => entity.ReviewId,
+                    _ => entity.OrderId ?? entity.ReviewId
+                },
                 OrderCode = entity.Order?.OrderCode,
                 Category = entity.DisputeCategoryNavigation == null
                     ? null

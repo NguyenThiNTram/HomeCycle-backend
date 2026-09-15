@@ -133,6 +133,22 @@ namespace HomeCycle.Infrastructure.Repositories.Users
             return entity?.ToDomain();
         }
 
+        public async Task<IReadOnlyList<user>> GetActiveByRoleAsync(
+            UserRole role,
+            CancellationToken cancellationToken = default)
+        {
+            var entities = await _db.Users
+                .AsNoTracking()
+                .Where(x =>
+                    x.Role == (int)role &&
+                    x.Status == (int)UserStatus.Active)
+                .ToListAsync(cancellationToken);
+
+            return entities
+                .Select(x => x.ToDomain()!)
+                .ToList();
+        }
+
         public async Task AddRefreshTokenAsync(refresh_token token, CancellationToken cancellationToken = default)
         {
             await _db.Refresh_Tokens.AddAsync(token.ToInfrastructure(), cancellationToken);

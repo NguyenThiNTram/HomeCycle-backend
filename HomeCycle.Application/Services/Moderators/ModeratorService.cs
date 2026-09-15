@@ -2,6 +2,7 @@
 using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Requests.Moderators;
 using HomeCycle.Application.DTOs.Responses.Moderators;
+using HomeCycle.Application.DTOs.Responses.Notifications;
 using HomeCycle.Application.DTOs.Responses.Profiles;
 using HomeCycle.Application.Interfaces.Generics;
 using HomeCycle.Application.Interfaces.Repositories.Banks;
@@ -9,6 +10,7 @@ using HomeCycle.Application.Interfaces.Repositories.Profiles;
 using HomeCycle.Application.Interfaces.Repositories.Users;
 using HomeCycle.Application.Interfaces.Services.Auths;
 using HomeCycle.Application.Interfaces.Services.Moderators;
+using HomeCycle.Application.Interfaces.Services.Notifications;
 using HomeCycle.Domain.Entities;
 using HomeCycle.Domain.Enums;
 using Microsoft.Extensions.Logging;
@@ -29,6 +31,7 @@ namespace HomeCycle.Application.Services.Moderators
         private readonly IBankAccountRepository _bankAccountRepository;
         private readonly IUserRepository _userRepository; 
         private readonly IEmailService _emailService;       
+        private readonly INotificationService _notificationService;
         private readonly IUnitOfWork _unitOfWork;
         private readonly ILogger<ModeratorService> _logger;
 
@@ -40,6 +43,7 @@ namespace HomeCycle.Application.Services.Moderators
             IBankAccountRepository bankAccountRepository,
             IUserRepository userRepository,
             IEmailService emailService,
+            INotificationService notificationService,
             IUnitOfWork unitOfWork,
             ILogger<ModeratorService> logger)
         {
@@ -49,6 +53,7 @@ namespace HomeCycle.Application.Services.Moderators
             _bankAccountRepository = bankAccountRepository;
             _userRepository = userRepository;
             _emailService = emailService;
+            _notificationService = notificationService;
             _unitOfWork = unitOfWork;
             _logger = logger;
             _personalProfileRepository = personalProfileRepository;
@@ -88,7 +93,12 @@ namespace HomeCycle.Application.Services.Moderators
                 return Result<string>.Fail(ValidationErrors.InvalidRequest("Tài khoản liên kết với hồ sơ doanh nghiệp này không tồn tại trên hệ thống."));
             }
 
+            string businessNameDisplay = !string.IsNullOrWhiteSpace(profile.BusinessName)
+                ? profile.BusinessName
+                : user.Username;
+
             // 5. THỰC THI GHI CƠ SỞ DỮ LIỆU TRONG TRANSACTION
+            notification? reviewNotification = null;
             await _unitOfWork.BeginTransactionAsync();
             try
             {
@@ -103,6 +113,19 @@ namespace HomeCycle.Application.Services.Moderators
 
                 _businessProfileRepository.Update(profile);
 
+                reviewNotification = await _notificationService.AddPendingAsync(
+                    new CreateNotificationCommand(
+                        user.UserId,
+                        request.IsApproved
+                            ? "Hồ sơ doanh nghiệp đã được phê duyệt"
+                            : "Hồ sơ doanh nghiệp đã bị từ chối",
+                        request.IsApproved
+                            ? $"Hồ sơ doanh nghiệp {businessNameDisplay} của bạn đã được phê duyệt."
+                            : $"Hồ sơ doanh nghiệp {businessNameDisplay} của bạn đã bị từ chối. Lý do: {profile.RejectReason}",
+                        NotificationTargetType.BusinessProfile,
+                        profile.BusinessProfileId),
+                    cancellationToken);
+
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync();
             }
@@ -114,13 +137,11 @@ namespace HomeCycle.Application.Services.Moderators
                 throw;
             }
 
+            await _notificationService.PublishCreatedSafelyAsync(reviewNotification!);
+
             // 6. GỬI EMAIL THÔNG BÁO (Ngoài Transaction - Resilient Fire-and-Forget)
             try
             {
-                string businessNameDisplay = !string.IsNullOrWhiteSpace(profile.BusinessName) 
-                    ? profile.BusinessName 
-                    : user.Username;
-
                 if (request.IsApproved)
                 {
                     await _emailService.SendBusinessApprovalEmailAsync(user.Email, businessNameDisplay);
@@ -367,6 +388,7 @@ namespace HomeCycle.Application.Services.Moderators
 
             var now = DateTime.UtcNow;
 
+            notification? reviewNotification = null;
             await _unitOfWork.BeginTransactionAsync();
 
             try
@@ -381,6 +403,20 @@ namespace HomeCycle.Application.Services.Moderators
                         : null;
 
                 await _personalProfileRepository.UpdateAsync(profile);
+
+                reviewNotification = await _notificationService.AddPendingAsync(
+                    new CreateNotificationCommand(
+                        user.UserId,
+                        request.Decision == VerifyStatus.Verified
+                            ? "Xác minh danh tính đã được phê duyệt"
+                            : "Xác minh danh tính đã bị từ chối",
+                        request.Decision == VerifyStatus.Verified
+                            ? "Thông tin căn cước công dân của bạn đã được xác minh."
+                            : $"Thông tin căn cước công dân của bạn đã bị từ chối. Lý do: {profile.RejectReason}",
+                        NotificationTargetType.PersonalProfile,
+                        profile.PersonalProfileId),
+                    cancellationToken);
+
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync();
             }
@@ -396,6 +432,8 @@ namespace HomeCycle.Application.Services.Moderators
 
                 throw;
             }
+
+            await _notificationService.PublishCreatedSafelyAsync(reviewNotification!);
 
             return Result<string>.Success(
                 request.Decision == VerifyStatus.Verified

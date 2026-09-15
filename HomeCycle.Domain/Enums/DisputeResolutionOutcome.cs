@@ -9,6 +9,8 @@ namespace HomeCycle.Domain.Enums
     public enum DisputeResolutionOutcome
     {
         BuyerFavored = 1,
-        SellerFavored = 2
+        SellerFavored = 2,
+        ViolationConfirmed = 3,
+        NoViolation = 4
     }
 }
