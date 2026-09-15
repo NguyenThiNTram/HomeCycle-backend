@@ -224,6 +224,14 @@ namespace HomeCycle.Application.Services.Payments
                 return Result<string>.Fail(new Error("Data.InvalidFormat", "Dữ liệu JSONB cấu hình thỏa thuận bị lỗi."));
             }
 
+            var scheduleError =
+                ValidateAgreementScheduleForPayment(
+                    agreement,
+                    details);
+
+            if (scheduleError != null)
+                return Result<string>.Fail(scheduleError);
+
             if (details?.EstimatedShippingFee is < 0)
                 return Result<string>.Fail(new Error("Payment.InvalidShippingFee", "Phí vận chuyển không được nhỏ hơn 0."));
 
@@ -249,6 +257,32 @@ namespace HomeCycle.Application.Services.Payments
             }
 
             agreement.PaymentType = calc.PaymentType;
+
+            var pendingSnapshot =
+                await _paymentRepo.GetLatestPendingByAgreementAsync(
+                    agreementId,
+                    ct);
+
+            if (pendingSnapshot?.ExpiredAt.HasValue == true &&
+                pendingSnapshot.ExpiredAt.Value <= DateTime.UtcNow)
+            {
+                var reconcileResult =
+                    await ReconcilePayOsPaymentAsync(
+                        pendingSnapshot.PaymentId,
+                        ct);
+
+                if (!reconcileResult.IsSuccess)
+                    return Result<string>.Fail(
+                        reconcileResult.Error!);
+
+                if (reconcileResult.Data == PaymentStatus.Pending)
+                {
+                    return Result<string>.Fail(
+                        new Error(
+                            "Payment.ActiveCheckoutExists",
+                            "Phiên thanh toán hiện tại vẫn đang được PayOS xử lý."));
+                }
+            }
 
             await _unitOfWork.BeginTransactionAsync(ct);
 
@@ -463,6 +497,15 @@ namespace HomeCycle.Application.Services.Payments
             {
                 return Result<PaymentStatusResponseDto>.Fail(new Error("Data.InvalidFormat", "Dữ liệu JSONB bị lỗi."));
             }
+
+            var scheduleError =
+                ValidateAgreementScheduleForPayment(
+                    agreement,
+                    details);
+
+            if (scheduleError != null)
+                return Result<PaymentStatusResponseDto>.Fail(
+                    scheduleError);
 
             if (details?.EstimatedShippingFee is < 0)
                 return Result<PaymentStatusResponseDto>.Fail(new Error("Payment.InvalidShippingFee", "Phí vận chuyển không được nhỏ hơn 0."));
@@ -1337,6 +1380,23 @@ namespace HomeCycle.Application.Services.Payments
 
         #region HELPER
 
+        private static Error? ValidateAgreementScheduleForPayment(
+            agreement_form agreement,
+            AgreementDetailsDto? details)
+        {
+            var scheduledAt =
+                agreement.AgreementType == (int)AgreementType.Inspection
+                    ? details?.InspectionDate
+                    : details?.CollectionDate;
+
+            if (!scheduledAt.HasValue)
+                return AgreementErrors.AppointmentScheduleMissing;
+
+            if (scheduledAt.Value <= DateTime.UtcNow)
+                return AgreementErrors.AppointmentScheduleExpired;
+
+            return null;
+        }
 
         private async Task<Result<PaymentStatus>> ReconcilePayOsPaymentAsync(
             Guid paymentId,
