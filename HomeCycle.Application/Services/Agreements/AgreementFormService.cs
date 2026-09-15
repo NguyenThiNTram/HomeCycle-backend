@@ -990,6 +990,12 @@ namespace HomeCycle.Application.Services.Agreements
 
             var response = new GhnParcelInfoResponse
             {
+                ProductName = product.ProductName?.Trim(),
+                CommercialQuantity = quantity,
+                ProductWeightGram = weightGram > 0 ? weightGram : null,
+                ProductLengthCm = NormalizeProductMeasurement(product.Length),
+                ProductWidthCm = NormalizeProductMeasurement(product.Width),
+                ProductHeightCm = NormalizeProductMeasurement(product.Height),
                 EstimatedTotalWeightGram = weightGram > 0 ? totalWeightGram : null,
                 EstimatedOverLimit = weightGram > 0 && totalWeightGram > GhnShippingCalculationHelper.MaxShipmentWeightGram,
                 Sender = await GetContactDefaultsAsync(negotiationResult.Data!.SellerId, cancellationToken),
@@ -1264,45 +1270,36 @@ namespace HomeCycle.Application.Services.Agreements
         }
         private static bool TryNormalizeProductMeasurements(product product, out int weightGram, out int lengthCm, out int widthCm, out int heightCm)
         {
-            weightGram = 0;
-            lengthCm = 0;
-            widthCm = 0;
-            heightCm = 0;
-
-            // Product weight is only an estimate and must survive missing dimensions.
-            if (product.Weight is > 0)
-            {
-                try { weightGram = checked((int)Math.Ceiling(product.Weight.Value * 1000)); }
-                catch (OverflowException) { return false; }
-            }
-            if (weightGram <= 0 || product.Length is null or <= 0 ||
-                product.Width is null or <= 0 ||
-                product.Height is null or <= 0)
+            // Normalize independently so missing measurements do not hide valid product suggestions.
+            weightGram = NormalizeProductMeasurement(product.Weight, 1000) ?? 0;
+            lengthCm = NormalizeProductMeasurement(product.Length) ?? 0;
+            widthCm = NormalizeProductMeasurement(product.Width) ?? 0;
+            heightCm = NormalizeProductMeasurement(product.Height) ?? 0;
+            if (weightGram <= 0 || lengthCm <= 0 || widthCm <= 0 || heightCm <= 0)
             {
                 return false;
             }
+
+            // Preserve the existing orientation of complete legacy parcel suggestions.
+            var sides = new[] { lengthCm, widthCm, heightCm }.OrderByDescending(x => x).ToArray();
+            lengthCm = sides[0];
+            widthCm = sides[1];
+            heightCm = sides[2];
+            return true;
+        }
+
+        private static int? NormalizeProductMeasurement(decimal? value, int multiplier = 1)
+        {
+            if (value is null or <= 0)
+                return null;
 
             try
             {
-                // Làm tròn lên để không khai thiếu khối lượng/kích thước.
-                var sides = new[]
-                {
-                    checked((int)Math.Ceiling(product.Length.Value)),
-                    checked((int)Math.Ceiling(product.Width.Value)),
-                    checked((int)Math.Ceiling(product.Height.Value))
-                }
-                .OrderByDescending(x => x)
-                .ToArray();
-
-                lengthCm = sides[0];
-                widthCm = sides[1];
-                heightCm = sides[2];
-
-                return true;
+                return checked((int)Math.Ceiling(value.Value * multiplier));
             }
             catch (OverflowException)
             {
-                return false;
+                return null;
             }
         }
 
