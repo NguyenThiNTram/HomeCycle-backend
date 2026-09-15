@@ -21,6 +21,7 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 Rating = entity.Rating,
                 Comment = entity.Comment,
                 ReviewStatus = entity.ReviewStatus,
+                AppliedReputationDelta = entity.AppliedReputationDelta,
                 CreatedAt = entity.CreatedAt,
                 UpdatedAt = entity.UpdatedAt
             };
@@ -37,6 +38,7 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 Rating = entity.Rating,
                 Comment = entity.Comment,
                 ReviewStatus = entity.ReviewStatus,
+                AppliedReputationDelta = entity.AppliedReputationDelta,
                 CreatedAt = entity.CreatedAt,
                 UpdatedAt = entity.UpdatedAt
             };

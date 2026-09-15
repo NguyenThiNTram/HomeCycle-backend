@@ -20,4 +20,18 @@ namespace HomeCycle.Application.DTOs.Requests.PlatformPolicies
         public int? PostViolationPenaltyPoints { get; set; }
         public int? ReviewViolationPenaltyPoints { get; set; }
     }
+
+    public class UpdateRatingPolicyRequest
+    {
+        public double? PriorMean { get; set; }
+        public int? PriorWeight { get; set; }
+        public int? FiveStarPoints { get; set; }
+        public int? FourStarPoints { get; set; }
+        public int? ThreeStarPoints { get; set; }
+        public int? TwoStarPoints { get; set; }
+        public int? OneStarPoints { get; set; }
+        public int? MinimumReputationScore { get; set; }
+        public int? MaximumReputationScore { get; set; }
+        public int? ReviewEditWindowDays { get; set; }
+    }
 }

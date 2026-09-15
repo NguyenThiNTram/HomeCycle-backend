@@ -502,7 +502,8 @@ namespace HomeCycle.Application.Mappings
                          src.PolicyType == PlatformPolicyType.FileUpload ||
                          src.PolicyType == PlatformPolicyType.Payment ||
                          src.PolicyType == PlatformPolicyType.Order ||
-                         src.PolicyType == PlatformPolicyType.Withdrawal)));
+                         src.PolicyType == PlatformPolicyType.Withdrawal ||
+                         src.PolicyType == PlatformPolicyType.Rating)));
 
             CreateMap<platform_policy, PlatformPolicyVersionDetailDto>()
                 .ForMember(
@@ -537,6 +538,9 @@ namespace HomeCycle.Application.Mappings
             CreateMap<platform_policy, PlatformPolicyResponseDto<OrderPolicyConfigDto>>()
                 .ForMember(dest => dest.Config, opt => opt.Ignore());
 
+            CreateMap<platform_policy, PlatformPolicyResponseDto<RatingPolicyConfigDto>>()
+                .ForMember(dest => dest.Config, opt => opt.Ignore());
+
             CreateMap<DisputePolicyConfigDto, DisputePolicyConfigDto>();
 
             CreateMap<AppointmentPolicyConfigDto, AppointmentPolicyConfigDto>();
@@ -544,6 +548,8 @@ namespace HomeCycle.Application.Mappings
             CreateMap<PaymentPolicyConfigDto, PaymentPolicyConfigDto>();
 
             CreateMap<OrderPolicyConfigDto, OrderPolicyConfigDto>();
+
+            CreateMap<RatingPolicyConfigDto, RatingPolicyConfigDto>();
 
             CreateMap<UpdateDisputePolicyRequest, DisputePolicyConfigDto>()
                 .ForMember(d => d.PostViolationPenaltyPoints, o => o.PreCondition(s => s.PostViolationPenaltyPoints.HasValue))
@@ -560,6 +566,10 @@ namespace HomeCycle.Application.Mappings
                     (src, dest, srcMember) => srcMember != null));
 
             CreateMap<UpdateOrderPolicyRequest, OrderPolicyConfigDto>()
+                .ForAllMembers(opt => opt.Condition(
+                    (src, dest, srcMember) => srcMember != null));
+
+            CreateMap<UpdateRatingPolicyRequest, RatingPolicyConfigDto>()
                 .ForAllMembers(opt => opt.Condition(
                     (src, dest, srcMember) => srcMember != null));
 

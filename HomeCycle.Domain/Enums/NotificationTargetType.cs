@@ -17,6 +17,7 @@ namespace HomeCycle.Domain.Enums
         Appointment = 7,
         Withdrawal = 8,
         BusinessProfile = 9,
-        PersonalProfile = 10
+        PersonalProfile = 10,
+        Review = 11
     }
 }

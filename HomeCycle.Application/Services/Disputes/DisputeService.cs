@@ -6,6 +6,7 @@ using HomeCycle.Application.Commons.Errors;
 using HomeCycle.Application.Commons.Helpers;
 using HomeCycle.Application.Commons.Paginations;
 using HomeCycle.Application.Commons.Results;
+using HomeCycle.Application.DTOs.Configs;
 using HomeCycle.Application.DTOs.Requests.Disputes;
 using HomeCycle.Application.DTOs.Responses.Disputes;
 using HomeCycle.Application.DTOs.Responses.Media;
@@ -210,6 +211,10 @@ namespace HomeCycle.Application.Services.Disputes
                     var penalty = alreadyConfirmed ? 0 : targetType == DisputeTargetType.Post
                         ? policy.PostViolationPenaltyPoints : policy.ReviewViolationPenaltyPoints;
                     var ownerId = post?.OwnerId ?? review!.ReviewerId;
+                    var ratingPolicy = review == null
+                        ? null
+                        : await _platformPolicyProvider.GetRatingConfigAsync(ct);
+                    var appliedRatingDelta = review?.AppliedReputationDelta ?? 0;
                     dispute!.TargetUserId = ownerId;
 
                     if (post != null)
@@ -221,13 +226,20 @@ namespace HomeCycle.Application.Services.Disputes
                     else
                     {
                         review!.ReviewStatus = (int)ReviewStatus.Hidden;
+                        review.AppliedReputationDelta = 0;
                         review.UpdatedAt = now;
                         await _reviewRepository.UpdateAsync(review, ct);
                     }
                     // Rating queries below must see the Hidden status inside this transaction.
                     await _unitOfWork.SaveChangesAsync(ct);
                     var profileResult = await ApplyContentProfileChangesAsync(
-                        ownerId, penalty, review?.RevieweeId, now, ct);
+                        ownerId,
+                        penalty,
+                        review?.RevieweeId,
+                        appliedRatingDelta,
+                        ratingPolicy,
+                        now,
+                        ct);
                     if (!profileResult.IsSuccess)
                         return await RollbackContentDecisionAsync(profileResult.Error!, ct);
                     penaltyApplied = profileResult.Data;
@@ -288,7 +300,13 @@ namespace HomeCycle.Application.Services.Disputes
         }
 
         private async Task<Result<int>> ApplyContentProfileChangesAsync(
-            Guid ownerId, int penalty, Guid? revieweeId, DateTime now, CancellationToken ct)
+            Guid ownerId,
+            int penalty,
+            Guid? revieweeId,
+            int appliedRatingDelta,
+            RatingPolicyConfigDto? ratingPolicy,
+            DateTime now,
+            CancellationToken ct)
         {
             var applied = 0;
             // Stable profile lock order also handles two users reporting each other's reviews.
@@ -309,9 +327,16 @@ namespace HomeCycle.Application.Services.Disputes
                         applied = profile.ReputationScore - next;
                         profile.ReputationScore = next;
                     }
-                    if (userId == revieweeId)
+                    if (userId == revieweeId && ratingPolicy != null)
+                    {
+                        profile.ReputationScore = Math.Clamp(
+                            profile.ReputationScore - appliedRatingDelta,
+                            ratingPolicy.MinimumReputationScore,
+                            ratingPolicy.MaximumReputationScore);
                         profile.DisplayStarRating = ReputationScoreCalculator.CalculateDisplayStarRating(
-                            await _reviewRepository.GetValidReviewsByRevieweeAsync(userId, ct));
+                            await _reviewRepository.GetValidReviewsByRevieweeAsync(userId, ct),
+                            ratingPolicy);
+                    }
                     profile.UpdatedAt = now;
                     _businessProfileRepository.Update(profile);
                 }
@@ -326,9 +351,16 @@ namespace HomeCycle.Application.Services.Disputes
                         applied = profile.ReputationScore - next;
                         profile.ReputationScore = next;
                     }
-                    if (userId == revieweeId)
+                    if (userId == revieweeId && ratingPolicy != null)
+                    {
+                        profile.ReputationScore = Math.Clamp(
+                            profile.ReputationScore - appliedRatingDelta,
+                            ratingPolicy.MinimumReputationScore,
+                            ratingPolicy.MaximumReputationScore);
                         profile.DisplayStarRating = ReputationScoreCalculator.CalculateDisplayStarRating(
-                            await _reviewRepository.GetValidReviewsByRevieweeAsync(userId, ct));
+                            await _reviewRepository.GetValidReviewsByRevieweeAsync(userId, ct),
+                            ratingPolicy);
+                    }
                     await _personalProfileRepository.UpdateAsync(profile, ct);
                 }
                 else

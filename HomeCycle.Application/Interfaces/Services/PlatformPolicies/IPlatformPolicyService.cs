@@ -17,9 +17,13 @@ namespace HomeCycle.Application.Interfaces.Services.PlatformPolicies
 
         Task<Result<PlatformPolicyResponseDto<AppointmentPolicyConfigDto>>> GetAppointmentPolicyAsync(CancellationToken cancellationToken = default);
 
+        Task<Result<PlatformPolicyResponseDto<RatingPolicyConfigDto>>> GetRatingPolicyAsync(CancellationToken cancellationToken = default);
+
         Task<Result<PlatformPolicyResponseDto<DisputePolicyConfigDto>>> UpdateDisputePolicyAsync(Guid adminId, UpdateDisputePolicyRequest request, CancellationToken cancellationToken = default);
 
         Task<Result<PlatformPolicyResponseDto<AppointmentPolicyConfigDto>>> UpdateAppointmentPolicyAsync(Guid adminId, UpdateAppointmentPolicyRequest request, CancellationToken cancellationToken = default);
+
+        Task<Result<PlatformPolicyResponseDto<RatingPolicyConfigDto>>> UpdateRatingPolicyAsync(Guid adminId, UpdateRatingPolicyRequest request, CancellationToken cancellationToken = default);
 
         Task<Result<IReadOnlyList<PlatformPolicySummaryResponseDto>>> GetAllActiveAsync(CancellationToken cancellationToken = default);
 

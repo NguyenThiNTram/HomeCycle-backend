@@ -57,6 +57,31 @@ namespace HomeCycle.API.Controllers
             return Ok(result);
         }
 
+        [HttpGet("rating")]
+        [SwaggerOperation(
+            Summary = "Lấy cấu hình rating hiện hành",
+            Description = "Trả về công thức điểm sao hiển thị, điểm uy tín theo từng mức sao và thời hạn sửa review.")]
+        public async Task<IActionResult> GetRatingPolicy(CancellationToken cancellationToken)
+        {
+            var result = await _platformPolicyService.GetRatingPolicyAsync(cancellationToken);
+            return result.IsSuccess ? Ok(result) : BadRequest(result);
+        }
+
+        [HttpPatch("rating")]
+        [SwaggerOperation(
+            Summary = "Cập nhật cấu hình rating",
+            Description = "Mỗi thay đổi tạo một phiên bản mới và chỉ giữ một phiên bản active.")]
+        public async Task<IActionResult> UpdateRatingPolicy(
+            [FromBody] UpdateRatingPolicyRequest request,
+            CancellationToken cancellationToken)
+        {
+            var adminId = GetCurrentUserId();
+            if (adminId == Guid.Empty) return Unauthorized();
+
+            var result = await _platformPolicyService.UpdateRatingPolicyAsync(adminId, request, cancellationToken);
+            return result.IsSuccess ? Ok(result) : BadRequest(result);
+        }
+
         [HttpGet("appointment")]
         [SwaggerOperation(
             Summary = "Lấy cấu hình lịch hẹn hiện hành",
@@ -111,7 +136,7 @@ namespace HomeCycle.API.Controllers
             Summary = "Lấy lịch sử phiên bản của một policy",
             Description =
                 "Dùng cho màn hình lịch sử cấu hình của Admin. " +
-                "PolicyType hỗ trợ: Dispute, Appointment, FileUpload, Payment, Order và Withdrawal.")]
+                "PolicyType hỗ trợ: Dispute, Appointment, FileUpload, Payment, Order, Withdrawal và Rating.")]
         public async Task<IActionResult> GetVersions(string policyType, CancellationToken cancellationToken)
         {
             if (!TryParsePolicyType(policyType, out var type))
@@ -393,6 +418,10 @@ namespace HomeCycle.API.Controllers
 
                 case "withdrawal":
                     type = PlatformPolicyType.Withdrawal;
+                    return true;
+
+                case "rating":
+                    type = PlatformPolicyType.Rating;
                     return true;
 
                 default:
