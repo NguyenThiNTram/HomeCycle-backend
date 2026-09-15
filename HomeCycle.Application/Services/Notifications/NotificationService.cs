@@ -3,8 +3,10 @@ using HomeCycle.Application.Commons.Paginations;
 using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Responses.Notifications;
 using HomeCycle.Application.Interfaces.Repositories.Notifications;
+using HomeCycle.Application.Interfaces.Repositories.Users;
 using HomeCycle.Application.Interfaces.Services.Notifications;
 using HomeCycle.Domain.Entities;
+using HomeCycle.Domain.Enums;
 using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
@@ -17,15 +19,18 @@ namespace HomeCycle.Application.Services.Notifications
     public class NotificationService : INotificationService
     {
         private readonly INotificationRepository _notificationRepository;
+        private readonly IUserRepository _userRepository;
         private readonly INotificationRealtimePublisher _realtimePublisher;
         private readonly ILogger<NotificationService> _logger;
 
         public NotificationService(
-        INotificationRepository notificationRepository,
-        INotificationRealtimePublisher realtimePublisher,
-        ILogger<NotificationService> logger)
+            INotificationRepository notificationRepository,
+            IUserRepository userRepository,
+            INotificationRealtimePublisher realtimePublisher,
+            ILogger<NotificationService> logger)
         {
             _notificationRepository = notificationRepository;
+            _userRepository = userRepository;
             _realtimePublisher = realtimePublisher;
             _logger = logger;
         }
@@ -56,6 +61,33 @@ namespace HomeCycle.Application.Services.Notifications
                 cancellationToken);
 
             return notification;
+        }
+
+        public async Task<IReadOnlyList<notification>> AddPendingForActiveModeratorsAsync(
+            string title,
+            string message,
+            NotificationTargetType targetType,
+            Guid targetId,
+            CancellationToken cancellationToken = default)
+        {
+            var moderators = await _userRepository.GetActiveByRoleAsync(
+                UserRole.Moderator,
+                cancellationToken);
+
+            var notifications = new List<notification>(moderators.Count);
+            foreach (var moderator in moderators)
+            {
+                notifications.Add(await AddPendingAsync(
+                    new CreateNotificationCommand(
+                        moderator.UserId,
+                        title,
+                        message,
+                        targetType,
+                        targetId),
+                    cancellationToken));
+            }
+
+            return notifications;
         }
 
         public async Task PublishCreatedSafelyAsync(notification notification)

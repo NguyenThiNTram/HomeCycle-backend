@@ -15,6 +15,9 @@ namespace HomeCycle.Domain.Enums
         Dispute = 5,
         Post = 6,
         Appointment = 7,
-        Withdrawal = 8
+        Withdrawal = 8,
+        BusinessProfile = 9,
+        PersonalProfile = 10,
+        Review = 11
     }
 }

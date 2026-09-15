@@ -2,6 +2,7 @@ using HomeCycle.Application.Interfaces.Repositories.Offers;
 using AutoMapper;
 using FluentValidation;
 using HomeCycle.Application.Commons.Errors;
+using HomeCycle.Application.Commons.Helpers;
 using HomeCycle.Application.Commons.Paginations;
 using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Requests.Media;
@@ -14,6 +15,7 @@ using HomeCycle.Application.Interfaces.Repositories.Posts;
 using HomeCycle.Application.Interfaces.Repositories.Reviews;
 using HomeCycle.Application.Interfaces.Repositories.Users;
 using HomeCycle.Application.Interfaces.Services.Notifications;
+using HomeCycle.Application.Interfaces.Services.PlatformPolicies;
 using HomeCycle.Application.Interfaces.Services.Posts;
 using HomeCycle.Application.Interfaces.Services.Products;
 using HomeCycle.Domain.Entities;
@@ -44,6 +46,7 @@ namespace HomeCycle.Application.Services.Posts
         private readonly IMapper _mapper;
         private readonly IUnitOfWork _unitOfWork;
         private readonly INotificationService _notificationService;
+        private readonly IPlatformPolicyProvider _platformPolicyProvider;
 
         private const string PostMediaTargetType = "Post";
         private const string PostMediaFolder = "posts";
@@ -62,7 +65,8 @@ namespace HomeCycle.Application.Services.Posts
             IValidator<PostSearchRequest> searchValidator,
             IMapper mapper,
             IUnitOfWork unitOfWork,
-            INotificationService notificationService)
+            INotificationService notificationService,
+            IPlatformPolicyProvider platformPolicyProvider)
         {
             _postRepository = postRepository;
             _offerRepository = offerRepository;
@@ -78,6 +82,7 @@ namespace HomeCycle.Application.Services.Posts
             _mapper = mapper;
             _unitOfWork = unitOfWork;
             _notificationService = notificationService;
+            _platformPolicyProvider = platformPolicyProvider;
         }
 
         // ================== CREATE - SELL ==================
@@ -264,10 +269,11 @@ namespace HomeCycle.Application.Services.Posts
 
             var response = _mapper.Map<PostDetailResponse>(entity);
 
-            var (averageRating, totalReviews) = await _reviewRepository.GetRatingStatsByRevieweeIdAsync(entity.OwnerId, cancellationToken);
+            var validReviews = await _reviewRepository.GetValidReviewsByRevieweeAsync(entity.OwnerId, cancellationToken);
+            var ratingPolicy = await _platformPolicyProvider.GetRatingConfigAsync(cancellationToken);
 
-            response.AverageRating = averageRating;
-            response.TotalReviews = totalReviews;
+            response.AverageRating = ReputationScoreCalculator.CalculateDisplayStarRating(validReviews, ratingPolicy);
+            response.TotalReviews = validReviews.Count;
 
             var productResult = await _productService.GetDetailByPostIdAsync(postId, cancellationToken);
 

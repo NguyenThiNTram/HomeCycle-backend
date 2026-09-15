@@ -502,7 +502,8 @@ namespace HomeCycle.Application.Mappings
                          src.PolicyType == PlatformPolicyType.FileUpload ||
                          src.PolicyType == PlatformPolicyType.Payment ||
                          src.PolicyType == PlatformPolicyType.Order ||
-                         src.PolicyType == PlatformPolicyType.Withdrawal)));
+                         src.PolicyType == PlatformPolicyType.Withdrawal ||
+                         src.PolicyType == PlatformPolicyType.Rating)));
 
             CreateMap<platform_policy, PlatformPolicyVersionDetailDto>()
                 .ForMember(
@@ -537,6 +538,9 @@ namespace HomeCycle.Application.Mappings
             CreateMap<platform_policy, PlatformPolicyResponseDto<OrderPolicyConfigDto>>()
                 .ForMember(dest => dest.Config, opt => opt.Ignore());
 
+            CreateMap<platform_policy, PlatformPolicyResponseDto<RatingPolicyConfigDto>>()
+                .ForMember(dest => dest.Config, opt => opt.Ignore());
+
             CreateMap<DisputePolicyConfigDto, DisputePolicyConfigDto>();
 
             CreateMap<AppointmentPolicyConfigDto, AppointmentPolicyConfigDto>();
@@ -545,7 +549,11 @@ namespace HomeCycle.Application.Mappings
 
             CreateMap<OrderPolicyConfigDto, OrderPolicyConfigDto>();
 
+            CreateMap<RatingPolicyConfigDto, RatingPolicyConfigDto>();
+
             CreateMap<UpdateDisputePolicyRequest, DisputePolicyConfigDto>()
+                .ForMember(d => d.PostViolationPenaltyPoints, o => o.PreCondition(s => s.PostViolationPenaltyPoints.HasValue))
+                .ForMember(d => d.ReviewViolationPenaltyPoints, o => o.PreCondition(s => s.ReviewViolationPenaltyPoints.HasValue))
                 .ForAllMembers(opt => opt.Condition(
                     (src, dest, srcMember) => srcMember != null));
 
@@ -558,6 +566,10 @@ namespace HomeCycle.Application.Mappings
                     (src, dest, srcMember) => srcMember != null));
 
             CreateMap<UpdateOrderPolicyRequest, OrderPolicyConfigDto>()
+                .ForAllMembers(opt => opt.Condition(
+                    (src, dest, srcMember) => srcMember != null));
+
+            CreateMap<UpdateRatingPolicyRequest, RatingPolicyConfigDto>()
                 .ForAllMembers(opt => opt.Condition(
                     (src, dest, srcMember) => srcMember != null));
 
@@ -781,6 +793,13 @@ namespace HomeCycle.Application.Mappings
             CreateMap<user, DisputeUserSummaryDto>();
 
             CreateMap<dispute, DisputeDecisionResponse>()
+                .ForMember(dest => dest.TargetType, opt => opt.MapFrom(src => (DisputeTargetType?)src.DisputeTargetType))
+                .ForMember(dest => dest.TargetId, opt => opt.MapFrom(src =>
+                    src.DisputeTargetType == (int)DisputeTargetType.Post ? src.PostId :
+                    src.DisputeTargetType == (int)DisputeTargetType.Review ? src.ReviewId : src.OrderId))
+                .ForMember(dest => dest.PostStatus, opt => opt.Ignore())
+                .ForMember(dest => dest.ReviewStatus, opt => opt.Ignore())
+                .ForMember(dest => dest.PenaltyPointsApplied, opt => opt.Ignore())
                 .ForMember(dest => dest.Status,
                     opt => opt.MapFrom(src => (DisputeStatus)src.DisputeStatus!.Value))
                 .ForMember(dest => dest.ResolutionOutcome,

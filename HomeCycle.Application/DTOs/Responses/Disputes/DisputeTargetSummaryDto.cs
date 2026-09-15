@@ -15,7 +15,7 @@ namespace HomeCycle.Application.DTOs.Responses.Disputes
 
         public OrderDisputeSummaryDto? Order { get; set; }
 
-        // Sau này:
-        // public ReviewDisputeSummaryDto? Review { get; set; }
+        public PostDisputeSummaryDto? Post { get; set; }
+        public ReviewDisputeSummaryDto? Review { get; set; }
     }
 }

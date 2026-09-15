@@ -419,6 +419,12 @@ public partial class HomeCycleDbContext : DbContext
 
             entity.HasOne(d => d.Review).WithMany(p => p.Disputes).HasConstraintName("fk_dispute_reviewid");
 
+            entity.HasIndex(d => d.PostId).HasDatabaseName("idx_dispute_post");
+            entity.HasOne(d => d.Post).WithMany()
+                .HasForeignKey(d => d.PostId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("fk_dispute_postid");
+
             entity.HasOne(d => d.Sender).WithMany(p => p.DisputeSenders)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("fk_dispute_senderid");

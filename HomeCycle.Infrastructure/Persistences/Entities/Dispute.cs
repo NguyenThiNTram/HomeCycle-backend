@@ -14,6 +14,7 @@ namespace HomeCycle.Infrastructure;
 [Index("SenderId", Name = "idx_dispute_sender")]
 [Index("DisputeStatus", Name = "idx_dispute_status")]
 [Index("TargetUserId", Name = "idx_dispute_target_user")]
+[Index("PostId", Name = "idx_dispute_post")]
 public partial class Dispute
 {
     [Key]
@@ -26,6 +27,7 @@ public partial class Dispute
     public Guid? ModeratorId { get; set; }
 
     public Guid? ReviewId { get; set; }
+    public Guid? PostId { get; set; }
 
     public Guid? OrderId { get; set; }
 
@@ -57,6 +59,9 @@ public partial class Dispute
     [ForeignKey("ReviewId")]
     [InverseProperty("Disputes")]
     public virtual Review? Review { get; set; }
+
+    [ForeignKey("PostId")]
+    public virtual Post? Post { get; set; }
 
     [ForeignKey("SenderId")]
     [InverseProperty("DisputeSenders")]

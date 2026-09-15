@@ -24,6 +24,8 @@ namespace HomeCycle.Application.Interfaces.Repositories.Users
 
         Task<user?> GetByUsernameAsync(string username, CancellationToken cancellationToken = default);
 
+        Task<IReadOnlyList<user>> GetActiveByRoleAsync(UserRole role, CancellationToken cancellationToken = default);
+
         Task<bool> ExistsByEmailAsync(string email, CancellationToken cancellationToken = default);
 
         Task<bool> ExistsByUsernameAsync(string username, CancellationToken cancellationToken = default);

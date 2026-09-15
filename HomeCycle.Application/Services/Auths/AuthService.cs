@@ -17,6 +17,7 @@ using HomeCycle.Application.Interfaces.Security;
 using HomeCycle.Application.Interfaces.Services.Auths;
 using HomeCycle.Application.Interfaces.Services.Configs;
 using HomeCycle.Application.Interfaces.Services.Externals;
+using HomeCycle.Application.Interfaces.Services.Notifications;
 using HomeCycle.Domain.Entities;
 using HomeCycle.Domain.Enums;
 using MathNet.Numerics.Statistics.Mcmc;
@@ -57,6 +58,7 @@ namespace HomeCycle.Application.Services.Auths
         private readonly IValidator<RegisterBusinessAccountRequest> _registerBusinessValidator;
         private readonly IFileStorageService _fileStorageService;
         private readonly IWalletRepository _walletRepository;
+        private readonly INotificationService _notificationService;
         private readonly IValidator<CreateModeratorRequest> _createModeratorValidator;
         private readonly IValidator<SetModeratorPasswordRequest> _setModeratorPasswordValidator;
         private const string ModeratorEmailPurpose = "ModeratorEmailVerification";
@@ -79,6 +81,7 @@ namespace HomeCycle.Application.Services.Auths
             IValidator<RegisterBusinessAccountRequest> registerBusinessValidator,
             IFileStorageService fileStorageService,
             IWalletRepository walletRepository,
+            INotificationService notificationService,
             IValidator<CreateModeratorRequest> createModeratorValidator,
             IValidator<SetModeratorPasswordRequest> setModeratorPasswordValidator
             )
@@ -102,6 +105,7 @@ namespace HomeCycle.Application.Services.Auths
             _registerBusinessValidator = registerBusinessValidator;
             _fileStorageService = fileStorageService;
             _walletRepository = walletRepository;
+            _notificationService = notificationService;
             _createModeratorValidator = createModeratorValidator;
             _setModeratorPasswordValidator = setModeratorPasswordValidator;
         }
@@ -600,9 +604,25 @@ namespace HomeCycle.Application.Services.Auths
 
                 await _userRepository.AddRefreshTokenAsync(refreshTokenEntity, cancellationToken);
 
+                IReadOnlyList<notification> moderatorNotifications = [];
+                if (!string.IsNullOrWhiteSpace(frontIdCardUrl) &&
+                    !string.IsNullOrWhiteSpace(backIdCardUrl))
+                {
+                    moderatorNotifications =
+                        await _notificationService.AddPendingForActiveModeratorsAsync(
+                            "Có yêu cầu xác minh danh tính mới",
+                            $"Tài khoản {newUser.Username} vừa đăng ký và đang chờ xác minh căn cước công dân.",
+                            NotificationTargetType.PersonalProfile,
+                            personalProfile.PersonalProfileId,
+                            cancellationToken);
+                }
+
                 // Commit DB
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync();
+
+                await Task.WhenAll(moderatorNotifications.Select(
+                    _notificationService.PublishCreatedSafelyAsync));
 
                 return Result<AuthResponse>.Success(new AuthResponse
                 {

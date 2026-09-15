@@ -15,6 +15,7 @@ namespace HomeCycle.Application.DTOs.Requests.Disputes
         public int? DisputeCategoryId { get; set; }
 
         public DisputeTargetType? TargetType { get; set; }
+        public Guid? TargetId { get; set; }
 
         public string? Keyword { get; set; }
 

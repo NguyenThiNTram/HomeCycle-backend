@@ -18,6 +18,8 @@ public class review
 
     public int? ReviewStatus { get; set; }
 
+    public int AppliedReputationDelta { get; set; }
+
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 
