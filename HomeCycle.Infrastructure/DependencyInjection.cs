@@ -1,10 +1,12 @@
 ﻿using FluentValidation;
+using HomeCycle.Application.Commons.Audits;
 using HomeCycle.Application.DTOs.Requests.Agreements;
 using HomeCycle.Application.Interfaces.Externals;
 using HomeCycle.Application.Interfaces.Generics;
 using HomeCycle.Application.Interfaces.Repositories;
 using HomeCycle.Application.Interfaces.Repositories.Agreements;
 using HomeCycle.Application.Interfaces.Repositories.Appointments;
+using HomeCycle.Application.Interfaces.Repositories.Audits;
 using HomeCycle.Application.Interfaces.Repositories.Banks;
 using HomeCycle.Application.Interfaces.Repositories.Carts;
 using HomeCycle.Application.Interfaces.Repositories.Disputes;
@@ -29,6 +31,7 @@ using HomeCycle.Application.Interfaces.Security;
 using HomeCycle.Application.Interfaces.Services.Agreements;
 using HomeCycle.Application.Interfaces.Services.Appointments;
 using HomeCycle.Application.Interfaces.Services.Appointments;
+using HomeCycle.Application.Interfaces.Services.Audits;
 using HomeCycle.Application.Interfaces.Services.Auths;
 using HomeCycle.Application.Interfaces.Services.Carts;
 using HomeCycle.Application.Interfaces.Services.Configs;
@@ -58,6 +61,7 @@ using HomeCycle.Application.Mappings;
 using HomeCycle.Application.Services.Agreements;
 using HomeCycle.Application.Services.Appointments;
 using HomeCycle.Application.Services.Appointments;
+using HomeCycle.Application.Services.Audits;
 using HomeCycle.Application.Services.Auths;
 using HomeCycle.Application.Services.Carts;
 using HomeCycle.Application.Services.Configs;
@@ -85,6 +89,7 @@ using HomeCycle.Application.Services.Wallets;
 using HomeCycle.Application.Validations.Agreements;
 using HomeCycle.Application.Validations.Auths;
 using HomeCycle.Application.Validations.Users;
+using HomeCycle.Infrastructure.Auditing;
 using HomeCycle.Infrastructure.DbContexts;
 using HomeCycle.Infrastructure.Externals;
 using HomeCycle.Infrastructure.Externals.Gemini;
@@ -144,6 +149,34 @@ namespace HomeCycle.Infrastructure
 
             //register UOW
             services.AddScoped<IUnitOfWork, UnitOfWork>();
+
+            // AuditLog
+            services.AddOptions<AuditLogOptions>()
+                .Bind(configuration.GetSection(AuditLogOptions.SectionName))
+                .Validate(x => x.Payload.MaxBytes is >= 1024 and <= 65536,
+                    "AuditLog Payload MaxBytes phải từ 1024 đến 65536 bytes.")
+                .Validate(x => x.Worker.BatchSize is >= 1 and <= 500,
+                    "AuditLog Worker BatchSize phải từ 1 đến 500.")
+                .Validate(x => x.Worker.PollIntervalSeconds is >= 2 and <= 300,
+                    "AuditLog Worker PollIntervalSeconds phải từ 2 đến 300 giây.")
+                .Validate(x => x.Worker.RetryLimit is >= 1 and <= 20,
+                    "AuditLog Worker RetryLimit phải từ 1 đến 20.")
+                .Validate(x => x.Worker.RetryBaseDelaySeconds is >= 5 and <= 3600,
+                    "AuditLog Worker RetryBaseDelaySeconds phải từ 5 đến 3600 giây.")
+                .Validate(x => x.Worker.ProcessingLeaseSeconds is >= 30 and <= 3600,
+                    "AuditLog Worker ProcessingLeaseSeconds phải từ 30 đến 3600 giây.")
+                .Validate(x => x.Worker.ProcessingLeaseSeconds >= x.Worker.PollIntervalSeconds * 3,
+                    "AuditLog ProcessingLeaseSeconds phải ít nhất gấp 3 PollIntervalSeconds.")
+                .Validate(x => x.Retention.Days is >= 30 and <= 3650,
+                    "AuditLog Retention Days phải từ 30 đến 3650 ngày.")
+                .Validate(x => x.Retention.CleanupBatchSize is >= 50 and <= 5000,
+                    "AuditLog Retention CleanupBatchSize phải từ 50 đến 5000.")
+                .ValidateOnStart();
+
+            services.AddSingleton<AuditPayloadSanitizer>();
+            services.AddScoped<IAuditOutboxWriter, AuditOutboxWriter>();
+            services.AddScoped<IAuditOutboxProcessor, AuditOutboxProcessor>();
+            services.AddScoped<IAuditService, AuditService>();
 
             //register hash password
             services.AddScoped<

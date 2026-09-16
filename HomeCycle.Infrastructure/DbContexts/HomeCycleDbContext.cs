@@ -19,6 +19,8 @@ public partial class HomeCycleDbContext : DbContext
 
     public virtual DbSet<Audit_Log> Audit_Logs { get; set; }
 
+    public virtual DbSet<Audit_Outbox> Audit_Outboxes { get; set; }
+
     public virtual DbSet<Bank_Account> Bank_Accounts { get; set; }
 
     public DbSet<Brand> Brands { get; set; }
@@ -195,6 +197,40 @@ public partial class HomeCycleDbContext : DbContext
             entity.HasOne(d => d.User).WithMany(p => p.Audit_Logs)
                 .OnDelete(DeleteBehavior.NoAction)
                 .HasConstraintName("fk_audit_log_userid");
+        });
+
+        modelBuilder.Entity<Audit_Outbox>(entity =>
+        {
+            entity.HasKey(e => e.EventId)
+                .HasName("Audit_Outbox_pkey");
+
+            entity.Property(e => e.EventId)
+                .ValueGeneratedNever();
+
+            entity.Property(e => e.Payload)
+                .HasColumnType("jsonb");
+
+            entity.Property(e => e.RetryCount)
+                .HasDefaultValue(0);
+
+            entity.Property(e => e.NextAttemptAtUtc)
+                .HasDefaultValueSql("now()");
+
+            entity.Property(e => e.CreatedAtUtc)
+                .HasDefaultValueSql("now()");
+
+            entity.HasIndex(e => new
+            {
+                e.NextAttemptAtUtc,
+                e.LeaseUntilUtc,
+                e.CreatedAtUtc
+            })
+                .HasDatabaseName("idx_audit_outbox_ready")
+                .HasFilter("\"FailedAtUtc\" IS NULL");
+
+            entity.HasIndex(e => e.FailedAtUtc)
+                .HasDatabaseName("idx_audit_outbox_failed")
+                .HasFilter("\"FailedAtUtc\" IS NOT NULL");
         });
 
         modelBuilder.Entity<Bank_Account>(entity =>
