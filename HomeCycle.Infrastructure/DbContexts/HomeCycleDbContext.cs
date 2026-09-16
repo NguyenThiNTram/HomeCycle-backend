@@ -186,9 +186,15 @@ public partial class HomeCycleDbContext : DbContext
             entity.HasKey(e => e.AuditId).HasName("Audit_Log_pkey");
 
             entity.Property(e => e.AuditId).ValueGeneratedNever();
-            entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()");
+            entity.Property(e => e.EventId).ValueGeneratedNever();
+            entity.Property(e => e.OldValues).HasColumnType("jsonb");
+            entity.Property(e => e.NewValues).HasColumnType("jsonb");
+            entity.Property(e => e.Metadata).HasColumnType("jsonb");
+            entity.Property(e => e.RecordedAtUtc).HasDefaultValueSql("now()");
 
-            entity.HasOne(d => d.User).WithMany(p => p.Audit_Logs).HasConstraintName("fk_audit_log_userid");
+            entity.HasOne(d => d.User).WithMany(p => p.Audit_Logs)
+                .OnDelete(DeleteBehavior.NoAction)
+                .HasConstraintName("fk_audit_log_userid");
         });
 
         modelBuilder.Entity<Bank_Account>(entity =>
