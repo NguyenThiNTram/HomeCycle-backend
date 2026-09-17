@@ -127,22 +127,31 @@ namespace HomeCycle.Application.Services.Wallets
                     return Result<Guid>.Fail(new Error("Wallet.InsufficientBalance", "Số dư khả dụng không đủ."));
                 }
 
-                var window = GetVietnamDayWindow(_clock.GetUtcNow());
-                var completedToday = await _withdrawalRepo.GetCompletedAmountAsync(userId, window.FromUtc, window.ToUtc, ct);
-                var activeReserved = await _withdrawalRepo.GetActiveReservedAmountAsync(userId, ct);
-                var usedLimit = completedToday + activeReserved;
+                var nowUtc = _clock.GetUtcNow();
+                var window = GetVietnamDayWindow(nowUtc);
+                var usage = await _withdrawalRepo.GetDailyUsageAsync(userId, window.FromUtc, window.ToUtc, ct);
+                var usedLimit = usage.CompletedAmount + usage.ReservedAmount;
 
                 if (usedLimit + amount > policy.DailyWithdrawalLimit)
                 {
                     await _unitOfWork.RollbackTransactionAsync(ct);
-                    var remaining = Math.Max(policy.DailyWithdrawalLimit - usedLimit, 0);
+                    var remaining = Math.Max(policy.DailyWithdrawalLimit - usedLimit, 0m);
 
                     return Result<Guid>.Fail(new Error(
                         "Withdrawal.DailyLimitExceeded",
                         $"Hạn mức rút còn lại hôm nay là {remaining:N0} VNĐ."));
                 }
 
-                var now = _clock.GetUtcNow().UtcDateTime;
+                if (usage.UsedCount >= policy.DailyWithdrawalCountLimit)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+
+                    return Result<Guid>.Fail(new Error(
+                        "Withdrawal.DailyCountLimitExceeded",
+                        $"Bạn đã sử dụng hết {policy.DailyWithdrawalCountLimit} lượt rút tiền trong ngày."));
+                }
+
+                var now = nowUtc.UtcDateTime;
                 var withdrawalId = Guid.NewGuid();
 
                 var withdrawal = new withdrawal
@@ -987,21 +996,21 @@ namespace HomeCycle.Application.Services.Wallets
         {
             var policy = await _platformPolicyProvider.GetWithdrawalConfigAsync(ct);
             var window = GetVietnamDayWindow(_clock.GetUtcNow());
-
-            var completedToday = await _withdrawalRepo.GetCompletedAmountAsync(userId, window.FromUtc, window.ToUtc, ct);
-            var activeReserved = await _withdrawalRepo.GetActiveReservedAmountAsync(userId, ct);
-            var used = completedToday + activeReserved;
-            var remaining = Math.Max(policy.DailyWithdrawalLimit - used, 0);
+            var usage = await _withdrawalRepo.GetDailyUsageAsync(userId, window.FromUtc, window.ToUtc, ct);
+            var used = usage.CompletedAmount + usage.ReservedAmount;
 
             return Result<WithdrawalQuotaResponseDto>.Success(new WithdrawalQuotaResponseDto
             {
                 MinimumWithdrawalAmount = policy.MinimumWithdrawalAmount,
                 MaximumWithdrawalAmount = policy.MaximumWithdrawalAmount,
                 DailyWithdrawalLimit = policy.DailyWithdrawalLimit,
-                CompletedTodayAmount = completedToday,
-                ActiveReservedAmount = activeReserved,
+                CompletedTodayAmount = usage.CompletedAmount,
+                ActiveReservedAmount = usage.ReservedAmount,
                 UsedDailyLimitAmount = used,
-                RemainingDailyLimitAmount = remaining,
+                RemainingDailyLimitAmount = Math.Max(policy.DailyWithdrawalLimit - used, 0m),
+                DailyWithdrawalCountLimit = policy.DailyWithdrawalCountLimit,
+                UsedDailyWithdrawalCount = usage.UsedCount,
+                RemainingDailyWithdrawalCount = Math.Max(policy.DailyWithdrawalCountLimit - usage.UsedCount, 0),
                 ResetAt = window.ResetAt
             });
         }

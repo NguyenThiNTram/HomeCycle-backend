@@ -27,15 +27,29 @@ namespace HomeCycle.API.Controllers
 
         // User tạo yêu cầu rút tiền cho chính ví của mình.
         [HttpPost("withdrawals")]
-        public async Task<IActionResult> CreateWithdrawal(
-           [FromBody] CreateWithdrawalRequest request, CancellationToken cancellationToken)
+        [SwaggerOperation(
+            Summary = "Tạo yêu cầu rút tiền",
+            Description = "Kiểm tra tài khoản ngân hàng, số dư, giới hạn mỗi lần và quota số tiền/số lần theo ngày RequestedAt ở UTC+7. Pending, Approved, Processing và Completed chiếm quota. Tạo thành công chuyển tiền từ Available sang Hold.")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        public async Task<IActionResult> CreateWithdrawal([FromBody] CreateWithdrawalRequest request, CancellationToken cancellationToken)
         {
             var currentUserId = GetCurrentUserId();
             var result = await _withdrawalService.CreateWithdrawalRequestAsync(
                 currentUserId, request, cancellationToken);
 
             if (!result.IsSuccess)
-                return BadRequest(result.Error);
+            {
+                return result.Error?.Code switch
+                {
+                    "Withdrawal.InvalidRequest" or "Withdrawal.BelowMinimum" or "Withdrawal.AboveMaximum"
+                        => BadRequest(result.Error),
+                    "Wallet.NotFound" => NotFound(result.Error),
+                    "Withdrawal.BankAccountNotVerified" or "Wallet.InsufficientBalance"
+                        or "Withdrawal.DailyLimitExceeded" or "Withdrawal.DailyCountLimitExceeded"
+                        => Conflict(result.Error),
+                    _ => StatusCode(StatusCodes.Status500InternalServerError, result.Error)
+                };
+            }
 
             return Ok(new { withdrawalId = result.Data });
         }
@@ -145,7 +159,8 @@ namespace HomeCycle.API.Controllers
         [HttpGet("withdrawals/quota")]
         [SwaggerOperation(
             Summary = "Lấy hạn mức rút tiền hiện tại",
-            Description = "Trả cấu hình min/max, hạn mức ngày, số đã hoàn tất hôm nay, khoản đang reserve và hạn mức còn lại theo UTC+7.")]
+            Description = "Trả quota tiền và số lần theo ngày RequestedAt ở UTC+7. Chỉ Pending, Approved, Processing và Completed chiếm quota. CompletedTodayAmount và ActiveReservedAmount chỉ gồm request tạo trong ngày. Count limit và remaining null biểu diễn unlimited; Phase 1 luôn trả giới hạn hữu hạn.")]
+        [ProducesResponseType(typeof(WithdrawalQuotaResponseDto), StatusCodes.Status200OK)]
         public async Task<IActionResult> GetWithdrawalQuota(CancellationToken cancellationToken)
         {
             var userId = GetCurrentUserId();

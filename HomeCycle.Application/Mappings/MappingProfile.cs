@@ -579,7 +579,26 @@ namespace HomeCycle.Application.Mappings
             CreateMap<WithdrawalPolicyConfigDto, WithdrawalPolicyConfigDto>();
 
             CreateMap<UpdateWithdrawalPolicyRequest, WithdrawalPolicyConfigDto>()
-                .ForAllMembers(opt => opt.Condition((src, dest, srcMember) => srcMember != null));
+                .ForMember(dest => dest.MinimumWithdrawalAmount, opt =>
+                {
+                    opt.PreCondition(src => src.MinimumWithdrawalAmount.HasValue);
+                    opt.MapFrom(src => src.MinimumWithdrawalAmount!.Value);
+                })
+                .ForMember(dest => dest.MaximumWithdrawalAmount, opt =>
+                {
+                    opt.PreCondition(src => src.MaximumWithdrawalAmount.HasValue);
+                    opt.MapFrom(src => src.MaximumWithdrawalAmount!.Value);
+                })
+                .ForMember(dest => dest.DailyWithdrawalLimit, opt =>
+                {
+                    opt.PreCondition(src => src.DailyWithdrawalLimit.HasValue);
+                    opt.MapFrom(src => src.DailyWithdrawalLimit!.Value);
+                })
+                .ForMember(dest => dest.DailyWithdrawalCountLimit, opt =>
+                {
+                    opt.PreCondition(src => src.DailyWithdrawalCountLimit.HasValue);
+                    opt.MapFrom(src => src.DailyWithdrawalCountLimit!.Value);
+                });
 
             // ==================== ORDER / APPOINTMENT READ MODEL ====================
 

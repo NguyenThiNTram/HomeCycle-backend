@@ -27,5 +27,6 @@ namespace HomeCycle.Application.Interfaces.Repositories.Wallets
             CancellationToken ct = default);
         Task<decimal> GetCompletedAmountAsync(Guid userId, DateTime fromUtc, DateTime toUtc, CancellationToken ct = default);
         Task<decimal> GetActiveReservedAmountAsync(Guid userId, CancellationToken ct = default);
+        Task<(decimal CompletedAmount, decimal ReservedAmount, int UsedCount)> GetDailyUsageAsync(Guid userId, DateTime fromUtc, DateTime toUtc, CancellationToken ct = default);
     }
 }
