@@ -1,4 +1,4 @@
-﻿using FluentValidation;
+using FluentValidation;
 using HomeCycle.Application.DTOs.Requests.Agreements;
 using HomeCycle.Application.Interfaces.Externals;
 using HomeCycle.Application.Interfaces.Generics;
@@ -174,6 +174,14 @@ namespace HomeCycle.Infrastructure
                 return new Google.GenAI.Client(apiKey: settings.ApiKey);
             });
             services.AddSingleton<GeminiRequestService>();
+            services.AddScoped<HomeCycle.Application.Interfaces.Services.AI.IPriceSuggestionQuota, PriceSuggestionQuota>();
+            services.AddScoped<HomeCycle.Application.Interfaces.Services.AI.IPriceSuggestionAiClient, GeminiPriceSuggestionClient>();
+            services.AddScoped<HomeCycle.Application.Interfaces.Services.AI.IPriceSuggestionService, HomeCycle.Application.Pricing.Services.PriceSuggestionService>();
+            services.AddScoped<HomeCycle.Application.Interfaces.Repositories.AI.IPriceEvidenceRepository, HomeCycle.Infrastructure.Repositories.AI.PriceEvidenceRepository>();
+            services.AddScoped<HomeCycle.Application.Interfaces.Services.AI.IProductContextProvider, HomeCycle.Application.Pricing.Services.DynamicProductContextBuilder>();
+            services.AddScoped<HomeCycle.Application.Pricing.Matching.DynamicAttributeMatcher>();
+            services.AddScoped<HomeCycle.Application.Pricing.Matching.EquivalentModelMatcher>();
+            services.AddScoped<HomeCycle.Application.Interfaces.Services.AI.IExternalUsedPriceSearchService, GeminiExternalUsedPriceSearchService>();
 
             // register FluentValidation
             // do nằm chung 1 application nên chỉ cần gọi 1 lần là đủ, không cần gọi nhiều lần
@@ -344,3 +352,4 @@ namespace HomeCycle.Infrastructure
         }
     }
 }
+
