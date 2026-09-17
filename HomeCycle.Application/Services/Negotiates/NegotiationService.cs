@@ -1,5 +1,6 @@
 using AutoMapper;
 using FluentValidation;
+using HomeCycle.Application.Commons.Audits;
 using HomeCycle.Application.Commons.Errors;
 using HomeCycle.Application.Commons.Helpers;
 using HomeCycle.Application.Commons.Paginations;
@@ -13,6 +14,7 @@ using HomeCycle.Application.Interfaces.Generics;
 using HomeCycle.Application.Interfaces.Repositories.Offers;
 using HomeCycle.Application.Interfaces.Repositories.Posts;
 using HomeCycle.Application.Interfaces.Repositories.Users;
+using HomeCycle.Application.Interfaces.Services.Audits;
 using HomeCycle.Application.Interfaces.Services.Negotiates;
 using HomeCycle.Domain.Entities;
 using HomeCycle.Domain.Enums;
@@ -38,6 +40,7 @@ namespace HomeCycle.Application.Services.Negotiates
         private readonly IMapper _mapper;
         private readonly IUnitOfWork _unitOfWork;
         private readonly IChatRealtimePublisher _realtimePublisher;
+        private readonly IAuditService _auditService;
 
         public NegotiationService(
             INegotiationRepository negotiationRepository,
@@ -50,7 +53,8 @@ namespace HomeCycle.Application.Services.Negotiates
             IValidator<SendNegotiationCounterRequest> counterValidator,
             IMapper mapper,
             IUnitOfWork unitOfWork,
-            IChatRealtimePublisher realtimePublisher)
+            IChatRealtimePublisher realtimePublisher,
+            IAuditService auditService)
         {
             _negotiationRepository = negotiationRepository;
             _offerRepository = offerRepository;
@@ -63,6 +67,7 @@ namespace HomeCycle.Application.Services.Negotiates
             _mapper = mapper;
             _unitOfWork = unitOfWork;
             _realtimePublisher = realtimePublisher;
+            _auditService = auditService;
         }
 
         // ================== QUERY ==================
@@ -277,6 +282,9 @@ namespace HomeCycle.Application.Services.Negotiates
                     supersededProposal = pendingProposal;
                 }
 
+                var previousOfferPrice = offer.OfferPrice;
+                var previousOfferQuantity = offer.OfferQuantity;
+                var previousOfferVersion = offer.Version;
                 // Đồng bộ Offer mới nhất
                 //offer.OfferPrice = request.OfferPrice;
                 //offer.OfferQuantity = request.OfferQuantity;
@@ -289,6 +297,11 @@ namespace HomeCycle.Application.Services.Negotiates
                     offer.Version = (offer.Version ?? 1) + 1;
                 }
 
+                var negotiationCounterAuditDiff = new AuditDiffBuilder()
+                    .Add("offerPrice", previousOfferPrice, offer.OfferPrice)
+                    .Add("offerQuantity", previousOfferQuantity, offer.OfferQuantity)
+                    .Add("version", previousOfferVersion, offer.Version);
+
                 await _offerRepository.UpdateAsync(offer, cancellationToken);
 
                 await _messageRepository.AddAsync(counterMessage, cancellationToken);
@@ -299,7 +312,22 @@ namespace HomeCycle.Application.Services.Negotiates
 
                 await _negotiationRepository.UpdateAsync(negotiation, cancellationToken);
                 await _conversationRepository.UpdateLastActivityAsync(conversationId, systemMessage.CreatedAt, cancellationToken);
-
+                await _auditService.EnqueueAsync(new AuditEvent
+                {
+                    Category = AuditCategory.BusinessOperation,
+                    Action = AuditActions.NegotiationCounter,
+                    Outcome = AuditOutcome.Success,
+                    ActorType = AuditActorType.User,
+                    UserId = userId,
+                    TargetType = AuditTargetTypes.Negotiation,
+                    TargetId = negotiation.NegotiationId,
+                    OldValues = negotiationCounterAuditDiff.OldValues,
+                    NewValues = negotiationCounterAuditDiff.NewValues,
+                    Metadata = new Dictionary<string, object?>
+                    {
+                        ["proposalMessageId"] = counterMessage.MessageId
+                    }
+                }, cancellationToken);
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync(cancellationToken);
 
@@ -516,12 +544,18 @@ namespace HomeCycle.Application.Services.Negotiates
                 //    MessageOfferStatus.Accepted,
                 //    now,
                 //    cancellationToken);
-
+                var previousNegotiationStatus = negotiation.NegotiationStatus;
+                var previousFinalPrice = negotiation.FinalPrice;
+                var previousFinalQuantity = negotiation.FinalQuantity;
                 negotiation.NegotiationStatus = NegotiationStatus.Agreed;
                 negotiation.FinalPrice = proposal.OfferPrice;
                 negotiation.FinalQuantity = proposal.OfferQuantity;
                 //negotiation.LastMessageAt = DateTime.UtcNow;
                 negotiation.LastMessageAt = systemMessage.CreatedAt;
+                var acceptNegotiationAuditDiff = new AuditDiffBuilder()
+                    .Add("status", previousNegotiationStatus?.ToString(), negotiation.NegotiationStatus?.ToString())
+                    .Add("finalPrice", previousFinalPrice, negotiation.FinalPrice)
+                    .Add("finalQuantity", previousFinalQuantity, negotiation.FinalQuantity);
 
                 await _messageRepository.AddAsync(systemMessage, cancellationToken);
                 await _negotiationRepository.UpdateAsync(negotiation, cancellationToken);
@@ -531,6 +565,22 @@ namespace HomeCycle.Application.Services.Negotiates
                 //offer.OfferQuantity = proposal.OfferQuantity;
 
                 await _offerRepository.UpdateAsync(offer, cancellationToken);
+                await _auditService.EnqueueAsync(new AuditEvent
+                {
+                    Category = AuditCategory.BusinessOperation,
+                    Action = AuditActions.NegotiationAccept,
+                    Outcome = AuditOutcome.Success,
+                    ActorType = AuditActorType.User,
+                    UserId = userId,
+                    TargetType = AuditTargetTypes.Negotiation,
+                    TargetId = negotiation.NegotiationId,
+                    OldValues = acceptNegotiationAuditDiff.OldValues,
+                    NewValues = acceptNegotiationAuditDiff.NewValues,
+                    Metadata = new Dictionary<string, object?>
+                    {
+                        ["proposalMessageId"] = proposalMessageId
+                    }
+                }, cancellationToken);
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync(cancellationToken);
 
@@ -673,9 +723,11 @@ namespace HomeCycle.Application.Services.Negotiates
                     return Result<NegotiationActionResponse>.Fail(
                         OfferErrors.NotPending);
                 }
-
+                var previousProposalStatus = proposal.OfferStatus;
                 proposal.OfferStatus = MessageOfferStatus.Rejected;
                 proposal.UpdatedAt = now;
+                var rejectProposalAuditDiff = new AuditDiffBuilder()
+                    .Add("proposalStatus", previousProposalStatus?.ToString(), proposal.OfferStatus?.ToString());
 
                 systemMessage = CreateSystemMessage(
                     conversationId,
@@ -692,7 +744,22 @@ namespace HomeCycle.Application.Services.Negotiates
                 await _messageRepository.AddAsync(systemMessage, cancellationToken);
                 await _negotiationRepository.UpdateAsync(negotiation, cancellationToken);
                 await _conversationRepository.UpdateLastActivityAsync(conversationId, systemMessage.CreatedAt, cancellationToken);
-
+                await _auditService.EnqueueAsync(new AuditEvent
+                {
+                    Category = AuditCategory.BusinessOperation,
+                    Action = AuditActions.NegotiationReject,
+                    Outcome = AuditOutcome.Success,
+                    ActorType = AuditActorType.User,
+                    UserId = userId,
+                    TargetType = AuditTargetTypes.Negotiation,
+                    TargetId = negotiation.NegotiationId,
+                    OldValues = rejectProposalAuditDiff.OldValues,
+                    NewValues = rejectProposalAuditDiff.NewValues,
+                    Metadata = new Dictionary<string, object?>
+                    {
+                        ["proposalMessageId"] = proposalMessageId
+                    }
+                }, cancellationToken);
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync(cancellationToken);
 
@@ -818,15 +885,29 @@ namespace HomeCycle.Application.Services.Negotiates
                     NegotiationSystemAction.Cancel,
                     cancelledAt);
 
+                var previousNegotiationStatus = negotiation.NegotiationStatus;
                 negotiation.NegotiationStatus = NegotiationStatus.Cancelled;
                 negotiation.LastMessageAt = cancelledAt;
                 offer.OfferStatus = OfferStatus.Cancelled;
+                var cancelNegotiationAuditDiff = new AuditDiffBuilder()
+                    .Add("status", previousNegotiationStatus?.ToString(), negotiation.NegotiationStatus?.ToString());
 
                 await _messageRepository.AddAsync(systemMessage, cancellationToken);
                 await _negotiationRepository.UpdateAsync(negotiation, cancellationToken);
                 await _offerRepository.UpdateAsync(offer, cancellationToken);
                 await _conversationRepository.UpdateLastActivityAsync(conversationId, systemMessage.CreatedAt, cancellationToken);
-
+                await _auditService.EnqueueAsync(new AuditEvent
+                {
+                    Category = AuditCategory.BusinessOperation,
+                    Action = AuditActions.NegotiationCancel,
+                    Outcome = AuditOutcome.Success,
+                    ActorType = AuditActorType.User,
+                    UserId = userId,
+                    TargetType = AuditTargetTypes.Negotiation,
+                    TargetId = negotiation.NegotiationId,
+                    OldValues = cancelNegotiationAuditDiff.OldValues,
+                    NewValues = cancelNegotiationAuditDiff.NewValues
+                }, cancellationToken);
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync(cancellationToken);
 

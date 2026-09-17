@@ -34,6 +34,9 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Security.Cryptography;
+using HomeCycle.Application.Interfaces.Services.Audits;
+using HomeCycle.Application.Commons.Audits;
+using HomeCycle.Application.Commons.Helpers;
 
 namespace HomeCycle.Application.Services.Auths
 {
@@ -59,6 +62,7 @@ namespace HomeCycle.Application.Services.Auths
         private readonly IFileStorageService _fileStorageService;
         private readonly IWalletRepository _walletRepository;
         private readonly INotificationService _notificationService;
+        private readonly IAuditService _auditService;
         private readonly IValidator<CreateModeratorRequest> _createModeratorValidator;
         private readonly IValidator<SetModeratorPasswordRequest> _setModeratorPasswordValidator;
         private const string ModeratorEmailPurpose = "ModeratorEmailVerification";
@@ -82,6 +86,7 @@ namespace HomeCycle.Application.Services.Auths
             IFileStorageService fileStorageService,
             IWalletRepository walletRepository,
             INotificationService notificationService,
+            IAuditService auditService,
             IValidator<CreateModeratorRequest> createModeratorValidator,
             IValidator<SetModeratorPasswordRequest> setModeratorPasswordValidator
             )
@@ -106,6 +111,7 @@ namespace HomeCycle.Application.Services.Auths
             _fileStorageService = fileStorageService;
             _walletRepository = walletRepository;
             _notificationService = notificationService;
+            _auditService = auditService;
             _createModeratorValidator = createModeratorValidator;
             _setModeratorPasswordValidator = setModeratorPasswordValidator;
         }
@@ -114,7 +120,21 @@ namespace HomeCycle.Application.Services.Auths
         {
             var admin = await _userRepository.GetByIdAsync(adminId, cancellationToken);
             if (admin?.Role != UserRole.Admin || admin.Status != UserStatus.Active)
+            {
+                var deniedAuditEvent = new AuditEvent
+                {
+                    Category = AuditCategory.Administration,
+                    Action = AuditActions.UserCreateModerator,
+                    Outcome = AuditOutcome.Denied,
+                    ReasonCode = AuthErrors.ModeratorCreationForbidden.Code,
+                    ActorType = AuditActorType.User,
+                    UserId = adminId,
+                    UserRole = admin?.Role
+                };
+
+                await PersistStandaloneAuditSafelyAsync(deniedAuditEvent, cancellationToken);
                 return Result<UserAdminResponse>.Fail(AuthErrors.ModeratorCreationForbidden);
+            }
 
             request.Email = request.Email?.Trim().ToLowerInvariant() ?? string.Empty;
             request.Username = request.Username?.Trim().ToLowerInvariant() ?? string.Empty;
@@ -141,11 +161,29 @@ namespace HomeCycle.Application.Services.Auths
                 Password = _passwordHasher.HashPassword(Convert.ToHexString(RandomNumberGenerator.GetBytes(32))),
                 Role = UserRole.Moderator, Status = UserStatus.Pending, IsEmailVerified = false, CreatedAt = now
             };
+            var moderatorAuditEvent = new AuditEvent
+            {
+                Category = AuditCategory.Administration,
+                Action = AuditActions.UserCreateModerator,
+                Outcome = AuditOutcome.Success,
+                ActorType = AuditActorType.User,
+                UserId = adminId,
+                UserRole = admin.Role,
+                TargetType = AuditTargetTypes.User,
+                TargetId = moderator.UserId,
+                NewValues = new Dictionary<string, object?>
+                {
+                    ["role"] = moderator.Role.ToString(),
+                    ["status"] = moderator.Status.ToString(),
+                    ["isEmailVerified"] = moderator.IsEmailVerified
+                }
+            };
             await _unitOfWork.BeginTransactionAsync(cancellationToken);
             try
             {
                 await _userRepository.AddAsync(moderator, cancellationToken);
                 await _otpRepository.AddModeratorTokenAsync(CreateModeratorToken(moderator.UserId, moderator.Email, token, ModeratorEmailPurpose, expiresAt), cancellationToken);
+                await _auditService.EnqueueAsync(moderatorAuditEvent, cancellationToken);
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync(cancellationToken);
             }
@@ -183,9 +221,24 @@ namespace HomeCycle.Application.Services.Auths
             var stored = await _otpRepository.GetModeratorTokenAsync(HashModeratorToken(request.Token), ModeratorEmailPurpose, cancellationToken);
             if (stored?.UserId == null)
                 return Result<VerifyModeratorEmailResponse>.Fail(AuthErrors.InvalidModeratorToken);
-
             var token = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
             var expiresAt = DateTime.UtcNow.AddMinutes(minutes);
+
+            var verifyEmailAuditDiff = new AuditDiffBuilder()
+                .Add("isEmailVerified", false, true);
+
+            var verifyEmailAuditEvent = new AuditEvent
+            {
+                Category = AuditCategory.Security,
+                Action = AuditActions.AuthModeratorVerifyEmail,
+                Outcome = AuditOutcome.Success,
+                ActorType = AuditActorType.Anonymous,
+                TargetType = AuditTargetTypes.User,
+                TargetId = stored.UserId.Value,
+                OldValues = verifyEmailAuditDiff.OldValues,
+                NewValues = verifyEmailAuditDiff.NewValues
+            };
+
             await _unitOfWork.BeginTransactionAsync(cancellationToken);
             try
             {
@@ -200,6 +253,7 @@ namespace HomeCycle.Application.Services.Auths
                     return Result<VerifyModeratorEmailResponse>.Fail(AuthErrors.ModeratorActivationUnavailable);
                 }
                 await _otpRepository.AddModeratorTokenAsync(CreateModeratorToken(stored.UserId.Value, stored.Email!, token, ModeratorPasswordPurpose, expiresAt), cancellationToken);
+                await _auditService.EnqueueAsync(verifyEmailAuditEvent, cancellationToken);
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync(cancellationToken);
             }
@@ -219,7 +273,24 @@ namespace HomeCycle.Application.Services.Auths
             var stored = await _otpRepository.GetModeratorTokenAsync(HashModeratorToken(request.Token), ModeratorPasswordPurpose, cancellationToken);
             if (stored?.UserId == null)
                 return Result<UserAdminResponse>.Fail(AuthErrors.InvalidModeratorToken);
+
             var passwordHash = _passwordHasher.HashPassword(request.Password);
+
+            var passwordSetupAuditDiff = new AuditDiffBuilder()
+                .Add("status", UserStatus.Pending.ToString(), UserStatus.Active.ToString());
+
+            var passwordSetupAuditEvent = new AuditEvent
+            {
+                Category = AuditCategory.Security,
+                Action = AuditActions.AuthModeratorSetPassword,
+                Outcome = AuditOutcome.Success,
+                ActorType = AuditActorType.Anonymous,
+                TargetType = AuditTargetTypes.User,
+                TargetId = stored.UserId.Value,
+                OldValues = passwordSetupAuditDiff.OldValues,
+                NewValues = passwordSetupAuditDiff.NewValues
+            };
+
             await _unitOfWork.BeginTransactionAsync(cancellationToken);
             try
             {
@@ -233,6 +304,8 @@ namespace HomeCycle.Application.Services.Auths
                     await _unitOfWork.RollbackTransactionAsync(cancellationToken);
                     return Result<UserAdminResponse>.Fail(AuthErrors.ModeratorActivationUnavailable);
                 }
+                await _auditService.EnqueueAsync(passwordSetupAuditEvent, cancellationToken);
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync(cancellationToken);
             }
             catch
@@ -272,6 +345,23 @@ namespace HomeCycle.Application.Services.Auths
 
             if (user.Status == UserStatus.Suspended || user.Status == UserStatus.Deleted)
             {
+                var blockedUserAuditEvent = new AuditEvent
+                {
+                    Category = AuditCategory.Security,
+                    Action = AuditActions.AuthLogin,
+                    Outcome = AuditOutcome.Denied,
+                    ReasonCode = user.Status == UserStatus.Deleted ? AuthErrors.AccountDeleted.Code : AuthErrors.AccountSuspended.Code,
+                    ActorType = AuditActorType.Anonymous,
+                    TargetType = AuditTargetTypes.User,
+                    TargetId = user.UserId,
+                    Metadata = new Dictionary<string, object?>
+                    {
+                        ["authMethod"] = "Password",
+                        ["accountStatus"] = user.Status.ToString()
+                    }
+                };
+
+                await PersistStandaloneAuditSafelyAsync(blockedUserAuditEvent, cancellationToken);
                 return Result<LoginResponseDto>.Fail(AuthErrors.AccountSuspended);
             }
 
@@ -283,6 +373,19 @@ namespace HomeCycle.Application.Services.Auths
             var refreshToken = _jwtService.GenerateRefreshToken();
             var now = DateTime.UtcNow;
 
+            var loginAuditEvent = new AuditEvent
+            {
+                Category = AuditCategory.Security,
+                Action = AuditActions.AuthLogin,
+                Outcome = AuditOutcome.Success,
+                ActorType = AuditActorType.User,
+                UserId = user.UserId,
+                UserRole = user.Role,
+                TargetType = AuditTargetTypes.User,
+                TargetId = user.UserId,
+                Metadata = new Dictionary<string, object?> { ["authMethod"] = "Password" }
+            };
+
             await _userRepository.AddRefreshTokenAsync(
                 new refresh_token
                 {
@@ -293,6 +396,7 @@ namespace HomeCycle.Application.Services.Auths
                     CreatedAt = now
                 }, cancellationToken);
 
+            await _auditService.EnqueueAsync(loginAuditEvent, cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
             var response = new LoginResponseDto
@@ -620,6 +724,22 @@ namespace HomeCycle.Application.Services.Auths
                 }
 
                 // Commit DB
+                await _auditService.EnqueueAsync(new AuditEvent
+                {
+                    Category = AuditCategory.Security,
+                    Action = AuditActions.AuthRegister,
+                    Outcome = AuditOutcome.Success,
+                    ActorType = AuditActorType.Anonymous,
+                    TargetType = AuditTargetTypes.User,
+                    TargetId = newUser.UserId,
+                    NewValues = new Dictionary<string, object?>
+                    {
+                        ["role"] = newUser.Role.ToString(),
+                        ["status"] = newUser.Status.ToString(),
+                        ["isEmailVerified"] = newUser.IsEmailVerified
+                    },
+                    Metadata = new Dictionary<string, object?> { ["accountType"] = "Business" }
+                }, cancellationToken);
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync();
 
@@ -727,7 +847,26 @@ namespace HomeCycle.Application.Services.Auths
                 {
                     // user đã tồn tại
                     if (user.Status == UserStatus.Suspended || user.Status == UserStatus.Deleted)
+                    {
+                        var blockedGoogleLoginAuditEvent = new AuditEvent
+                        {
+                            Category = AuditCategory.Security,
+                            Action = AuditActions.AuthLogin,
+                            Outcome = AuditOutcome.Denied,
+                            ReasonCode = user.Status == UserStatus.Deleted ? AuthErrors.AccountDeleted.Code : AuthErrors.AccountSuspended.Code,
+                            ActorType = AuditActorType.Anonymous,
+                            TargetType = AuditTargetTypes.User,
+                            TargetId = user.UserId,
+                            Metadata = new Dictionary<string, object?>
+                            {
+                                ["authMethod"] = "Google",
+                                ["accountStatus"] = user.Status.ToString()
+                            }
+                        };
+
+                        await PersistStandaloneAuditSafelyAsync(blockedGoogleLoginAuditEvent, cancellationToken);
                         return Result<GoogleAuthResponseDto>.Fail(AuthErrors.AccountSuspended);
+                    }
 
                     var accessToken = _jwtService.GenerateAccessToken(user);
                     var refreshToken = _jwtService.GenerateRefreshToken();
@@ -742,6 +881,18 @@ namespace HomeCycle.Application.Services.Auths
                         CreatedAt = now
                     }, cancellationToken);
 
+                    await _auditService.EnqueueAsync(new AuditEvent
+                    {
+                        Category = AuditCategory.Security,
+                        Action = AuditActions.AuthLogin,
+                        Outcome = AuditOutcome.Success,
+                        ActorType = AuditActorType.User,
+                        UserId = user.UserId,
+                        UserRole = user.Role,
+                        TargetType = AuditTargetTypes.User,
+                        TargetId = user.UserId,
+                        Metadata = new Dictionary<string, object?> { ["authMethod"] = "Google" }
+                    }, cancellationToken);
                     await _unitOfWork.SaveChangesAsync(cancellationToken);
 
                     return Result<GoogleAuthResponseDto>.Success(new GoogleAuthResponseDto
@@ -920,6 +1071,23 @@ namespace HomeCycle.Application.Services.Auths
                 CreatedAt = now
             };
 
+            var registrationAuditEvent = new AuditEvent
+            {
+                Category = AuditCategory.Security,
+                Action = AuditActions.AuthRegister,
+                Outcome = AuditOutcome.Success,
+                ActorType = AuditActorType.Anonymous,
+                TargetType = AuditTargetTypes.User,
+                TargetId = newUser.UserId,
+                NewValues = new Dictionary<string, object?>
+                {
+                    ["role"] = newUser.Role.ToString(),
+                    ["status"] = newUser.Status.ToString(),
+                    ["isEmailVerified"] = newUser.IsEmailVerified
+                },
+                Metadata = new Dictionary<string, object?> { ["accountType"] = "Business" }
+            };
+
             await _unitOfWork.BeginTransactionAsync();
             try
             {
@@ -950,6 +1118,7 @@ namespace HomeCycle.Application.Services.Auths
                     CreatedAt = now
                 }, cancellationToken);
 
+                await _auditService.EnqueueAsync(registrationAuditEvent, cancellationToken);
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync();
 
@@ -1034,14 +1203,45 @@ namespace HomeCycle.Application.Services.Auths
             CancellationToken cancellationToken = default)
         {
             if (adminId == targetUserId)
+            {
+                var selfLockAuditEvent = new AuditEvent
+                {
+                    Category = AuditCategory.Administration,
+                    Action = AuditActions.UserLock,
+                    Outcome = AuditOutcome.Denied,
+                    ReasonCode = AuthErrors.CannotLockSelf.Code,
+                    ActorType = AuditActorType.User,
+                    UserId = adminId,
+                    TargetType = AuditTargetTypes.User,
+                    TargetId = targetUserId
+                };
+
+                await PersistStandaloneAuditSafelyAsync(selfLockAuditEvent, cancellationToken);
                 return Result<UserAdminResponse>.Fail(AuthErrors.CannotLockSelf);
+
+            }
 
             var target = await _userRepository.GetByIdAsync(targetUserId, cancellationToken);
             if (target is null)
                 return Result<UserAdminResponse>.Fail(AuthErrors.UserNotFound);
 
             if (target.Role == UserRole.Admin)
+            {
+                var protectedAdminAuditEvent = new AuditEvent
+                {
+                    Category = AuditCategory.Administration,
+                    Action = AuditActions.UserLock,
+                    Outcome = AuditOutcome.Denied,
+                    ReasonCode = AuthErrors.CannotLockAdmin.Code,
+                    ActorType = AuditActorType.User,
+                    UserId = adminId,
+                    TargetType = AuditTargetTypes.User,
+                    TargetId = targetUserId
+                };
+
+                await PersistStandaloneAuditSafelyAsync(protectedAdminAuditEvent, cancellationToken);
                 return Result<UserAdminResponse>.Fail(AuthErrors.CannotLockAdmin);
+            }
 
             if (target.Status == UserStatus.Suspended)
                 return Result<UserAdminResponse>.Fail(AuthErrors.AlreadyLocked);
@@ -1050,9 +1250,27 @@ namespace HomeCycle.Application.Services.Auths
 
             try
             {
+                var previousUserStatus = target.Status;
                 target.Status = UserStatus.Suspended;
                 await _userRepository.UpdateAsync(target, cancellationToken);
 
+                var lockAuditDiff = new AuditDiffBuilder()
+                    .Add("status", previousUserStatus.ToString(), target.Status.ToString());
+
+                var lockAuditEvent = new AuditEvent
+                {
+                    Category = AuditCategory.Administration,
+                    Action = AuditActions.UserLock,
+                    Outcome = AuditOutcome.Success,
+                    ActorType = AuditActorType.User,
+                    UserId = adminId,
+                    TargetType = AuditTargetTypes.User,
+                    TargetId = target.UserId,
+                    OldValues = lockAuditDiff.OldValues,
+                    NewValues = lockAuditDiff.NewValues
+                };
+
+                await _auditService.EnqueueAsync(lockAuditEvent, cancellationToken);
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync(cancellationToken);
 
@@ -1081,8 +1299,26 @@ namespace HomeCycle.Application.Services.Auths
 
             try
             {
+                var previousUserStatus = target.Status;
+
                 target.Status = UserStatus.Active;
                 await _userRepository.UpdateAsync(target, cancellationToken);
+
+                var unlockUserAuditDiff = new AuditDiffBuilder()
+                    .Add("status", previousUserStatus.ToString(), target.Status.ToString());
+
+                await _auditService.EnqueueAsync(new AuditEvent
+                {
+                    Category = AuditCategory.Administration,
+                    Action = AuditActions.UserUnlock,
+                    Outcome = AuditOutcome.Success,
+                    ActorType = AuditActorType.User,
+                    UserId = adminId,
+                    TargetType = AuditTargetTypes.User,
+                    TargetId = target.UserId,
+                    OldValues = unlockUserAuditDiff.OldValues,
+                    NewValues = unlockUserAuditDiff.NewValues
+                }, cancellationToken);
 
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync(cancellationToken);
@@ -1099,6 +1335,24 @@ namespace HomeCycle.Application.Services.Auths
         //-----------------------------------------------------------------------------------------------------
         // HELPER METHODS
         //-----------------------------------------------------------------------------------------------------
+
+        private async Task PersistStandaloneAuditSafelyAsync(AuditEvent auditEvent, CancellationToken cancellationToken)
+        {
+            try
+            {
+                await _auditService.EnqueueAsync(auditEvent, cancellationToken);
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _unitOfWork.ClearTrackedEntities();
+                _logger.LogError(ex, "Không thể lưu standalone audit event {AuditAction}.", auditEvent.Action);
+            }
+        }
         private static UserAdminResponse MapAdminUser(user u)
         {
             return new UserAdminResponse

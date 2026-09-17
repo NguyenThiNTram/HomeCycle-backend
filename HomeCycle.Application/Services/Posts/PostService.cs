@@ -27,6 +27,8 @@ using System.Management;
 using System.Reflection.Metadata;
 using System.Text;
 using System.Threading.Tasks;
+using HomeCycle.Application.Interfaces.Services.Audits;
+using HomeCycle.Application.Commons.Audits;
 
 namespace HomeCycle.Application.Services.Posts
 {
@@ -47,6 +49,7 @@ namespace HomeCycle.Application.Services.Posts
         private readonly IUnitOfWork _unitOfWork;
         private readonly INotificationService _notificationService;
         private readonly IPlatformPolicyProvider _platformPolicyProvider;
+        private readonly IAuditService _auditService;
 
         private const string PostMediaTargetType = "Post";
         private const string PostMediaFolder = "posts";
@@ -66,7 +69,8 @@ namespace HomeCycle.Application.Services.Posts
             IMapper mapper,
             IUnitOfWork unitOfWork,
             INotificationService notificationService,
-            IPlatformPolicyProvider platformPolicyProvider)
+            IPlatformPolicyProvider platformPolicyProvider,
+            IAuditService auditService)
         {
             _postRepository = postRepository;
             _offerRepository = offerRepository;
@@ -83,6 +87,7 @@ namespace HomeCycle.Application.Services.Posts
             _unitOfWork = unitOfWork;
             _notificationService = notificationService;
             _platformPolicyProvider = platformPolicyProvider;
+            _auditService = auditService;
         }
 
         // ================== CREATE - SELL ==================
@@ -154,6 +159,24 @@ namespace HomeCycle.Application.Services.Posts
                     return Result<PostResponse>.Fail(mediaResult.Error!);
                 }
 
+                await _auditService.EnqueueAsync(new AuditEvent
+                {
+                    Category = AuditCategory.BusinessOperation,
+                    Action = AuditActions.PostCreate,
+                    Outcome = AuditOutcome.Success,
+                    ActorType = AuditActorType.User,
+                    UserId = ownerId,
+                    TargetType = AuditTargetTypes.Post,
+                    TargetId = post.PostId,
+                    NewValues = new Dictionary<string, object?>
+                    {
+                        ["postType"] = post.PostType.ToString(),
+                        ["status"] = post.Status.ToString(),
+                        ["basePrice"] = post.BasePrice,
+                        ["quantity"] = post.Quantity
+                    }
+                }, cancellationToken);
+
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync(cancellationToken);
 
@@ -197,6 +220,7 @@ namespace HomeCycle.Application.Services.Posts
                     return Result<PostResponse>.Fail(PostErrors.InvalidUpdateQuantity(existing!.Quantity - existing.RemainingQuantity + reserved, request.Quantity ?? existing.Quantity));
                 var previousPrice = existing!.BasePrice;
                 var previousQuantity = existing.Quantity;
+                var previousPostStatus = existing.Status;
                 _mapper.Map(request, existing);
                 existing.Quantity = request.Quantity ?? previousQuantity;
                 existing.BasePrice = request.BasePrice ?? previousPrice;
@@ -241,6 +265,25 @@ namespace HomeCycle.Application.Services.Posts
                     }
                 }
                 // Nếu không có Medias trong request -> Bỏ qua, giữ nguyên ảnh hiện tại trong DB.
+
+                var sellPostAuditDiff = new AuditDiffBuilder()
+                    .Add("basePrice", previousPrice, existing.BasePrice)
+                    .Add("quantity", previousQuantity, existing.Quantity)
+                    .Add("status", previousPostStatus.ToString(), existing.Status.ToString());
+
+                await _auditService.EnqueueAsync(new AuditEvent
+                {
+                    Category = AuditCategory.BusinessOperation,
+                    Action = AuditActions.PostUpdate,
+                    Outcome = AuditOutcome.Success,
+                    ActorType = AuditActorType.User,
+                    UserId = ownerId,
+                    TargetType = AuditTargetTypes.Post,
+                    TargetId = existing.PostId,
+                    OldValues = sellPostAuditDiff.OldValues,
+                    NewValues = sellPostAuditDiff.NewValues
+                }, cancellationToken);
+
 
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync(cancellationToken);
@@ -537,6 +580,27 @@ namespace HomeCycle.Application.Services.Posts
             if (!deleted)
                 return Result<bool>.Fail(PostErrors.NotFound);
 
+            var hardDeletePostAuditDiff = new AuditDiffBuilder()
+                .Add("exists", true, false);
+
+            await _auditService.EnqueueAsync(new AuditEvent
+            {
+                Category = AuditCategory.Administration,
+                Action = AuditActions.PostDelete,
+                Outcome = AuditOutcome.Success,
+                ActorType = AuditActorType.User,
+                TargetType = AuditTargetTypes.Post,
+                TargetId = existing.PostId,
+                OldValues = hardDeletePostAuditDiff.OldValues,
+                NewValues = hardDeletePostAuditDiff.NewValues,
+                Metadata = new Dictionary<string, object?>
+                {
+                    ["postType"] = existing.PostType.ToString(),
+                    ["previousStatus"] = existing.Status.ToString(),
+                    ["hardDelete"] = true
+                }
+            }, cancellationToken);
+
             await _unitOfWork.SaveChangesAsync(cancellationToken);
             return Result<bool>.Success(true);
         }
@@ -553,10 +617,28 @@ namespace HomeCycle.Application.Services.Posts
                 var existing = await _postRepository.GetByIdForUpdateAsync(postId, cancellationToken);
                 if (existing is null || existing.Status == PostStatus.Deleted) return Result<bool>.Fail(PostErrors.NotFound);
                 if (existing.Status == PostStatus.Suspended) return Result<bool>.Fail(PostErrors.PostAlreadySuspended);
+                var previousPostStatus = existing.Status;
                 existing.Status = PostStatus.Suspended;
                 existing.UpdatedAt = DateTime.UtcNow;
                 await _postRepository.UpdateAsync(existing, cancellationToken);
                 await _offerRepository.ClosePendingByPostAsync(postId, OfferStatus.Closed, cancellationToken);
+
+                var suspendPostAuditDiff = new AuditDiffBuilder()
+                    .Add("status", previousPostStatus.ToString(), existing.Status.ToString());
+
+                await _auditService.EnqueueAsync(new AuditEvent
+                {
+                    Category = AuditCategory.Administration,
+                    Action = AuditActions.PostSuspend,
+                    Outcome = AuditOutcome.Success,
+                    ActorType = AuditActorType.User,
+                    TargetType = AuditTargetTypes.Post,
+                    TargetId = existing.PostId,
+                    OldValues = suspendPostAuditDiff.OldValues,
+                    NewValues = suspendPostAuditDiff.NewValues
+                }, cancellationToken);
+
+
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync(cancellationToken);
                 return Result<bool>.Success(true);
