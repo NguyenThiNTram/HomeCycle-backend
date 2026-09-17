@@ -1,5 +1,7 @@
 ﻿using AutoMapper;
 using FluentValidation;
+using HomeCycle.Application.Commons.Audits;
+using HomeCycle.Application.Commons.Helpers;
 using HomeCycle.Application.Commons.Paginations;
 using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Requests.Payments;
@@ -10,6 +12,7 @@ using HomeCycle.Application.Interfaces.Externals;
 using HomeCycle.Application.Interfaces.Generics;
 using HomeCycle.Application.Interfaces.Repositories.Banks;
 using HomeCycle.Application.Interfaces.Repositories.Wallets;
+using HomeCycle.Application.Interfaces.Services.Audits;
 using HomeCycle.Application.Interfaces.Services.Notifications;
 using HomeCycle.Application.Interfaces.Services.PlatformPolicies;
 using HomeCycle.Application.Interfaces.Services.Wallets;
@@ -37,6 +40,7 @@ namespace HomeCycle.Application.Services.Wallets
         private readonly IWithdrawalRepository _withdrawalRepo;
         private readonly INotificationService _notificationService;
         private readonly IPlatformPolicyProvider _platformPolicyProvider;
+        private readonly IAuditService _auditService;
         private readonly TimeProvider _clock;
         private readonly ILogger<WithdrawalService> _logger;
         private readonly IValidator<CreateWithdrawalRequest> _createValidator;
@@ -53,6 +57,7 @@ namespace HomeCycle.Application.Services.Wallets
             IWithdrawalRepository withdrawalRepo,
             INotificationService notificationService,
             IPlatformPolicyProvider platformPolicyProvider,
+            IAuditService auditService,
             TimeProvider clock,
             ILogger<WithdrawalService> logger,
             IValidator<CreateWithdrawalRequest> createValidator,
@@ -68,6 +73,7 @@ namespace HomeCycle.Application.Services.Wallets
             _withdrawalRepo = withdrawalRepo;
             _notificationService = notificationService;
             _platformPolicyProvider = platformPolicyProvider;
+            _auditService = auditService;
             _clock = clock;
             _createValidator = createValidator;
             _rejectValidator = rejectValidator;
@@ -149,6 +155,26 @@ namespace HomeCycle.Application.Services.Wallets
                     RequestedAt = now
                 };
 
+                var withdrawalRequestAuditEvent = new AuditEvent
+                {
+                    Category = AuditCategory.BusinessOperation,
+                    Action = AuditActions.WithdrawalRequest,
+                    Outcome = AuditOutcome.Success,
+                    ActorType = AuditActorType.User,
+                    UserId = userId,
+                    TargetType = AuditTargetTypes.Withdrawal,
+                    TargetId = withdrawalId,
+                    NewValues = new Dictionary<string, object?>
+                    {
+                        ["status"] = WithdrawalStatus.Pending.ToString(),
+                        ["amount"] = amount
+                    },
+                    Metadata = new Dictionary<string, object?>
+                    {
+                        ["walletId"] = wallet.WalletId
+                    }
+                };
+
                 var walletTx = new wallet_transaction
                 {
                     WalletTransactionId = Guid.NewGuid(),
@@ -203,6 +229,7 @@ namespace HomeCycle.Application.Services.Wallets
                 await _ledgerRepo.AddAsync(availableOut, ct);
                 await _ledgerRepo.AddAsync(holdIn, ct);
                 await _walletRepo.UpdateAsync(wallet, ct);
+                await _auditService.EnqueueAsync(withdrawalRequestAuditEvent, ct);
 
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
@@ -229,6 +256,8 @@ namespace HomeCycle.Application.Services.Wallets
             if (withdrawalEntity.WithdrawalStatus != (int)WithdrawalStatus.Pending)
                 return Result<bool>.Fail(new Error("Withdrawal.InvalidStatus", "Yêu cầu không ở trạng thái chờ duyệt."));
 
+            var previousWithdrawalStatus = (WithdrawalStatus)withdrawalEntity.WithdrawalStatus;
+
             var bankAccount = await _bankAccountRepo.GetByIdAsync(
                 withdrawalEntity.UserBankId,
                 ct);
@@ -254,7 +283,33 @@ namespace HomeCycle.Application.Services.Wallets
             withdrawalEntity.WithdrawalStatus = (int)WithdrawalStatus.Processing;
             withdrawalEntity.ProcessedAt = DateTime.UtcNow;
             withdrawalEntity.ProcessedBy = moderatorId;
+
+            var approveWithdrawalAuditDiff = new AuditDiffBuilder()
+                .Add(
+                    "status",
+                    previousWithdrawalStatus.ToString(),
+                    WithdrawalStatus.Processing.ToString());
+
+            var approveWithdrawalAuditEvent = new AuditEvent
+            {
+                Category = AuditCategory.Administration,
+                Action = AuditActions.WithdrawalApprove,
+                Outcome = AuditOutcome.Success,
+                ActorType = AuditActorType.User,
+                UserId = moderatorId,
+                TargetType = AuditTargetTypes.Withdrawal,
+                TargetId = withdrawalEntity.WithdrawalId,
+                OldValues = approveWithdrawalAuditDiff.OldValues,
+                NewValues = approveWithdrawalAuditDiff.NewValues,
+                Metadata = new Dictionary<string, object?>
+                {
+                    ["amount"] = withdrawalEntity.Amount,
+                    ["processingMode"] = "PayOS"
+                }
+            };
+
             await _withdrawalRepo.UpdateAsync(withdrawalEntity, ct);
+            await _auditService.EnqueueAsync(approveWithdrawalAuditEvent, ct);
             await _unitOfWork.SaveChangesAsync(ct);
 
             await Task.Delay(2000, ct);
@@ -342,6 +397,8 @@ namespace HomeCycle.Application.Services.Wallets
                             "Withdrawal.AlreadyProcessed",
                             "Yêu cầu rút tiền đã được xử lý bởi Moderator khác."));
                 }
+
+                var previousWithdrawalStatus = (WithdrawalStatus)withdrawal.WithdrawalStatus;
 
                 var wallet =
                     await _walletRepo.GetByIdForUpdateAsync(
@@ -469,6 +526,29 @@ namespace HomeCycle.Application.Services.Wallets
                 withdrawal.ProcessedAt =
                     now;
 
+                var rejectWithdrawalAuditDiff = new AuditDiffBuilder()
+                    .Add(
+                        "status",
+                        previousWithdrawalStatus.ToString(),
+                        WithdrawalStatus.Rejected.ToString());
+
+                var rejectWithdrawalAuditEvent = new AuditEvent
+                {
+                    Category = AuditCategory.Administration,
+                    Action = AuditActions.WithdrawalReject,
+                    Outcome = AuditOutcome.Success,
+                    ActorType = AuditActorType.User,
+                    UserId = moderatorId,
+                    TargetType = AuditTargetTypes.Withdrawal,
+                    TargetId = withdrawal.WithdrawalId,
+                    OldValues = rejectWithdrawalAuditDiff.OldValues,
+                    NewValues = rejectWithdrawalAuditDiff.NewValues,
+                    Metadata = new Dictionary<string, object?>
+                    {
+                        ["amount"] = amount
+                    }
+                };
+
                 await _walletTxRepo.AddAsync(
                     walletTransaction,
                     ct);
@@ -498,6 +578,7 @@ namespace HomeCycle.Application.Services.Wallets
                             NotificationTargetType.Withdrawal,
                             withdrawal.WithdrawalId),
                         ct);
+                await _auditService.EnqueueAsync(rejectWithdrawalAuditEvent, ct);
 
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
@@ -738,6 +819,8 @@ namespace HomeCycle.Application.Services.Wallets
                             "Yêu cầu rút tiền đã được xử lý bởi Moderator khác."));
                 }
 
+                var previousWithdrawalStatus = (WithdrawalStatus)withdrawal.WithdrawalStatus;
+
                 var wallet =
                     await _walletRepo.GetByIdForUpdateAsync(
                         withdrawal.WalletId,
@@ -824,6 +907,30 @@ namespace HomeCycle.Application.Services.Wallets
                 withdrawal.ProcessedBy = moderatorId;
                 withdrawal.ProcessedAt = now;
 
+                var approveWithdrawalAuditDiff = new AuditDiffBuilder()
+                    .Add(
+                        "status",
+                        previousWithdrawalStatus.ToString(),
+                        WithdrawalStatus.Completed.ToString());
+
+                var approveWithdrawalAuditEvent = new AuditEvent
+                {
+                    Category = AuditCategory.Administration,
+                    Action = AuditActions.WithdrawalApprove,
+                    Outcome = AuditOutcome.Success,
+                    ActorType = AuditActorType.User,
+                    UserId = moderatorId,
+                    TargetType = AuditTargetTypes.Withdrawal,
+                    TargetId = withdrawal.WithdrawalId,
+                    OldValues = approveWithdrawalAuditDiff.OldValues,
+                    NewValues = approveWithdrawalAuditDiff.NewValues,
+                    Metadata = new Dictionary<string, object?>
+                    {
+                        ["amount"] = amount,
+                        ["processingMode"] = "Simulated"
+                    }
+                };
+
                 await _walletTxRepo.AddAsync(
                     walletTransaction,
                     ct);
@@ -849,6 +956,7 @@ namespace HomeCycle.Application.Services.Wallets
                             NotificationTargetType.Withdrawal,
                             withdrawal.WithdrawalId),
                         ct);
+                await _auditService.EnqueueAsync(approveWithdrawalAuditEvent, ct);
 
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
@@ -943,6 +1051,8 @@ namespace HomeCycle.Application.Services.Wallets
                     return;
                 }
 
+                var previousWithdrawalStatus = (WithdrawalStatus)lockedWithdrawal.WithdrawalStatus;
+
                 var wallet = await _walletRepo.GetByIdAsync(
                     lockedWithdrawal.WalletId,
                     ct);
@@ -990,6 +1100,30 @@ namespace HomeCycle.Application.Services.Wallets
                 lockedWithdrawal.WithdrawalStatus =
                     (int)WithdrawalStatus.Completed;
 
+                var completeWithdrawalAuditDiff = new AuditDiffBuilder()
+                    .Add(
+                        "status",
+                        previousWithdrawalStatus.ToString(),
+                        WithdrawalStatus.Completed.ToString());
+
+                var completeWithdrawalAuditEvent = new AuditEvent
+                {
+                    Category = AuditCategory.BusinessOperation,
+                    Action = AuditActions.WithdrawalComplete,
+                    Outcome = AuditOutcome.Success,
+                    ActorType = AuditActorType.ExternalSystem,
+                    Source = AuditSource.Internal,
+                    TargetType = AuditTargetTypes.Withdrawal,
+                    TargetId = lockedWithdrawal.WithdrawalId,
+                    OldValues = completeWithdrawalAuditDiff.OldValues,
+                    NewValues = completeWithdrawalAuditDiff.NewValues,
+                    Metadata = new Dictionary<string, object?>
+                    {
+                        ["amount"] = amount,
+                        ["processingMode"] = "PayOS"
+                    }
+                };
+
                 await _walletTxRepo.AddAsync(walletTx, ct);
                 await _ledgerRepo.AddAsync(ledger, ct);
                 await _walletRepo.UpdateAsync(wallet, ct);
@@ -1004,6 +1138,7 @@ namespace HomeCycle.Application.Services.Wallets
                             NotificationTargetType.Withdrawal,
                             lockedWithdrawal.WithdrawalId),
                         ct);
+                await _auditService.EnqueueAsync(completeWithdrawalAuditEvent, ct);
 
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
@@ -1061,6 +1196,8 @@ namespace HomeCycle.Application.Services.Wallets
                     await _unitOfWork.CommitTransactionAsync(ct);
                     return;
                 }
+
+                var previousWithdrawalStatus = (WithdrawalStatus)lockedWithdrawal.WithdrawalStatus;
 
                 var wallet = await _walletRepo.GetByIdAsync(
                     lockedWithdrawal.WalletId,
@@ -1130,6 +1267,29 @@ namespace HomeCycle.Application.Services.Wallets
                     lockedWithdrawal.ProcessedBy =
                         withdrawalEntity.ProcessedBy;
 
+                var revertWithdrawalAuditDiff = new AuditDiffBuilder()
+                    .Add(
+                        "status",
+                        previousWithdrawalStatus.ToString(),
+                        finalStatus.ToString());
+
+                var revertWithdrawalAuditEvent = new AuditEvent
+                {
+                    Category = AuditCategory.BusinessOperation,
+                    Action = AuditActions.WithdrawalRevert,
+                    Outcome = AuditOutcome.Success,
+                    ActorType = AuditActorType.ExternalSystem,
+                    Source = AuditSource.Internal,
+                    TargetType = AuditTargetTypes.Withdrawal,
+                    TargetId = lockedWithdrawal.WithdrawalId,
+                    OldValues = revertWithdrawalAuditDiff.OldValues,
+                    NewValues = revertWithdrawalAuditDiff.NewValues,
+                    Metadata = new Dictionary<string, object?>
+                    {
+                        ["amount"] = amount
+                    }
+                };
+
                 await _walletTxRepo.AddAsync(walletTx, ct);
                 await _ledgerRepo.AddAsync(ledgerOutHold, ct);
                 await _ledgerRepo.AddAsync(ledgerInAvailable, ct);
@@ -1155,6 +1315,7 @@ namespace HomeCycle.Application.Services.Wallets
                             NotificationTargetType.Withdrawal,
                             lockedWithdrawal.WithdrawalId),
                         ct);
+                await _auditService.EnqueueAsync(revertWithdrawalAuditEvent, ct);
 
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);

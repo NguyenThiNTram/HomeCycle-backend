@@ -31,6 +31,8 @@ using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
+using HomeCycle.Application.Interfaces.Services.Audits;
+using HomeCycle.Application.Commons.Audits;
 
 namespace HomeCycle.Application.Services.Orders
 {
@@ -55,6 +57,7 @@ namespace HomeCycle.Application.Services.Orders
         private readonly INotificationService _notificationService;
         private readonly IOrderTimelineBuilder _orderTimelineBuilder;
         private readonly IOrderTrackingRealtimeService _orderTrackingRealtimeService;
+        private readonly IAuditService _auditService;
         private readonly IMapper _mapper;
 
         public OrderService(
@@ -76,6 +79,7 @@ namespace HomeCycle.Application.Services.Orders
             INotificationService notificationService,
             IOrderTimelineBuilder orderTimelineBuilder,
             IOrderTrackingRealtimeService orderTrackingRealtimeService,
+            IAuditService auditService,
             IMapper mapper)
         {
             _orderRepo = orderRepo;
@@ -96,6 +100,7 @@ namespace HomeCycle.Application.Services.Orders
             _notificationService = notificationService;
             _orderTimelineBuilder = orderTimelineBuilder;
             _orderTrackingRealtimeService = orderTrackingRealtimeService;
+            _auditService = auditService;
             _mapper = mapper;
         }
 
@@ -354,6 +359,7 @@ namespace HomeCycle.Application.Services.Orders
                 var confirmedAt = DateTime.UtcNow;
                 var changed = false;
                 notification? handoverNotification = null;
+                AuditEvent? handoverAuditEvent = null;
 
                 if (inspectionCollectNow && !shipment.SellerReadyAt.HasValue)
                 {
@@ -369,6 +375,30 @@ namespace HomeCycle.Application.Services.Orders
                 {
                     order.SellerHandoverConfirmedAt = confirmedAt;
                     order.UpdatedAt = confirmedAt;
+
+                    var handoverAuditDiff = new AuditDiffBuilder()
+                        .Add(
+                            "sellerHandoverConfirmed",
+                            false,
+                            true);
+
+                    handoverAuditEvent = new AuditEvent
+                    {
+                        Category = AuditCategory.BusinessOperation,
+                        Action = AuditActions.OrderHandoverConfirm,
+                        Outcome = AuditOutcome.Success,
+                        ActorType = AuditActorType.User,
+                        UserId = sellerId,
+                        TargetType = AuditTargetTypes.Order,
+                        TargetId = order.OrderId,
+                        OldValues = handoverAuditDiff.OldValues,
+                        NewValues = handoverAuditDiff.NewValues,
+                        Metadata = new Dictionary<string, object?>
+                        {
+                            ["shipmentId"] = shipment.ShipmentId,
+                            ["inspectionCollectNow"] = inspectionCollectNow
+                        }
+                    };
 
                     await _orderRepo.UpdateAsync(order, ct);
 
@@ -400,6 +430,14 @@ namespace HomeCycle.Application.Services.Orders
 
                     changed = true;
                 }
+
+                if (handoverAuditEvent != null)
+                {
+                    await _auditService.EnqueueAsync(
+                        handoverAuditEvent,
+                        ct);
+                }
+
 
                 if (changed)
                     await _unitOfWork.SaveChangesAsync(ct);
@@ -633,6 +671,22 @@ namespace HomeCycle.Application.Services.Orders
                     }
                 }
 
+                var previousOrderStatus =
+                    (OrderStatus)order.OrderStatus;
+
+                var previousPaymentStatus =
+                    order.PaymentStatus.HasValue
+                        ? (PaymentStatus?)order.PaymentStatus.Value
+                        : null;
+
+                var previousBuyerReceivedConfirmed =
+                    order.BuyerReceivedConfirmedAt.HasValue;
+
+                var previousCompletionSource =
+                    order.CompletionSource.HasValue
+                        ? (OrderCompletionSource?)order.CompletionSource.Value
+                        : null;
+
                 var completedAt = DateTime.UtcNow;
 
                 var disputeWindow =
@@ -655,6 +709,42 @@ namespace HomeCycle.Application.Services.Orders
                     completedAt.Add(disputeWindow);
 
                 order.UpdatedAt = completedAt;
+
+                var completeOrderAuditDiff = new AuditDiffBuilder()
+                    .Add(
+                        "status",
+                        previousOrderStatus.ToString(),
+                        OrderStatus.Completed.ToString())
+                    .Add(
+                        "paymentStatus",
+                        previousPaymentStatus?.ToString(),
+                        PaymentStatus.Completed.ToString())
+                    .Add(
+                        "buyerReceivedConfirmed",
+                        previousBuyerReceivedConfirmed,
+                        true)
+                    .Add(
+                        "completionSource",
+                        previousCompletionSource?.ToString(),
+                        OrderCompletionSource.BuyerConfirmed.ToString());
+
+                var completeOrderAuditEvent = new AuditEvent
+                {
+                    Category = AuditCategory.BusinessOperation,
+                    Action = AuditActions.OrderComplete,
+                    Outcome = AuditOutcome.Success,
+                    ActorType = AuditActorType.User,
+                    UserId = buyerId,
+                    TargetType = AuditTargetTypes.Order,
+                    TargetId = order.OrderId,
+                    OldValues = completeOrderAuditDiff.OldValues,
+                    NewValues = completeOrderAuditDiff.NewValues,
+                    Metadata = new Dictionary<string, object?>
+                    {
+                        ["disputeWindowEndsAt"] =
+                            order.DisputeWindowEndsAt
+                    }
+                };
 
                 await _orderRepo.UpdateAsync(order, ct);
 
@@ -679,6 +769,10 @@ namespace HomeCycle.Application.Services.Orders
                         NotificationTargetType.Order,
                         order.OrderId),
                     ct);
+                await _auditService.EnqueueAsync(
+                    completeOrderAuditEvent,
+                    ct);
+
 
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
@@ -873,6 +967,11 @@ namespace HomeCycle.Application.Services.Orders
                         PaymentErrors.InvalidRefundAmount);
                 }
 
+                var previousOrderStatus = (OrderStatus)order.OrderStatus.Value;
+                var previousPaymentStatus = order.PaymentStatus.HasValue
+                    ? (PaymentStatus?)order.PaymentStatus.Value
+                    : null;
+
                 var refundResult =
                     await _paymentService
                         .RefundOrderHeldAmountAsync(
@@ -922,6 +1021,27 @@ namespace HomeCycle.Application.Services.Orders
                 order.DisputeWindowEndsAt = null;
                 order.UpdatedAt = now;
 
+                var cancelOrderAuditDiff = new AuditDiffBuilder()
+                    .Add("status", previousOrderStatus.ToString(), OrderStatus.Cancelled.ToString())
+                    .Add("paymentStatus", previousPaymentStatus?.ToString(), PaymentStatus.Refunded.ToString());
+
+                var cancelOrderAuditEvent = new AuditEvent
+                {
+                    Category = AuditCategory.BusinessOperation,
+                    Action = AuditActions.OrderCancel,
+                    Outcome = AuditOutcome.Success,
+                    ActorType = AuditActorType.User,
+                    UserId = userId,
+                    TargetType = AuditTargetTypes.Order,
+                    TargetId = order.OrderId,
+                    OldValues = cancelOrderAuditDiff.OldValues,
+                    NewValues = cancelOrderAuditDiff.NewValues,
+                    Metadata = new Dictionary<string, object?>
+                    {
+                        ["inspectionFormId"] = inspectionForm.InspectionFormId
+                    }
+                };
+
                 await _appointmentRepo.UpdateAsync(
                     appointment,
                     ct);
@@ -942,6 +1062,7 @@ namespace HomeCycle.Application.Services.Orders
                         NotificationTargetType.Order,
                         order.OrderId),
                     ct);
+                await _auditService.EnqueueAsync(cancelOrderAuditEvent, ct);
 
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
@@ -1059,9 +1180,32 @@ namespace HomeCycle.Application.Services.Orders
 
                 var policy = await _platformPolicyProvider.GetDisputeConfigAsync(ct);
 
+                var previousBuyerReturnConfirmed = order.BuyerReturnConfirmedAt.HasValue;
+                var previousReturnDueAt = order.ReturnDueAt;
                 order.BuyerReturnConfirmedAt = now;
                 order.ReturnDueAt = now.AddDays(policy.ReturnWindowDays);
                 order.UpdatedAt = now;
+
+                var confirmReturnAuditDiff = new AuditDiffBuilder()
+                    .Add("buyerReturnConfirmed", previousBuyerReturnConfirmed, true)
+                    .Add("returnDueAt", previousReturnDueAt, order.ReturnDueAt);
+
+                var confirmReturnAuditEvent = new AuditEvent
+                {
+                    Category = AuditCategory.BusinessOperation,
+                    Action = AuditActions.OrderReturnConfirm,
+                    Outcome = AuditOutcome.Success,
+                    ActorType = AuditActorType.User,
+                    UserId = buyerId,
+                    TargetType = AuditTargetTypes.Order,
+                    TargetId = order.OrderId,
+                    OldValues = confirmReturnAuditDiff.OldValues,
+                    NewValues = confirmReturnAuditDiff.NewValues,
+                    Metadata = new Dictionary<string, object?>
+                    {
+                        ["disputeId"] = dispute.DisputeId
+                    }
+                };
 
                 dispute.UpdatedAt = now;
 
@@ -1075,6 +1219,7 @@ namespace HomeCycle.Application.Services.Orders
                         NotificationTargetType.Order,
                         order.OrderId),
                     ct);
+                await _auditService.EnqueueAsync(confirmReturnAuditEvent, ct);
 
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
@@ -1157,6 +1302,13 @@ namespace HomeCycle.Application.Services.Orders
                     return Result<OrderReturnConfirmationResponseDto>.Fail(OrderErrors.ReturnConfirmationNotAllowed);
                 }
 
+                var previousOrderStatus = (OrderStatus)order.OrderStatus.Value;
+                var previousPaymentStatus = order.PaymentStatus.HasValue
+                    ? (PaymentStatus?)order.PaymentStatus.Value
+                    : null;
+                var previousSellerReturnReceived = order.SellerReturnReceivedAt.HasValue;
+                var previousReturnDueAt = order.ReturnDueAt;
+
                 var refundResult = await _paymentService.RefundAllRemainingOrderHeldAmountAsync(
                     order,
                     agreement,
@@ -1188,6 +1340,30 @@ namespace HomeCycle.Application.Services.Orders
                 dispute.ResolvedAt = now;
                 dispute.UpdatedAt = now;
 
+                var completeReturnAuditDiff = new AuditDiffBuilder()
+                    .Add("status", previousOrderStatus.ToString(), ((OrderStatus)order.OrderStatus.Value).ToString())
+                    .Add("paymentStatus", previousPaymentStatus?.ToString(), order.PaymentStatus.HasValue ? ((PaymentStatus)order.PaymentStatus.Value).ToString() : null)
+                    .Add("sellerReturnReceived", previousSellerReturnReceived, true)
+                    .Add("returnDueAt", previousReturnDueAt, order.ReturnDueAt);
+
+                var completeReturnAuditEvent = new AuditEvent
+                {
+                    Category = AuditCategory.BusinessOperation,
+                    Action = AuditActions.OrderReturnComplete,
+                    Outcome = AuditOutcome.Success,
+                    ActorType = AuditActorType.User,
+                    UserId = sellerId,
+                    TargetType = AuditTargetTypes.Order,
+                    TargetId = order.OrderId,
+                    OldValues = completeReturnAuditDiff.OldValues,
+                    NewValues = completeReturnAuditDiff.NewValues,
+                    Metadata = new Dictionary<string, object?>
+                    {
+                        ["disputeId"] = dispute.DisputeId,
+                        ["disputeStatus"] = DisputeStatus.Resolved.ToString()
+                    }
+                };
+
                 await _orderRepo.UpdateAsync(order, ct);
                 await _disputeRepo.UpdateAsync(dispute, ct);
 
@@ -1199,6 +1375,7 @@ namespace HomeCycle.Application.Services.Orders
                         NotificationTargetType.Order,
                         order.OrderId),
                     ct);
+                await _auditService.EnqueueAsync(completeReturnAuditEvent, ct);
 
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);

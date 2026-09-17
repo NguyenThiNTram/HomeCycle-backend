@@ -28,6 +28,8 @@ using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
+using HomeCycle.Application.Interfaces.Services.Audits;
+using HomeCycle.Application.Commons.Audits;
 
 namespace HomeCycle.Application.Services.Agreements
 {
@@ -47,6 +49,7 @@ namespace HomeCycle.Application.Services.Agreements
         private readonly IOfferRepository _offerRepo;
         private readonly IProductRepository _productRepo;
         private readonly INotificationService _notificationService;
+        private readonly IAuditService _auditService;
         private readonly IValidator<CreateAgreementFormRequest> _createValidator;
         private readonly IValidator<UpdateAgreementFormRequest> _updateValidator;
         private readonly IValidator<CalculateGhnFeeRequest> _shippingFeeValidator;
@@ -74,6 +77,7 @@ namespace HomeCycle.Application.Services.Agreements
             IOfferRepository offerRepo,
             IProductRepository productRepo,
             INotificationService notificationService,
+            IAuditService auditService,
             IValidator<CreateAgreementFormRequest> createValidator,
             IValidator<UpdateAgreementFormRequest> updateValidator,
             IValidator<CalculateGhnFeeRequest> shippingFeeValidator,
@@ -99,6 +103,7 @@ namespace HomeCycle.Application.Services.Agreements
             _offerRepo = offerRepo;
             _productRepo = productRepo;
             _notificationService = notificationService;
+            _auditService = auditService;
             _createValidator = createValidator;
             _updateValidator = updateValidator;
             _shippingFeeValidator = shippingFeeValidator;
@@ -247,6 +252,31 @@ namespace HomeCycle.Application.Services.Agreements
 
                 negotiation.NegotiationStatus = NegotiationStatus.AgreementPending;
 
+                var createAgreementAuditEvent = new AuditEvent
+                {
+                    Category = AuditCategory.BusinessOperation,
+                    Action = AuditActions.AgreementCreate,
+                    Outcome = AuditOutcome.Success,
+                    ActorType = AuditActorType.User,
+                    UserId = currentUserId,
+                    TargetType = AuditTargetTypes.Agreement,
+                    TargetId = newAgreement.AgreementId,
+                    NewValues = new Dictionary<string, object?>
+                    {
+                        ["status"] = AgreementStatus.Pending.ToString(),
+                        ["agreementType"] = request.AgreementType.ToString(),
+                        ["paymentType"] = request.PaymentType.ToString(),
+                        ["finalPrice"] = newAgreement.FinalPrice,
+                        ["quantity"] = newAgreement.Quantity,
+                        ["sellerConfirmed"] = true,
+                        ["buyerConfirmed"] = false
+                    },
+                    Metadata = new Dictionary<string, object?>
+                    {
+                        ["negotiationId"] = newAgreement.NegotiationId
+                    }
+                };
+
                 var agreementMessage = new message
                 {
                     MessageId = Guid.NewGuid(),
@@ -273,6 +303,7 @@ namespace HomeCycle.Application.Services.Agreements
                     "Người bán vừa tạo thỏa thuận mua bán. Vui lòng kiểm tra và xác nhận.",
                     newAgreement.AgreementId,
                     cancellationToken);
+                await _auditService.EnqueueAsync(createAgreementAuditEvent, cancellationToken);
 
                 await _unitOfWork.SaveChangesAsync();
                 await _unitOfWork.CommitTransactionAsync();
@@ -395,6 +426,18 @@ namespace HomeCycle.Application.Services.Agreements
                         "Thỏa thuận đã được cả hai bên chốt. Vui lòng yêu cầu mở lại (Request Edit) trước khi chỉnh sửa."));
                 }
 
+                var previousAgreementType =
+                    (AgreementType)agreement.AgreementType;
+
+                var previousPaymentType =
+                    (PaymentType)agreement.PaymentType;
+
+                var previousSellerConfirmed =
+                    agreement.SellerConfirmedAt.HasValue;
+
+                var previousBuyerConfirmed =
+                    agreement.BuyerConfirmedAt.HasValue;
+
                 var currentRevision = 1;
                 if (!string.IsNullOrWhiteSpace(agreement.AgreementDetailsJsonb))
                 {
@@ -437,6 +480,48 @@ namespace HomeCycle.Application.Services.Agreements
                     agreement.SellerConfirmedAt = null;
                 }
 
+                var updatedRevision =
+                    request.AgreementDetails?.Revision ?? currentRevision;
+
+                var updateAgreementAuditDiff = new AuditDiffBuilder()
+                    .Add(
+                        "agreementType",
+                        previousAgreementType.ToString(),
+                        ((AgreementType)agreement.AgreementType).ToString())
+                    .Add(
+                        "paymentType",
+                        previousPaymentType.ToString(),
+                        ((PaymentType)agreement.PaymentType).ToString())
+                    .Add(
+                        "revision",
+                        currentRevision,
+                        updatedRevision)
+                    .Add(
+                        "sellerConfirmed",
+                        previousSellerConfirmed,
+                        agreement.SellerConfirmedAt.HasValue)
+                    .Add(
+                        "buyerConfirmed",
+                        previousBuyerConfirmed,
+                        agreement.BuyerConfirmedAt.HasValue);
+
+                var updateAgreementAuditEvent = new AuditEvent
+                {
+                    Category = AuditCategory.BusinessOperation,
+                    Action = AuditActions.AgreementUpdate,
+                    Outcome = AuditOutcome.Success,
+                    ActorType = AuditActorType.User,
+                    UserId = currentUserId,
+                    TargetType = AuditTargetTypes.Agreement,
+                    TargetId = agreement.AgreementId,
+                    OldValues = updateAgreementAuditDiff.OldValues,
+                    NewValues = updateAgreementAuditDiff.NewValues,
+                    Metadata = new Dictionary<string, object?>
+                    {
+                        ["actorSide"] = isSeller ? "Seller" : "Buyer"
+                    }
+                };
+
                 var negotiation = await _negotiationRepo.GetByIdForUpdateAsync(agreement.NegotiationId, cancellationToken);
                 if (negotiation == null)
                     throw new InvalidOperationException("Không tìm thấy cuộc thương lượng của thỏa thuận.");
@@ -472,6 +557,7 @@ namespace HomeCycle.Application.Services.Agreements
                     $"{actorRole} đã cập nhật thỏa thuận. Vui lòng kiểm tra và xác nhận lại nội dung mới.",
                     agreement.AgreementId,
                     cancellationToken);
+                await _auditService.EnqueueAsync(updateAgreementAuditEvent, cancellationToken);
 
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync(cancellationToken);
@@ -559,6 +645,15 @@ namespace HomeCycle.Application.Services.Agreements
                         "Nội dung thỏa thuận vừa được cập nhật. Vui lòng tải lại và xem nội dung mới nhất trước khi xác nhận."));
                 }
 
+                var previousAgreementStatus =
+                    (AgreementStatus)agreement.AgreementStatus;
+
+                var previousSellerConfirmed =
+                    agreement.SellerConfirmedAt.HasValue;
+
+                var previousBuyerConfirmed =
+                    agreement.BuyerConfirmedAt.HasValue;
+
                 var now = DateTime.UtcNow;
                 if (isSeller)
                     agreement.SellerConfirmedAt = now;
@@ -568,6 +663,38 @@ namespace HomeCycle.Application.Services.Agreements
                 bool bothConfirmed = agreement.SellerConfirmedAt != null && agreement.BuyerConfirmedAt != null;
                 if (bothConfirmed)
                     agreement.AgreementStatus = (int)AgreementStatus.Awaiting_Payment;
+
+                var confirmAgreementAuditDiff = new AuditDiffBuilder()
+                    .Add(
+                        "status",
+                        previousAgreementStatus.ToString(),
+                        ((AgreementStatus)agreement.AgreementStatus).ToString())
+                    .Add(
+                        "sellerConfirmed",
+                        previousSellerConfirmed,
+                        agreement.SellerConfirmedAt.HasValue)
+                    .Add(
+                        "buyerConfirmed",
+                        previousBuyerConfirmed,
+                        agreement.BuyerConfirmedAt.HasValue);
+
+                var confirmAgreementAuditEvent = new AuditEvent
+                {
+                    Category = AuditCategory.BusinessOperation,
+                    Action = AuditActions.AgreementConfirm,
+                    Outcome = AuditOutcome.Success,
+                    ActorType = AuditActorType.User,
+                    UserId = currentUserId,
+                    TargetType = AuditTargetTypes.Agreement,
+                    TargetId = agreement.AgreementId,
+                    OldValues = confirmAgreementAuditDiff.OldValues,
+                    NewValues = confirmAgreementAuditDiff.NewValues,
+                    Metadata = new Dictionary<string, object?>
+                    {
+                        ["actorSide"] = isSeller ? "Seller" : "Buyer",
+                        ["revision"] = actualRevision
+                    }
+                };
 
                 var negotiation = await _negotiationRepo.GetByIdForUpdateAsync(agreement.NegotiationId, cancellationToken);
                 if (negotiation == null)
@@ -613,6 +740,7 @@ namespace HomeCycle.Application.Services.Agreements
                     acceptMessage,
                     agreement.AgreementId,
                     cancellationToken);
+                await _auditService.EnqueueAsync(confirmAgreementAuditEvent, cancellationToken);
 
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync(cancellationToken);

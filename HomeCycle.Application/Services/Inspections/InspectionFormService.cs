@@ -1,5 +1,7 @@
 ﻿using FluentValidation;
+using HomeCycle.Application.Commons.Audits;
 using HomeCycle.Application.Commons.Errors;
+using HomeCycle.Application.Commons.Helpers;
 using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Requests.Inspections;
 using HomeCycle.Application.DTOs.Responses.Inspections;
@@ -14,6 +16,7 @@ using HomeCycle.Application.Interfaces.Repositories.Orders;
 using HomeCycle.Application.Interfaces.Repositories.Payments;
 using HomeCycle.Application.Interfaces.Repositories.Shipments;
 using HomeCycle.Application.Interfaces.Repositories.Wallets;
+using HomeCycle.Application.Interfaces.Services.Audits;
 using HomeCycle.Application.Interfaces.Services.Inspections;
 using HomeCycle.Application.Interfaces.Services.Notifications;
 using HomeCycle.Application.Interfaces.Services.Orders;
@@ -46,6 +49,7 @@ namespace HomeCycle.Application.Services.Inspections
         private readonly INotificationService _notificationService;
         private readonly IShipmentRepository _shipmentRepo;
         private readonly IOrderTrackingRealtimeService _orderTrackingRealtimeService;
+        private readonly IAuditService _auditService;
         private readonly IUnitOfWork _unitOfWork;
 
         private readonly IValidator<CreateInspectionFormRequest> _createValidator;
@@ -53,7 +57,7 @@ namespace HomeCycle.Application.Services.Inspections
         private readonly IValidator<InspectionRevisionRequest> _revisionValidator;
         private readonly IValidator<RejectInspectionFormRequest> _rejectValidator;
 
-        public InspectionFormService(IInspectionFormRepository inspectionFormRepo, IInspectionAppointmentRepository inspectionAppointmentRepo, IAppointmentRepository appointmentRepo, IAgreementFormRepository agreementRepo, IOrderRepository orderRepo, IDisputeRepository disputeRepo, IMediaService mediaService, IPaymentService paymentService, INotificationService notificationService, IShipmentRepository shipmentRepo, IOrderTrackingRealtimeService orderTrackingRealtimeService, IUnitOfWork unitOfWork, IValidator<CreateInspectionFormRequest> createValidator, IValidator<UpdateInspectionFormRequest> updateValidator, IValidator<InspectionRevisionRequest> revisionValidator, IValidator<RejectInspectionFormRequest> rejectValidator)
+        public InspectionFormService(IInspectionFormRepository inspectionFormRepo, IInspectionAppointmentRepository inspectionAppointmentRepo, IAppointmentRepository appointmentRepo, IAgreementFormRepository agreementRepo, IOrderRepository orderRepo, IDisputeRepository disputeRepo, IMediaService mediaService, IPaymentService paymentService, INotificationService notificationService, IShipmentRepository shipmentRepo, IOrderTrackingRealtimeService orderTrackingRealtimeService, IAuditService auditService, IUnitOfWork unitOfWork, IValidator<CreateInspectionFormRequest> createValidator, IValidator<UpdateInspectionFormRequest> updateValidator, IValidator<InspectionRevisionRequest> revisionValidator, IValidator<RejectInspectionFormRequest> rejectValidator)
         {
             _inspectionFormRepo = inspectionFormRepo;
             _inspectionAppointmentRepo = inspectionAppointmentRepo;
@@ -66,6 +70,7 @@ namespace HomeCycle.Application.Services.Inspections
             _notificationService = notificationService;
             _shipmentRepo = shipmentRepo;
             _orderTrackingRealtimeService = orderTrackingRealtimeService;
+            _auditService = auditService;
             _unitOfWork = unitOfWork;
             _createValidator = createValidator;
             _updateValidator = updateValidator;
@@ -446,10 +451,34 @@ namespace HomeCycle.Application.Services.Inspections
                 }
 
                 var now = DateTime.UtcNow;
-
+                var previousInspectionStatus = (InspectionStatus)form.InspectionStatus;
                 form.InspectionStatus = (int)InspectionStatus.PendingSellerConfirmation;
                 form.SubmittedAt = now;
                 form.UpdatedAt = now;
+
+                var submitInspectionAuditDiff = new AuditDiffBuilder()
+                    .Add("status", previousInspectionStatus.ToString(), InspectionStatus.PendingSellerConfirmation.ToString());
+                var submitInspectionMetadata = new Dictionary<string, object?>
+                {
+                    ["orderId"] = form.OrderId,
+                    ["conclusion"] = conclusion?.ToString()
+                };
+
+                if (conclusion == InspectionConclusion.PriceAdjustment)
+                    submitInspectionMetadata["suggestedPrice"] = form.SuggestedPrice;
+                var submitInspectionAuditEvent = new AuditEvent
+                {
+                    Category = AuditCategory.BusinessOperation,
+                    Action = AuditActions.InspectionSubmit,
+                    Outcome = AuditOutcome.Success,
+                    ActorType = AuditActorType.User,
+                    UserId = buyerId,
+                    TargetType = AuditTargetTypes.Inspection,
+                    TargetId = form.InspectionFormId,
+                    OldValues = submitInspectionAuditDiff.OldValues,
+                    NewValues = submitInspectionAuditDiff.NewValues,
+                    Metadata = submitInspectionMetadata
+                };
 
                 await _inspectionFormRepo.UpdateAsync(form, ct);
 
@@ -461,6 +490,7 @@ namespace HomeCycle.Application.Services.Inspections
                         NotificationTargetType.Appointment,
                         appointment.AppointmentId),
                     ct);
+                await _auditService.EnqueueAsync(submitInspectionAuditEvent, ct);
 
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
@@ -540,11 +570,32 @@ namespace HomeCycle.Application.Services.Inspections
                 }
 
                 var now = DateTime.UtcNow;
-
+                var previousInspectionStatus = (InspectionStatus)form.InspectionStatus;
                 form.InspectionStatus = (int)InspectionStatus.Rejected;
                 form.SellerDecisionAt = now;
                 form.SellerDecisionReason = request.Reason.Trim();
                 form.UpdatedAt = now;
+
+                var rejectInspectionAuditDiff = new AuditDiffBuilder()
+                    .Add("status", previousInspectionStatus.ToString(), InspectionStatus.Rejected.ToString());
+
+                var rejectInspectionAuditEvent = new AuditEvent
+                {
+                    Category = AuditCategory.BusinessOperation,
+                    Action = AuditActions.InspectionReject,
+                    Outcome = AuditOutcome.Success,
+                    ActorType = AuditActorType.User,
+                    UserId = sellerId,
+                    TargetType = AuditTargetTypes.Inspection,
+                    TargetId = form.InspectionFormId,
+                    OldValues = rejectInspectionAuditDiff.OldValues,
+                    NewValues = rejectInspectionAuditDiff.NewValues,
+                    Metadata = new Dictionary<string, object?>
+                    {
+                        ["orderId"] = form.OrderId,
+                        ["conclusion"] = form.Conclusion.HasValue ? ((InspectionConclusion)form.Conclusion.Value).ToString() : null
+                    }
+                };
 
                 await _inspectionFormRepo.UpdateAsync(form, ct);
 
@@ -556,6 +607,7 @@ namespace HomeCycle.Application.Services.Inspections
                         NotificationTargetType.Appointment,
                         inspection.AppointmentId),
                     ct);
+                await _auditService.EnqueueAsync(rejectInspectionAuditEvent, ct);
 
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
@@ -692,6 +744,12 @@ namespace HomeCycle.Application.Services.Inspections
                         InspectionErrors.Incomplete);
                 }
 
+                var previousInspectionStatus = (InspectionStatus)form.InspectionStatus;
+                var previousAppointmentStatus = (AppointmentStatus)appointment.AppointmentStatus.Value;
+                var previousOrderStatus = (OrderStatus)order.OrderStatus;
+                var previousPaymentStatus = order.PaymentStatus.HasValue ? (PaymentStatus?)order.PaymentStatus.Value : null;
+                var previousFinalTotalAmount = order.FinalTotalAmount;
+
                 var now = DateTime.UtcNow;
 
                 form.InspectionStatus =
@@ -822,6 +880,32 @@ namespace HomeCycle.Application.Services.Inspections
                     order.UpdatedAt = now;
                 }
 
+                var confirmInspectionAuditDiff = new AuditDiffBuilder()
+                    .Add("inspectionStatus", previousInspectionStatus.ToString(), InspectionStatus.Accepted.ToString())
+                    .Add("appointmentStatus", previousAppointmentStatus.ToString(), ((AppointmentStatus)appointment.AppointmentStatus.Value).ToString())
+                    .Add("orderStatus", previousOrderStatus.ToString(), ((OrderStatus)order.OrderStatus).ToString())
+                    .Add("paymentStatus", previousPaymentStatus?.ToString(), order.PaymentStatus.HasValue ? ((PaymentStatus)order.PaymentStatus.Value).ToString() : null)
+                    .Add("finalTotalAmount", previousFinalTotalAmount, order.FinalTotalAmount);
+
+                var confirmInspectionAuditEvent = new AuditEvent
+                {
+                    Category = AuditCategory.BusinessOperation,
+                    Action = AuditActions.InspectionConfirm,
+                    Outcome = AuditOutcome.Success,
+                    ActorType = AuditActorType.User,
+                    UserId = sellerId,
+                    TargetType = AuditTargetTypes.Inspection,
+                    TargetId = form.InspectionFormId,
+                    OldValues = confirmInspectionAuditDiff.OldValues,
+                    NewValues = confirmInspectionAuditDiff.NewValues,
+                    Metadata = new Dictionary<string, object?>
+                    {
+                        ["orderId"] = order.OrderId,
+                        ["appointmentId"] = appointment.AppointmentId,
+                        ["conclusion"] = conclusion.Value.ToString()
+                    }
+                };
+
                 await _inspectionFormRepo.UpdateAsync(form, ct);
                 await _appointmentRepo.UpdateAsync(appointment, ct);
                 await _orderRepo.UpdateAsync(order, ct);
@@ -844,6 +928,7 @@ namespace HomeCycle.Application.Services.Inspections
                         NotificationTargetType.Appointment,
                         appointment.AppointmentId),
                     ct);
+                await _auditService.EnqueueAsync(confirmInspectionAuditEvent, ct);
 
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
@@ -965,9 +1050,32 @@ namespace HomeCycle.Application.Services.Inspections
                     UpdatedAt = now
                 };
 
+                var previousCollectAction = form.CollectAction.HasValue ? (InspectionCollectAction?)form.CollectAction.Value : null;
                 form.CollectAction = (int)InspectionCollectAction.CollectNow;
                 form.Revision++;
                 form.UpdatedAt = now;
+
+                var collectNowAuditDiff = new AuditDiffBuilder()
+                    .Add("collectAction", previousCollectAction?.ToString(), InspectionCollectAction.CollectNow.ToString());
+
+                var collectNowAuditEvent = new AuditEvent
+                {
+                    Category = AuditCategory.BusinessOperation,
+                    Action = AuditActions.InspectionCollectNow,
+                    Outcome = AuditOutcome.Success,
+                    ActorType = AuditActorType.User,
+                    UserId = buyerId,
+                    TargetType = AuditTargetTypes.Inspection,
+                    TargetId = form.InspectionFormId,
+                    OldValues = collectNowAuditDiff.OldValues,
+                    NewValues = collectNowAuditDiff.NewValues,
+                    Metadata = new Dictionary<string, object?>
+                    {
+                        ["orderId"] = order.OrderId,
+                        ["shipmentId"] = shipment.ShipmentId,
+                        ["deliveryMethod"] = DeliveryMethod.BuyerPickUp.ToString()
+                    }
+                };
 
                 await _shipmentRepo.AddAsync(shipment, ct);
 
@@ -981,6 +1089,7 @@ namespace HomeCycle.Application.Services.Inspections
                         NotificationTargetType.Appointment,
                         inspection.AppointmentId),
                     ct);
+                await _auditService.EnqueueAsync(collectNowAuditEvent, ct);
 
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);

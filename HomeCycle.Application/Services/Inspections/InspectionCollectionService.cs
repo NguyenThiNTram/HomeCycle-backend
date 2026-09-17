@@ -1,4 +1,5 @@
 ﻿using FluentValidation;
+using HomeCycle.Application.Commons.Audits;
 using HomeCycle.Application.Commons.Errors;
 using HomeCycle.Application.Commons.Helpers;
 using HomeCycle.Application.Commons.Results;
@@ -17,6 +18,7 @@ using HomeCycle.Application.Interfaces.Repositories.Orders;
 using HomeCycle.Application.Interfaces.Repositories.Payments;
 using HomeCycle.Application.Interfaces.Repositories.Products;
 using HomeCycle.Application.Interfaces.Repositories.Shipments;
+using HomeCycle.Application.Interfaces.Services.Audits;
 using HomeCycle.Application.Interfaces.Services.Inspections;
 using HomeCycle.Application.Interfaces.Services.Notifications;
 using HomeCycle.Application.Interfaces.Services.Orders;
@@ -54,6 +56,7 @@ namespace HomeCycle.Application.Services.Inspections
         private readonly IPlatformPolicyProvider _platformPolicyProvider;
         private readonly INotificationService _notificationService;
         private readonly IOrderTrackingRealtimeService _orderTrackingRealtimeService;
+        private readonly IAuditService _auditService;
         private readonly IUnitOfWork _unitOfWork;
         private readonly IValidator<ScheduleInspectionCollectionRequest> _validator;
         private readonly IValidator<CalculateGhnFeeRequest> _ghnFeeValidator;
@@ -74,6 +77,7 @@ namespace HomeCycle.Application.Services.Inspections
             IPlatformPolicyProvider platformPolicyProvider,
             INotificationService notificationService,
             IOrderTrackingRealtimeService orderTrackingRealtimeService,
+            IAuditService auditService,
             IUnitOfWork unitOfWork,
             IValidator<ScheduleInspectionCollectionRequest> validator,
             IValidator<CalculateGhnFeeRequest> ghnFeeValidator,
@@ -93,6 +97,7 @@ namespace HomeCycle.Application.Services.Inspections
             _platformPolicyProvider = platformPolicyProvider;
             _notificationService = notificationService;
             _orderTrackingRealtimeService = orderTrackingRealtimeService;
+            _auditService = auditService;
             _unitOfWork = unitOfWork;
             _validator = validator;
             _ghnFeeValidator = ghnFeeValidator;
@@ -539,9 +544,37 @@ namespace HomeCycle.Application.Services.Inspections
                 order.UpdatedAt = now;
                 }
 
+                var previousCollectAction = form.CollectAction.HasValue
+                    ? (InspectionCollectAction?)form.CollectAction.Value
+                    : null;
                 form.CollectAction = (int)InspectionCollectAction.ScheduleCollection;
                 form.Revision++;
                 form.UpdatedAt = now;
+
+                var scheduleCollectionAuditDiff = new AuditDiffBuilder()
+                    .Add("collectAction", previousCollectAction?.ToString(), InspectionCollectAction.ScheduleCollection.ToString());
+
+                var scheduleCollectionAuditEvent = new AuditEvent
+                {
+                    Category = AuditCategory.BusinessOperation,
+                    Action = AuditActions.InspectionScheduleCollection,
+                    Outcome = AuditOutcome.Success,
+                    ActorType = AuditActorType.User,
+                    UserId = buyerId,
+                    TargetType = AuditTargetTypes.Inspection,
+                    TargetId = form.InspectionFormId,
+                    OldValues = scheduleCollectionAuditDiff.OldValues,
+                    NewValues = scheduleCollectionAuditDiff.NewValues,
+                    Metadata = new Dictionary<string, object?>
+                    {
+                        ["orderId"] = order.OrderId,
+                        ["appointmentId"] = appointmentId,
+                        ["shipmentId"] = shipmentId,
+                        ["deliveryMethod"] = request.DeliveryMethod.ToString(),
+                        ["collectionDate"] = collectionDate,
+                        ["estimatedShippingFee"] = shippingFee
+                    }
+                };
 
                 await _inspectionFormRepo.UpdateAsync(form, cancellationToken);
                 await _orderRepo.UpdateAsync(order, cancellationToken);
@@ -554,6 +587,7 @@ namespace HomeCycle.Application.Services.Inspections
                         NotificationTargetType.Appointment,
                         appointmentId),
                     cancellationToken);
+                await _auditService.EnqueueAsync(scheduleCollectionAuditEvent, cancellationToken);
 
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync(cancellationToken);

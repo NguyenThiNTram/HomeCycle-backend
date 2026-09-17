@@ -687,13 +687,15 @@ namespace HomeCycle.Application.Services.Profiles
                 return Result.Fail(ValidationErrors.InvalidRequest(string.Join(" | ", valResult.Errors.Select(e => e.ErrorMessage))));
 
             var existingBank = await _bankAccountRepository.GetByUserIdAsync(userId, cancellationToken);
+            var isNewBankAccount = existingBank == null;
+            Guid bankAccountId;
 
             if (existingBank != null)
             {
 
                 _mapper.Map(request, existingBank);
                 existingBank.VerifyStatus = VerifyStatus.Verified;
-
+                bankAccountId = existingBank.UserBankId;
                 _bankAccountRepository.UpdateAsync(existingBank);
             }
             else
@@ -704,9 +706,27 @@ namespace HomeCycle.Application.Services.Profiles
                 newBank.UserId = userId;
                 newBank.VerifyStatus = VerifyStatus.Verified;
                 newBank.CreatedAt = DateTime.UtcNow;
-
+                bankAccountId = newBank.UserBankId;
                 await _bankAccountRepository.AddAsync(newBank, cancellationToken);
             }
+
+            var bankAccountAuditEvent = new AuditEvent
+            {
+                Category = AuditCategory.Security,
+                Action = AuditActions.BankAccountChange,
+                Outcome = AuditOutcome.Success,
+                ActorType = AuditActorType.User,
+                UserId = userId,
+                TargetType = AuditTargetTypes.BankAccount,
+                TargetId = bankAccountId,
+                Metadata = new Dictionary<string, object?>
+                {
+                    ["created"] = isNewBankAccount,
+                    ["verificationStatus"] = VerifyStatus.Verified.ToString()
+                }
+            };
+
+            await _auditService.EnqueueAsync(bankAccountAuditEvent, cancellationToken);
 
             await _unitOfWork.SaveChangesAsync(cancellationToken);
             return Result.Success();

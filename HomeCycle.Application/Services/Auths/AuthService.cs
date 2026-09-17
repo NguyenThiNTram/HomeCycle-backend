@@ -738,7 +738,7 @@ namespace HomeCycle.Application.Services.Auths
                         ["status"] = newUser.Status.ToString(),
                         ["isEmailVerified"] = newUser.IsEmailVerified
                     },
-                    Metadata = new Dictionary<string, object?> { ["accountType"] = "Business" }
+                    Metadata = new Dictionary<string, object?> { ["accountType"] = "Personal" }
                 }, cancellationToken);
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync();

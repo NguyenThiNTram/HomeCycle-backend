@@ -42,5 +42,52 @@ namespace HomeCycle.Application.Commons.Audits
         public const string NegotiationAccept = "NEGOTIATION.ACCEPT";
         public const string NegotiationReject = "NEGOTIATION.REJECT";
         public const string NegotiationCancel = "NEGOTIATION.CANCEL";
+
+        public const string BankAccountChange = "BANK_ACCOUNT.CHANGE";
+
+        public const string PaymentInitiate = "PAYMENT.INITIATE";
+        public const string PaymentComplete = "PAYMENT.COMPLETE";
+        public const string PaymentReconcile = "PAYMENT.RECONCILE";
+        public const string PaymentRefund = "PAYMENT.REFUND";
+        public const string PaymentRelease = "PAYMENT.RELEASE";
+
+        public const string WithdrawalRequest = "WITHDRAWAL.REQUEST";
+        public const string WithdrawalApprove = "WITHDRAWAL.APPROVE";
+        public const string WithdrawalReject = "WITHDRAWAL.REJECT";
+        public const string WithdrawalComplete = "WITHDRAWAL.COMPLETE";
+        public const string WithdrawalRevert = "WITHDRAWAL.REVERT";
+
+        public const string AgreementCreate = "AGREEMENT.CREATE";
+        public const string AgreementUpdate = "AGREEMENT.UPDATE";
+        public const string AgreementConfirm = "AGREEMENT.CONFIRM";
+        public const string AgreementReopen = "AGREEMENT.REOPEN";
+
+        public const string OrderHandoverConfirm = "ORDER.HANDOVER_CONFIRM";
+        public const string OrderComplete = "ORDER.COMPLETE";
+        public const string OrderCancel = "ORDER.CANCEL";
+        public const string OrderReturnConfirm = "ORDER.RETURN_CONFIRM";
+        public const string OrderReturnComplete = "ORDER.RETURN_COMPLETE";
+
+        public const string AppointmentCheckIn = "APPOINTMENT.CHECK_IN";
+        public const string AppointmentRescheduleRequest = "APPOINTMENT.RESCHEDULE_REQUEST";
+        public const string AppointmentRescheduleAccept = "APPOINTMENT.RESCHEDULE_ACCEPT";
+        public const string AppointmentRescheduleReject = "APPOINTMENT.RESCHEDULE_REJECT";
+        public const string AppointmentCancel = "APPOINTMENT.CANCEL";
+
+        public const string InspectionSubmit = "INSPECTION.SUBMIT";
+        public const string InspectionConfirm = "INSPECTION.CONFIRM";
+        public const string InspectionReject = "INSPECTION.REJECT";
+        public const string InspectionCollectNow = "INSPECTION.COLLECT_NOW";
+
+        public const string InspectionScheduleCollection = "INSPECTION.SCHEDULE_COLLECTION";
+
+        public const string ShipmentSellerReady = "SHIPMENT.SELLER_READY";
+
+        public const string DisputeCreate = "DISPUTE.CREATE";
+        public const string DisputeClose = "DISPUTE.CLOSE";
+        public const string DisputeClaim = "DISPUTE.CLAIM";
+        public const string DisputeResolve = "DISPUTE.RESOLVE";
+        public const string DisputeReject = "DISPUTE.REJECT";
+        public const string DisputeReturnVerify = "DISPUTE.RETURN_VERIFY";
     }
 }
