@@ -11,6 +11,10 @@ public sealed class CreateBuyPostRequestValidator : AbstractValidator<CreateBuyP
     {
         RuleFor(x => x.Title).NotEmpty().MaximumLength(255);
         RuleFor(x => x.Description).NotEmpty();
+        RuleFor(x => x.ModelNumber)
+            .MaximumLength(100)
+            .Must(value => string.IsNullOrWhiteSpace(value) || value.Any(char.IsLetterOrDigit))
+            .WithMessage("Mã model tối đa 100 ký tự và phải chứa ít nhất một chữ cái hoặc chữ số.");
         RuleFor(x => x.Quantity).GreaterThan(0).When(x => x.Quantity.HasValue);
         RuleFor(x => x.StreetAddress).MaximumLength(500);
         RuleFor(x => x.Ward).MaximumLength(100);
@@ -25,6 +29,7 @@ public sealed class CreateBuyPostRequestValidator : AbstractValidator<CreateBuyP
         RuleFor(x => x).Custom((x, context) => {
             var result = new ProductRequirementRequestValidator().Validate(new ProductRequirementRequest {
                 ProductName = x.Title, CategoryId = x.CategoryId, ProductTypeId = x.ProductTypeId, BrandId = x.BrandId,
+                ModelNumber = x.ModelNumber,
                 FunctionalityStatus = x.FunctionalityStatus, UsageDuration = x.UsageDuration, DamageLevel = x.DamageLevel,
                 AttributeValues = x.AttributeValues ?? []
             });

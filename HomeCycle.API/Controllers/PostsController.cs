@@ -99,7 +99,7 @@ namespace HomeCycle.API.Controllers
             Summary = "Cập nhật bài đăng bán",
             Description = "Cập nhật thông tin bài đăng bán sản phẩm."
         )]
-        [Authorize(Roles = "Personal,Business")]
+        [Authorize(Roles = "Business")]
         [Consumes("multipart/form-data")]
         [ProducesResponseType(StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status403Forbidden)]
@@ -302,7 +302,7 @@ namespace HomeCycle.API.Controllers
         [SwaggerOperation(Summary = "Tìm bài bán phù hợp nhu cầu thu mua")]
         public async Task<IActionResult> Matches(Guid buyPostId, [FromQuery] PaginationRequest request, CancellationToken ct)
         {
-            var result = await _postService.GetMatchesAsync(buyPostId, request, ct);
+            var result = await _postService.GetMatchesAsync(CurrentUserId, buyPostId, request, ct);
             return result.IsSuccess ? Ok(result.Data) : MapErrorToResponse(result.Error!);
         }
 

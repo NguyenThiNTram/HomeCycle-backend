@@ -12,7 +12,8 @@ namespace HomeCycle.Application.Interfaces.Services.Posts
 {
     public interface IPostService
     {
-        Task<Result<PagedResult<BuyPostMatchResponse>>> GetMatchesAsync(Guid buyPostId, PaginationRequest request, CancellationToken cancellationToken = default);
+        Task<Result<PagedResult<BuyPostMatchResponse>>> GetMatchesAsync(Guid ownerId, Guid buyPostId, PaginationRequest request, CancellationToken cancellationToken = default);
+        Task<Result<HomeCycle.Application.DTOs.Responses.SupplierMatching.SupplierMatchResponse>> GetSupplierMatchesAsync(Guid ownerId, Guid buyPostId, CancellationToken cancellationToken = default);
         Task<Result<bool>> DeleteBuyPostAsync(Guid ownerId, Guid postId, CancellationToken cancellationToken = default);
         Task ExpireBuyPostsAsync(CancellationToken cancellationToken = default);
         Task<Result<PostResponse>> CreateSellPostAsync(Guid ownerId, CreateSellPostRequest request, CancellationToken cancellationToken = default);

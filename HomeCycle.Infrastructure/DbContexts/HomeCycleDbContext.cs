@@ -78,6 +78,9 @@ public partial class HomeCycleDbContext : DbContext
 
     public virtual DbSet<Product> Products { get; set; }
     public DbSet<PriceSuggestionDailyUsage> PriceSuggestionDailyUsages { get; set; }
+    public DbSet<SupplierMatchDailyUsage> SupplierMatchDailyUsages { get; set; }
+    public DbSet<SupplierMatchMonitorState> SupplierMatchMonitorStates { get; set; }
+    public DbSet<SupplierMatchNotificationDedupe> SupplierMatchNotificationDedupes { get; set; }
     public DbSet<Market_Price_Reference> MarketPriceReferences { get; set; }
 
     public virtual DbSet<Product_Attribute> Product_Attributes { get; set; }
@@ -1089,6 +1092,24 @@ public partial class HomeCycleDbContext : DbContext
             entity.HasKey(x => new { x.UserId, x.UsageDate });
             entity.ToTable("PriceSuggestionDailyUsage", "public", table =>
                 table.HasCheckConstraint("CK_PriceSuggestionDailyUsage_Count", "\"UsageCount\" BETWEEN 1 AND 5"));
+        });
+        modelBuilder.Entity<SupplierMatchDailyUsage>(entity =>
+        {
+            entity.HasKey(x => new { x.UserId, x.UsageDate });
+            entity.ToTable("SupplierMatchDailyUsage", "public", table =>
+                table.HasCheckConstraint("CK_SupplierMatchDailyUsage_Count", "\"RefreshCount\" >= 1"));
+            entity.Property(x => x.CreatedAt).HasDefaultValueSql("now()");
+            entity.Property(x => x.UpdatedAt).HasDefaultValueSql("now()");
+        });
+        modelBuilder.Entity<SupplierMatchMonitorState>(entity =>
+        {
+            entity.HasKey(x => x.BuyPostId);
+            entity.Property(x => x.CreatedAt).HasDefaultValueSql("now()");
+            entity.Property(x => x.UpdatedAt).HasDefaultValueSql("now()");
+        });
+        modelBuilder.Entity<SupplierMatchNotificationDedupe>(entity =>
+        {
+            entity.HasKey(x => new { x.BuyPostId, x.SellPostId });
         });
         modelBuilder.Entity<Market_Price_Reference>(entity =>
         {

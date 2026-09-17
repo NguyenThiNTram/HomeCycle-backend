@@ -119,6 +119,20 @@ namespace HomeCycle.API
             // Worker nền tự tạo vận đơn GHN cho các ghn_shipment Pending/Failed
             builder.Services.AddHostedService<HomeCycle.API.Workers.GhnShipmentCreationWorker>();
             builder.Services.AddHostedService<HomeCycle.API.Workers.BuyPostExpiryWorker>();
+            builder.Services
+                .AddOptions<HomeCycle.API.Workers.SupplierMatchMonitorWorkerOptions>()
+                .Bind(builder.Configuration.GetSection(
+                    HomeCycle.API.Workers.SupplierMatchMonitorWorkerOptions.SectionName))
+                .Validate(x => x.PollMinutes is >= 1 and <= 1440,
+                    "SupplierMatchMonitor PollMinutes phải từ 1 đến 1440 phút.")
+                .Validate(x => x.BatchSize is >= 1 and <= 200,
+                    "SupplierMatchMonitor BatchSize phải từ 1 đến 200.")
+                .Validate(x => x.MinimumScore is >= 0 and <= 10,
+                    "SupplierMatchMonitor MinimumScore phải từ 0 đến 10.")
+                .Validate(x => x.ImprovementDelta is > 0 and <= 5,
+                    "SupplierMatchMonitor ImprovementDelta phải lớn hơn 0 và không quá 5.")
+                .ValidateOnStart();
+            builder.Services.AddHostedService<HomeCycle.API.Workers.SupplierMatchMonitorWorker>();
 
             // Worker nền reconcile các PayOS payment Pending nếu webhook bị delay/miss
             builder.Services.AddHostedService<HomeCycle.API.Workers.PayOsPaymentSyncWorker>();

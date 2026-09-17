@@ -22,6 +22,8 @@ namespace HomeCycle.Application.DTOs.Requests.Products
 
         public string? ProductName { get; set; }
 
+        public string? ModelNumber { get; set; }
+
         public SpaceUsage? SpaceUsage { get; set; }
 
         public FunctionalityStatus? FunctionalityStatus { get; set; }

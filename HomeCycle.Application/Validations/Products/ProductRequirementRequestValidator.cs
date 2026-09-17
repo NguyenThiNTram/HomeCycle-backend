@@ -27,6 +27,11 @@ namespace HomeCycle.Application.Validations.Products
                 .MaximumLength(255)
                 .WithMessage("Tên sản phẩm mong muốn không được vượt quá 255 ký tự.");
 
+            RuleFor(x => x.ModelNumber)
+                .MaximumLength(100)
+                .Must(value => string.IsNullOrWhiteSpace(value) || value.Any(char.IsLetterOrDigit))
+                .WithMessage("Mã model tối đa 100 ký tự và phải chứa ít nhất một chữ cái hoặc chữ số.");
+
             RuleFor(x => x.SpaceUsage)
                 .IsInEnum()
                 .When(x => x.SpaceUsage.HasValue)

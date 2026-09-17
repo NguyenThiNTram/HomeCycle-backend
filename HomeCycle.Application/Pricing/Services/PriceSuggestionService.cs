@@ -173,7 +173,7 @@ public sealed class PriceSuggestionService(
             response.Status = "NO_RELIABLE_DATA";
             response.ReasonCodes = ["NO_RELIABLE_EVIDENCE"];
             response.Explanation =
-                "Chưa có đủ giao dịch, bài đăng đang hoạt động hoặc tin bán đồ cũ cùng model để đưa ra giá tham khảo.";
+                "Chưa tìm được giao dịch, bài đăng hoặc tin bán đồ cũ cùng loại và cùng hãng đủ tin cậy để đưa ra giá tham khảo.";
             return response;
         }
 
@@ -322,8 +322,12 @@ public sealed class PriceSuggestionService(
             response.MaxPrice = RoundUp(equivalentCombined.MaxPrice!.Value);
             response.Confidence = "LOW";
             response.ReasonCodes = ["EQUIVALENT_MODEL_REFERENCE", "LIMITED_EVIDENCE"];
+            // OLD (2026-09-18, Edit 4 - giu lai de doi chieu):
+            // response.Explanation =
+            //     "AI chưa trả được kết quả hợp lệ. Đây là giá tham khảo từ các model cùng hãng, cùng loại và có thuộc tính phù hợp.";
+            // NEW (2026-09-18, Edit 4):
             response.Explanation =
-                "AI chưa trả được kết quả hợp lệ. Đây là giá tham khảo từ các model cùng hãng, cùng loại và có thuộc tính phù hợp.";
+                "AI chưa trả được kết quả hợp lệ. Đây là giá tham khảo từ các model cùng hãng, cùng loại và có thuộc tính phù hợp, hoặc tin bán đồ cũ tương đương bên ngoài.";
             return;
         }
 

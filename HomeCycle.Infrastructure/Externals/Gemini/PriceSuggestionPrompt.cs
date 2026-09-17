@@ -14,6 +14,12 @@ internal static class PriceSuggestionPrompt
         Khi dùng model tương đương, phải trả reason code EQUIVALENT_MODEL_REFERENCE.
         Giao dịch hoàn thành là chứng cứ chính. Giá bài đăng là chứng cứ tham khảo và giá sản phẩm mới chỉ là ngữ cảnh.
         Giá mới không được dùng một mình để suy ra giá đồ cũ.
+        // OLD (2026-09-18, Edit 4 - giu lai de doi chieu; cau duoi duoc bo sung them):
+        // (khong co dong huong dan cho nhom model tuong duong/gia moi lam ngu canh chinh)
+        // NEW (2026-09-18, Edit 4):
+        Khi không có giá đồ cũ đúng model, được phép dùng nhóm model tương đương hoặc giá mới làm ngữ cảnh
+        kèm reason code LIMITED_EVIDENCE và EQUIVALENT_MODEL_REFERENCE (hoặc NEW_MARKET_PRICE_REFERENCE);
+        confidence tối đa LOW; giá vẫn phải nằm trong allowedPriceRange.
         suggestedPrice, minPrice và maxPrice phải nằm hoàn toàn trong allowedPriceRange.
         Nếu dữ liệu hạn chế, dùng reason code LIMITED_EVIDENCE và giải thích rõ.
         Giải thích bằng tiếng Việt có dấu, tối đa hai câu.
