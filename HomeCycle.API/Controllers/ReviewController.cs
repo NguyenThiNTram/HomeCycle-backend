@@ -136,6 +136,7 @@ namespace HomeCycle.API.Controllers
 
                 "Order.NotCompleted"
                     or "Review.AlreadyExists"
+                    or "Review.SelfNotAllowed"
                     or "Review.EditWindowExpired"
                     or "Validation.InvalidRequest"
                     => BadRequest(error),
