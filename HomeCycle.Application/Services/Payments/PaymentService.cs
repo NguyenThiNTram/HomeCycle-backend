@@ -2670,7 +2670,8 @@ namespace HomeCycle.Application.Services.Payments
                 if (exhausted)
                     message += " Bài đăng đã hết số lượng và được HomeCycle tự động khóa, không còn hoạt động. Vui lòng bổ sung thêm số lượng hoặc xóa bài đăng khi các giao dịch đã hoàn tất.";
 
-                postNotifications.Add(await AddPaymentNotificationPendingAsync(
+                if (relatedPost.PostType != PostType.Buy)
+                    postNotifications.Add(await AddPaymentNotificationPendingAsync(
                     relatedPost.OwnerId,
                     exhausted ? "Bài đăng đã hết số lượng và bị khóa" : "Số lượng bài đăng đã giảm",
                     message,

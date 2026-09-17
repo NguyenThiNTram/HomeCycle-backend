@@ -155,8 +155,44 @@ namespace HomeCycle.Application.Services.Agreements
         }
 
 
+        public async Task<Result<AgreementSellerInfoDto>> GetSellerInfoAsync(Guid negotiationId, Guid currentUserId, CancellationToken cancellationToken = default)
+        {
+            var authorized = await GetAuthorizedNegotiationAsync(negotiationId, currentUserId, cancellationToken);
+            if (!authorized.IsSuccess) return Result<AgreementSellerInfoDto>.Fail(authorized.Error!);
+            var negotiation = authorized.Data!;
+            if (negotiation.SellerId != currentUserId)
+                return Result<AgreementSellerInfoDto>.Fail(new Error("Auth.Forbidden", "Chỉ người bán được lấy thông tin tạo thỏa thuận."));
+            var sellPost = await _postRepo.GetByIdAsync(negotiation.PostId, cancellationToken);
+            if (sellPost == null || sellPost.PostType != PostType.Sell || sellPost.OwnerId != currentUserId)
+                return Result<AgreementSellerInfoDto>.Fail(new Error("Post.NotFound", "Không tìm thấy bài đăng bán của thỏa thuận."));
+            var contact = await GetContactDefaultsAsync(currentUserId, cancellationToken);
+            return Result<AgreementSellerInfoDto>.Success(new AgreementSellerInfoDto
+            {
+                FullName = contact.FullName,
+                Phone = contact.Phone,
+                StreetAddress = sellPost.StreetAddress,
+                Ward = sellPost.Ward,
+                City = sellPost.City
+            });
+        }
+
         public async Task<Result<Guid>> CreateAgreementAsync(CreateAgreementFormRequest request, Guid currentUserId, CancellationToken cancellationToken = default)
         {
+            if (request.AgreementDetails != null)
+            {
+                var sellerInfo = await GetSellerInfoAsync(request.NegotiationId, currentUserId, cancellationToken);
+                if (!sellerInfo.IsSuccess) return Result<Guid>.Fail(sellerInfo.Error!);
+                var defaults = sellerInfo.Data!;
+                var details = request.AgreementDetails;
+                details.SellerInfo ??= new AgreementSellerInfoDto();
+                details.SellerInfo.FullName ??= defaults.FullName;
+                details.SellerInfo.Phone ??= defaults.Phone;
+                details.SellerInfo.StreetAddress ??= defaults.StreetAddress;
+                details.SellerInfo.Ward ??= defaults.Ward;
+                details.SellerInfo.City ??= defaults.City;
+                if (details.DeliveryMethod.HasValue && details.PickupAddress == null)
+                    details.PickupAddress = details.SellerInfo.FullAddress;
+            }
             var validationResult = await _createValidator.ValidateAsync(request, cancellationToken);
             if (!validationResult.IsValid)
             {
@@ -275,6 +311,23 @@ namespace HomeCycle.Application.Services.Agreements
                     cancellationToken);
 
                 await _unitOfWork.SaveChangesAsync();
+                if (offer.BuyPostId.HasValue)
+                {
+                    var buyPost = await _postRepo.GetByIdForUpdateAsync(offer.BuyPostId.Value, cancellationToken);
+                    if (buyPost != null && await _postRepo.GetAgreedBuyQuantityAsync(buyPost.PostId, null, cancellationToken) >= buyPost.Quantity)
+                    {
+                        buyPost.Status = PostStatus.Closed;
+                        buyPost.UpdatedAt = now;
+                        await _postRepo.UpdateAsync(buyPost, cancellationToken);
+                        await _offerRepo.ClosePendingByPostAsync(buyPost.PostId, OfferStatus.Closed, cancellationToken);
+                        var targetNotification = await _notificationService.AddPendingAsync(
+                            new CreateNotificationCommand(buyPost.OwnerId, "Tin thu mua đã đạt mục tiêu",
+                                $"Tin thu mua đã lập hợp đồng đủ {buyPost.Quantity}/{buyPost.Quantity} sản phẩm và được đóng. Vui lòng kiểm tra và chỉnh sửa số lượng nếu muốn tiếp tục thu mua.",
+                                NotificationTargetType.Post, buyPost.PostId), cancellationToken);
+                        _unitOfWork.RegisterAfterCommit(() => _notificationService.PublishCreatedSafelyAsync(targetNotification));
+                        await _unitOfWork.SaveChangesAsync(cancellationToken);
+                    }
+                }
                 await _unitOfWork.CommitTransactionAsync();
 
                 var response = _mapper.Map<MessageResponse>(agreementMessage);
@@ -396,9 +449,11 @@ namespace HomeCycle.Application.Services.Agreements
                 }
 
                 var currentRevision = 1;
+                AgreementSellerInfoDto? currentSellerInfo = null;
                 if (!string.IsNullOrWhiteSpace(agreement.AgreementDetailsJsonb))
                 {
                     var currentDetails = JsonSerializer.Deserialize<AgreementDetailsDto>(agreement.AgreementDetailsJsonb);
+                    currentSellerInfo = currentDetails?.SellerInfo;
                     if (currentDetails != null)
                         currentRevision = currentDetails.Revision;
                 }
@@ -408,6 +463,7 @@ namespace HomeCycle.Application.Services.Agreements
                     request.AgreementDetails = new AgreementDetailsDto
                     {
                         Revision = currentRevision + 1,
+                        SellerInfo = request.AgreementDetails.SellerInfo ?? currentSellerInfo,
                         Notes = request.AgreementDetails.Notes,
                         InspectionDate = request.AgreementDetails.InspectionDate,
                         InspectionAddress = request.AgreementDetails.InspectionAddress,

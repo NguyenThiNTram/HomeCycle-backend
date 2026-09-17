@@ -137,6 +137,22 @@ namespace HomeCycle.API.Controllers
             return Ok(result.Data);
         }
 
+        [HttpGet("sell/{postId:guid}")]
+        [ProducesResponseType(typeof(SellPostDetailResponse), StatusCodes.Status200OK)]
+        public async Task<IActionResult> GetSellDetail(Guid postId, CancellationToken cancellationToken)
+        {
+            var result = await _postService.GetSellDetailAsync(postId, cancellationToken);
+            return result.IsSuccess ? Ok(result.Data) : MapErrorToResponse(result.Error!);
+        }
+
+        [HttpGet("buy/{postId:guid}")]
+        [ProducesResponseType(typeof(BuyPostDetailResponse), StatusCodes.Status200OK)]
+        public async Task<IActionResult> GetBuyDetail(Guid postId, CancellationToken cancellationToken)
+        {
+            var result = await _postService.GetBuyDetailAsync(postId, cancellationToken);
+            return result.IsSuccess ? Ok(result.Data) : MapErrorToResponse(result.Error!);
+        }
+
         [HttpGet("get-by-id/{id:guid}")]
         [SwaggerOperation(
             Summary = "Lấy chi tiết bài đăng",

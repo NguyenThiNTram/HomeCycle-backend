@@ -10,6 +10,7 @@ namespace HomeCycle.Application.DTOs.Requests.Agreements
 {
     public class AgreementDetailsDto
     {
+        public AgreementSellerInfoDto? SellerInfo { get; set; }
         public int Revision { get; init; } = 1; // Tăng mỗi lần nội dung Agreement thay đổi
         public string? Notes { get; set; }
 
@@ -33,5 +34,16 @@ namespace HomeCycle.Application.DTOs.Requests.Agreements
 
         // Phí ship do gọi API GHN (hoặc tự thỏa thuận) trả về lúc cấu hình form
         public decimal? EstimatedShippingFee { get; set; }
+    }
+
+    public sealed class AgreementSellerInfoDto
+    {
+        public string? FullName { get; set; }
+        public string? Phone { get; set; }
+        public string? StreetAddress { get; set; }
+        public string? Ward { get; set; }
+        public string? City { get; set; }
+        public string FullAddress => string.Join(", ", new[] { StreetAddress, Ward, City }
+            .Where(value => !string.IsNullOrWhiteSpace(value)).Select(value => value!.Trim()));
     }
 }
