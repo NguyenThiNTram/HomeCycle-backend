@@ -103,6 +103,9 @@ namespace HomeCycle.Application.Services.Reviews
 
             var revieweeId = isBuyer ? agreement.SellerId : agreement.BuyerId;
 
+            if (revieweeId == currentUserId)
+                return Result<ReviewResponseDto>.Fail(new Error("Review.SelfNotAllowed", "Bạn không thể tự đánh giá chính mình."));
+
             if (await _reviewRepo.ExistsAsync(orderId, currentUserId, ct))
                 return Result<ReviewResponseDto>.Fail(new Error("Review.AlreadyExists", "Bạn đã đánh giá đơn hàng này."));
 

@@ -5,8 +5,11 @@ using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Requests.Posts;
 using HomeCycle.Application.DTOs.Requests.Products;
 using HomeCycle.Application.DTOs.Responses.Posts;
+using HomeCycle.Application.DTOs.Responses.SupplierMatching;
+using HomeCycle.Application.SupplierMatching.Services;
 using HomeCycle.Domain.Entities;
 using HomeCycle.Domain.Enums;
+using Microsoft.Extensions.Logging;
 
 namespace HomeCycle.Application.Services.Posts;
 
@@ -39,6 +42,7 @@ public partial class PostService
         finally { await _unitOfWork.RollbackTransactionAsync(CancellationToken.None); }
         var saved = await _postRepository.GetByIdAsync(entity.PostId, cancellationToken);
         await SendPostCreatedNotificationAsync(ownerId, entity.PostId, "Đã tạo tin thu mua", "Tin thu mua của bạn đã được đăng tải.", cancellationToken);
+        await TryWarmSupplierMatchesAsync(ownerId, entity.PostId, cancellationToken);
         return Result<PostResponse>.Success(_mapper.Map<PostResponse>(saved));
     }
 
@@ -62,7 +66,8 @@ public partial class PostService
             var p = current.Product!;
             var merged = new CreateBuyPostRequest {
                 Title = p.ProductName ?? "", Description = current.Description ?? "", CategoryId = p.CategoryId,
-                ProductTypeId = p.ProductTypeId, BrandId = p.BrandId, FunctionalityStatus = p.FunctionalityStatus,
+                ProductTypeId = p.ProductTypeId, BrandId = p.BrandId, ModelNumber = p.ModelNumber,
+                FunctionalityStatus = p.FunctionalityStatus,
                 UsageDuration = p.UsageDuration, DamageLevel = p.DamageLevel, StreetAddress = current.StreetAddress,
                 Ward = current.Ward, City = current.City, PriorityLevel = current.PriorityLevel,
                 PriceFrom = current.MinExpectedPrice, PriceTo = current.BasePrice, Quantity = current.Quantity, ExpiryDate = current.ExpiryDate,
@@ -85,7 +90,7 @@ public partial class PostService
             var reserved = await _postRepository.GetReservedQuantityAsync(postId, null, cancellationToken);
             if (merged.Quantity < allocated + reserved)
                 return Result<PostResponse>.Fail(PostErrors.InvalidUpdateQuantity(allocated + reserved, merged.Quantity!.Value));
-            var materialFields = new[] { "Title", "BrandId", "CategoryId", "ProductTypeId", "FunctionalityStatus", "UsageDuration", "DamageLevel", "AttributeValues", "PriceFrom", "PriceTo" };
+            var materialFields = new[] { "Title", "BrandId", "CategoryId", "ProductTypeId", "ModelNumber", "FunctionalityStatus", "UsageDuration", "DamageLevel", "AttributeValues", "PriceFrom", "PriceTo" };
             var after = System.Text.Json.JsonSerializer.SerializeToElement(merged);
             var material = materialFields.Any(name => before.GetProperty(name).GetRawText() != after.GetProperty(name).GetRawText());
             if (material && await _postRepository.HasUnfinishedTransactionsAsync(postId, cancellationToken))
@@ -186,20 +191,58 @@ public partial class PostService
         }
     }
 
-    public async Task<Result<PagedResult<BuyPostMatchResponse>>> GetMatchesAsync(Guid buyPostId, PaginationRequest request, CancellationToken cancellationToken = default)
+    public async Task<Result<PagedResult<BuyPostMatchResponse>>> GetMatchesAsync(Guid ownerId, Guid buyPostId, PaginationRequest request, CancellationToken cancellationToken = default)
     {
         var buy = await _postRepository.GetDetailByIdAsync(buyPostId, cancellationToken);
         if (buy == null || buy.Product == null || buy.User?.Status != UserStatus.Active || buy.PostType != PostType.Buy || !TradingPostRules.IsAvailable(buy))
             return Result<PagedResult<BuyPostMatchResponse>>.Fail(PostErrors.NotFound);
-        var page = await _postRepository.GetMatchesAsync(buy, request, cancellationToken);
-        var media = await _mediaService.GetByTargetsAsync(page.Items.Select(p => p.PostId).ToArray(), PostMediaTargetType, cancellationToken);
-        var items = page.Items.Select(p => {
-            var response = _mapper.Map<PostResponse>(p);
-            if (media.IsSuccess && media.Data!.TryGetValue(p.PostId, out var files)) response.Medias = files;
-            return new BuyPostMatchResponse { SellPost = response, MatchSummary = BuyPostMatching.Evaluate(buy, p) };
-        }).ToList();
+        if (buy.OwnerId != ownerId)
+            return Result<PagedResult<BuyPostMatchResponse>>.Fail(PostErrors.Forbidden);
+        var matched = await _supplierMatchService.MatchAsync(
+            SupplierDemandContextBuilder.FromBuyPost(buy),
+            (request.PageNumber - 1) * request.PageSize,
+            request.PageSize,
+            cancellationToken);
         return Result<PagedResult<BuyPostMatchResponse>>.Success(new PagedResult<BuyPostMatchResponse> {
-            Items = items, PageNumber = page.PageNumber, PageSize = page.PageSize, TotalCount = page.TotalCount
+            Items = matched.Matches,
+            PageNumber = request.PageNumber,
+            PageSize = request.PageSize,
+            TotalCount = matched.CandidateCount
         });
+    }
+
+    public async Task<Result<SupplierMatchResponse>> GetSupplierMatchesAsync(
+        Guid ownerId,
+        Guid buyPostId,
+        CancellationToken cancellationToken = default)
+    {
+        var buy = await _postRepository.GetDetailByIdAsync(buyPostId, cancellationToken);
+        if (buy == null || buy.Product == null || buy.User?.Status != UserStatus.Active ||
+            buy.PostType != PostType.Buy || !TradingPostRules.IsAvailable(buy))
+            return Result<SupplierMatchResponse>.Fail(PostErrors.NotFound);
+        if (buy.OwnerId != ownerId)
+            return Result<SupplierMatchResponse>.Fail(PostErrors.Forbidden);
+
+        var response = await _supplierMatchService.MatchAsync(
+            SupplierDemandContextBuilder.FromBuyPost(buy), 0, int.MaxValue, cancellationToken);
+        response.BuyPostId = buyPostId;
+        return Result<SupplierMatchResponse>.Success(response);
+    }
+
+    private async Task TryWarmSupplierMatchesAsync(Guid ownerId, Guid buyPostId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await GetSupplierMatchesAsync(ownerId, buyPostId, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Bài mua đã commit; request bị hủy chỉ dừng bước warm cache.
+        }
+        catch (Exception exception)
+        {
+            _logger.LogWarning(exception,
+                "Không thể tạo supplier matches ban đầu cho BuyPostId {BuyPostId}", buyPostId);
+        }
     }
 }

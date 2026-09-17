@@ -11,6 +11,7 @@ public sealed class CreateBuyPostRequest
     public Guid? BrandId { get; set; }
     public Guid? CategoryId { get; set; }
     public Guid? ProductTypeId { get; set; }
+    public string? ModelNumber { get; set; }
     public FunctionalityStatus? FunctionalityStatus { get; set; }
     public int? UsageDuration { get; set; }
     public DamageLevel? DamageLevel { get; set; }

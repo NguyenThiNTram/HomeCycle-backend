@@ -22,4 +22,10 @@ public sealed class BuyPostMatchResponse
 {
     public PostResponse SellPost { get; set; } = null!;
     public MatchSummaryResponse MatchSummary { get; set; } = null!;
+    public decimal MatchingScore { get; set; }
+    public string MatchingLevel { get; set; } = "LOW";
+    public string RankingSource { get; set; } = "BACKEND_ONLY";
+    public List<string> ReasonCodes { get; set; } = [];
+    public string ShortExplanation { get; set; } = string.Empty;
+    public bool CanFulfillQuantity { get; set; }
 }

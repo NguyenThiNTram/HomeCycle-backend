@@ -19,6 +19,8 @@ public sealed class UpdateBuyPostRequest
     public Guid? CategoryId { get => _CategoryId; set { _CategoryId = value; ChangedProperties.Add(nameof(CategoryId)); } }
     private Guid? _ProductTypeId;
     public Guid? ProductTypeId { get => _ProductTypeId; set { _ProductTypeId = value; ChangedProperties.Add(nameof(ProductTypeId)); } }
+    private string? _ModelNumber;
+    public string? ModelNumber { get => _ModelNumber; set { _ModelNumber = value; ChangedProperties.Add(nameof(ModelNumber)); } }
     private FunctionalityStatus? _FunctionalityStatus;
     public FunctionalityStatus? FunctionalityStatus { get => _FunctionalityStatus; set { _FunctionalityStatus = value; ChangedProperties.Add(nameof(FunctionalityStatus)); } }
     private int? _UsageDuration;

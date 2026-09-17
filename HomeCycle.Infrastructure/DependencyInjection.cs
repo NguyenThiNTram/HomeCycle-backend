@@ -163,6 +163,8 @@ namespace HomeCycle.Infrastructure
 
             //gemini
             services.Configure<GeminiOptions>(configuration.GetSection("Gemini"));
+            services.Configure<HomeCycle.Infrastructure.SupplierMatching.SupplierMatchingOptions>(
+                configuration.GetSection("SupplierMatching"));
 
             services.AddSingleton(sp =>
             {
@@ -182,6 +184,14 @@ namespace HomeCycle.Infrastructure
             services.AddScoped<HomeCycle.Application.Pricing.Matching.DynamicAttributeMatcher>();
             services.AddScoped<HomeCycle.Application.Pricing.Matching.EquivalentModelMatcher>();
             services.AddScoped<HomeCycle.Application.Interfaces.Services.AI.IExternalUsedPriceSearchService, GeminiExternalUsedPriceSearchService>();
+            services.AddScoped<HomeCycle.Application.Interfaces.Services.SupplierMatching.ISupplierMatchAiReranker,
+                GeminiSupplierMatchReranker>();
+            services.AddScoped<HomeCycle.Application.Interfaces.Services.SupplierMatching.ISupplierMatchEntitlementService,
+                HomeCycle.Infrastructure.SupplierMatching.SupplierMatchEntitlementService>();
+            services.AddScoped<HomeCycle.Application.Interfaces.Services.SupplierMatching.ISupplierMatchQuota,
+                HomeCycle.Infrastructure.SupplierMatching.SupplierMatchQuota>();
+            services.AddSingleton<HomeCycle.Application.Interfaces.Services.SupplierMatching.ISupplierMatchCache,
+                HomeCycle.Infrastructure.SupplierMatching.MemorySupplierMatchCache>();
 
             // register FluentValidation
             // do nằm chung 1 application nên chỉ cần gọi 1 lần là đủ, không cần gọi nhiều lần
@@ -209,6 +219,10 @@ namespace HomeCycle.Infrastructure
             services.AddScoped<IBrandRepository, BrandRepository>();
             services.AddScoped<IProductRepository, ProductRepository>();
             services.AddScoped<IPostRepository, PostRepository>();
+            services.AddScoped<HomeCycle.Application.Interfaces.Repositories.SupplierMatching.ISupplierMatchCandidateRepository,
+                HomeCycle.Infrastructure.Repositories.SupplierMatching.SupplierMatchCandidateRepository>();
+            services.AddScoped<HomeCycle.Application.Interfaces.Repositories.SupplierMatching.ISupplierMatchMonitorRepository,
+                HomeCycle.Infrastructure.Repositories.SupplierMatching.SupplierMatchMonitorRepository>();
             services.AddScoped<ICartItemRepository, CartRepository>();
             services.AddScoped<IMediaRepository, MediaRepository>();
             services.AddScoped<IProductAttributeValueRepository, ProductAttributeValueRepository>();
@@ -257,6 +271,11 @@ namespace HomeCycle.Infrastructure
             services.AddScoped<IProductTypeService, ProductTypeService>();
             services.AddScoped<IProductAttributeService, ProductAttributeService>();
             services.AddScoped<IPostService, PostService>();
+            services.AddScoped<HomeCycle.Application.Interfaces.Services.SupplierMatching.ISupplierMatchService,
+                HomeCycle.Application.SupplierMatching.Services.SupplierMatchService>();
+            services.AddScoped<HomeCycle.Application.SupplierMatching.Scoring.SupplierMatchScorer>();
+            services.AddScoped<HomeCycle.Application.Interfaces.Services.SupplierMatching.ISupplierMatchMonitorService,
+                HomeCycle.Application.SupplierMatching.Services.SupplierMatchMonitorService>();
             services.AddScoped<ICartService, CartService>();
             services.AddScoped<IProductService, ProductService>();
             services.AddScoped<IMediaService, MediaService>();

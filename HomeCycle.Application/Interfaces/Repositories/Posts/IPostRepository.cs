@@ -18,7 +18,6 @@ namespace HomeCycle.Application.Interfaces.Repositories.Posts
         Task<int> GetReservedQuantityAsync(Guid postId, Guid? excludedNegotiationId = null, CancellationToken cancellationToken = default);
         Task<bool> HasUnfinishedTransactionsAsync(Guid postId, CancellationToken cancellationToken = default);
         Task<IReadOnlyList<Guid>> GetExpiredBuyPostIdsAsync(DateTime now, int count, CancellationToken cancellationToken = default);
-        Task<PagedResult<post>> GetMatchesAsync(post buyPost, PaginationRequest request, CancellationToken cancellationToken = default);
         Task AddAsync(post entity, CancellationToken cancellationToken = default);
         Task UpdateAsync(post entity, CancellationToken cancellationToken = default);
 
