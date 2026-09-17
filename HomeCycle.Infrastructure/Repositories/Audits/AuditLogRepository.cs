@@ -84,11 +84,8 @@ namespace HomeCycle.Infrastructure.Repositories.Audits
             if (request.Category.HasValue)
                 query = query.Where(x => x.Category == (int)request.Category.Value);
 
-            if (!string.IsNullOrWhiteSpace(request.Action))
-            {
-                var action = request.Action.Trim();
-                query = query.Where(x => x.Action == action);
-            }
+            if (request.Action != null)
+                query = query.Where(x => x.Action == request.Action);
 
             if (request.Outcome.HasValue)
                 query = query.Where(x => x.Outcome == (int)request.Outcome.Value);
@@ -102,11 +99,8 @@ namespace HomeCycle.Infrastructure.Repositories.Audits
             if (request.UserRole.HasValue)
                 query = query.Where(x => x.UserRole == (int)request.UserRole.Value);
 
-            if (!string.IsNullOrWhiteSpace(request.TargetType))
-            {
-                var targetType = request.TargetType.Trim();
-                query = query.Where(x => x.TargetType == targetType);
-            }
+            if (request.TargetType != null)
+                query = query.Where(x => x.TargetType == request.TargetType);
 
             if (request.TargetId.HasValue)
                 query = query.Where(x => x.TargetId == request.TargetId.Value);
@@ -114,11 +108,8 @@ namespace HomeCycle.Infrastructure.Repositories.Audits
             if (request.Source.HasValue)
                 query = query.Where(x => x.Source == (int)request.Source.Value);
 
-            if (!string.IsNullOrWhiteSpace(request.CorrelationId))
-            {
-                var correlationId = request.CorrelationId.Trim();
-                query = query.Where(x => x.CorrelationId == correlationId);
-            }
+            if (request.CorrelationId != null)
+                query = query.Where(x => x.CorrelationId == request.CorrelationId);
 
             return query;
         }

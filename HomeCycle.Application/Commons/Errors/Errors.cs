@@ -662,5 +662,9 @@ namespace HomeCycle.Application.Commons.Errors
     {
         public static readonly Error NotFound = new("AuditLog.NotFound", "Không tìm thấy audit log.");
         public static readonly Error InvalidDateRange = new("AuditLog.InvalidDateRange", "FromUtc không được lớn hơn ToUtc.");
+        public static Error InvalidFilter(string field) =>
+            new("AuditLog.InvalidFilter", $"Bộ lọc '{field}' không hợp lệ.");
+        public static Error FilterTooLong(string field, int maxLength) =>
+            new("AuditLog.FilterTooLong", $"Bộ lọc '{field}' không được vượt quá {maxLength} ký tự.");
     }
 }

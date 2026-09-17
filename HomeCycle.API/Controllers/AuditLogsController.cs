@@ -1,5 +1,7 @@
 ﻿using HomeCycle.Application.Commons.Errors;
+using HomeCycle.Application.Commons.Paginations;
 using HomeCycle.Application.DTOs.Requests.Audits;
+using HomeCycle.Application.DTOs.Responses.Audits;
 using HomeCycle.Application.Interfaces.Services.Audits;
 using HomeCycle.Domain.Enums;
 using Microsoft.AspNetCore.Authorization;
@@ -25,6 +27,7 @@ namespace HomeCycle.API.Controllers
         [SwaggerOperation(
             Summary = "Lấy danh sách audit log",
             Description = "Admin tra cứu audit log theo thời gian, actor, action, target, source và outcome.")]
+        [ProducesResponseType(typeof(PagedResult<AuditLogListItemResponse>), StatusCodes.Status200OK)]
         public async Task<IActionResult> GetAuditLogsAsync(
             [FromQuery] AuditLogSearchRequest request,
             CancellationToken cancellationToken)
@@ -41,6 +44,7 @@ namespace HomeCycle.API.Controllers
         [SwaggerOperation(
             Summary = "Lấy chi tiết audit log",
             Description = "Admin xem đầy đủ context và payload thay đổi của một audit event.")]
+        [ProducesResponseType(typeof(AuditLogDetailResponse), StatusCodes.Status200OK)]
         public async Task<IActionResult> GetAuditLogDetailAsync(
             Guid auditId,
             CancellationToken cancellationToken)

@@ -23,7 +23,14 @@ namespace HomeCycle.Infrastructure.Auditing
             "apikey",
             "checksumkey",
             "privatekey",
-            "credential"
+            "credential",
+            "bankaccountnumber",
+            "accountnumber",
+            "cardnumber",
+            "routingnumber",
+            "iban",
+            "cvv",
+            "cvc"
         ];
 
         private static readonly JsonSerializerOptions JsonOptions =

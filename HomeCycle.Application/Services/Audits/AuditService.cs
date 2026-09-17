@@ -106,8 +106,11 @@ namespace HomeCycle.Application.Services.Audits
         {
             ArgumentNullException.ThrowIfNull(request);
 
-            if (request.FromUtc.HasValue && request.ToUtc.HasValue && request.FromUtc.Value > request.ToUtc.Value)
-                return Result<PagedResult<AuditLogListItemResponse>>.Fail(AuditErrors.InvalidDateRange);
+            NormalizeSearchRequest(request);
+
+            var validationError = ValidateSearchRequest(request);
+            if (validationError != null)
+                return Result<PagedResult<AuditLogListItemResponse>>.Fail(validationError);
 
             var result = await _auditLogRepository.GetPagedAsync(request, cancellationToken);
             return Result<PagedResult<AuditLogListItemResponse>>.Success(result);
@@ -125,6 +128,19 @@ namespace HomeCycle.Application.Services.Audits
 
 
         // =============== HELPER =====================
+        private static void NormalizeSearchRequest(AuditLogSearchRequest request)
+        {
+            if (request.FromUtc.HasValue)
+                request.FromUtc = NormalizeUtc(request.FromUtc.Value);
+
+            if (request.ToUtc.HasValue)
+                request.ToUtc = NormalizeUtc(request.ToUtc.Value);
+
+            request.Action = Normalize(request.Action);
+            request.TargetType = Normalize(request.TargetType);
+            request.CorrelationId = Normalize(request.CorrelationId);
+        }
+
         private static AuditLogDetailResponse ToDetailResponse(audit_log auditLog)
         {
             return new AuditLogDetailResponse
@@ -210,6 +226,38 @@ namespace HomeCycle.Application.Services.Audits
                 DateTimeKind.Local => value.ToUniversalTime(),
                 _ => DateTime.SpecifyKind(value, DateTimeKind.Utc)
             };
+        }
+
+        private static Error? ValidateSearchRequest(AuditLogSearchRequest request)
+        {
+            if (request.FromUtc.HasValue && request.ToUtc.HasValue && request.FromUtc.Value > request.ToUtc.Value)
+                return AuditErrors.InvalidDateRange;
+
+            if (request.Category.HasValue && !Enum.IsDefined(typeof(AuditCategory), request.Category.Value))
+                return AuditErrors.InvalidFilter(nameof(request.Category));
+
+            if (request.Outcome.HasValue && !Enum.IsDefined(typeof(AuditOutcome), request.Outcome.Value))
+                return AuditErrors.InvalidFilter(nameof(request.Outcome));
+
+            if (request.ActorType.HasValue && !Enum.IsDefined(typeof(AuditActorType), request.ActorType.Value))
+                return AuditErrors.InvalidFilter(nameof(request.ActorType));
+
+            if (request.UserRole.HasValue && !Enum.IsDefined(typeof(UserRole), request.UserRole.Value))
+                return AuditErrors.InvalidFilter(nameof(request.UserRole));
+
+            if (request.Source.HasValue && !Enum.IsDefined(typeof(AuditSource), request.Source.Value))
+                return AuditErrors.InvalidFilter(nameof(request.Source));
+
+            if (request.Action?.Length > 100)
+                return AuditErrors.FilterTooLong(nameof(request.Action), 100);
+
+            if (request.TargetType?.Length > 100)
+                return AuditErrors.FilterTooLong(nameof(request.TargetType), 100);
+
+            if (request.CorrelationId?.Length > 100)
+                return AuditErrors.FilterTooLong(nameof(request.CorrelationId), 100);
+
+            return null;
         }
     }
 }

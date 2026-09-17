@@ -148,7 +148,7 @@ namespace HomeCycle.API
             
             // Worker AuditLog
             builder.Services.AddHostedService<HomeCycle.API.Workers.AuditLogWorker>();
-
+            builder.Services.AddHostedService<HomeCycle.API.Workers.AuditRetentionWorker>();
 
             // Add DbContext with PostgreSQL configuration
             builder.Services.AddDbContext<HomeCycleDbContext>(options =>

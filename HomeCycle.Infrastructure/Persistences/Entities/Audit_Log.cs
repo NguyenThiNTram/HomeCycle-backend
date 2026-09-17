@@ -12,6 +12,7 @@ namespace HomeCycle.Infrastructure;
 [Index("UserId", "OccurredAtUtc", Name = "idx_audit_user_occurred")]
 [Index("TargetType", "TargetId", "OccurredAtUtc", Name = "idx_audit_target_occurred")]
 [Index("Action", "OccurredAtUtc", Name = "idx_audit_action_occurred")]
+[Index("CorrelationId", Name = "idx_audit_correlation")]
 public partial class Audit_Log
 {
     [Key]

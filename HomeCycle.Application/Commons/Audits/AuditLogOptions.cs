@@ -40,5 +40,6 @@ namespace HomeCycle.Application.Commons.Audits
     {
         public int Days { get; set; } = 365;
         public int CleanupBatchSize { get; set; } = 500;
+        public int CleanupIntervalHours { get; set; } = 24;
     }
 }

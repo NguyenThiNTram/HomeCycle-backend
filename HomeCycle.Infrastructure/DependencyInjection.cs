@@ -172,11 +172,14 @@ namespace HomeCycle.Infrastructure
                     "AuditLog Retention Days phải từ 30 đến 3650 ngày.")
                 .Validate(x => x.Retention.CleanupBatchSize is >= 50 and <= 5000,
                     "AuditLog Retention CleanupBatchSize phải từ 50 đến 5000.")
+                .Validate(x => x.Retention.CleanupIntervalHours is >= 1 and <= 168,
+                    "AuditLog Retention CleanupIntervalHours phải từ 1 đến 168 giờ.")
                 .ValidateOnStart();
 
             services.AddSingleton<AuditPayloadSanitizer>();
             services.AddScoped<IAuditOutboxWriter, AuditOutboxWriter>();
             services.AddScoped<IAuditOutboxProcessor, AuditOutboxProcessor>();
+            services.AddScoped<IAuditRetentionProcessor, AuditRetentionProcessor>();
             services.AddScoped<IAuditLogRepository, AuditLogRepository>();
             services.AddScoped<IAuditService, AuditService>();
 
