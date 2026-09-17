@@ -18,6 +18,7 @@ using HomeCycle.Application.Interfaces.Services.Notifications;
 using HomeCycle.Application.Interfaces.Services.PlatformPolicies;
 using HomeCycle.Application.Interfaces.Services.Posts;
 using HomeCycle.Application.Interfaces.Services.Products;
+using HomeCycle.Application.Interfaces.Services.SupplierMatching;
 using HomeCycle.Domain.Entities;
 using HomeCycle.Domain.Enums;
 using System;
@@ -27,6 +28,7 @@ using System.Management;
 using System.Reflection.Metadata;
 using System.Text;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 
 namespace HomeCycle.Application.Services.Posts
 {
@@ -47,6 +49,8 @@ namespace HomeCycle.Application.Services.Posts
         private readonly IUnitOfWork _unitOfWork;
         private readonly INotificationService _notificationService;
         private readonly IPlatformPolicyProvider _platformPolicyProvider;
+        private readonly ISupplierMatchService _supplierMatchService;
+        private readonly ILogger<PostService> _logger;
 
         private const string PostMediaTargetType = "Post";
         private const string PostMediaFolder = "posts";
@@ -66,7 +70,9 @@ namespace HomeCycle.Application.Services.Posts
             IMapper mapper,
             IUnitOfWork unitOfWork,
             INotificationService notificationService,
-            IPlatformPolicyProvider platformPolicyProvider)
+            IPlatformPolicyProvider platformPolicyProvider,
+            ISupplierMatchService supplierMatchService,
+            ILogger<PostService> logger)
         {
             _postRepository = postRepository;
             _offerRepository = offerRepository;
@@ -83,6 +89,8 @@ namespace HomeCycle.Application.Services.Posts
             _unitOfWork = unitOfWork;
             _notificationService = notificationService;
             _platformPolicyProvider = platformPolicyProvider;
+            _supplierMatchService = supplierMatchService;
+            _logger = logger;
         }
 
         // ================== CREATE - SELL ==================

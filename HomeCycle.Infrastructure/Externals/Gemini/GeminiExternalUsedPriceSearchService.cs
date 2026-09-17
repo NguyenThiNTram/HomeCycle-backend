@@ -111,7 +111,8 @@ public sealed class GeminiExternalUsedPriceSearchService(
                 product.Model,
                 maxResults,
                 clock.GetUtcNow(),
-                out var generatedItemCount);
+                out var generatedItemCount,
+                allowRelatedByProductContext: true);
 
             logger.LogInformation(
                 "Gemini external extraction diagnostics: step2GeneratedItemCount={GeneratedItemCount}, step2AcceptedItemCount={AcceptedItemCount}, exactOrVariantCount={ExactOrVariantCount}, relatedCount={RelatedCount}",
@@ -204,18 +205,40 @@ public sealed class GeminiExternalUsedPriceSearchService(
         IEnumerable<GenerateContentResponse> responses,
         int maxResults)
     {
-        return responses
-            .SelectMany(response => response.Candidates ?? [])
-            .SelectMany(candidate => candidate.GroundingMetadata?.GroundingChunks ?? [])
-            .Where(chunk => chunk.Web is not null)
-            .Select(chunk => chunk.Web!)
-            .Where(web => TryNormalizeHttpUrl(web.Uri, out _))
-            .GroupBy(web => NormalizeUrl(web.Uri!), StringComparer.OrdinalIgnoreCase)
-            .Take(maxResults)
-            .Select((group, index) => new GroundedSource(
-                $"S{index + 1}",
-                NormalizeSourceTitle(group.First().Title),
-                group.Key))
+        var sourcesBySearch = responses
+            .Select(response => response.Candidates ?? [])
+            .Select(candidates => candidates
+                .SelectMany(candidate => candidate.GroundingMetadata?.GroundingChunks ?? [])
+                .Where(chunk => chunk.Web is not null)
+                .Select(chunk => chunk.Web!)
+                .Where(web => TryNormalizeHttpUrl(web.Uri, out _))
+                .GroupBy(web => NormalizeUrl(web.Uri!), StringComparer.OrdinalIgnoreCase)
+                .Select(group => new SourceCandidate(
+                    NormalizeSourceTitle(group.First().Title),
+                    group.Key))
+                .ToArray())
+            .ToArray();
+
+        var selected = new List<SourceCandidate>(maxResults);
+        var seenUrls = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var largestSearch = sourcesBySearch.Length == 0 ? 0 : sourcesBySearch.Max(x => x.Length);
+
+        for (var position = 0; position < largestSearch && selected.Count < maxResults; position++)
+        {
+            foreach (var sources in sourcesBySearch)
+            {
+                if (position >= sources.Length || !seenUrls.Add(sources[position].Url))
+                    continue;
+
+                selected.Add(sources[position]);
+                if (selected.Count == maxResults)
+                    break;
+            }
+        }
+
+        return selected
+            .Select((source, index) => new GroundedSource(
+                $"S{index + 1}", source.Title, source.Url))
             .ToArray();
     }
 
@@ -271,7 +294,8 @@ public sealed class GeminiExternalUsedPriceSearchService(
         string requestedModel,
         int maxResults,
         DateTimeOffset retrievedAt,
-        out int generatedItemCount)
+        out int generatedItemCount,
+        bool allowRelatedByProductContext = false)
     {
         generatedItemCount = 0;
 
@@ -304,16 +328,15 @@ public sealed class GeminiExternalUsedPriceSearchService(
                 continue;
 
             var observedModel = modelElement.GetString()?.Trim();
-            if (string.IsNullOrWhiteSpace(observedModel))
-                continue;
+            observedModel ??= string.Empty;
             if (observedModel.Length > 100)
                 observedModel = observedModel[..100];
 
             var attributesCompatible = ReadRequiredTrue(item, "attributesCompatible");
-            var (matchLevel, similarity) = ClassifyModel(
-                requestedModel,
-                observedModel,
-                attributesCompatible);
+            var (matchLevel, similarity) = ClassifyModel(requestedModel, observedModel);
+            if (matchLevel == ExternalModelMatchLevel.Unrelated &&
+                allowRelatedByProductContext && attributesCompatible)
+                matchLevel = ExternalModelMatchLevel.Related;
             if (matchLevel == ExternalModelMatchLevel.Unrelated)
                 continue;
 
@@ -361,8 +384,7 @@ public sealed class GeminiExternalUsedPriceSearchService(
 
     private static (ExternalModelMatchLevel Level, decimal Similarity) ClassifyModel(
         string requestedModel,
-        string observedModel,
-        bool attributesCompatible)
+        string observedModel)
     {
         var requested = NormalizeModel(requestedModel);
         var observed = NormalizeModel(observedModel);
@@ -376,7 +398,7 @@ public sealed class GeminiExternalUsedPriceSearchService(
         if (IsRegionalVariant(requested, observed))
             return (ExternalModelMatchLevel.Variant, Math.Max(0.95m, similarity));
 
-        return (similarity >= 0.45m || attributesCompatible && similarity >= 0.25m)
+        return (similarity >= 0.25m)
             ? (ExternalModelMatchLevel.Related, similarity)
             : (ExternalModelMatchLevel.Unrelated, similarity);
     }
@@ -451,7 +473,7 @@ public sealed class GeminiExternalUsedPriceSearchService(
             product.BrandId.ToString("D"),
             product.Model,
             string.Join(';', attributes));
-        return "gemini:external-used-price:v3:" +
+        return "gemini:external-used-price:v4:" +
                Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(rawKey)));
     }
 
@@ -476,5 +498,7 @@ public sealed class GeminiExternalUsedPriceSearchService(
     private static string NormalizeUrl(string value) => value.Trim().TrimEnd('/');
 
     private sealed record SearchAttemptResult(GenerateContentResponse Response, string? ResponseText);
+    private sealed record SourceCandidate(string Title, string Url);
     private sealed record GroundedSource(string SourceId, string Title, string Url);
 }
+
