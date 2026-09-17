@@ -75,15 +75,100 @@ public sealed class GeminiSmokeTestController(
         }
         catch (Exception exception)
         {
+            //logger.LogError(
+            //    "Gemini market search smoke test failed for model {Model} with {ErrorType}",
+            //    settings.MarketSearchModel,
+            //    exception.GetType().Name);
+
             logger.LogError(
-                "Gemini market search smoke test failed for model {Model} with {ErrorType}",
-                settings.MarketSearchModel,
-                exception.GetType().Name);
+                exception,
+                "Gemini market search smoke test failed for model {Model}",
+                settings.MarketSearchModel);
+
             return StatusCode(StatusCodes.Status502BadGateway, new
             {
                 success = false,
                 model = settings.MarketSearchModel,
                 message = "Không gọi được Gemini Search. Kiểm tra model và quota trong log backend."
+            });
+        }
+    }
+
+    [HttpGet("used-price-search")]
+    public async Task<IActionResult> TestUsedPriceSearch(CancellationToken cancellationToken)
+    {
+        if (!environment.IsDevelopment()) return NotFound();
+
+        var settings = options.Value;
+        if (!settings.SearchGroundingEnabled)
+            return BadRequest(new { success = false, message = "Search grounding đang bị tắt trong cấu hình." });
+
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(settings.ExternalUsedPriceSearchTimeoutSeconds));
+
+        try
+        {
+            var response = await gemini.GenerateContentAsync(
+                model: settings.MarketSearchModel,
+                contents: "Dùng Google Search tìm Samsung WW90T3040WW cũ tại Việt Nam. " +
+                          "Trả tên nguồn và giá tìm được.",
+                config: new GenerateContentConfig
+                {
+                    Tools = [new Tool { GoogleSearch = new GoogleSearch() }],
+                    Temperature = 0.1,
+                    MaxOutputTokens = 500
+                },
+                cancellationToken: timeout.Token);
+
+            var grounding = response.Candidates?.FirstOrDefault()?.GroundingMetadata;
+            var sources = grounding?.GroundingChunks?
+                .Where(chunk => chunk.Web != null &&
+                                Uri.TryCreate(chunk.Web.Uri, UriKind.Absolute, out var uri) &&
+                                (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
+                .Select(chunk => new { title = chunk.Web!.Title, url = chunk.Web.Uri })
+                .DistinctBy(source => source.url)
+                .ToArray() ?? [];
+
+            logger.LogInformation(
+                "Gemini used-price search diagnostic completed for model {Model} with {SourceCount} grounded sources",
+                settings.MarketSearchModel,
+                sources.Length);
+
+            return Ok(new
+            {
+                success = !string.IsNullOrWhiteSpace(response.Text),
+                model = settings.MarketSearchModel,
+                grounded = sources.Length > 0,
+                sourceCount = sources.Length,
+                sources,
+                response = response.Text
+            });
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            logger.LogWarning(
+                "Gemini used-price search diagnostic timed out for model {Model}",
+                settings.MarketSearchModel);
+
+            return StatusCode(StatusCodes.Status504GatewayTimeout, new
+            {
+                success = false,
+                model = settings.MarketSearchModel,
+                message = "Gemini Search đã vượt thời gian chờ."
+            });
+        }
+        catch (Exception exception)
+        {
+            logger.LogError(
+                exception,
+                "Gemini used-price search diagnostic failed for model {Model}",
+                settings.MarketSearchModel);
+
+            return StatusCode(StatusCodes.Status502BadGateway, new
+            {
+                success = false,
+                model = settings.MarketSearchModel,
+                message = "Không gọi được Gemini Search. Kiểm tra model, quota và spend cap trong log backend."
             });
         }
     }

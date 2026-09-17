@@ -77,6 +77,8 @@ public partial class HomeCycleDbContext : DbContext
     public virtual DbSet<Post> Posts { get; set; }
 
     public virtual DbSet<Product> Products { get; set; }
+    public DbSet<PriceSuggestionDailyUsage> PriceSuggestionDailyUsages { get; set; }
+    public DbSet<Market_Price_Reference> MarketPriceReferences { get; set; }
 
     public virtual DbSet<Product_Attribute> Product_Attributes { get; set; }
 
@@ -1077,6 +1079,34 @@ public partial class HomeCycleDbContext : DbContext
                 .HasForeignKey(d => d.ProcessedBy)
                 .OnDelete(DeleteBehavior.Restrict)
                 .HasConstraintName("fk_withdrawal_processedby");
+        });
+
+        modelBuilder.HasDbFunction(typeof(PostgresPricingFunctions).GetMethod(nameof(PostgresPricingFunctions.RegexpReplace))!)
+            .HasName("regexp_replace").IsBuiltIn();
+
+        modelBuilder.Entity<PriceSuggestionDailyUsage>(entity =>
+        {
+            entity.HasKey(x => new { x.UserId, x.UsageDate });
+            entity.ToTable("PriceSuggestionDailyUsage", "public", table =>
+                table.HasCheckConstraint("CK_PriceSuggestionDailyUsage_Count", "\"UsageCount\" BETWEEN 1 AND 5"));
+        });
+        modelBuilder.Entity<Market_Price_Reference>(entity =>
+        {
+            entity.ToTable("Market_Price_Reference", "public", table =>
+            {
+                table.HasCheckConstraint("CK_MarketPriceReference_Specifications", "jsonb_typeof(\"KeySpecifications\") = 'object'");
+                table.HasCheckConstraint("CK_MarketPriceReference_Price", "\"PriceVndPerUnit\" > 0");
+            });
+            entity.HasKey(x => x.Id).HasName("Market_Price_Reference_pkey");
+            entity.Property(x => x.Id).HasDefaultValueSql("gen_random_uuid()");
+            entity.Property(x => x.ObservedAt).HasColumnType("timestamp with time zone");
+            entity.Property(x => x.CreatedAt).HasColumnType("timestamp with time zone");
+            entity.Property(x => x.UpdatedAt).HasColumnType("timestamp with time zone");
+            entity.Property(x => x.KeySpecifications).HasColumnType("jsonb");
+            entity.HasIndex(x => new { x.ProductTypeId, x.BrandId, x.NormalizedModelNumber, x.ObservedAt },
+                    "ix_market_price_verified_lookup")
+                .IsDescending(false, false, false, true)
+                .HasFilter("\"IsVerified\" = true");
         });
 
         OnModelCreatingPartial(modelBuilder);
