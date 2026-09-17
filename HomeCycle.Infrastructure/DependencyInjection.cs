@@ -98,6 +98,7 @@ using HomeCycle.Infrastructure.Externals.PayOS;
 using HomeCycle.Infrastructure.Externals.PayOS;
 using HomeCycle.Infrastructure.Repositories.Agreements;
 using HomeCycle.Infrastructure.Repositories.Appointments;
+using HomeCycle.Infrastructure.Repositories.Audits;
 using HomeCycle.Infrastructure.Repositories.Banks;
 using HomeCycle.Infrastructure.Repositories.Carts;
 using HomeCycle.Infrastructure.Repositories.Disputes;
@@ -176,6 +177,7 @@ namespace HomeCycle.Infrastructure
             services.AddSingleton<AuditPayloadSanitizer>();
             services.AddScoped<IAuditOutboxWriter, AuditOutboxWriter>();
             services.AddScoped<IAuditOutboxProcessor, AuditOutboxProcessor>();
+            services.AddScoped<IAuditLogRepository, AuditLogRepository>();
             services.AddScoped<IAuditService, AuditService>();
 
             //register hash password

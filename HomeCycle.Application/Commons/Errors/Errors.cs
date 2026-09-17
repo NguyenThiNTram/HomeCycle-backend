@@ -657,4 +657,10 @@ namespace HomeCycle.Application.Commons.Errors
         public static readonly Error TargetNotAllowed =
             new("DisputeCategory.TargetNotAllowed", "Loại tranh chấp không áp dụng cho đối tượng này.");
     }
+
+    public static class AuditErrors
+    {
+        public static readonly Error NotFound = new("AuditLog.NotFound", "Không tìm thấy audit log.");
+        public static readonly Error InvalidDateRange = new("AuditLog.InvalidDateRange", "FromUtc không được lớn hơn ToUtc.");
+    }
 }

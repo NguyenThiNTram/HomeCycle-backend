@@ -1,6 +1,12 @@
 ﻿using HomeCycle.Application.Commons.Audits;
+using HomeCycle.Application.Commons.Errors;
+using HomeCycle.Application.Commons.Paginations;
+using HomeCycle.Application.Commons.Results;
+using HomeCycle.Application.DTOs.Requests.Audits;
+using HomeCycle.Application.DTOs.Responses.Audits;
 using HomeCycle.Application.Interfaces.Repositories.Audits;
 using HomeCycle.Application.Interfaces.Services.Audits;
+using HomeCycle.Domain.Entities;
 using HomeCycle.Domain.Enums;
 using System;
 using System.Collections.Generic;
@@ -15,15 +21,18 @@ namespace HomeCycle.Application.Services.Audits
         private readonly IAuditOutboxWriter _outboxWriter;
         private readonly IAuditContextAccessor _contextAccessor;
         private readonly TimeProvider _timeProvider;
+        private readonly IAuditLogRepository _auditLogRepository;
 
         public AuditService(
             IAuditOutboxWriter outboxWriter,
             IAuditContextAccessor contextAccessor,
-            TimeProvider timeProvider)
+            TimeProvider timeProvider,
+            IAuditLogRepository auditLogRepository)
         {
             _outboxWriter = outboxWriter;
             _contextAccessor = contextAccessor;
             _timeProvider = timeProvider;
+            _auditLogRepository = auditLogRepository;
         }
 
         public async Task EnqueueAsync(
@@ -88,6 +97,59 @@ namespace HomeCycle.Application.Services.Audits
             await _outboxWriter.EnqueueAsync(
                 record,
                 cancellationToken);
+        }
+
+
+        public async Task<Result<PagedResult<AuditLogListItemResponse>>> GetPagedAsync(
+            AuditLogSearchRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(request);
+
+            if (request.FromUtc.HasValue && request.ToUtc.HasValue && request.FromUtc.Value > request.ToUtc.Value)
+                return Result<PagedResult<AuditLogListItemResponse>>.Fail(AuditErrors.InvalidDateRange);
+
+            var result = await _auditLogRepository.GetPagedAsync(request, cancellationToken);
+            return Result<PagedResult<AuditLogListItemResponse>>.Success(result);
+        }
+
+        public async Task<Result<AuditLogDetailResponse>> GetByIdAsync(Guid auditId, CancellationToken cancellationToken = default)
+        {
+            var auditLog = await _auditLogRepository.GetByIdAsync(auditId, cancellationToken);
+
+            if (auditLog == null)
+                return Result<AuditLogDetailResponse>.Fail(AuditErrors.NotFound);
+
+            return Result<AuditLogDetailResponse>.Success(ToDetailResponse(auditLog));
+        }
+
+
+        // =============== HELPER =====================
+        private static AuditLogDetailResponse ToDetailResponse(audit_log auditLog)
+        {
+            return new AuditLogDetailResponse
+            {
+                AuditId = auditLog.AuditId,
+                EventId = auditLog.EventId,
+                Category = auditLog.Category,
+                Action = auditLog.Action,
+                Outcome = auditLog.Outcome,
+                ReasonCode = auditLog.ReasonCode,
+                ActorType = auditLog.ActorType,
+                UserId = auditLog.UserId,
+                UserRole = auditLog.UserRole,
+                TargetType = auditLog.TargetType,
+                TargetId = auditLog.TargetId,
+                Source = auditLog.Source,
+                CorrelationId = auditLog.CorrelationId,
+                IpAddress = auditLog.IpAddress,
+                UserAgent = auditLog.UserAgent,
+                OldValues = auditLog.OldValues,
+                NewValues = auditLog.NewValues,
+                Metadata = auditLog.Metadata,
+                OccurredAtUtc = auditLog.OccurredAtUtc,
+                RecordedAtUtc = auditLog.RecordedAtUtc
+            };
         }
 
         private static void Validate(AuditEvent auditEvent)
