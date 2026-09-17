@@ -43,45 +43,26 @@ namespace HomeCycle.Application.Validations.Auths
                 .Must(IsValidPhoneNumber)
                     .WithMessage("Phone number must contain 10 or 11 digits and start with 0.");
 
-            When(HasAnyIdentityInformation, () =>
-            {
-                RuleFor(x => x.RepresentativeCode)
-                    .NotEmpty()
-                    .WithMessage("Số CCCD không được để trống.")
-                    .MaximumLength(50)
-                    .WithMessage("Số CCCD không được vượt quá 50 ký tự.");
+            RuleFor(x => x.RepresentativeCode)
+                .MaximumLength(50)
+                .WithMessage("Số CCCD không được vượt quá 50 ký tự.");
 
-                RuleFor(x => x.RepresentativeName)
-                    .NotEmpty()
-                    .WithMessage("Tên trên CCCD không được để trống.")
-                    .MaximumLength(255)
-                    .WithMessage(
-                        "Tên trên CCCD không được vượt quá 255 ký tự.");
+            RuleFor(x => x.RepresentativeName)
+                .MaximumLength(255)
+                .WithMessage("Tên trên CCCD không được vượt quá 255 ký tự.");
 
-                RuleFor(x => x.RepresentativeDob)
-                    .NotNull()
-                    .WithMessage("Ngày sinh trên CCCD không được để trống.")
-                    .Must(value =>
-                        !value.HasValue ||
-                        value.Value <= DateOnly.FromDateTime(DateTime.UtcNow))
-                    .WithMessage(
-                        "Ngày sinh trên CCCD không được lớn hơn ngày hiện tại.");
+            RuleFor(x => x.RepresentativeDob)
+                .Must(value => !value.HasValue || value.Value <= DateOnly.FromDateTime(DateTime.UtcNow))
+                .WithMessage("Ngày sinh trên CCCD không được lớn hơn ngày hiện tại.");
 
-                RuleFor(x => x.RepresentativeAddress)
-                    .NotEmpty()
-                    .WithMessage("Địa chỉ trên CCCD không được để trống.")
-                    .MaximumLength(500)
-                    .WithMessage(
-                        "Địa chỉ trên CCCD không được vượt quá 500 ký tự.");
+            RuleFor(x => x.RepresentativeAddress)
+                .MaximumLength(500)
+                .WithMessage("Địa chỉ trên CCCD không được vượt quá 500 ký tự.");
 
-                RuleFor(x => x.FrontIDCardImage)
-                    .NotNull()
-                    .WithMessage("Ảnh mặt trước CCCD không được để trống.");
-
-                RuleFor(x => x.BackIDCardImage)
-                    .NotNull()
-                    .WithMessage("Ảnh mặt sau CCCD không được để trống.");
-            });
+            RuleFor(x => x.BankCode).MaximumLength(20);
+            RuleFor(x => x.BankName).MaximumLength(255);
+            RuleFor(x => x.AccountNumber).MaximumLength(50);
+            RuleFor(x => x.AccountName).MaximumLength(255);
         }
         private static bool IsValidFullName(string? fullName)
         {
@@ -116,16 +97,5 @@ namespace HomeCycle.Application.Validations.Auths
             return Regex.IsMatch(cleanNumber, pattern);
         }
 
-        private static bool HasAnyIdentityInformation(RegisterPersonalRequest request)
-        {
-            return
-                !string.IsNullOrWhiteSpace(request.RepresentativeCode) ||
-                !string.IsNullOrWhiteSpace(request.RepresentativeName) ||
-                request.RepresentativeDob.HasValue ||
-                !string.IsNullOrWhiteSpace(
-                    request.RepresentativeAddress) ||
-                request.FrontIDCardImage != null ||
-                request.BackIDCardImage != null;
-        }
     }
 }

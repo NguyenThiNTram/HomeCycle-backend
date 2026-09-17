@@ -27,7 +27,7 @@ public partial class Review
 
     public int? ReviewStatus { get; set; }
 
-    public int AppliedReputationDelta { get; set; }
+    public int? AppliedReputationDelta { get; set; }
 
     public DateTime CreatedAt { get; set; }
 

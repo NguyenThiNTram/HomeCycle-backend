@@ -1,4 +1,4 @@
-﻿using FluentValidation;
+using FluentValidation;
 using HomeCycle.Application.DTOs.Requests.Agreements;
 using HomeCycle.Application.Interfaces.Externals;
 using HomeCycle.Application.Interfaces.Generics;
@@ -87,6 +87,7 @@ using HomeCycle.Application.Validations.Auths;
 using HomeCycle.Application.Validations.Users;
 using HomeCycle.Infrastructure.DbContexts;
 using HomeCycle.Infrastructure.Externals;
+using HomeCycle.Infrastructure.Externals.Gemini;
 using HomeCycle.Infrastructure.Externals.GHN;
 using HomeCycle.Infrastructure.Externals.PayOS;
 using HomeCycle.Infrastructure.Externals.PayOS;
@@ -159,6 +160,28 @@ namespace HomeCycle.Infrastructure
 
             //register AutoMapper
             services.AddAutoMapper(cfg => cfg.AddMaps(typeof(MappingProfile).Assembly));
+
+            //gemini
+            services.Configure<GeminiOptions>(configuration.GetSection("Gemini"));
+
+            services.AddSingleton(sp =>
+            {
+                var settings = sp.GetRequiredService<IOptions<GeminiOptions>>().Value;
+
+                if (string.IsNullOrWhiteSpace(settings.ApiKey))
+                    throw new InvalidOperationException("Gemini:ApiKey chưa được cấu hình.");
+
+                return new Google.GenAI.Client(apiKey: settings.ApiKey);
+            });
+            services.AddSingleton<GeminiRequestService>();
+            services.AddScoped<HomeCycle.Application.Interfaces.Services.AI.IPriceSuggestionQuota, PriceSuggestionQuota>();
+            services.AddScoped<HomeCycle.Application.Interfaces.Services.AI.IPriceSuggestionAiClient, GeminiPriceSuggestionClient>();
+            services.AddScoped<HomeCycle.Application.Interfaces.Services.AI.IPriceSuggestionService, HomeCycle.Application.Pricing.Services.PriceSuggestionService>();
+            services.AddScoped<HomeCycle.Application.Interfaces.Repositories.AI.IPriceEvidenceRepository, HomeCycle.Infrastructure.Repositories.AI.PriceEvidenceRepository>();
+            services.AddScoped<HomeCycle.Application.Interfaces.Services.AI.IProductContextProvider, HomeCycle.Application.Pricing.Services.DynamicProductContextBuilder>();
+            services.AddScoped<HomeCycle.Application.Pricing.Matching.DynamicAttributeMatcher>();
+            services.AddScoped<HomeCycle.Application.Pricing.Matching.EquivalentModelMatcher>();
+            services.AddScoped<HomeCycle.Application.Interfaces.Services.AI.IExternalUsedPriceSearchService, GeminiExternalUsedPriceSearchService>();
 
             // register FluentValidation
             // do nằm chung 1 application nên chỉ cần gọi 1 lần là đủ, không cần gọi nhiều lần
@@ -329,3 +352,4 @@ namespace HomeCycle.Infrastructure
         }
     }
 }
+

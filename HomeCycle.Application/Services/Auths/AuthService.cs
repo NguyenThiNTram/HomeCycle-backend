@@ -502,7 +502,6 @@ namespace HomeCycle.Application.Services.Auths
                     }
                 }
 
-                await _unitOfWork.BeginTransactionAsync();
                 var now = DateTime.UtcNow;
 
                 var newUser = _mapper.Map<user>(request);
@@ -556,7 +555,10 @@ namespace HomeCycle.Application.Services.Auths
                 personalProfile.UserId = newUser.UserId;
                 personalProfile.FrontIDCardImage = frontIdCardUrl;
                 personalProfile.BackIDCardImage = backIdCardUrl;
-                personalProfile.VerificationStatus = VerifyStatus.Pending;
+                personalProfile.VerificationStatus =
+                    !string.IsNullOrWhiteSpace(frontIdCardUrl) && !string.IsNullOrWhiteSpace(backIdCardUrl)
+                        ? VerifyStatus.Pending
+                        : null;
                 personalProfile.CreatedAt = now;
 
                 await _personalProfileRepository.AddAsync(personalProfile, cancellationToken);

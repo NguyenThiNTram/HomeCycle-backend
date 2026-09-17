@@ -523,7 +523,6 @@ namespace HomeCycle.Application.Services.Posts
             ChangeLifecycleAsync(ownerId, postId, PostStatus.Active, false, cancellationToken);
 
         public async Task<Result<bool>> DeleteAsync(
-            Guid ownerId,
             Guid postId,
             CancellationToken cancellationToken = default)
         {
@@ -531,10 +530,7 @@ namespace HomeCycle.Application.Services.Posts
             if (existing is null)
                 return Result<bool>.Fail(PostErrors.NotFound);
 
-            if (existing.OwnerId != ownerId)
-                return Result<bool>.Fail(PostErrors.Forbidden);
-
-            if (existing.PostType == PostType.Buy) return await DeleteBuyPostAsync(ownerId, postId, cancellationToken);
+            if (existing.PostType == PostType.Buy) return await DeleteBuyPostAsAdminAsync(postId, cancellationToken);
             if (await _postRepository.HasUnfinishedTransactionsAsync(postId, cancellationToken))
                 return Result<bool>.Fail(ValidationErrors.InvalidRequest("Bài đăng đang có giao dịch chưa hoàn tất."));
             var deleted = await _postRepository.DeleteAsync(postId, cancellationToken);
