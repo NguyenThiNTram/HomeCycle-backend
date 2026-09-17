@@ -13,6 +13,7 @@ using HomeCycle.Application.Interfaces.Generics;
 using HomeCycle.Application.Interfaces.Repositories.Banks;
 using HomeCycle.Application.Interfaces.Repositories.Wallets;
 using HomeCycle.Application.Interfaces.Services.Audits;
+using HomeCycle.Application.Interfaces.Services.Entitlements;
 using HomeCycle.Application.Interfaces.Services.Notifications;
 using HomeCycle.Application.Interfaces.Services.PlatformPolicies;
 using HomeCycle.Application.Interfaces.Services.Wallets;
@@ -46,6 +47,7 @@ namespace HomeCycle.Application.Services.Wallets
         private readonly IValidator<CreateWithdrawalRequest> _createValidator;
         private readonly IValidator<RejectWithdrawalRequest> _rejectValidator;
         private readonly IMapper _mapper;
+        private readonly IEntitlementResolver _entitlementResolver;
 
         public WithdrawalService(
             IUnitOfWork unitOfWork,
@@ -62,7 +64,8 @@ namespace HomeCycle.Application.Services.Wallets
             ILogger<WithdrawalService> logger,
             IValidator<CreateWithdrawalRequest> createValidator,
             IValidator<RejectWithdrawalRequest> rejectValidator,
-            IMapper mapper)
+            IMapper mapper,
+            IEntitlementResolver entitlementResolver)
         {
             _unitOfWork = unitOfWork;
             _bankAccountRepo = bankAccountRepo;
@@ -79,6 +82,7 @@ namespace HomeCycle.Application.Services.Wallets
             _rejectValidator = rejectValidator;
             _logger = logger;
             _mapper = mapper;
+            _entitlementResolver = entitlementResolver;
         }
 
 
@@ -91,7 +95,14 @@ namespace HomeCycle.Application.Services.Wallets
                 return Result<Guid>.Fail(new Error("Withdrawal.InvalidRequest", errors));
             }
 
+            var nowUtc = _clock.GetUtcNow();
             var policy = await _platformPolicyProvider.GetWithdrawalConfigAsync(ct);
+            var effectiveEntitlements = await _entitlementResolver.ResolveWithdrawalAsync(
+                userId,
+                policy.DailyWithdrawalLimit,
+                policy.DailyWithdrawalCountLimit,
+                nowUtc.UtcDateTime,
+                ct);
             var amount = request.Amount;
 
             if (amount < policy.MinimumWithdrawalAmount)
@@ -127,28 +138,28 @@ namespace HomeCycle.Application.Services.Wallets
                     return Result<Guid>.Fail(new Error("Wallet.InsufficientBalance", "Số dư khả dụng không đủ."));
                 }
 
-                var nowUtc = _clock.GetUtcNow();
                 var window = GetVietnamDayWindow(nowUtc);
                 var usage = await _withdrawalRepo.GetDailyUsageAsync(userId, window.FromUtc, window.ToUtc, ct);
                 var usedLimit = usage.CompletedAmount + usage.ReservedAmount;
 
-                if (usedLimit + amount > policy.DailyWithdrawalLimit)
+                if (usedLimit + amount > effectiveEntitlements.DailyAmountLimit)
                 {
                     await _unitOfWork.RollbackTransactionAsync(ct);
-                    var remaining = Math.Max(policy.DailyWithdrawalLimit - usedLimit, 0m);
+                    var remaining = Math.Max(effectiveEntitlements.DailyAmountLimit - usedLimit, 0m);
 
                     return Result<Guid>.Fail(new Error(
                         "Withdrawal.DailyLimitExceeded",
                         $"Hạn mức rút còn lại hôm nay là {remaining:N0} VNĐ."));
                 }
 
-                if (usage.UsedCount >= policy.DailyWithdrawalCountLimit)
+                if (effectiveEntitlements.DailyCountLimit.HasValue &&
+                    usage.UsedCount >= effectiveEntitlements.DailyCountLimit.Value)
                 {
                     await _unitOfWork.RollbackTransactionAsync(ct);
 
                     return Result<Guid>.Fail(new Error(
                         "Withdrawal.DailyCountLimitExceeded",
-                        $"Bạn đã sử dụng hết {policy.DailyWithdrawalCountLimit} lượt rút tiền trong ngày."));
+                        $"Bạn đã sử dụng hết {effectiveEntitlements.DailyCountLimit.Value} lượt rút tiền trong ngày."));
                 }
 
                 var now = nowUtc.UtcDateTime;
@@ -992,27 +1003,48 @@ namespace HomeCycle.Application.Services.Wallets
             return Result<bool>.Success(true);
         }
 
-        public async Task<Result<WithdrawalQuotaResponseDto>> GetMyWithdrawalQuotaAsync(Guid userId, CancellationToken ct = default)
+        public async Task<Result<WithdrawalQuotaResponseDto>> GetMyWithdrawalQuotaAsync(
+            Guid userId,
+            CancellationToken ct = default)
         {
+            var nowUtc = _clock.GetUtcNow();
             var policy = await _platformPolicyProvider.GetWithdrawalConfigAsync(ct);
-            var window = GetVietnamDayWindow(_clock.GetUtcNow());
-            var usage = await _withdrawalRepo.GetDailyUsageAsync(userId, window.FromUtc, window.ToUtc, ct);
-            var used = usage.CompletedAmount + usage.ReservedAmount;
+            var effectiveEntitlements = await _entitlementResolver.ResolveWithdrawalAsync(
+                userId,
+                policy.DailyWithdrawalLimit,
+                policy.DailyWithdrawalCountLimit,
+                nowUtc.UtcDateTime,
+                ct);
 
-            return Result<WithdrawalQuotaResponseDto>.Success(new WithdrawalQuotaResponseDto
-            {
-                MinimumWithdrawalAmount = policy.MinimumWithdrawalAmount,
-                MaximumWithdrawalAmount = policy.MaximumWithdrawalAmount,
-                DailyWithdrawalLimit = policy.DailyWithdrawalLimit,
-                CompletedTodayAmount = usage.CompletedAmount,
-                ActiveReservedAmount = usage.ReservedAmount,
-                UsedDailyLimitAmount = used,
-                RemainingDailyLimitAmount = Math.Max(policy.DailyWithdrawalLimit - used, 0m),
-                DailyWithdrawalCountLimit = policy.DailyWithdrawalCountLimit,
-                UsedDailyWithdrawalCount = usage.UsedCount,
-                RemainingDailyWithdrawalCount = Math.Max(policy.DailyWithdrawalCountLimit - usage.UsedCount, 0),
-                ResetAt = window.ResetAt
-            });
+            var window = GetVietnamDayWindow(nowUtc);
+            var usage = await _withdrawalRepo.GetDailyUsageAsync(
+                userId,
+                window.FromUtc,
+                window.ToUtc,
+                ct);
+
+            var used = usage.CompletedAmount + usage.ReservedAmount;
+            var remainingCount = effectiveEntitlements.DailyCountLimit.HasValue
+                ? Math.Max(effectiveEntitlements.DailyCountLimit.Value - usage.UsedCount, 0)
+                : (int?)null;
+
+            return Result<WithdrawalQuotaResponseDto>.Success(
+                new WithdrawalQuotaResponseDto
+                {
+                    MinimumWithdrawalAmount = policy.MinimumWithdrawalAmount,
+                    MaximumWithdrawalAmount = policy.MaximumWithdrawalAmount,
+                    DailyWithdrawalLimit = effectiveEntitlements.DailyAmountLimit,
+                    CompletedTodayAmount = usage.CompletedAmount,
+                    ActiveReservedAmount = usage.ReservedAmount,
+                    UsedDailyLimitAmount = used,
+                    RemainingDailyLimitAmount = Math.Max(
+                        effectiveEntitlements.DailyAmountLimit - used,
+                        0m),
+                    DailyWithdrawalCountLimit = effectiveEntitlements.DailyCountLimit,
+                    UsedDailyWithdrawalCount = usage.UsedCount,
+                    RemainingDailyWithdrawalCount = remainingCount,
+                    ResetAt = window.ResetAt
+                });
         }
 
 

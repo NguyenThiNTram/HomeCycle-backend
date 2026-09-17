@@ -38,6 +38,7 @@ using HomeCycle.Application.Interfaces.Services.Carts;
 using HomeCycle.Application.Interfaces.Services.Configs;
 using HomeCycle.Application.Interfaces.Services.Disputes;
 using HomeCycle.Application.Interfaces.Services.Disputes;
+using HomeCycle.Application.Interfaces.Services.Entitlements;
 using HomeCycle.Application.Interfaces.Services.Externals;
 using HomeCycle.Application.Interfaces.Services.GHN;
 using HomeCycle.Application.Interfaces.Services.GHN;
@@ -69,6 +70,7 @@ using HomeCycle.Application.Services.Carts;
 using HomeCycle.Application.Services.Configs;
 using HomeCycle.Application.Services.Disputes;
 using HomeCycle.Application.Services.Disputes;
+using HomeCycle.Application.Services.Entitlements;
 using HomeCycle.Application.Services.GHN;
 using HomeCycle.Application.Services.GHN;
 using HomeCycle.Application.Services.Inspections;
@@ -282,6 +284,7 @@ namespace HomeCycle.Infrastructure
             services.AddScoped<IConversationRepository, ConversationRepository>();
             services.AddScoped<IDisputeCategoryRepository, DisputeCategoryRepository>();
             services.AddScoped<ISubscriptionPackageRepository, SubscriptionPackageRepository>();
+            services.AddScoped<IUserSubscriptionRepository, UserSubscriptionRepository>();
 
             // register Services
             services.AddScoped<IAuthService, AuthService>();
@@ -334,6 +337,7 @@ namespace HomeCycle.Infrastructure
             services.AddScoped<IFileValidationService, FileValidationService>();
             services.AddScoped<IDisputeCategoryService, DisputeCategoryService>();
             services.AddScoped<ISubscriptionPackageService, SubscriptionPackageService>();
+            services.AddScoped<IEntitlementResolver, EntitlementResolver>();
 
 
             services.AddScoped<INotificationService, NotificationService>();

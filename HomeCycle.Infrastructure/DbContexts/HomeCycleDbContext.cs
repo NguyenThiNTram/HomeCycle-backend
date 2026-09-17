@@ -102,6 +102,8 @@ public partial class HomeCycleDbContext : DbContext
 
     public virtual DbSet<User_Subscription> User_Subscriptions { get; set; }
 
+    public virtual DbSet<User_Subscription_Entitlement> User_Subscription_Entitlements { get; set; }
+
     public virtual DbSet<Wallet> Wallets { get; set; }
 
     public virtual DbSet<Wallet_Ledger> Wallet_Ledgers { get; set; }
@@ -1075,6 +1077,21 @@ public partial class HomeCycleDbContext : DbContext
             entity.HasOne(d => d.User).WithMany(p => p.User_Subscriptions)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("fk_us_user");
+        });
+
+        modelBuilder.Entity<User_Subscription_Entitlement>(entity =>
+        {
+            entity.HasKey(e => e.SubscriptionEntitlementId)
+                .HasName("User_Subscription_Entitlement_pkey");
+
+            entity.Property(e => e.SubscriptionEntitlementId).ValueGeneratedNever();
+            entity.Property(e => e.IsUnlimited).HasDefaultValue(false);
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()");
+
+            entity.HasOne(d => d.Subscription)
+                .WithMany(p => p.User_Subscription_Entitlements)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("fk_user_subscription_entitlement_subscription");
         });
 
         modelBuilder.Entity<Wallet>(entity =>

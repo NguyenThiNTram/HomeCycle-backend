@@ -29,7 +29,7 @@ namespace HomeCycle.API.Controllers
         [HttpPost("withdrawals")]
         [SwaggerOperation(
             Summary = "Tạo yêu cầu rút tiền",
-            Description = "Kiểm tra tài khoản ngân hàng, số dư, giới hạn mỗi lần và quota số tiền/số lần theo ngày RequestedAt ở UTC+7. Pending, Approved, Processing và Completed chiếm quota. Tạo thành công chuyển tiền từ Available sang Hold.")]
+            Description = "Kiểm tra tài khoản ngân hàng, số dư, giới hạn mỗi lần và quota hiệu lực theo Platform Policy hoặc subscription đang active. Quota được tính theo RequestedAt ở UTC+7; Pending, Approved, Processing và Completed chiếm quota. Tạo thành công chuyển tiền từ Available sang Hold.")]
         [ProducesResponseType(StatusCodes.Status200OK)]
         public async Task<IActionResult> CreateWithdrawal([FromBody] CreateWithdrawalRequest request, CancellationToken cancellationToken)
         {
@@ -159,7 +159,7 @@ namespace HomeCycle.API.Controllers
         [HttpGet("withdrawals/quota")]
         [SwaggerOperation(
             Summary = "Lấy hạn mức rút tiền hiện tại",
-            Description = "Trả quota tiền và số lần theo ngày RequestedAt ở UTC+7. Chỉ Pending, Approved, Processing và Completed chiếm quota. CompletedTodayAmount và ActiveReservedAmount chỉ gồm request tạo trong ngày. Count limit và remaining null biểu diễn unlimited; Phase 1 luôn trả giới hạn hữu hạn.")]
+            Description = "Trả quota rút tiền hiệu lực từ Platform Policy hoặc subscription đang active. Quota được tính theo RequestedAt ở UTC+7; Pending, Approved, Processing và Completed chiếm quota. DailyWithdrawalCountLimit và RemainingDailyWithdrawalCount bằng null khi số lượt rút là unlimited.")]
         [ProducesResponseType(typeof(WithdrawalQuotaResponseDto), StatusCodes.Status200OK)]
         public async Task<IActionResult> GetWithdrawalQuota(CancellationToken cancellationToken)
         {
