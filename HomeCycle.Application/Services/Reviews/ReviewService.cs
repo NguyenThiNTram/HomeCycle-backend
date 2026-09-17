@@ -479,7 +479,7 @@ namespace HomeCycle.Application.Services.Reviews
 
         private async Task<Result<int>> ReplaceRatingImpactAsync(
             Guid userId,
-            int oldAppliedDelta,
+            int? oldAppliedDelta,
             int requestedDelta,
             RatingPolicyConfigDto ratingPolicy,
             CancellationToken ct)
@@ -494,7 +494,8 @@ namespace HomeCycle.Application.Services.Reviews
                 if (profile == null)
                     return Result<int>.Fail(ProfileErrors.ProfileNotFound);
 
-                var baseScore = profile.ReputationScore - oldAppliedDelta;
+                // Legacy reviews have no recorded delta to reverse.
+                var baseScore = profile.ReputationScore - (oldAppliedDelta ?? 0);
                 var result = ReputationScoreCalculator.ApplyRatingDelta(baseScore, requestedDelta, ratingPolicy);
                 profile.ReputationScore = result.Score;
                 _businessProfileRepo.Update(profile);
@@ -507,7 +508,7 @@ namespace HomeCycle.Application.Services.Reviews
                 if (profile == null)
                     return Result<int>.Fail(ProfileErrors.ProfileNotFound);
 
-                var baseScore = profile.ReputationScore - oldAppliedDelta;
+                var baseScore = profile.ReputationScore - (oldAppliedDelta ?? 0);
                 var result = ReputationScoreCalculator.ApplyRatingDelta(baseScore, requestedDelta, ratingPolicy);
                 profile.ReputationScore = result.Score;
                 await _personalProfileRepo.UpdateAsync(profile, ct);

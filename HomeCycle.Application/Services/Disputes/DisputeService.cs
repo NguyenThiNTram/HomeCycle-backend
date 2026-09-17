@@ -214,6 +214,7 @@ namespace HomeCycle.Application.Services.Disputes
                     var ratingPolicy = review == null
                         ? null
                         : await _platformPolicyProvider.GetRatingConfigAsync(ct);
+                    // Reverse only recorded impact; legacy NULL is not inferred from stars.
                     var appliedRatingDelta = review?.AppliedReputationDelta ?? 0;
                     dispute!.TargetUserId = ownerId;
 
