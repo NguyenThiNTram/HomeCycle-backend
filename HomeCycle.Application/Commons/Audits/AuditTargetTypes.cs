@@ -23,5 +23,6 @@ namespace HomeCycle.Application.Commons.Audits
         public const string Inspection = "Inspection";
         public const string Shipment = "Shipment";
         public const string Dispute = "Dispute";
+        public const string SubscriptionPackage = "SubscriptionPackage";
     }
 }

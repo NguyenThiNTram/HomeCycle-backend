@@ -96,6 +96,8 @@ public partial class HomeCycleDbContext : DbContext
 
     public virtual DbSet<Subscription_Package> Subscription_Packages { get; set; }
 
+    public virtual DbSet<Subscription_Package_Entitlement> Subscription_Package_Entitlements { get; set; }
+
     public virtual DbSet<User> Users { get; set; }
 
     public virtual DbSet<User_Subscription> User_Subscriptions { get; set; }
@@ -1032,6 +1034,22 @@ public partial class HomeCycleDbContext : DbContext
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()");
             entity.Property(e => e.IsActive).HasDefaultValue(true);
             entity.Property(e => e.UpdatedAt).HasDefaultValueSql("now()");
+        });
+
+        modelBuilder.Entity<Subscription_Package_Entitlement>(entity =>
+        {
+            entity.HasKey(e => e.PackageEntitlementId)
+                .HasName("Subscription_Package_Entitlement_pkey");
+
+            entity.Property(e => e.PackageEntitlementId).ValueGeneratedNever();
+            entity.Property(e => e.IsUnlimited).HasDefaultValue(false);
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()");
+            entity.Property(e => e.UpdatedAt).HasDefaultValueSql("now()");
+
+            entity.HasOne(d => d.Package)
+                .WithMany(p => p.Subscription_Package_Entitlements)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("fk_subscription_package_entitlement_package");
         });
 
         modelBuilder.Entity<User>(entity =>

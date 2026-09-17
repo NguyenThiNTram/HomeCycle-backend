@@ -12,6 +12,7 @@ using HomeCycle.Application.DTOs.Requests.PlatformPolicies;
 using HomeCycle.Application.DTOs.Requests.Posts;
 using HomeCycle.Application.DTOs.Requests.Products;
 using HomeCycle.Application.DTOs.Requests.Profiles;
+using HomeCycle.Application.DTOs.Requests.SubscriptionPackages;
 using HomeCycle.Application.DTOs.Requests.Users;
 using HomeCycle.Application.DTOs.Responses.Appointments;
 using HomeCycle.Application.DTOs.Responses.Auths;
@@ -30,8 +31,10 @@ using HomeCycle.Application.DTOs.Responses.Posts;
 using HomeCycle.Application.DTOs.Responses.Products;
 using HomeCycle.Application.DTOs.Responses.Profiles;
 using HomeCycle.Application.DTOs.Responses.Shipments;
+using HomeCycle.Application.DTOs.Responses.SubscriptionPackages;
 using HomeCycle.Application.DTOs.Responses.Users;
 using HomeCycle.Application.DTOs.Responses.Wallets;
+using HomeCycle.Application.Entitlements;
 using HomeCycle.Domain.Entities;
 using HomeCycle.Domain.Enums;
 using System;
@@ -858,7 +861,42 @@ namespace HomeCycle.Application.Mappings
 
             CreateMap<shipment, ShipmentSellerReadyResponseDto>();
 
-            
+            // ==================== SUBSCRIPTION PACKAGE ====================
+
+            CreateMap<PackageEntitlementRequest, subscription_package_entitlement>()
+                .ForMember(dest => dest.PackageEntitlementId, opt => opt.Ignore())
+                .ForMember(dest => dest.PackageId, opt => opt.Ignore())
+                .ForMember(dest => dest.EntitlementKey, opt => opt.MapFrom(src => src.Key))
+                .ForMember(dest => dest.ValueType, opt => opt.Ignore())
+                .ForMember(dest => dest.CreatedAt, opt => opt.Ignore())
+                .ForMember(dest => dest.UpdatedAt, opt => opt.Ignore());
+
+            CreateMap<CreateSubscriptionPackageRequest, subscription_package>()
+                .ForMember(dest => dest.PackageId, opt => opt.Ignore())
+                .ForMember(dest => dest.Code, opt => opt.Ignore())
+                .ForMember(dest => dest.Name, opt => opt.Ignore())
+                .ForMember(dest => dest.Description, opt => opt.Ignore())
+                .ForMember(dest => dest.IsActive, opt => opt.Ignore())
+                .ForMember(dest => dest.CreatedAt, opt => opt.Ignore())
+                .ForMember(dest => dest.UpdatedAt, opt => opt.Ignore())
+                .ForMember(dest => dest.Entitlements, opt => opt.Ignore());
+
+            CreateMap<UpdateSubscriptionPackageRequest, subscription_package>()
+                .ForMember(dest => dest.PackageId, opt => opt.Ignore())
+                .ForMember(dest => dest.Code, opt => opt.Ignore())
+                .ForMember(dest => dest.TargetRole, opt => opt.Ignore())
+                .ForMember(dest => dest.IsActive, opt => opt.Ignore())
+                .ForMember(dest => dest.CreatedAt, opt => opt.Ignore())
+                .ForMember(dest => dest.UpdatedAt, opt => opt.Ignore())
+                .ForMember(dest => dest.Entitlements, opt => opt.Ignore())
+                .ForAllMembers(opt => opt.Condition((src, dest, srcMember) => srcMember != null));
+
+            CreateMap<subscription_package_entitlement, PackageEntitlementResponseDto>()
+                .ForMember(dest => dest.Key, opt => opt.MapFrom(src => src.EntitlementKey));
+
+            CreateMap<subscription_package, SubscriptionPackageResponseDto>();
+
+            CreateMap<EntitlementDefinition, EntitlementDefinitionResponseDto>();
         }
     }
 }

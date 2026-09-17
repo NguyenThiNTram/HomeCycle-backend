@@ -667,4 +667,19 @@ namespace HomeCycle.Application.Commons.Errors
         public static Error FilterTooLong(string field, int maxLength) =>
             new("AuditLog.FilterTooLong", $"Bộ lọc '{field}' không được vượt quá {maxLength} ký tự.");
     }
+
+    public static class SubscriptionPackageErrors
+    {
+        public static readonly Error NotFound =
+            new("SubscriptionPackage.NotFound", "Không tìm thấy gói đăng ký.");
+
+        public static readonly Error CodeAlreadyExists =
+            new("SubscriptionPackage.CodeAlreadyExists", "Code của gói đăng ký đã tồn tại.");
+
+        public static readonly Error NameAlreadyExists =
+            new("SubscriptionPackage.NameAlreadyExists", "Tên gói đăng ký đã tồn tại.");
+
+        public static Error InvalidEntitlement(string message) =>
+            new("SubscriptionPackage.InvalidEntitlement", message);
+    }
 }

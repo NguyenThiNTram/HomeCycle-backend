@@ -89,5 +89,9 @@ namespace HomeCycle.Application.Commons.Audits
         public const string DisputeResolve = "DISPUTE.RESOLVE";
         public const string DisputeReject = "DISPUTE.REJECT";
         public const string DisputeReturnVerify = "DISPUTE.RETURN_VERIFY";
+
+        public const string SubscriptionPackageCreate = "SUBSCRIPTION_PACKAGE.CREATE";
+        public const string SubscriptionPackageUpdate = "SUBSCRIPTION_PACKAGE.UPDATE";
+        public const string SubscriptionPackageUpdateStatus = "SUBSCRIPTION_PACKAGE.UPDATE_STATUS";
     }
 }

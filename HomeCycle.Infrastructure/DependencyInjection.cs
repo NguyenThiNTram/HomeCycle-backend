@@ -25,6 +25,7 @@ using HomeCycle.Application.Interfaces.Repositories.Products;
 using HomeCycle.Application.Interfaces.Repositories.Profiles;
 using HomeCycle.Application.Interfaces.Repositories.Reviews;
 using HomeCycle.Application.Interfaces.Repositories.Shipments;
+using HomeCycle.Application.Interfaces.Repositories.SubscriptionPackages;
 using HomeCycle.Application.Interfaces.Repositories.Users;
 using HomeCycle.Application.Interfaces.Repositories.Wallets;
 using HomeCycle.Application.Interfaces.Security;
@@ -54,6 +55,7 @@ using HomeCycle.Application.Interfaces.Services.Products;
 using HomeCycle.Application.Interfaces.Services.Profiles;
 using HomeCycle.Application.Interfaces.Services.Reviews;
 using HomeCycle.Application.Interfaces.Services.Shipments;
+using HomeCycle.Application.Interfaces.Services.SubscriptionPackages;
 using HomeCycle.Application.Interfaces.Services.Users;
 using HomeCycle.Application.Interfaces.Services.Wallets;
 using HomeCycle.Application.Interfaces.Services.Wallets;
@@ -84,6 +86,7 @@ using HomeCycle.Application.Services.Products;
 using HomeCycle.Application.Services.Profiles;
 using HomeCycle.Application.Services.Reviews;
 using HomeCycle.Application.Services.Shipments;
+using HomeCycle.Application.Services.SubscriptionPackages;
 using HomeCycle.Application.Services.Wallets;
 using HomeCycle.Application.Services.Wallets;
 using HomeCycle.Application.Validations.Agreements;
@@ -116,6 +119,7 @@ using HomeCycle.Infrastructure.Repositories.Products;
 using HomeCycle.Infrastructure.Repositories.Profiles;
 using HomeCycle.Infrastructure.Repositories.Reviews;
 using HomeCycle.Infrastructure.Repositories.Shipments;
+using HomeCycle.Infrastructure.Repositories.SubscriptionPackages;
 using HomeCycle.Infrastructure.Repositories.Users;
 using HomeCycle.Infrastructure.Repositories.Wallets;
 using HomeCycle.Infrastructure.Security;
@@ -277,6 +281,7 @@ namespace HomeCycle.Infrastructure
             services.AddScoped<INotificationRepository, NotificationRepository>();
             services.AddScoped<IConversationRepository, ConversationRepository>();
             services.AddScoped<IDisputeCategoryRepository, DisputeCategoryRepository>();
+            services.AddScoped<ISubscriptionPackageRepository, SubscriptionPackageRepository>();
 
             // register Services
             services.AddScoped<IAuthService, AuthService>();
@@ -328,6 +333,7 @@ namespace HomeCycle.Infrastructure
             services.AddScoped<IConversationService, ConversationService>();
             services.AddScoped<IFileValidationService, FileValidationService>();
             services.AddScoped<IDisputeCategoryService, DisputeCategoryService>();
+            services.AddScoped<ISubscriptionPackageService, SubscriptionPackageService>();
 
 
             services.AddScoped<INotificationService, NotificationService>();
