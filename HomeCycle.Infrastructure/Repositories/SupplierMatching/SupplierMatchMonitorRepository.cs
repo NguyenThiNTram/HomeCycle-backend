@@ -24,10 +24,14 @@ public sealed class SupplierMatchMonitorRepository(HomeCycleDbContext db) : ISup
                 .SetProperty(state => state.UpdatedAt, now.UtcDateTime), cancellationToken);
 
     public async Task<IReadOnlyList<SupplierMatchMonitorTarget>> GetTargetsAsync(
+        IReadOnlyCollection<Guid> vipUserIds,
         int batchSize,
         CancellationToken cancellationToken = default)
     {
         batchSize = Math.Clamp(batchSize, 1, 200);
+        var eligibleUserIds = vipUserIds.Distinct().ToArray();
+        if (eligibleUserIds.Length == 0)
+            return [];
         var now = DateTime.UtcNow;
         return await (
                 from post in db.Posts.AsNoTracking()
@@ -35,10 +39,12 @@ public sealed class SupplierMatchMonitorRepository(HomeCycleDbContext db) : ISup
                     on post.PostId equals state.BuyPostId into states
                 from state in states.DefaultIfEmpty()
                 where post.PostType == (int)PostType.Buy &&
+                      eligibleUserIds.Contains(post.OwnerId) &&
                       post.Status == (int)PostStatus.Active &&
                       post.RemainingQuantity > 0 &&
                       (!post.ExpiryDate.HasValue || post.ExpiryDate > now) &&
-                      post.User != null && post.User.Status == (int)UserStatus.Active
+                      post.User != null && post.User.Status == (int)UserStatus.Active &&
+                      (state == null || state.IsActive)
                 orderby state == null ? DateTime.MinValue : state.LastCheckedAt, post.PostId
                 select new SupplierMatchMonitorTarget(post.PostId, post.OwnerId))
             .Take(batchSize)

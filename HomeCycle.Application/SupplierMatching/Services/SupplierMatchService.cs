@@ -50,8 +50,8 @@ public sealed class SupplierMatchService(
         if (cached is not null)
         {
             var status = await GetQuotaStatusAsync(demand.RequesterId, entitlement, cancellationToken);
-            return await BuildResponseAsync(cached, entitlement, status, skip, take,
-                "AI_RERANKED", "AVAILABLE", true, effectiveDemand, cancellationToken);
+            return await BuildResponseAsync(cached.Ranked, entitlement, status, skip, take,
+                cached.RankingSource, cached.AiStatus, true, effectiveDemand, cancellationToken);
         }
 
         await using var fingerprintLock = await cache.AcquireAsync(fingerprint, cancellationToken);
@@ -59,16 +59,16 @@ public sealed class SupplierMatchService(
         if (cached is not null)
         {
             var status = await GetQuotaStatusAsync(demand.RequesterId, entitlement, cancellationToken);
-            return await BuildResponseAsync(cached, entitlement, status, skip, take,
-                "AI_RERANKED", "AVAILABLE", true, effectiveDemand, cancellationToken);
+            return await BuildResponseAsync(cached.Ranked, entitlement, status, skip, take,
+                cached.RankingSource, cached.AiStatus, true, effectiveDemand, cancellationToken);
         }
 
         var backendRanked = await GetBackendRankedAsync(effectiveDemand, entitlement.ResultLimit, cancellationToken);
-        if (backendRanked.Length == 0 || !demand.RequesterId.HasValue || !entitlement.AiRerankingEnabled)
+        if (backendRanked.Length <= 1 || !demand.RequesterId.HasValue || !entitlement.AiRerankingEnabled)
         {
             var status = await GetQuotaStatusAsync(demand.RequesterId, entitlement, cancellationToken);
             return await BuildResponseAsync(backendRanked, entitlement, status, skip, take,
-                "BACKEND_ONLY", backendRanked.Length == 0 ? "NOT_REQUIRED" : "NOT_ELIGIBLE",
+                "BACKEND_ONLY", backendRanked.Length <= 1 ? "NOT_REQUIRED" : "NOT_ELIGIBLE",
                 false, effectiveDemand, cancellationToken);
         }
 
@@ -80,23 +80,29 @@ public sealed class SupplierMatchService(
 
         var aiResult = await aiReranker.RerankAsync(
             effectiveDemand,
-            backendRanked.Select((item, index) => ToAiCandidate(item, index)).ToArray(),
+            backendRanked.Select((item, index) => ToAiCandidate(effectiveDemand, item, index)).ToArray(),
             cancellationToken);
         var application = ApplyAiRankings(backendRanked, aiResult);
         if (application is null)
+        {
+            cache.SetFallback(fingerprint, CreateBackendCacheEntry(backendRanked, "FALLBACK"));
             return await BuildResponseAsync(backendRanked, entitlement, ToStatus(reservation), skip, take,
                 "BACKEND_ONLY", "FALLBACK", false, effectiveDemand, cancellationToken);
+        }
 
-        cache.Set(fingerprint, new SupplierMatchCacheEntry(application.CacheDecisions, clock.GetUtcNow()));
+        cache.Set(fingerprint, new SupplierMatchCacheEntry(
+            application.CacheDecisions, clock.GetUtcNow(), "AI_RERANKED", "AVAILABLE"));
         return await BuildResponseAsync(application.Ranked, entitlement, ToStatus(reservation), skip, take,
             "AI_RERANKED", "AVAILABLE", false, effectiveDemand, cancellationToken);
     }
 
     public async Task<SupplierMatchResponse> MatchBackendOnlyAsync(
         SupplierDemandContext demand,
+        int skip,
         int take,
         CancellationToken cancellationToken = default)
     {
+        skip = Math.Max(0, skip);
         var entitlement = demand.RequesterId.HasValue
             ? await entitlements.GetAsync(demand.RequesterId.Value, cancellationToken)
             : SupplierMatchEntitlement.Free();
@@ -104,13 +110,38 @@ public sealed class SupplierMatchService(
             ? demand
             : demand with { AdvancedFilters = SupplierMatchAdvancedFilters.None };
         var ranked = await GetBackendRankedAsync(
-            effectiveDemand, Math.Min(take, entitlement.ResultLimit), cancellationToken);
+            effectiveDemand, entitlement.ResultLimit, cancellationToken);
         var status = await GetQuotaStatusAsync(demand.RequesterId, entitlement, cancellationToken);
-        return await BuildResponseAsync(ranked, entitlement, status, 0, take,
-            "BACKEND_ONLY", "BACKGROUND_MONITOR", false, effectiveDemand, cancellationToken);
+        return await BuildResponseAsync(ranked, entitlement, status, skip, take,
+            "BACKEND_ONLY", "NOT_REQUIRED", false, effectiveDemand, cancellationToken);
     }
 
-    private async Task<RankedCandidate[]?> TryRestoreCacheAsync(
+    public async Task<SupplierMatchResponse> MatchInitialBackendAsync(
+        SupplierDemandContext demand,
+        int take,
+        CancellationToken cancellationToken = default)
+    {
+        var entitlement = demand.RequesterId.HasValue
+            ? await entitlements.GetAsync(demand.RequesterId.Value, cancellationToken)
+            : SupplierMatchEntitlement.Free();
+        var basicDemand = demand with
+        {
+            ModelNumber = null,
+            NormalizedModelNumber = null,
+            FunctionalityStatus = null,
+            DamageLevel = null,
+            UsageDuration = null,
+            City = null,
+            Attributes = [],
+            AdvancedFilters = SupplierMatchAdvancedFilters.None
+        };
+        var ranked = await GetBackendRankedAsync(basicDemand, Math.Min(3, take), cancellationToken);
+        var status = await GetQuotaStatusAsync(demand.RequesterId, entitlement, cancellationToken);
+        return await BuildResponseAsync(ranked, entitlement, status, 0, Math.Min(3, take),
+            "BACKEND_ONLY", "NOT_REQUIRED", false, basicDemand, cancellationToken);
+    }
+
+    private async Task<RestoredCache?> TryRestoreCacheAsync(
         string fingerprint,
         SupplierDemandContext demand,
         CancellationToken cancellationToken)
@@ -157,14 +188,21 @@ public sealed class SupplierMatchService(
         }
 
         if (retainedDecisions.Count != entry.Decisions.Count)
-            cache.Set(fingerprint, entry with { Decisions = retainedDecisions });
+        {
+            var retainedEntry = entry with { Decisions = retainedDecisions };
+            if (entry.AiStatus == "FALLBACK")
+                cache.SetFallback(fingerprint, retainedEntry);
+            else
+                cache.Set(fingerprint, retainedEntry);
+        }
 
-        return restored
+        var ranked = restored
             .OrderByDescending(item => item.FinalScore ?? item.Evaluation.BaseScore)
             .ThenBy(item => item.CachedRank)
             .ThenByDescending(item => item.Candidate.CreatedAt)
             .ThenBy(item => item.Candidate.SellPostId)
             .ToArray();
+        return new RestoredCache(ranked, entry.RankingSource, entry.AiStatus);
     }
 
     private async Task<RankedCandidate[]> GetBackendRankedAsync(
@@ -228,14 +266,50 @@ public sealed class SupplierMatchService(
         };
     }
 
-    private static SupplierMatchAiCandidate ToAiCandidate(RankedCandidate item, int index) => new(
-        $"C{index + 1}", item.Evaluation.BaseScore,
-        item.Evaluation.MatchLevel.ToString().ToUpperInvariant(),
-        item.Evaluation.ModelMatchLevel.ToString().ToUpperInvariant(),
-        item.Candidate.Price, item.Candidate.AvailableQuantity,
-        item.Evaluation.CanFulfillQuantity, item.Candidate.AverageRating,
-        item.Evaluation.MatchedCriteria, item.Evaluation.UnmatchedCriteria,
-        item.Evaluation.UnknownCriteria, item.Evaluation.ReasonCodes);
+    private static SupplierMatchAiCandidate ToAiCandidate(
+        SupplierDemandContext demand,
+        RankedCandidate item,
+        int index)
+    {
+        var evaluation = item.Evaluation;
+        var conditionWeight =
+            (demand.FunctionalityStatus.HasValue ? 0.4m : 0m) +
+            (demand.DamageLevel.HasValue ? 0.4m : 0m) +
+            (demand.UsageDuration.HasValue ? 0.2m : 0m);
+        bool? cityMatched = string.IsNullOrWhiteSpace(demand.City)
+            ? null
+            : evaluation.MatchedCriteria.Contains("CITY", StringComparer.Ordinal)
+                ? true
+                : evaluation.UnmatchedCriteria.Contains("CITY", StringComparer.Ordinal)
+                    ? false
+                    : null;
+        return new SupplierMatchAiCandidate(
+            $"C{index + 1}",
+            evaluation.BaseScore,
+            evaluation.ModelMatchLevel.ToString().ToUpperInvariant(),
+            demand.PriceFrom.HasValue || demand.PriceTo.HasValue
+                ? Math.Clamp(evaluation.Breakdown.Budget / 1.5m, 0m, 1m)
+                : null,
+            Math.Clamp(evaluation.Breakdown.Quantity, 0m, 1m),
+            evaluation.AttributeStates.Count(pair => pair.Value == SupplierCriterionState.Matched),
+            evaluation.AttributeStates.Count(pair => pair.Value == SupplierCriterionState.Conflicted),
+            evaluation.AttributeStates.Count(pair => pair.Value == SupplierCriterionState.Unknown),
+            conditionWeight > 0
+                ? Math.Clamp(evaluation.Breakdown.Condition / conditionWeight, 0m, 1m)
+                : null,
+            cityMatched,
+            item.Candidate.AverageRating,
+            evaluation.ReasonCodes);
+    }
+
+    private SupplierMatchCacheEntry CreateBackendCacheEntry(
+        IReadOnlyList<RankedCandidate> ranked,
+        string aiStatus) => new(
+        ranked.Select((item, index) => new SupplierMatchCachedDecision(
+            item.Candidate.SellPostId, index, null, [], null)).ToArray(),
+        clock.GetUtcNow(),
+        "BACKEND_ONLY",
+        aiStatus);
 
     private static AiApplication? ApplyAiRankings(
         IReadOnlyList<RankedCandidate> backendRanked,
@@ -347,4 +421,9 @@ public sealed class SupplierMatchService(
     private sealed record AiApplication(
         RankedCandidate[] Ranked,
         IReadOnlyList<SupplierMatchCachedDecision> CacheDecisions);
+
+    private sealed record RestoredCache(
+        RankedCandidate[] Ranked,
+        string RankingSource,
+        string AiStatus);
 }

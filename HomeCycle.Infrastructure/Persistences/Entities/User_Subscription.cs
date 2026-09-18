@@ -18,6 +18,9 @@ public partial class User_Subscription
     public Guid UserId { get; set; }
 
     public Guid PackageId { get; set; }
+    [MaxLength(255)]
+    public string? PackageNameSnapshot { get; set; }
+    public int? DurationDaysSnapshot { get; set; }
 
     [Precision(18, 2)]
     public decimal? PricePaid { get; set; }

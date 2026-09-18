@@ -5,7 +5,9 @@ using HomeCycle.Application.Commons.Paginations;
 using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Requests.Posts;
 using HomeCycle.Application.DTOs.Requests.Products;
+using HomeCycle.Application.DTOs.Requests.SupplierMatching;
 using HomeCycle.Application.DTOs.Responses.Posts;
+using HomeCycle.Application.DTOs.Responses.Notifications;
 using HomeCycle.Application.DTOs.Responses.SupplierMatching;
 using HomeCycle.Application.SupplierMatching.Services;
 using HomeCycle.Domain.Entities;
@@ -16,6 +18,23 @@ namespace HomeCycle.Application.Services.Posts;
 
 public partial class PostService
 {
+    public async Task<Result<SellPostDetailResponse>> GetSellDetailAsync(Guid postId, CancellationToken cancellationToken = default)
+    {
+        var detail = await GetDetailAsync(postId, cancellationToken);
+        if (!detail.IsSuccess) return Result<SellPostDetailResponse>.Fail(detail.Error!);
+        if (detail.Data!.PostType != PostType.Sell) return Result<SellPostDetailResponse>.Fail(PostErrors.NotFound);
+        return Result<SellPostDetailResponse>.Success(new SellPostDetailResponse(detail.Data));
+    }
+
+    public async Task<Result<BuyPostDetailResponse>> GetBuyDetailAsync(Guid postId, CancellationToken cancellationToken = default)
+    {
+        var detail = await GetDetailAsync(postId, cancellationToken);
+        if (!detail.IsSuccess) return Result<BuyPostDetailResponse>.Fail(detail.Error!);
+        if (detail.Data!.PostType != PostType.Buy) return Result<BuyPostDetailResponse>.Fail(PostErrors.NotFound);
+        var agreed = await _postRepository.GetAgreedBuyQuantityAsync(postId, null, cancellationToken);
+        return Result<BuyPostDetailResponse>.Success(new BuyPostDetailResponse(detail.Data, agreed));
+    }
+
     public async Task<Result<PostResponse>> CreateBuyPostAsync(Guid ownerId, CreateBuyPostRequest request, CancellationToken cancellationToken = default)
     {
         var validation = await _createBuyValidator.ValidateAsync(request, cancellationToken);
@@ -113,8 +132,10 @@ public partial class PostService
                 return Result<PostResponse>.Fail(ValidationErrors.InvalidRequest("Thời hạn tối đa là 6 tháng từ ngày tạo tin."));
             var allocated = current.Quantity - current.RemainingQuantity;
             var reserved = await _postRepository.GetReservedQuantityAsync(postId, null, cancellationToken);
-            if (merged.Quantity < allocated + reserved)
-                return Result<PostResponse>.Fail(PostErrors.InvalidUpdateQuantity(allocated + reserved, merged.Quantity!.Value));
+            var agreed = await _postRepository.GetAgreedBuyQuantityAsync(postId, null, cancellationToken);
+            var minimumQuantity = Math.Max(allocated + reserved, agreed);
+            if (merged.Quantity < minimumQuantity)
+                return Result<PostResponse>.Fail(PostErrors.InvalidUpdateQuantity(minimumQuantity, merged.Quantity!.Value));
             var materialFields = new[] { "Title", "BrandId", "CategoryId", "ProductTypeId", "ModelNumber", "FunctionalityStatus", "UsageDuration", "DamageLevel", "AttributeValues", "PriceFrom", "PriceTo" };
             var after = System.Text.Json.JsonSerializer.SerializeToElement(merged);
             var material = materialFields.Any(name => before.GetProperty(name).GetRawText() != after.GetProperty(name).GetRawText());
@@ -125,7 +146,7 @@ public partial class PostService
             current.MinExpectedPrice = merged.PriceFrom; current.BasePrice = merged.PriceTo;
             current.StreetAddress = merged.StreetAddress; current.Ward = merged.Ward; current.City = merged.City;
             current.PriorityLevel = merged.PriorityLevel; current.ExpiryDate = merged.ExpiryDate?.ToUniversalTime(); current.UpdatedAt = DateTime.UtcNow;
-            if (current.RemainingQuantity == 0) current.Status = PostStatus.Closed;
+            if (current.RemainingQuantity == 0 || agreed >= current.Quantity) current.Status = PostStatus.Closed;
             else if (current.Status == PostStatus.Closed && current.Quantity > previousQuantity)
                 current.Status = PostStatus.Active;
             await _postRepository.UpdateAsync(current, cancellationToken);
@@ -156,6 +177,14 @@ public partial class PostService
                 NewValues = buyPostAuditDiff.NewValues
             }, cancellationToken);
 
+            if (agreed < previousQuantity && agreed >= current.Quantity)
+            {
+                var notification = await _notificationService.AddPendingAsync(
+                    new CreateNotificationCommand(ownerId, "Tin thu mua đã đạt mục tiêu",
+                        $"Tin thu mua đã lập hợp đồng đủ {agreed}/{current.Quantity} sản phẩm và được đóng. Vui lòng kiểm tra và chỉnh sửa số lượng nếu muốn tiếp tục thu mua.",
+                        NotificationTargetType.Post, postId), cancellationToken);
+                _unitOfWork.RegisterAfterCommit(() => _notificationService.PublishCreatedSafelyAsync(notification));
+            }
             await _unitOfWork.SaveChangesAsync(cancellationToken);
             await _unitOfWork.CommitTransactionAsync(cancellationToken);
             return Result<PostResponse>.Success(_mapper.Map<PostResponse>(await _postRepository.GetByIdAsync(postId, cancellationToken)));
@@ -221,6 +250,9 @@ public partial class PostService
             if (p.Status is PostStatus.Deleted or PostStatus.Suspended) return Result<bool>.Fail(PostErrors.PostAlreadyClosedOrDeleted);
             if (status is PostStatus.Active or PostStatus.Deleted && p.ExpiryDate <= DateTime.UtcNow) return Result<bool>.Fail(PostErrors.PostExpired);
             if (status == PostStatus.Active && (p.Status != PostStatus.Closed || p.RemainingQuantity <= 0)) return Result<bool>.Fail(PostErrors.PostAlreadyClosedOrDeleted);
+            if (status == PostStatus.Active && p.PostType == PostType.Buy &&
+                await _postRepository.GetAgreedBuyQuantityAsync(postId, null, ct) >= p.Quantity)
+                return Result<bool>.Fail(ValidationErrors.InvalidRequest("Tin đã đạt mục tiêu thu mua. Vui lòng kiểm tra và tăng số lượng trước khi mở lại."));
             if (status == PostStatus.Deleted && await _postRepository.HasUnfinishedTransactionsAsync(postId, ct))
                 return Result<bool>.Fail(ValidationErrors.InvalidRequest("Bài đăng đang có giao dịch chưa hoàn tất. Bạn có thể đóng nhận đề nghị mới."));
             var previousPostStatus = p.Status;
@@ -287,7 +319,7 @@ public partial class PostService
             return Result<PagedResult<BuyPostMatchResponse>>.Fail(PostErrors.NotFound);
         if (buy.OwnerId != ownerId)
             return Result<PagedResult<BuyPostMatchResponse>>.Fail(PostErrors.Forbidden);
-        var matched = await _supplierMatchService.MatchAsync(
+        var matched = await _supplierMatchService.MatchBackendOnlyAsync(
             SupplierDemandContextBuilder.FromBuyPost(buy),
             (request.PageNumber - 1) * request.PageSize,
             request.PageSize,
@@ -303,6 +335,7 @@ public partial class PostService
     public async Task<Result<SupplierMatchResponse>> GetSupplierMatchesAsync(
         Guid ownerId,
         Guid buyPostId,
+        SupplierMatchAdvancedFilterRequest? advancedFilters,
         CancellationToken cancellationToken = default)
     {
         var buy = await _postRepository.GetDetailByIdAsync(buyPostId, cancellationToken);
@@ -313,7 +346,7 @@ public partial class PostService
             return Result<SupplierMatchResponse>.Fail(PostErrors.Forbidden);
 
         var response = await _supplierMatchService.MatchAsync(
-            SupplierDemandContextBuilder.FromBuyPost(buy), 0, int.MaxValue, cancellationToken);
+            SupplierDemandContextBuilder.FromBuyPost(buy, advancedFilters), 0, int.MaxValue, cancellationToken);
         response.BuyPostId = buyPostId;
         return Result<SupplierMatchResponse>.Success(response);
     }
@@ -322,11 +355,15 @@ public partial class PostService
     {
         try
         {
-            await GetSupplierMatchesAsync(ownerId, buyPostId, cancellationToken);
+            var buy = await _postRepository.GetDetailByIdAsync(buyPostId, cancellationToken);
+            if (buy?.Product is null || buy.OwnerId != ownerId || buy.PostType != PostType.Buy)
+                return;
+            await _supplierMatchService.MatchInitialBackendAsync(
+                SupplierDemandContextBuilder.FromBuyPost(buy), 3, cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            // Bài mua đã commit; request bị hủy chỉ dừng bước warm cache.
+            return;
         }
         catch (Exception exception)
         {

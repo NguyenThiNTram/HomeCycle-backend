@@ -19,6 +19,12 @@ public interface ISupplierMatchService
 
     Task<SupplierMatchResponse> MatchBackendOnlyAsync(
         SupplierDemandContext demand,
+        int skip,
+        int take,
+        CancellationToken cancellationToken = default);
+
+    Task<SupplierMatchResponse> MatchInitialBackendAsync(
+        SupplierDemandContext demand,
         int take,
         CancellationToken cancellationToken = default);
 }

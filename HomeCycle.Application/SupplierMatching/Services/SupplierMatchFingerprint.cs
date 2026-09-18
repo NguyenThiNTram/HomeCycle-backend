@@ -13,6 +13,7 @@ public static class SupplierMatchFingerprint
     {
         var canonical = new
         {
+            demand.RequesterId,
             demand.ProductTypeId,
             demand.CategoryId,
             demand.BrandId,

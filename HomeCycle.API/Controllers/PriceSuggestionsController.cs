@@ -21,8 +21,9 @@ public sealed class PriceSuggestionsController(
     public async Task<IActionResult> GetQuota(CancellationToken cancellationToken)
     {
         if (UserId is not Guid userId) return Unauthorized();
-        var remaining = await quota.RemainingAsync(userId, cancellationToken);
-        return Ok(new { dailyLimit = quota.DailyLimit, remainingToday = remaining, resetsAt = quota.ResetsAt });
+        var dailyLimit = await quota.GetDailyLimitAsync(userId, cancellationToken);
+        var remaining = await quota.RemainingAsync(userId, dailyLimit, cancellationToken);
+        return Ok(new { dailyLimit, remainingToday = remaining, resetsAt = quota.ResetsAt });
     }
 
     [HttpPost("draft")]

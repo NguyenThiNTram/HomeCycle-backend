@@ -687,6 +687,7 @@ namespace HomeCycle.Application.Commons.Errors
 
     public static class UserSubscriptionErrors
     {
+        public static readonly Error InvalidSnapshot = new("UserSubscription.InvalidSnapshot", "Subscription thiếu snapshot hợp lệ; cần đối soát trước khi kích hoạt.");
         public static readonly Error NotFound =
             new("UserSubscription.NotFound", "Không tìm thấy subscription.");
 

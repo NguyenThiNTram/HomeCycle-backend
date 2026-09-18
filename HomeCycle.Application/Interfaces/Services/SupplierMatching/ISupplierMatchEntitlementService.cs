@@ -7,4 +7,7 @@ public interface ISupplierMatchEntitlementService
     Task<SupplierMatchEntitlement> GetAsync(
         Guid userId,
         CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyCollection<Guid>> GetActiveVipUserIdsAsync(
+        CancellationToken cancellationToken = default);
 }

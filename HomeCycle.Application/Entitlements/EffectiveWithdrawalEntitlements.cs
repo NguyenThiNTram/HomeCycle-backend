@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 namespace HomeCycle.Application.Entitlements
 {
     public sealed record EffectiveWithdrawalEntitlements(
-        decimal DailyAmountLimit,
+        decimal? DailyAmountLimit,
         int? DailyCountLimit,
         Guid? SubscriptionId);
 }

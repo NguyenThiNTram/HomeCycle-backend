@@ -14,6 +14,14 @@ namespace HomeCycle.Application.Validations.Agreements
     {
         public AgreementDetailsDtoValidator(AgreementType agreementType)
         {
+            When(x => x.SellerInfo != null, () =>
+            {
+                RuleFor(x => x.SellerInfo!.FullName).MaximumLength(255);
+                RuleFor(x => x.SellerInfo!.Phone).MaximumLength(30);
+                RuleFor(x => x.SellerInfo!.StreetAddress).MaximumLength(500);
+                RuleFor(x => x.SellerInfo!.Ward).MaximumLength(100);
+                RuleFor(x => x.SellerInfo!.City).MaximumLength(100);
+            });
             RuleFor(x => x.DeliveryMethod)
                 .Must(x => x is DeliveryMethod.GhnDelivery or DeliveryMethod.SellerDelivers or DeliveryMethod.BuyerPickUp)
                 .When(x => x.DeliveryMethod.HasValue)

@@ -114,6 +114,9 @@ namespace HomeCycle.Infrastructure.Externals.PayOS
                     // là PascalCase "Paid"/"Pending", trong khi API gốc + switch-case ở PaymentService
                     // dùng UPPERCASE "PAID"/"PENDING" — lệch case khiến switch luôn rơi vào default.
                     Status = paymentLink.Status.ToString().ToUpperInvariant(),
+                    OrderCode = paymentLink.OrderCode,
+                    Amount = paymentLink.Amount,
+                    AmountPaid = paymentLink.AmountPaid,
                     TransactionId = paymentLink.Transactions?.LastOrDefault()?.Reference
                 });
             }

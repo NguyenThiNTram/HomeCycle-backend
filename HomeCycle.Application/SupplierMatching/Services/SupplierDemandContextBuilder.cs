@@ -27,16 +27,11 @@ public static class SupplierDemandContextBuilder
             x.ValueBoolean,
             CleanOptional(x.ValueText),
             x.ValueNumber)).ToArray(),
-        request.AdvancedFilters is null
-            ? SupplierMatchAdvancedFilters.None
-            : new SupplierMatchAdvancedFilters(
-                request.AdvancedFilters.RequireFullQuantity,
-                request.AdvancedFilters.StrictBudget,
-                request.AdvancedFilters.StrictBrand,
-                request.AdvancedFilters.SameCityOnly,
-                request.AdvancedFilters.MinimumSellerRating));
+        MapAdvancedFilters(request.AdvancedFilters));
 
-    public static SupplierDemandContext FromBuyPost(post buyPost)
+    public static SupplierDemandContext FromBuyPost(
+        post buyPost,
+        SupplierMatchAdvancedFilterRequest? advancedFilters = null)
     {
         ArgumentNullException.ThrowIfNull(buyPost.Product);
         var product = buyPost.Product;
@@ -60,8 +55,18 @@ public static class SupplierDemandContextBuilder
                 x.ValueBoolean,
                 CleanOptional(x.ValueText),
                 x.ValueNumber)).ToArray(),
-            SupplierMatchAdvancedFilters.None);
+            MapAdvancedFilters(advancedFilters));
     }
+
+    private static SupplierMatchAdvancedFilters MapAdvancedFilters(
+        SupplierMatchAdvancedFilterRequest? filters) => filters is null
+        ? SupplierMatchAdvancedFilters.None
+        : new SupplierMatchAdvancedFilters(
+            filters.RequireFullQuantity,
+            filters.StrictBudget,
+            filters.StrictBrand,
+            filters.SameCityOnly,
+            filters.MinimumSellerRating);
 
     private static string? CleanOptional(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();

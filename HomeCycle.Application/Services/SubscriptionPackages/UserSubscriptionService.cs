@@ -3,9 +3,15 @@ using HomeCycle.Application.Commons.Audits;
 using HomeCycle.Application.Commons.Errors;
 using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Responses.SubscriptionPackages;
+using HomeCycle.Application.DTOs.Requests.SubscriptionPackages;
 using HomeCycle.Application.Interfaces.Generics;
 using HomeCycle.Application.Interfaces.Repositories.SubscriptionPackages;
 using HomeCycle.Application.Interfaces.Repositories.Users;
+using HomeCycle.Application.Interfaces.Repositories.Payments;
+using HomeCycle.Application.Interfaces.Services.Wallets;
+using HomeCycle.Application.Interfaces.Services.AI;
+using HomeCycle.Application.Interfaces.Services.SupplierMatching;
+using HomeCycle.Application.Interfaces.Services.Entitlements;
 using HomeCycle.Application.Interfaces.Services.Audits;
 using HomeCycle.Application.Interfaces.Services.SubscriptionPackages;
 using HomeCycle.Domain.Entities;
@@ -26,6 +32,11 @@ namespace HomeCycle.Application.Services.SubscriptionPackages
         private readonly IUnitOfWork _unitOfWork;
         private readonly IAuditService _auditService;
         private readonly IMapper _mapper;
+        private readonly IPaymentRepository _payments;
+        private readonly IWithdrawalService _withdrawals;
+        private readonly IPriceSuggestionQuota _priceQuota;
+        private readonly ISupplierMatchQuota _supplierQuota;
+        private readonly IEntitlementResolver _entitlements;
 
         public UserSubscriptionService(
             IUserSubscriptionRepository repository,
@@ -33,7 +44,12 @@ namespace HomeCycle.Application.Services.SubscriptionPackages
             IUserRepository userRepository,
             IUnitOfWork unitOfWork,
             IAuditService auditService,
-            IMapper mapper)
+            IMapper mapper,
+            IPaymentRepository payments,
+            IWithdrawalService withdrawals,
+            IPriceSuggestionQuota priceQuota,
+            ISupplierMatchQuota supplierQuota,
+            IEntitlementResolver entitlements)
         {
             _repository = repository;
             _packageRepository = packageRepository;
@@ -41,6 +57,11 @@ namespace HomeCycle.Application.Services.SubscriptionPackages
             _unitOfWork = unitOfWork;
             _auditService = auditService;
             _mapper = mapper;
+            _payments = payments;
+            _withdrawals = withdrawals;
+            _priceQuota = priceQuota;
+            _supplierQuota = supplierQuota;
+            _entitlements = entitlements;
         }
 
         public async Task<Result<SubscriptionPurchaseContext>> ValidatePurchaseEligibilityAsync(
@@ -68,6 +89,16 @@ namespace HomeCycle.Application.Services.SubscriptionPackages
             if (package.TargetRole != user.Role)
                 return Result<SubscriptionPurchaseContext>.Fail(UserSubscriptionErrors.RoleNotEligible);
 
+            var configurationError = SubscriptionPackageService.ValidateVipConfiguration(package.Duration, package.Entitlements.Select(x => new PackageEntitlementRequest
+            {
+                Key = x.EntitlementKey,
+                NumericValue = x.NumericValue,
+                BooleanValue = x.BooleanValue,
+                IsUnlimited = x.IsUnlimited
+            }).ToList(), package.TargetRole);
+            if (configurationError != null)
+                return Result<SubscriptionPurchaseContext>.Fail(configurationError);
+
             var openSubscription = await _repository.GetOpenForUpdateAsync(userId, cancellationToken);
 
             if (openSubscription != null)
@@ -94,7 +125,7 @@ namespace HomeCycle.Application.Services.SubscriptionPackages
 
         public async Task<user_subscription> CreatePendingSubscriptionAsync(
             Guid userId,
-            Guid packageId,
+            subscription_package package,
             DateTime createdAtUtc,
             CancellationToken cancellationToken = default)
         {
@@ -102,11 +133,14 @@ namespace HomeCycle.Application.Services.SubscriptionPackages
             {
                 SubscriptionId = Guid.NewGuid(),
                 UserId = userId,
-                PackageId = packageId,
+                PackageId = package.PackageId,
+                PackageNameSnapshot = package.Name,
+                DurationDaysSnapshot = package.Duration,
                 Status = (int)UserSubscriptionStatus.Pending,
                 CreatedAt = createdAtUtc
             };
 
+            subscription.Entitlements = SnapshotEntitlements(subscription.SubscriptionId, package, createdAtUtc);
             await _repository.AddAsync(subscription, cancellationToken);
             return subscription;
         }
@@ -131,22 +165,16 @@ namespace HomeCycle.Application.Services.SubscriptionPackages
             if (subscription.Status != (int)UserSubscriptionStatus.Pending)
                 return Result<user_subscription>.Fail(UserSubscriptionErrors.InvalidStatus);
 
-            var package = await _packageRepository.GetByIdForUpdateAsync(subscription.PackageId, cancellationToken);
-
-            if (package == null)
-                return Result<user_subscription>.Fail(SubscriptionPackageErrors.NotFound);
+            if (string.IsNullOrWhiteSpace(subscription.PackageNameSnapshot) ||
+                subscription.DurationDaysSnapshot != 30 || subscription.Entitlements.Count == 0)
+                return Result<user_subscription>.Fail(UserSubscriptionErrors.InvalidSnapshot);
 
             subscription.PricePaid = pricePaid;
             subscription.Status = (int)UserSubscriptionStatus.Active;
             subscription.ActivatedAt = paidAtUtc;
-            subscription.ExpiresAt = paidAtUtc.AddDays(package.Duration);
-            subscription.Entitlements = SnapshotEntitlements(subscription.SubscriptionId, package, paidAtUtc);
+            subscription.ExpiresAt = paidAtUtc.AddDays(subscription.DurationDaysSnapshot.Value);
 
             await _repository.UpdateAsync(subscription, cancellationToken);
-            await _repository.ReplaceEntitlementsAsync(
-                subscription.SubscriptionId,
-                subscription.Entitlements,
-                cancellationToken);
 
             await _auditService.EnqueueAsync(
                 new AuditEvent
@@ -199,17 +227,88 @@ namespace HomeCycle.Application.Services.SubscriptionPackages
             return Result<bool>.Success(true);
         }
 
+        public async Task<Result<bool>> CancelActiveSubscriptionAsync(Guid userId, Guid subscriptionId, CancellationToken cancellationToken = default)
+        {
+            await _unitOfWork.BeginTransactionAsync(cancellationToken);
+            try
+            {
+                var user = await _userRepository.GetByIdForUpdateAsync(userId, cancellationToken);
+                var subscription = await _repository.GetByIdForUpdateAsync(subscriptionId, cancellationToken);
+                if (user == null || subscription == null || subscription.UserId != userId)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<bool>.Fail(UserSubscriptionErrors.NotFound);
+                }
+                if (subscription.Status is (int)UserSubscriptionStatus.Cancelled or (int)UserSubscriptionStatus.Expired)
+                {
+                    await _unitOfWork.CommitTransactionAsync(cancellationToken);
+                    return Result<bool>.Success(true);
+                }
+                if (subscription.Status != (int)UserSubscriptionStatus.Active)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<bool>.Fail(UserSubscriptionErrors.InvalidStatus);
+                }
+                subscription.Status = subscription.ExpiresAt <= DateTime.UtcNow
+                    ? (int)UserSubscriptionStatus.Expired
+                    : (int)UserSubscriptionStatus.Cancelled;
+                await _repository.UpdateAsync(subscription, cancellationToken);
+                await _auditService.EnqueueAsync(new AuditEvent
+                {
+                    Category = AuditCategory.BusinessOperation,
+                    Action = AuditActions.SubscriptionCancel,
+                    Outcome = AuditOutcome.Success,
+                    ActorType = AuditActorType.User,
+                    Source = AuditSource.HttpApi,
+                    UserId = userId,
+                    TargetType = AuditTargetTypes.UserSubscription,
+                    TargetId = subscriptionId,
+                    NewValues = new Dictionary<string, object?> { ["status"] = ((UserSubscriptionStatus)subscription.Status.Value).ToString() }
+                }, cancellationToken);
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+                await _unitOfWork.CommitTransactionAsync(cancellationToken);
+                return Result<bool>.Success(true);
+            }
+            catch
+            {
+                await _unitOfWork.RollbackTransactionAsync(CancellationToken.None);
+                _unitOfWork.ClearTrackedEntities();
+                throw;
+            }
+        }
+
         public async Task<Result<UserSubscriptionResponseDto?>> GetCurrentAsync(
             Guid userId,
             DateTime nowUtc,
             CancellationToken cancellationToken = default)
         {
             var subscription = await _repository.GetOpenAsync(userId, nowUtc, cancellationToken);
-
-            return Result<UserSubscriptionResponseDto?>.Success(
-                subscription == null
-                    ? null
-                    : _mapper.Map<UserSubscriptionResponseDto>(subscription));
+            if (subscription == null)
+                return Result<UserSubscriptionResponseDto?>.Success(null);
+            var response = _mapper.Map<UserSubscriptionResponseDto>(subscription);
+            var payment = await _payments.GetBySubscriptionIdAsync(subscription.SubscriptionId, cancellationToken);
+            response.CheckoutAmount = payment?.Amount;
+            response.CheckoutExpiresAt = payment?.ExpiredAt;
+            var withdrawalQuota = await _withdrawals.GetMyWithdrawalQuotaAsync(userId, cancellationToken);
+            if (!withdrawalQuota.IsSuccess)
+                return Result<UserSubscriptionResponseDto?>.Fail(withdrawalQuota.Error!);
+            response.WithdrawalQuota = withdrawalQuota.Data;
+            var user = await _userRepository.GetByIdAsync(userId, cancellationToken);
+            if (user?.Role == UserRole.Personal)
+            {
+                response.AiDailyLimit = await _priceQuota.GetDailyLimitAsync(userId, cancellationToken);
+                response.AiRemainingToday = await _priceQuota.RemainingAsync(userId, response.AiDailyLimit.Value, cancellationToken);
+                response.AiResetsAt = _priceQuota.ResetsAt;
+            }
+            else if (user?.Role == UserRole.Business)
+            {
+                var limit = await _entitlements.ResolveAiDailyLimitAsync(userId, UserRole.Business, nowUtc, cancellationToken);
+                var quota = await _supplierQuota.GetRemainingAsync(userId, limit, cancellationToken);
+                response.AiDailyLimit = quota.Limit;
+                response.AiRemainingToday = quota.Remaining;
+                response.AiResetsAt = quota.ResetsAt;
+            }
+            return Result<UserSubscriptionResponseDto?>.Success(response);
         }
 
         private static List<user_subscription_entitlement> SnapshotEntitlements(

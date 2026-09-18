@@ -6,6 +6,7 @@ public interface ISupplierMatchCache
 {
     bool TryGet(string fingerprint, out SupplierMatchCacheEntry? entry);
     void Set(string fingerprint, SupplierMatchCacheEntry entry);
+    void SetFallback(string fingerprint, SupplierMatchCacheEntry entry);
     void Remove(string fingerprint);
     ValueTask<IAsyncDisposable> AcquireAsync(
         string fingerprint,

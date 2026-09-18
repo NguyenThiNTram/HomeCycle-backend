@@ -133,7 +133,12 @@ public sealed class SupplierMatchCandidateRepository(
                 ExpiryDate = post.ExpiryDate
             })
             .Where(row => row.RemainingQuantity > row.ReservedQuantity)
-            .OrderByDescending(row => row.CreatedAt)
+            .OrderByDescending(row => demand.BrandId.HasValue && row.BrandId == demand.BrandId)
+            .ThenByDescending(row => row.Price.HasValue &&
+                (!demand.PriceFrom.HasValue || row.Price.Value >= demand.PriceFrom.Value) &&
+                (!demand.PriceTo.HasValue || row.Price.Value <= demand.PriceTo.Value))
+            .ThenByDescending(row => row.RemainingQuantity - row.ReservedQuantity >= demand.Quantity)
+            .ThenByDescending(row => row.CreatedAt)
             .ThenBy(row => row.SellPostId)
             .Take(candidateLimit)
             .ToListAsync(cancellationToken);

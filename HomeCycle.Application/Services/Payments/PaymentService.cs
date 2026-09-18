@@ -598,7 +598,7 @@ namespace HomeCycle.Application.Services.Payments
 
                 var subscription = await _userSubscriptionService.CreatePendingSubscriptionAsync(
                     payerId,
-                    package.PackageId,
+                    package,
                     now,
                     ct);
 
@@ -668,6 +668,10 @@ namespace HomeCycle.Application.Services.Payments
                     new SubscriptionPayOSCheckoutResponseDto
                     {
                         SubscriptionId = subscription.SubscriptionId,
+                        PackageNameSnapshot = subscription.PackageNameSnapshot,
+                        DurationDaysSnapshot = subscription.DurationDaysSnapshot,
+                        CheckoutAmount = payment.Amount,
+                        Entitlements = _mapper.Map<List<UserSubscriptionEntitlementResponseDto>>(subscription.Entitlements),
                         PaymentId = paymentId,
                         CheckoutUrl = gatewayResult.Data.CheckoutUrl,
                         CheckoutExpiresAt = checkoutExpiresAt
@@ -705,7 +709,7 @@ namespace HomeCycle.Application.Services.Payments
             if (payload.Status != "Success")
                 return Result<bool>.Success(true);
 
-            await ExecuteSuccessfulPaymentCoreAsync(payload.OrderCode.ToString(), payload.ReferenceTransactionId, AuditSource.Webhook, ct);
+            await ExecuteSuccessfulPaymentCoreAsync(payload.OrderCode.ToString(), payload.ReferenceTransactionId, AuditSource.Webhook, ct, payload.Amount);
             return Result<bool>.Success(true);
         }
 
@@ -1191,7 +1195,7 @@ namespace HomeCycle.Application.Services.Payments
                 var now = DateTime.UtcNow;
                 var subscription = await _userSubscriptionService.CreatePendingSubscriptionAsync(
                     payerId,
-                    package.PackageId,
+                    package,
                     now,
                     ct);
 
@@ -1327,6 +1331,10 @@ namespace HomeCycle.Application.Services.Payments
                     new SubscriptionPaymentStatusResponseDto
                     {
                         SubscriptionId = activatedSubscription.SubscriptionId,
+                        PackageNameSnapshot = activatedSubscription.PackageNameSnapshot,
+                        DurationDaysSnapshot = activatedSubscription.DurationDaysSnapshot,
+                        CheckoutAmount = payment.Amount,
+                        Entitlements = _mapper.Map<List<UserSubscriptionEntitlementResponseDto>>(activatedSubscription.Entitlements),
                         PaymentId = paymentId,
                         PaymentStatus = PaymentStatus.Completed,
                         SubscriptionStatus = UserSubscriptionStatus.Active,
@@ -1473,9 +1481,16 @@ namespace HomeCycle.Application.Services.Payments
                 new SubscriptionPaymentStatusResponseDto
                 {
                     SubscriptionId = subscription.SubscriptionId,
+                    PackageNameSnapshot = subscription.PackageNameSnapshot,
+                    DurationDaysSnapshot = subscription.DurationDaysSnapshot,
+                    CheckoutAmount = payment.Amount,
+                    CheckoutExpiresAt = payment.ExpiredAt,
+                    Entitlements = _mapper.Map<List<UserSubscriptionEntitlementResponseDto>>(subscription.Entitlements),
                     PaymentId = payment.PaymentId,
                     PaymentStatus = paymentStatus,
-                    SubscriptionStatus = subscription.Status.HasValue
+                    SubscriptionStatus = subscription.Status == (int)UserSubscriptionStatus.Active && subscription.ExpiresAt <= DateTime.UtcNow
+                        ? UserSubscriptionStatus.Expired
+                        : subscription.Status.HasValue
                         ? (UserSubscriptionStatus)subscription.Status.Value
                         : UserSubscriptionStatus.Pending,
                     ActivatedAt = subscription.ActivatedAt,
@@ -1548,6 +1563,10 @@ namespace HomeCycle.Application.Services.Payments
                         "Unexpected PayOS sync error for Payment {PaymentId}, OrderCode {OrderCode}",
                         candidate.PaymentId,
                         candidate.PayOSOrderCode);
+                }
+                finally
+                {
+                    _unitOfWork.ClearTrackedEntities();
                 }
             }
 
@@ -2058,7 +2077,8 @@ namespace HomeCycle.Application.Services.Payments
             string payOsOrderCode,
             string payOsTransactionId,
             AuditSource auditSource,
-            CancellationToken ct)
+            CancellationToken ct,
+            decimal? confirmedAmount)
         {
             await _unitOfWork.BeginTransactionAsync(ct);
 
@@ -2100,12 +2120,18 @@ namespace HomeCycle.Application.Services.Payments
                 }
 
                 if (currentPaymentStatus != PaymentStatus.Pending)
-                    throw new InvalidOperationException("Payment subscription không còn ở trạng thái Pending.");
+                {
+                    _logger.LogError("PayOS reported a successful payment for closed subscription payment {PaymentId}, OrderCode {OrderCode}, Status {Status}. Manual reconciliation is required.", payment.PaymentId, payOsOrderCode, currentPaymentStatus);
+                    throw new InvalidOperationException("Payment subscription đã kết thúc; cần đối soát khoản tiền PayOS đến muộn.");
+                }
 
                 var amount = payment.Amount ?? 0;
 
                 if (amount <= 0)
                     throw new InvalidOperationException("Số tiền subscription payment không hợp lệ.");
+
+                if (!confirmedAmount.HasValue || confirmedAmount.Value != amount)
+                    throw new InvalidOperationException("Số tiền PayOS xác nhận không khớp giá checkout subscription.");
 
                 var platformWallet = await _walletRepo.GetSystemWalletForUpdateAsync(
                     SystemWalletPurpose.Platform_Revenue,
@@ -2300,6 +2326,10 @@ namespace HomeCycle.Application.Services.Payments
                     .Trim()
                     .ToUpperInvariant();
 
+            if (payment.SubscriptionId.HasValue &&
+                (statusResult.Data.OrderCode?.ToString() != transaction.PayOSOrderCode || statusResult.Data.Amount != payment.Amount))
+                return Result<PaymentStatus>.Fail(new Error("Payment.InvalidGatewayResponse", "Thông tin PayOS không khớp checkout subscription."));
+
             switch (gatewayStatus)
             {
                 case "PAID":
@@ -2307,7 +2337,8 @@ namespace HomeCycle.Application.Services.Payments
                         transaction.PayOSOrderCode,
                         statusResult.Data.TransactionId ?? string.Empty,
                         auditSource,
-                        ct);
+                        ct,
+                        statusResult.Data.AmountPaid);
 
                     return Result<PaymentStatus>.Success(
                         PaymentStatus.Completed);
@@ -2368,6 +2399,14 @@ namespace HomeCycle.Application.Services.Payments
 
                 case "PENDING":
                 case "PROCESSING":
+                    if (payment.SubscriptionId.HasValue && payment.ExpiredAt <= DateTime.UtcNow &&
+                        gatewayStatus == "PENDING" && statusResult.Data.AmountPaid == 0)
+                    {
+                        var status = await ApplySubscriptionPayOsTerminalStatusAsync(
+                            payment.PaymentId, transaction.PayOSOrderCode, PaymentStatus.Expired,
+                            PaymentTransactionStatus.Failed, auditSource, ct);
+                        return Result<PaymentStatus>.Success(status);
+                    }
                     if (payment.ExpiredAt.HasValue &&
                         payment.ExpiredAt.Value <= DateTime.UtcNow)
                     {
@@ -2891,7 +2930,7 @@ namespace HomeCycle.Application.Services.Payments
             return Result<decimal>.Success(amount);
         }
 
-        private async Task ExecuteSuccessfulPaymentCoreAsync(string payOsOrderCode, string payOsTransactionId, AuditSource auditSource, CancellationToken ct)
+        private async Task ExecuteSuccessfulPaymentCoreAsync(string payOsOrderCode, string payOsTransactionId, AuditSource auditSource, CancellationToken ct, decimal? confirmedAmount = null)
         {
             var paymentTxSnapshot = await _paymentTxRepo.GetByPayOSOrderCodeAsync(payOsOrderCode, ct);
             if (paymentTxSnapshot == null)
@@ -2911,7 +2950,8 @@ namespace HomeCycle.Application.Services.Payments
                     payOsOrderCode,
                     payOsTransactionId,
                     auditSource,
-                    ct);
+                    ct,
+                    confirmedAmount);
 
                 return;
             }
@@ -3603,7 +3643,8 @@ namespace HomeCycle.Application.Services.Payments
                 if (exhausted)
                     message += " Bài đăng đã hết số lượng và được HomeCycle tự động khóa, không còn hoạt động. Vui lòng bổ sung thêm số lượng hoặc xóa bài đăng khi các giao dịch đã hoàn tất.";
 
-                postNotifications.Add(await AddPaymentNotificationPendingAsync(
+                if (relatedPost.PostType != PostType.Buy)
+                    postNotifications.Add(await AddPaymentNotificationPendingAsync(
                     relatedPost.OwnerId,
                     exhausted ? "Bài đăng đã hết số lượng và bị khóa" : "Số lượng bài đăng đã giảm",
                     message,

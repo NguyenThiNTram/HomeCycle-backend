@@ -22,6 +22,21 @@ namespace HomeCycle.API.Controllers
             _agreementService = agreementService;
         }
 
+        [HttpGet("negotiations/{negotiationId:guid}/seller-info")]
+        [ProducesResponseType(typeof(AgreementSellerInfoDto), StatusCodes.Status200OK)]
+        public async Task<IActionResult> GetSellerInfo(Guid negotiationId, CancellationToken cancellationToken)
+        {
+            var result = await _agreementService.GetSellerInfoAsync(negotiationId, GetCurrentUserId(), cancellationToken);
+            if (result.IsSuccess) return Ok(result.Data);
+            return result.Error!.Code switch
+            {
+                "Auth.Forbidden" => StatusCode(StatusCodes.Status403Forbidden, result.Error),
+                "Negotiation.NotFound" or "Post.NotFound" => NotFound(result.Error),
+                "Negotiation.Cancelled" => Conflict(result.Error),
+                _ => BadRequest(result.Error)
+            };
+        }
+
         [HttpGet("preview/{negotiationId}")]
         public async Task<IActionResult> GetPreview(Guid negotiationId, CancellationToken cancellationToken)
         {

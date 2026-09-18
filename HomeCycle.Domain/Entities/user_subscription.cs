@@ -11,6 +11,8 @@ public class user_subscription
     public Guid SubscriptionId { get; set; }
     public Guid UserId { get; set; }
     public Guid PackageId { get; set; }
+    public string? PackageNameSnapshot { get; set; }
+    public int? DurationDaysSnapshot { get; set; }
 
     public decimal? PricePaid { get; set; }
 

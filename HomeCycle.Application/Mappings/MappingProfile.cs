@@ -285,6 +285,18 @@ namespace HomeCycle.Application.Mappings
             CreateMap<product_type, ProductTypeDetailResponse>()
                 .ForMember(dest => dest.Attributes, opt => opt.MapFrom(src => src.ProductAttributes));
 
+            CreateMap<product_type, ProductTypePostingSchemaResponse>()
+                .ForMember(
+                    dest => dest.Attributes,
+                    opt => opt.MapFrom(src => src.ProductAttributes.OrderBy(attribute => attribute.DisplayOrder)));
+
+            CreateMap<product_attribute, ProductAttributeSchemaResponse>()
+                .ForMember(
+                    dest => dest.Options,
+                    opt => opt.MapFrom(src => src.ProductAttributeOptions.OrderBy(option => option.DisplayOrder)));
+
+            CreateMap<product_attribute_option, AttributeOptionItem>();
+
             CreateMap<product_attribute, ProductAttributeResponse>()
                 .ForMember(dest => dest.Options, opt => opt.MapFrom(src => src.ProductAttributeOptions));
 
@@ -902,6 +914,12 @@ namespace HomeCycle.Application.Mappings
                 .ForMember(dest => dest.Key, opt => opt.MapFrom(src => src.EntitlementKey));
 
             CreateMap<user_subscription, UserSubscriptionResponseDto>()
+                .ForMember(dest => dest.CheckoutAmount, opt => opt.Ignore())
+                .ForMember(dest => dest.CheckoutExpiresAt, opt => opt.Ignore())
+                .ForMember(dest => dest.WithdrawalQuota, opt => opt.Ignore())
+                .ForMember(dest => dest.AiDailyLimit, opt => opt.Ignore())
+                .ForMember(dest => dest.AiRemainingToday, opt => opt.Ignore())
+                .ForMember(dest => dest.AiResetsAt, opt => opt.Ignore())
                 .ForMember(
                     dest => dest.Status,
                     opt => opt.MapFrom(src =>
@@ -911,4 +929,3 @@ namespace HomeCycle.Application.Mappings
         }
     }
 }
-

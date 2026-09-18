@@ -15,7 +15,7 @@ public sealed class CreateBuyPostRequestValidator : AbstractValidator<CreateBuyP
             .MaximumLength(100)
             .Must(value => string.IsNullOrWhiteSpace(value) || value.Any(char.IsLetterOrDigit))
             .WithMessage("Mã model tối đa 100 ký tự và phải chứa ít nhất một chữ cái hoặc chữ số.");
-        RuleFor(x => x.Quantity).GreaterThan(0).When(x => x.Quantity.HasValue);
+        RuleFor(x => x.Quantity).InclusiveBetween(1, 99999).When(x => x.Quantity.HasValue);
         RuleFor(x => x.StreetAddress).MaximumLength(500);
         RuleFor(x => x.Ward).MaximumLength(100);
         RuleFor(x => x.City).MaximumLength(100);
@@ -44,7 +44,7 @@ public sealed class UpdateBuyPostRequestValidator : AbstractValidator<UpdateBuyP
         RuleFor(x => x.ChangedProperties).NotEmpty();
         RuleFor(x => x.Title).NotEmpty().MaximumLength(255).When(x => x.ChangedProperties.Contains(nameof(x.Title)));
         RuleFor(x => x.Description).NotEmpty().When(x => x.ChangedProperties.Contains(nameof(x.Description)));
-        RuleFor(x => x.Quantity).NotNull().GreaterThan(0).When(x => x.ChangedProperties.Contains(nameof(x.Quantity)));
+        RuleFor(x => x.Quantity).NotNull().InclusiveBetween(1, 99999).When(x => x.ChangedProperties.Contains(nameof(x.Quantity)));
         RuleFor(x => x.ExpiryDate).NotNull().When(x => x.ChangedProperties.Contains(nameof(x.ExpiryDate)));
         // Validate the merged document with CreateBuyPostRequestValidator in PostService.
     }

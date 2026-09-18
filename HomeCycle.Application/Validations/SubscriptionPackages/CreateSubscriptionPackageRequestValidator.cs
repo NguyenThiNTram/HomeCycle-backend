@@ -38,12 +38,12 @@ namespace HomeCycle.Application.Validations.SubscriptionPackages
                 .WithMessage("Package price must be a whole VND amount and cannot exceed the payment gateway limit.");
 
             RuleFor(x => x.Duration)
-                .GreaterThan(0)
-                .WithMessage("Package duration must be greater than zero.");
+                .Equal(30)
+                .WithMessage("VIP package duration must be 30 days.");
 
             RuleFor(x => x.TargetRole)
-                .Equal(UserRole.Business)
-                .WithMessage("Current subscription entitlements only support Business packages.");
+                .Must(role => role is UserRole.Personal or UserRole.Business)
+                .WithMessage("VIP packages only support Personal and Business.");
 
             RuleFor(x => x.Entitlements)
                 .NotEmpty()

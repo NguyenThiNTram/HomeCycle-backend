@@ -19,6 +19,10 @@ public sealed class MemorySupplierMatchCache(
         cache.Set(CacheKey(fingerprint), entry,
             TimeSpan.FromMinutes(Math.Clamp(options.Value.CacheMinutes, 1, 1440)));
 
+    public void SetFallback(string fingerprint, SupplierMatchCacheEntry entry) =>
+        cache.Set(CacheKey(fingerprint), entry,
+            TimeSpan.FromMinutes(Math.Clamp(options.Value.FallbackCacheMinutes, 2, 5)));
+
     public void Remove(string fingerprint) => cache.Remove(CacheKey(fingerprint));
 
     public async ValueTask<IAsyncDisposable> AcquireAsync(
