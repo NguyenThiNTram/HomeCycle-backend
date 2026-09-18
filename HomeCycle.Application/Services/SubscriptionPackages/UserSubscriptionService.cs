@@ -14,6 +14,8 @@ using HomeCycle.Application.Interfaces.Services.SupplierMatching;
 using HomeCycle.Application.Interfaces.Services.Entitlements;
 using HomeCycle.Application.Interfaces.Services.Audits;
 using HomeCycle.Application.Interfaces.Services.SubscriptionPackages;
+using HomeCycle.Application.Entitlements;
+using HomeCycle.Application.SupplierMatching.Models;
 using HomeCycle.Domain.Entities;
 using HomeCycle.Domain.Enums;
 using System;
@@ -36,7 +38,9 @@ namespace HomeCycle.Application.Services.SubscriptionPackages
         private readonly IWithdrawalService _withdrawals;
         private readonly IPriceSuggestionQuota _priceQuota;
         private readonly ISupplierMatchQuota _supplierQuota;
+        private readonly ISupplierMatchEntitlementService _supplierMatchEntitlements;
         private readonly IEntitlementResolver _entitlements;
+        private readonly FreePlanOptions _freePlan;
 
         public UserSubscriptionService(
             IUserSubscriptionRepository repository,
@@ -49,7 +53,9 @@ namespace HomeCycle.Application.Services.SubscriptionPackages
             IWithdrawalService withdrawals,
             IPriceSuggestionQuota priceQuota,
             ISupplierMatchQuota supplierQuota,
-            IEntitlementResolver entitlements)
+            ISupplierMatchEntitlementService supplierMatchEntitlements,
+            IEntitlementResolver entitlements,
+            FreePlanOptions freePlan)
         {
             _repository = repository;
             _packageRepository = packageRepository;
@@ -61,7 +67,9 @@ namespace HomeCycle.Application.Services.SubscriptionPackages
             _withdrawals = withdrawals;
             _priceQuota = priceQuota;
             _supplierQuota = supplierQuota;
+            _supplierMatchEntitlements = supplierMatchEntitlements;
             _entitlements = entitlements;
+            _freePlan = freePlan;
         }
 
         public async Task<Result<SubscriptionPurchaseContext>> ValidatePurchaseEligibilityAsync(
@@ -309,6 +317,119 @@ namespace HomeCycle.Application.Services.SubscriptionPackages
                 response.AiResetsAt = quota.ResetsAt;
             }
             return Result<UserSubscriptionResponseDto?>.Success(response);
+        }
+
+        public async Task<Result<PlanBenefitsResponseDto>> GetBenefitsAsync(
+            Guid userId,
+            DateTime nowUtc,
+            CancellationToken cancellationToken = default)
+        {
+            var user = await _userRepository.GetByIdAsync(userId, cancellationToken);
+            if (user == null)
+                return Result<PlanBenefitsResponseDto>.Fail(AuthErrors.UserNotFound);
+            if (user.Role is not (UserRole.Personal or UserRole.Business))
+                return Result<PlanBenefitsResponseDto>.Fail(
+                    ValidationErrors.InvalidRequest("Role không hỗ trợ gói AI."));
+
+            var activeSubscription = await _repository.GetActiveWithEntitlementsAsync(
+                userId, nowUtc, cancellationToken);
+            var package = activeSubscription == null
+                ? null
+                : await _packageRepository.GetByIdAsync(activeSubscription.PackageId, cancellationToken);
+            var isVip = activeSubscription != null;
+
+            if (user.Role == UserRole.Personal)
+            {
+                var limit = await _priceQuota.GetDailyLimitAsync(userId, cancellationToken);
+                var remaining = await _priceQuota.RemainingAsync(userId, limit, cancellationToken);
+                return Result<PlanBenefitsResponseDto>.Success(new PlanBenefitsResponseDto
+                {
+                    Tier = isVip ? "VIP" : "FREE",
+                    PlanName = activeSubscription?.PackageNameSnapshot ?? package?.Name ?? _freePlan.Personal.Name,
+                    Description = package?.Description ?? _freePlan.Personal.Description,
+                    Role = user.Role,
+                    SubscriptionId = activeSubscription?.SubscriptionId,
+                    ActivatedAt = activeSubscription?.ActivatedAt,
+                    ExpiresAt = activeSubscription?.ExpiresAt,
+                    Ai = new PlanAiUsageResponseDto
+                    {
+                        Feature = "PRICE_SUGGESTION",
+                        DailyLimit = limit,
+                        UsedToday = Math.Max(0, limit - remaining),
+                        RemainingToday = remaining,
+                        ResetsAt = _priceQuota.ResetsAt
+                    }
+                });
+            }
+
+            var entitlement = await _supplierMatchEntitlements.GetAsync(userId, cancellationToken);
+            var quota = await _supplierQuota.GetRemainingAsync(
+                userId, entitlement.DailyAiRefreshLimit, cancellationToken);
+            return Result<PlanBenefitsResponseDto>.Success(new PlanBenefitsResponseDto
+            {
+                Tier = entitlement.Tier.ToString().ToUpperInvariant(),
+                PlanName = activeSubscription?.PackageNameSnapshot ?? package?.Name ?? _freePlan.Business.Name,
+                Description = package?.Description ?? _freePlan.Business.Description,
+                Role = user.Role,
+                SubscriptionId = activeSubscription?.SubscriptionId,
+                ActivatedAt = activeSubscription?.ActivatedAt,
+                ExpiresAt = activeSubscription?.ExpiresAt,
+                Ai = new PlanAiUsageResponseDto
+                {
+                    Feature = "SUPPLIER_MATCH",
+                    DailyLimit = quota.Limit,
+                    UsedToday = Math.Max(0, quota.Limit - quota.Remaining),
+                    RemainingToday = quota.Remaining,
+                    ResetsAt = quota.ResetsAt
+                },
+                SupplierMatching = new SupplierMatchingBenefitsResponseDto
+                {
+                    ResultLimit = entitlement.ResultLimit,
+                    AiRerankingEnabled = entitlement.AiRerankingEnabled,
+                    AdvancedFiltersEnabled = entitlement.AdvancedFiltersEnabled,
+                    DetailedReasonsEnabled = entitlement.DetailedReasonsEnabled,
+                    NewSupplierNotificationsEnabled = entitlement.Tier == SupplierMatchTier.Vip ||
+                                                      _freePlan.Business.NewSupplierNotificationsEnabled
+                }
+            });
+        }
+
+        public Result<PlanDefinitionResponseDto> GetFreePlan(UserRole role)
+        {
+            if (role == UserRole.Personal)
+            {
+                return Result<PlanDefinitionResponseDto>.Success(new PlanDefinitionResponseDto
+                {
+                    PlanName = _freePlan.Personal.Name,
+                    Description = _freePlan.Personal.Description,
+                    Role = role,
+                    AiFeature = "PRICE_SUGGESTION",
+                    AiDailyLimit = Math.Max(0, _freePlan.Personal.PriceSuggestionDailyLimit)
+                });
+            }
+
+            if (role == UserRole.Business)
+            {
+                return Result<PlanDefinitionResponseDto>.Success(new PlanDefinitionResponseDto
+                {
+                    PlanName = _freePlan.Business.Name,
+                    Description = _freePlan.Business.Description,
+                    Role = role,
+                    AiFeature = "SUPPLIER_MATCH",
+                    AiDailyLimit = Math.Max(0, _freePlan.Business.SupplierMatchDailyLimit),
+                    SupplierMatching = new SupplierMatchingBenefitsResponseDto
+                    {
+                        ResultLimit = Math.Clamp(_freePlan.Business.SupplierMatchResultLimit, 1, 100),
+                        AiRerankingEnabled = _freePlan.Business.AiRerankingEnabled,
+                        AdvancedFiltersEnabled = _freePlan.Business.AdvancedFiltersEnabled,
+                        DetailedReasonsEnabled = _freePlan.Business.DetailedReasonsEnabled,
+                        NewSupplierNotificationsEnabled = _freePlan.Business.NewSupplierNotificationsEnabled
+                    }
+                });
+            }
+
+            return Result<PlanDefinitionResponseDto>.Fail(
+                ValidationErrors.InvalidRequest("TargetRole chỉ hỗ trợ Personal hoặc Business."));
         }
 
         private static List<user_subscription_entitlement> SnapshotEntitlements(

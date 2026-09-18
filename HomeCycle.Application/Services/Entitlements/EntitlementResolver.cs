@@ -16,11 +16,16 @@ namespace HomeCycle.Application.Services.Entitlements
     {
         private readonly IUserSubscriptionRepository _repository;
         private readonly IUserRepository _users;
+        private readonly FreePlanOptions _freePlan;
 
-        public EntitlementResolver(IUserSubscriptionRepository repository, IUserRepository users)
+        public EntitlementResolver(
+            IUserSubscriptionRepository repository,
+            IUserRepository users,
+            FreePlanOptions freePlan)
         {
             _repository = repository;
             _users = users;
+            _freePlan = freePlan;
         }
 
         public async Task<EffectiveWithdrawalEntitlements> ResolveWithdrawalAsync(
@@ -76,7 +81,9 @@ namespace HomeCycle.Application.Services.Entitlements
             var key = role == UserRole.Personal ? EntitlementKeys.PriceSuggestionDailyCount : EntitlementKeys.SupplierMatchDailyCount;
             var entitlement = subscription?.Entitlements.SingleOrDefault(x => x.EntitlementKey.Equals(key, StringComparison.OrdinalIgnoreCase));
             if (entitlement == null)
-                return 5;
+                return role == UserRole.Personal
+                    ? Math.Max(0, _freePlan.Personal.PriceSuggestionDailyLimit)
+                    : Math.Max(0, _freePlan.Business.SupplierMatchDailyLimit);
             var expected = role == UserRole.Personal ? 50 : 100;
             if (entitlement.ValueType != EntitlementValueType.Integer || entitlement.IsUnlimited || entitlement.BooleanValue.HasValue || entitlement.NumericValue != expected)
                 throw new InvalidOperationException($"Invalid snapshot value for entitlement '{key}'.");
