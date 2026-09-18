@@ -5,7 +5,10 @@ namespace HomeCycle.Application.Interfaces.Repositories.SupplierMatching;
 public interface ISupplierMatchMonitorRepository
 {
     Task DisableClosedOrExpiredAsync(DateTimeOffset now, CancellationToken cancellationToken = default);
-    Task<IReadOnlyList<SupplierMatchMonitorTarget>> GetTargetsAsync(int batchSize, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<SupplierMatchMonitorTarget>> GetTargetsAsync(
+        IReadOnlyCollection<Guid> vipUserIds,
+        int batchSize,
+        CancellationToken cancellationToken = default);
     Task<SupplierMatchMonitorStateSnapshot?> GetStateAsync(Guid buyPostId, CancellationToken cancellationToken = default);
     Task InitializeAsync(Guid buyPostId, Guid userId, decimal bestScore,
         IReadOnlyList<SupplierMatchMonitorCandidate> candidates, DateTimeOffset now,

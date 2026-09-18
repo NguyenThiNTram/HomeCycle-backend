@@ -8,6 +8,14 @@ namespace HomeCycle.Infrastructure.Repositories.Posts;
 
 public partial class PostRepository
 {
+    public async Task<int> GetAgreedBuyQuantityAsync(Guid postId, Guid? excludedNegotiationId = null, CancellationToken cancellationToken = default) =>
+        await _db.Agreement_Forms.AsNoTracking()
+            .Where(a => a.Negotiation.Offer.BuyPostId == postId &&
+                (!excludedNegotiationId.HasValue || a.NegotiationId != excludedNegotiationId.Value) &&
+                a.AgreementStatus != (int)AgreementStatus.Cancelled &&
+                (a.Order == null || a.Order.OrderStatus != (int)OrderStatus.Cancelled))
+            .SumAsync(a => (int?)a.Quantity, cancellationToken) ?? 0;
+
     private IQueryable<Negotiation> Reservations(Guid postId, Guid? excluded = null) => _db.Negotiations.AsNoTracking()
         .Where(n => (n.PostId == postId || n.Offer.BuyPostId == postId) && n.NegotiationId != excluded &&
             (n.Agreement_Form != null

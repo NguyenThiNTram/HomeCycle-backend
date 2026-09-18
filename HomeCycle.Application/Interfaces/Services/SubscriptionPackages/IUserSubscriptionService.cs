@@ -15,7 +15,8 @@ namespace HomeCycle.Application.Interfaces.Services.SubscriptionPackages
     public interface IUserSubscriptionService
     {
         Task<Result<SubscriptionPurchaseContext>> ValidatePurchaseEligibilityAsync(Guid userId, Guid packageId, DateTime nowUtc, CancellationToken cancellationToken = default);
-        Task<user_subscription> CreatePendingSubscriptionAsync(Guid userId, Guid packageId, DateTime createdAtUtc, CancellationToken cancellationToken = default);
+        Task<user_subscription> CreatePendingSubscriptionAsync(Guid userId, subscription_package package, DateTime createdAtUtc, CancellationToken cancellationToken = default);
+        Task<Result<bool>> CancelActiveSubscriptionAsync(Guid userId, Guid subscriptionId, CancellationToken cancellationToken = default);
         Task<Result<user_subscription>> ActivateSubscriptionAsync(Guid subscriptionId, decimal pricePaid, DateTime paidAtUtc, AuditActorType actorType, AuditSource auditSource, Guid? actorUserId, CancellationToken cancellationToken = default);
         Task<Result<bool>> CancelPendingSubscriptionAsync(Guid subscriptionId, CancellationToken cancellationToken = default);
         Task<Result<UserSubscriptionResponseDto?>> GetCurrentAsync(Guid userId, DateTime nowUtc, CancellationToken cancellationToken = default);

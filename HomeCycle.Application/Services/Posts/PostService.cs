@@ -306,7 +306,6 @@ namespace HomeCycle.Application.Services.Posts
         }
 
         // ================== QUERY + SEARCH + HELPERS ==================
-
         public async Task<Result<PostDetailResponse>> GetDetailAsync(
             Guid postId,
             CancellationToken cancellationToken = default)

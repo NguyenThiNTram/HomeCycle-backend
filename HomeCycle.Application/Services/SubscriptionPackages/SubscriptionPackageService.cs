@@ -106,7 +106,7 @@ namespace HomeCycle.Application.Services.SubscriptionPackages
                         string.Join("\n", validation.Errors.Select(x => x.ErrorMessage))));
             }
 
-            var entitlementError = ValidateEntitlements(request.Entitlements, request.TargetRole);
+            var entitlementError = ValidateVipConfiguration(request.Duration, request.Entitlements, request.TargetRole);
             if (entitlementError != null)
                 return Result<SubscriptionPackageResponseDto>.Fail(entitlementError);
 
@@ -209,17 +209,18 @@ namespace HomeCycle.Application.Services.SubscriptionPackages
                         SubscriptionPackageErrors.NameAlreadyExists);
                 }
 
-                if (request.Entitlements != null)
+                var effectiveEntitlements = request.Entitlements ?? package.Entitlements.Select(x => new PackageEntitlementRequest
                 {
-                    var entitlementError = ValidateEntitlements(
-                        request.Entitlements,
-                        package.TargetRole);
-
-                    if (entitlementError != null)
-                    {
-                        await _unitOfWork.RollbackTransactionAsync(cancellationToken);
-                        return Result<SubscriptionPackageResponseDto>.Fail(entitlementError);
-                    }
+                    Key = x.EntitlementKey,
+                    NumericValue = x.NumericValue,
+                    BooleanValue = x.BooleanValue,
+                    IsUnlimited = x.IsUnlimited
+                }).ToList();
+                var configurationError = ValidateVipConfiguration(request.Duration ?? package.Duration, effectiveEntitlements, package.TargetRole);
+                if (configurationError != null)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<SubscriptionPackageResponseDto>.Fail(configurationError);
                 }
 
                 var oldEntitlementSignature = EntitlementSignature(package.Entitlements);
@@ -363,6 +364,31 @@ namespace HomeCycle.Application.Services.SubscriptionPackages
                 await _unitOfWork.RollbackTransactionAsync(CancellationToken.None);
                 throw;
             }
+        }
+
+        internal static Error? ValidateVipConfiguration(int duration, IReadOnlyCollection<PackageEntitlementRequest> entitlements, UserRole role)
+        {
+            if (duration != 30 || role is not (UserRole.Personal or UserRole.Business))
+                return SubscriptionPackageErrors.InvalidEntitlement("VIP chỉ áp dụng cho Personal/Business và có thời hạn 30 ngày.");
+
+            var error = ValidateEntitlements(entitlements, role);
+            if (error != null)
+                return error;
+
+            var aiKey = role == UserRole.Personal ? EntitlementKeys.PriceSuggestionDailyCount : EntitlementKeys.SupplierMatchDailyCount;
+            var expectedCount = role == UserRole.Personal ? 1 : 3;
+            if (entitlements.Count != expectedCount || entitlements.Select(x => x.Key.Trim().ToLowerInvariant()).Distinct().Count() != expectedCount)
+                return SubscriptionPackageErrors.InvalidEntitlement("Bộ quyền lợi VIP không đúng với role của gói.");
+
+            var ai = entitlements.SingleOrDefault(x => string.Equals(x.Key.Trim(), aiKey, StringComparison.OrdinalIgnoreCase));
+            if (ai == null || ai.IsUnlimited || ai.NumericValue != (role == UserRole.Personal ? 50 : 100))
+                return SubscriptionPackageErrors.InvalidEntitlement("Personal VIP cần 50 lượt AI giá; Business VIP cần 100 lượt AI nhà cung cấp.");
+
+            if (role == UserRole.Business && (!entitlements.Any(x => x.Key.Trim().Equals(EntitlementKeys.WithdrawalDailyCount, StringComparison.OrdinalIgnoreCase) && x.IsUnlimited) ||
+                !entitlements.Any(x => x.Key.Trim().Equals(EntitlementKeys.WithdrawalDailyAmount, StringComparison.OrdinalIgnoreCase) && x.IsUnlimited)))
+                return SubscriptionPackageErrors.InvalidEntitlement("Business VIP cần unlimited số lượt và tổng tiền rút mỗi ngày.");
+
+            return null;
         }
 
         private static Error? ValidateEntitlements(

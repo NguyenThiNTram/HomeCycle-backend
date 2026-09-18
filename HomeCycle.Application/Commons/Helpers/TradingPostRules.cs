@@ -30,6 +30,12 @@ public static class TradingPostRules
             if (p.Status is PostStatus.Deleted or PostStatus.Suspended) return OfferErrors.PostNotActive;
             var available = p.RemainingQuantity - await repo.GetReservedQuantityAsync(id, excludedNegotiationId, ct);
             if (quantity > available) return OfferErrors.QuantityExceedsRemaining(quantity, Math.Max(0, available));
+            if (p.PostType == PostType.Buy)
+            {
+                var targetAvailable = p.Quantity - await repo.GetAgreedBuyQuantityAsync(id, excludedNegotiationId, ct);
+                if (quantity > targetAvailable)
+                    return OfferErrors.QuantityExceedsRemaining(quantity, Math.Max(0, targetAvailable));
+            }
         }
         return null;
     }

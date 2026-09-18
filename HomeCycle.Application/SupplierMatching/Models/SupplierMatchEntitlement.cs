@@ -15,5 +15,5 @@ public sealed record SupplierMatchEntitlement(
     bool DetailedReasonsEnabled)
 {
     public static SupplierMatchEntitlement Free(int resultLimit = 5) =>
-        new(SupplierMatchTier.Free, resultLimit, 3, true, false, false);
+        new(SupplierMatchTier.Free, resultLimit, 5, true, false, false);
 }

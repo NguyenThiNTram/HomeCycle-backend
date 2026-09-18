@@ -28,7 +28,8 @@ public sealed class SupplierMatchMonitorService(
     {
         var now = clock.GetUtcNow();
         await monitorRepository.DisableClosedOrExpiredAsync(now, cancellationToken);
-        var targets = await monitorRepository.GetTargetsAsync(batchSize, cancellationToken);
+        var vipUserIds = await entitlements.GetActiveVipUserIdsAsync(cancellationToken);
+        var targets = await monitorRepository.GetTargetsAsync(vipUserIds, batchSize, cancellationToken);
         foreach (var target in targets)
         {
             try
@@ -75,7 +76,7 @@ public sealed class SupplierMatchMonitorService(
         }
 
         var response = await matching.MatchBackendOnlyAsync(
-            SupplierDemandContextBuilder.FromBuyPost(buyPost), entitlement.ResultLimit, cancellationToken);
+            SupplierDemandContextBuilder.FromBuyPost(buyPost), 0, entitlement.ResultLimit, cancellationToken);
         var snapshots = response.Matches
             .Select(match => new SupplierMatchMonitorCandidate(match.SellPost.PostId, match.MatchingScore))
             .ToArray();

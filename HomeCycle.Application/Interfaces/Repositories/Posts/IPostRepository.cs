@@ -12,6 +12,7 @@ namespace HomeCycle.Application.Interfaces.Repositories.Posts
 {
     public interface IPostRepository
     {
+        Task<int> GetAgreedBuyQuantityAsync(Guid postId, Guid? excludedNegotiationId = null, CancellationToken cancellationToken = default);
         Task<offer?> GetTradeByAgreementAsync(Guid agreementId, CancellationToken cancellationToken = default);
         Task<offer?> GetTradeByOrderAsync(Guid orderId, CancellationToken cancellationToken = default);
         Task RestoreOrderQuantityAsync(Guid orderId, bool restoreSellStock, CancellationToken cancellationToken = default);

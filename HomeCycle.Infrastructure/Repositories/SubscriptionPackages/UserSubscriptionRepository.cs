@@ -110,17 +110,30 @@ namespace HomeCycle.Infrastructure.Repositories.SubscriptionPackages
                 .AsNoTracking()
                 .SingleOrDefaultAsync(cancellationToken);
 
+            if (entity != null)
+            {
+                entity.User_Subscription_Entitlements = await _db.User_Subscription_Entitlements
+                    .AsNoTracking()
+                    .Where(x => x.SubscriptionId == subscriptionId)
+                    .ToListAsync(cancellationToken);
+            }
+
             return entity?.ToDomain();
         }
 
         public async Task AddAsync(user_subscription subscription, CancellationToken cancellationToken = default)
         {
-            await _db.User_Subscriptions.AddAsync(subscription.ToInfrastructure(false), cancellationToken);
+            await _db.User_Subscriptions.AddAsync(subscription.ToInfrastructure(), cancellationToken);
         }
 
         public Task UpdateAsync(user_subscription subscription, CancellationToken cancellationToken = default)
         {
-            _db.User_Subscriptions.Update(subscription.ToInfrastructure(false));
+            var entity = subscription.ToInfrastructure(false);
+            var tracked = _db.User_Subscriptions.Local.SingleOrDefault(x => x.SubscriptionId == subscription.SubscriptionId);
+            if (tracked != null)
+                _db.Entry(tracked).CurrentValues.SetValues(entity);
+            else
+                _db.User_Subscriptions.Update(entity);
             return Task.CompletedTask;
         }
 

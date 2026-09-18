@@ -94,5 +94,6 @@ namespace HomeCycle.Application.Commons.Audits
         public const string SubscriptionPackageUpdate = "SUBSCRIPTION_PACKAGE.UPDATE";
         public const string SubscriptionPackageUpdateStatus = "SUBSCRIPTION_PACKAGE.UPDATE_STATUS";
         public const string SubscriptionActivate = "SUBSCRIPTION.ACTIVATE";
+        public const string SubscriptionCancel = "SUBSCRIPTION.CANCEL";
     }
 }

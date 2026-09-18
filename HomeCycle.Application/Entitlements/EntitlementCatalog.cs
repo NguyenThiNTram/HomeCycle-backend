@@ -11,6 +11,8 @@ namespace HomeCycle.Application.Entitlements
     {
         public static IReadOnlyList<EntitlementDefinition> All { get; } =
         [
+            new(EntitlementKeys.PriceSuggestionDailyCount, "Lượt AI gợi ý giá mỗi ngày", EntitlementValueType.Integer, false, new[] { UserRole.Personal }),
+            new(EntitlementKeys.SupplierMatchDailyCount, "Lượt AI gợi ý nhà cung cấp mỗi ngày", EntitlementValueType.Integer, false, new[] { UserRole.Business }),
             new(
                 EntitlementKeys.WithdrawalDailyCount,
                 "Số lần rút tiền tối đa mỗi ngày",
@@ -21,7 +23,7 @@ namespace HomeCycle.Application.Entitlements
                 EntitlementKeys.WithdrawalDailyAmount,
                 "Tổng số tiền được rút tối đa mỗi ngày",
                 EntitlementValueType.Decimal,
-                false,
+                true,
                 new[] { UserRole.Business })
         ];
 

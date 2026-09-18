@@ -1,5 +1,6 @@
 ﻿using HomeCycle.Application.Entitlements;
 using HomeCycle.Application.Interfaces.Repositories.SubscriptionPackages;
+using HomeCycle.Application.Interfaces.Repositories.Users;
 using HomeCycle.Application.Interfaces.Services.Entitlements;
 using HomeCycle.Domain.Entities;
 using HomeCycle.Domain.Enums;
@@ -14,10 +15,12 @@ namespace HomeCycle.Application.Services.Entitlements
     public class EntitlementResolver : IEntitlementResolver
     {
         private readonly IUserSubscriptionRepository _repository;
+        private readonly IUserRepository _users;
 
-        public EntitlementResolver(IUserSubscriptionRepository repository)
+        public EntitlementResolver(IUserSubscriptionRepository repository, IUserRepository users)
         {
             _repository = repository;
+            _users = users;
         }
 
         public async Task<EffectiveWithdrawalEntitlements> ResolveWithdrawalAsync(
@@ -27,6 +30,10 @@ namespace HomeCycle.Application.Services.Entitlements
             DateTime atUtc,
             CancellationToken cancellationToken = default)
         {
+            var user = await _users.GetByIdAsync(userId, cancellationToken);
+            if (user?.Role != UserRole.Business)
+                return new EffectiveWithdrawalEntitlements(baselineDailyAmountLimit, baselineDailyCountLimit, null);
+
             var subscription = await _repository.GetActiveWithEntitlementsAsync(
                 userId,
                 atUtc,
@@ -58,12 +65,34 @@ namespace HomeCycle.Application.Services.Entitlements
                 subscription.SubscriptionId);
         }
 
-        private static decimal ResolveDailyAmount(
+        public async Task<int> ResolveAiDailyLimitAsync(Guid userId, UserRole role, DateTime atUtc, CancellationToken cancellationToken = default)
+        {
+            if (role is not (UserRole.Personal or UserRole.Business))
+                throw new ArgumentOutOfRangeException(nameof(role));
+            var user = await _users.GetByIdAsync(userId, cancellationToken);
+            if (user?.Role != role)
+                return 0;
+            var subscription = await _repository.GetActiveWithEntitlementsAsync(userId, atUtc, cancellationToken);
+            var key = role == UserRole.Personal ? EntitlementKeys.PriceSuggestionDailyCount : EntitlementKeys.SupplierMatchDailyCount;
+            var entitlement = subscription?.Entitlements.SingleOrDefault(x => x.EntitlementKey.Equals(key, StringComparison.OrdinalIgnoreCase));
+            if (entitlement == null)
+                return 5;
+            var expected = role == UserRole.Personal ? 50 : 100;
+            if (entitlement.ValueType != EntitlementValueType.Integer || entitlement.IsUnlimited || entitlement.BooleanValue.HasValue || entitlement.NumericValue != expected)
+                throw new InvalidOperationException($"Invalid snapshot value for entitlement '{key}'.");
+            return expected;
+        }
+
+        private static decimal? ResolveDailyAmount(
             user_subscription_entitlement? entitlement,
             decimal baseline)
         {
             if (entitlement == null)
                 return baseline;
+
+            if (entitlement.ValueType == EntitlementValueType.Decimal && entitlement.IsUnlimited &&
+                !entitlement.NumericValue.HasValue && !entitlement.BooleanValue.HasValue)
+                return null;
 
             if (entitlement.ValueType != EntitlementValueType.Decimal ||
                 entitlement.IsUnlimited ||
