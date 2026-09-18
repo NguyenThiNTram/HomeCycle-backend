@@ -775,6 +775,12 @@ public partial class HomeCycleDbContext : DbContext
 
             entity.HasOne(d => d.Order).WithMany(p => p.Payments).HasConstraintName("FK_Payment_OrderId");
 
+            entity.HasOne(d => d.Subscription)
+                .WithOne(p => p.Payment)
+                .HasForeignKey<Payment>(d => d.SubscriptionId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("FK_Payment_SubscriptionId");
+
             entity.HasOne(d => d.Payer).WithMany(p => p.Payments)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("FK_Payment_PayerId");
@@ -1069,6 +1075,9 @@ public partial class HomeCycleDbContext : DbContext
 
             entity.Property(e => e.SubscriptionId).ValueGeneratedNever();
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()");
+            entity.HasIndex(e => e.UserId, "ux_user_subscription_open")
+                .IsUnique()
+                .HasFilter("\"Status\" IN (1, 2)");
 
             entity.HasOne(d => d.Package).WithMany(p => p.User_Subscriptions)
                 .OnDelete(DeleteBehavior.ClientSetNull)

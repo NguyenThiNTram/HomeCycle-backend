@@ -11,6 +11,7 @@ public class payment
     public Guid PaymentId { get; set; }
     public Guid? AgreementId { get; set; }
     public Guid? OrderId { get; set; }
+    public Guid? SubscriptionId { get; set; }
     public Guid PayerId { get; set; }
 
     public int? PaymentType { get; set; }

@@ -34,6 +34,9 @@ public partial class User_Subscription
     public virtual ICollection<User_Subscription_Entitlement> User_Subscription_Entitlements { get; set; } =
     new List<User_Subscription_Entitlement>();
 
+    [InverseProperty("Subscription")]
+    public virtual Payment? Payment { get; set; }
+
     [ForeignKey("PackageId")]
     [InverseProperty("User_Subscriptions")]
     public virtual Subscription_Package Package { get; set; } = null!;

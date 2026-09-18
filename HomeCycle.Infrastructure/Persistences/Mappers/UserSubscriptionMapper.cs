@@ -27,7 +27,7 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                     .ToList()
             };
         }
-        public static User_Subscription ToInfrastructure(this user_subscription entity)
+        public static User_Subscription ToInfrastructure(this user_subscription entity, bool includeEntitlements = true)
         {
             var result = new User_Subscription
             {
@@ -41,9 +41,12 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 CreatedAt = entity.CreatedAt
             };
 
-            result.User_Subscription_Entitlements = entity.Entitlements
-                .Select(x => x.ToInfrastructure())
-                .ToList();
+            if (includeEntitlements)
+            {
+                result.User_Subscription_Entitlements = entity.Entitlements
+                    .Select(x => x.ToInfrastructure())
+                    .ToList();
+            }
 
             return result;
         }

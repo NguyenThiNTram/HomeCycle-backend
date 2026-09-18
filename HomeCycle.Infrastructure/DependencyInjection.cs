@@ -338,6 +338,7 @@ namespace HomeCycle.Infrastructure
             services.AddScoped<IDisputeCategoryService, DisputeCategoryService>();
             services.AddScoped<ISubscriptionPackageService, SubscriptionPackageService>();
             services.AddScoped<IEntitlementResolver, EntitlementResolver>();
+            services.AddScoped<IUserSubscriptionService, UserSubscriptionService>();
 
 
             services.AddScoped<INotificationService, NotificationService>();

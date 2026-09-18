@@ -897,6 +897,17 @@ namespace HomeCycle.Application.Mappings
             CreateMap<subscription_package, SubscriptionPackageResponseDto>();
 
             CreateMap<EntitlementDefinition, EntitlementDefinitionResponseDto>();
+
+            CreateMap<user_subscription_entitlement, UserSubscriptionEntitlementResponseDto>()
+                .ForMember(dest => dest.Key, opt => opt.MapFrom(src => src.EntitlementKey));
+
+            CreateMap<user_subscription, UserSubscriptionResponseDto>()
+                .ForMember(
+                    dest => dest.Status,
+                    opt => opt.MapFrom(src =>
+                        src.Status.HasValue
+                            ? (UserSubscriptionStatus)src.Status.Value
+                            : UserSubscriptionStatus.Pending));
         }
     }
 }

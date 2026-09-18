@@ -678,8 +678,37 @@ namespace HomeCycle.Application.Commons.Errors
 
         public static readonly Error NameAlreadyExists =
             new("SubscriptionPackage.NameAlreadyExists", "Tên gói đăng ký đã tồn tại.");
+        public static readonly Error Inactive =
+            new("SubscriptionPackage.Inactive", "Gói đăng ký hiện không còn hoạt động.");
 
         public static Error InvalidEntitlement(string message) =>
             new("SubscriptionPackage.InvalidEntitlement", message);
+    }
+
+    public static class UserSubscriptionErrors
+    {
+        public static readonly Error NotFound =
+            new("UserSubscription.NotFound", "Không tìm thấy subscription.");
+
+        public static readonly Error OpenSubscriptionExists =
+            new("UserSubscription.OpenExists", "Bạn đang có subscription Pending hoặc Active.");
+
+        public static readonly Error RoleNotEligible =
+            new("UserSubscription.RoleNotEligible", "Gói đăng ký không áp dụng cho loại tài khoản hiện tại.");
+
+        public static readonly Error UserInactive =
+            new("UserSubscription.UserInactive", "Tài khoản phải ở trạng thái Active để mua gói đăng ký.");
+
+        public static readonly Error InvalidStatus =
+            new("UserSubscription.InvalidStatus", "Trạng thái subscription hiện tại không cho phép thao tác này.");
+
+        public static readonly Error WalletNotFound =
+            new("UserSubscription.WalletNotFound", "Không tìm thấy ví người dùng.");
+
+        public static readonly Error InsufficientBalance =
+            new("UserSubscription.InsufficientBalance", "Số dư khả dụng không đủ để mua gói đăng ký.");
+
+        public static readonly Error PlatformRevenueWalletNotFound =
+            new("UserSubscription.PlatformRevenueWalletNotFound", "Không tìm thấy ví doanh thu hệ thống.");
     }
 }

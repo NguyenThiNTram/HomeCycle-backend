@@ -27,6 +27,8 @@ namespace HomeCycle.Application.Validations.SubscriptionPackages
             RuleFor(x => x.Price)
                 .GreaterThan(0)
                 .WithMessage("Package price must be greater than zero.")
+                .Must(x => !x.HasValue || BeSupportedPaymentAmount(x.Value))
+                .WithMessage("Package price must be a whole VND amount and cannot exceed the payment gateway limit.")
                 .When(x => x.Price.HasValue);
 
             RuleFor(x => x.Duration)
@@ -45,6 +47,10 @@ namespace HomeCycle.Application.Validations.SubscriptionPackages
                 .When(x => x.Entitlements != null);
         }
 
+        private static bool BeSupportedPaymentAmount(decimal price)
+        {
+            return decimal.Truncate(price) == price && price <= int.MaxValue;
+        }
         private static bool HaveUniqueKeys(List<PackageEntitlementRequest>? entitlements)
         {
             if (entitlements == null)

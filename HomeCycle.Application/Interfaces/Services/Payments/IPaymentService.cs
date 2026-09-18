@@ -2,6 +2,7 @@
 using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Requests.Payments;
 using HomeCycle.Application.DTOs.Responses.Payments;
+using HomeCycle.Application.DTOs.Responses.SubscriptionPackages;
 using HomeCycle.Domain.Entities;
 using System;
 using System.Collections.Generic;
@@ -31,6 +32,22 @@ namespace HomeCycle.Application.Interfaces.Services.Payments
             CancellationToken ct = default);
         Task<Result<IReadOnlyList<OrderFinancialEventDto>>> GetOrderFinancialHistoryForModeratorAsync(
             Guid orderId,
+            CancellationToken ct = default);
+        Task<Result<SubscriptionPayOSCheckoutResponseDto>> CreateSubscriptionPayOSCheckoutAsync(
+            Guid packageId,
+            Guid payerId,
+            string returnUrl,
+            string cancelUrl,
+            CancellationToken ct = default);
+
+        Task<Result<SubscriptionPaymentStatusResponseDto>> ExecuteSubscriptionWalletPaymentAsync(
+            Guid packageId,
+            Guid payerId,
+            CancellationToken ct = default);
+
+        Task<Result<SubscriptionPaymentStatusResponseDto>> SyncSubscriptionPaymentStatusAsync(
+            Guid subscriptionId,
+            Guid payerId,
             CancellationToken ct = default);
     }
 }

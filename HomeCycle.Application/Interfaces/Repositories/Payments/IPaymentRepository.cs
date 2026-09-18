@@ -25,5 +25,6 @@ namespace HomeCycle.Application.Interfaces.Repositories.Payments
         Task<payment?> GetByIdForUpdateAsync(
             Guid paymentId,
             CancellationToken ct = default);
+        Task<payment?> GetBySubscriptionIdAsync(Guid subscriptionId, CancellationToken ct = default);
     }
 }
