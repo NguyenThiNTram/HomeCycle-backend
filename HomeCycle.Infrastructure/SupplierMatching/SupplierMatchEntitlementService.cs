@@ -13,20 +13,21 @@ public sealed class SupplierMatchEntitlementService(
     HomeCycleDbContext db,
     IOptions<SupplierMatchingOptions> options,
     TimeProvider clock,
-    IEntitlementResolver resolver) : ISupplierMatchEntitlementService
+    IEntitlementResolver resolver,
+    FreePlanOptions freePlan) : ISupplierMatchEntitlementService
 {
     public async Task<SupplierMatchEntitlement> GetAsync(Guid userId, CancellationToken cancellationToken = default)
     {
         var limit = await resolver.ResolveAiDailyLimitAsync(userId, UserRole.Business, clock.GetUtcNow().UtcDateTime, cancellationToken);
-        var isVip = limit == 100;
+        var isVip = limit != freePlan.Business.SupplierMatchDailyLimit;
         var settings = options.Value;
         return new SupplierMatchEntitlement(
             isVip ? SupplierMatchTier.Vip : SupplierMatchTier.Free,
-            Math.Clamp(isVip ? settings.VipResultLimit : settings.FreeResultLimit, 1, 100),
+            Math.Clamp(isVip ? settings.VipResultLimit : freePlan.Business.SupplierMatchResultLimit, 1, 100),
             limit,
-            limit > 0,
-            isVip,
-            isVip);
+            isVip || freePlan.Business.AiRerankingEnabled,
+            isVip || freePlan.Business.AdvancedFiltersEnabled,
+            isVip || freePlan.Business.DetailedReasonsEnabled);
     }
 
     public async Task<IReadOnlyCollection<Guid>> GetActiveVipUserIdsAsync(CancellationToken cancellationToken = default)

@@ -26,6 +26,7 @@ using HomeCycle.Application.Interfaces.Repositories.Profiles;
 using HomeCycle.Application.Interfaces.Repositories.Reviews;
 using HomeCycle.Application.Interfaces.Repositories.Shipments;
 using HomeCycle.Application.Interfaces.Repositories.SubscriptionPackages;
+using HomeCycle.Application.Entitlements;
 using HomeCycle.Application.Interfaces.Repositories.Users;
 using HomeCycle.Application.Interfaces.Repositories.Wallets;
 using HomeCycle.Application.Interfaces.Security;
@@ -209,6 +210,8 @@ namespace HomeCycle.Infrastructure
             services.Configure<GeminiOptions>(configuration.GetSection("Gemini"));
             services.Configure<HomeCycle.Infrastructure.SupplierMatching.SupplierMatchingOptions>(
                 configuration.GetSection("SupplierMatching"));
+            services.AddSingleton(
+                configuration.GetSection("FreePlan").Get<FreePlanOptions>() ?? new FreePlanOptions());
 
             services.AddSingleton(sp =>
             {
