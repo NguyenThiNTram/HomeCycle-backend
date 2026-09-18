@@ -1,4 +1,5 @@
 ﻿using HomeCycle.Domain.Entities;
+using HomeCycle.Domain.Enums;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -14,14 +15,25 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
             return new audit_log
             {
                 AuditId = entity.AuditId,
-                UserId = entity.UserId,
-                UserRole = entity.UserRole,
+                EventId = entity.EventId,
+                Category = (AuditCategory)entity.Category,
                 Action = entity.Action,
-                OldValue = entity.OldValue,
-                NewValue = entity.NewValue,
-                TargetTable = entity.TargetTable,
+                Outcome = (AuditOutcome)entity.Outcome,
+                ReasonCode = entity.ReasonCode,
+                ActorType = (AuditActorType)entity.ActorType,
+                UserId = entity.UserId,
+                UserRole = entity.UserRole.HasValue ? (UserRole?)entity.UserRole.Value : null,
+                TargetType = entity.TargetType,
                 TargetId = entity.TargetId,
-                CreatedAt = entity.CreatedAt
+                OldValues = entity.OldValues,
+                NewValues = entity.NewValues,
+                Source = (AuditSource)entity.Source,
+                CorrelationId = entity.CorrelationId,
+                IpAddress = entity.IpAddress,
+                UserAgent = entity.UserAgent,
+                OccurredAtUtc = entity.OccurredAtUtc,
+                RecordedAtUtc = entity.RecordedAtUtc,
+                Metadata = entity.Metadata
             };
         }
 
@@ -30,14 +42,25 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
             return new Audit_Log
             {
                 AuditId = entity.AuditId,
-                UserId = entity.UserId,
-                UserRole = entity.UserRole,
+                EventId = entity.EventId,
+                Category = (int)entity.Category,
                 Action = entity.Action,
-                OldValue = entity.OldValue,
-                NewValue = entity.NewValue,
-                TargetTable = entity.TargetTable,
+                Outcome = (int)entity.Outcome,
+                ReasonCode = entity.ReasonCode,
+                ActorType = (int)entity.ActorType,
+                UserId = entity.UserId,
+                UserRole = entity.UserRole.HasValue ? (int?)entity.UserRole.Value : null,
+                TargetType = entity.TargetType,
                 TargetId = entity.TargetId,
-                CreatedAt = entity.CreatedAt
+                OldValues = entity.OldValues,
+                NewValues = entity.NewValues,
+                Source = (int)entity.Source,
+                CorrelationId = entity.CorrelationId,
+                IpAddress = entity.IpAddress,
+                UserAgent = entity.UserAgent,
+                OccurredAtUtc = entity.OccurredAtUtc,
+                RecordedAtUtc = entity.RecordedAtUtc,
+                Metadata = entity.Metadata
             };
         }
     }

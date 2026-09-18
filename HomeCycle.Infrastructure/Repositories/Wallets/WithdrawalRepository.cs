@@ -157,6 +157,37 @@ namespace HomeCycle.Infrastructure.Repositories.Wallets
                 .SumAsync(ct) ?? 0;
         }
 
+        public async Task<(decimal CompletedAmount, decimal ReservedAmount, int UsedCount)> GetDailyUsageAsync(Guid userId, DateTime fromUtc, DateTime toUtc, CancellationToken ct = default)
+        {
+            var countedStatuses = new[]
+            {
+                (int)WithdrawalStatus.Pending,
+                (int)WithdrawalStatus.Approved,
+                (int)WithdrawalStatus.Processing,
+                (int)WithdrawalStatus.Completed
+            };
+
+            var usage = await _db.Withdrawals
+                .AsNoTracking()
+                .Where(x => x.Wallet.UserId == userId
+                    && x.RequestedAt >= fromUtc
+                    && x.RequestedAt < toUtc
+                    && x.WithdrawalStatus.HasValue
+                    && countedStatuses.Contains(x.WithdrawalStatus.Value))
+                .GroupBy(x => 1)
+                .Select(group => new
+                {
+                    CompletedAmount = group.Sum(x => x.WithdrawalStatus == (int)WithdrawalStatus.Completed ? x.Amount ?? 0m : 0m),
+                    ReservedAmount = group.Sum(x => x.WithdrawalStatus != (int)WithdrawalStatus.Completed ? x.Amount ?? 0m : 0m),
+                    UsedCount = group.Count()
+                })
+                .SingleOrDefaultAsync(ct);
+
+            return usage == null
+                ? (0m, 0m, 0)
+                : (usage.CompletedAmount, usage.ReservedAmount, usage.UsedCount);
+        }
+
         private static IQueryable<WithdrawalReadModel> ProjectWithdrawalReadModels(IQueryable<Withdrawal> query)
         {
             return query.Select(x => new WithdrawalReadModel

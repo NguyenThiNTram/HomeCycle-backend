@@ -19,6 +19,8 @@ public partial class HomeCycleDbContext : DbContext
 
     public virtual DbSet<Audit_Log> Audit_Logs { get; set; }
 
+    public virtual DbSet<Audit_Outbox> Audit_Outboxes { get; set; }
+
     public virtual DbSet<Bank_Account> Bank_Accounts { get; set; }
 
     public DbSet<Brand> Brands { get; set; }
@@ -99,9 +101,13 @@ public partial class HomeCycleDbContext : DbContext
 
     public virtual DbSet<Subscription_Package> Subscription_Packages { get; set; }
 
+    public virtual DbSet<Subscription_Package_Entitlement> Subscription_Package_Entitlements { get; set; }
+
     public virtual DbSet<User> Users { get; set; }
 
     public virtual DbSet<User_Subscription> User_Subscriptions { get; set; }
+
+    public virtual DbSet<User_Subscription_Entitlement> User_Subscription_Entitlements { get; set; }
 
     public virtual DbSet<Wallet> Wallets { get; set; }
 
@@ -191,9 +197,49 @@ public partial class HomeCycleDbContext : DbContext
             entity.HasKey(e => e.AuditId).HasName("Audit_Log_pkey");
 
             entity.Property(e => e.AuditId).ValueGeneratedNever();
-            entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()");
+            entity.Property(e => e.EventId).ValueGeneratedNever();
+            entity.Property(e => e.OldValues).HasColumnType("jsonb");
+            entity.Property(e => e.NewValues).HasColumnType("jsonb");
+            entity.Property(e => e.Metadata).HasColumnType("jsonb");
+            entity.Property(e => e.RecordedAtUtc).HasDefaultValueSql("now()");
 
-            entity.HasOne(d => d.User).WithMany(p => p.Audit_Logs).HasConstraintName("fk_audit_log_userid");
+            entity.HasOne(d => d.User).WithMany(p => p.Audit_Logs)
+                .OnDelete(DeleteBehavior.NoAction)
+                .HasConstraintName("fk_audit_log_userid");
+        });
+
+        modelBuilder.Entity<Audit_Outbox>(entity =>
+        {
+            entity.HasKey(e => e.EventId)
+                .HasName("Audit_Outbox_pkey");
+
+            entity.Property(e => e.EventId)
+                .ValueGeneratedNever();
+
+            entity.Property(e => e.Payload)
+                .HasColumnType("jsonb");
+
+            entity.Property(e => e.RetryCount)
+                .HasDefaultValue(0);
+
+            entity.Property(e => e.NextAttemptAtUtc)
+                .HasDefaultValueSql("now()");
+
+            entity.Property(e => e.CreatedAtUtc)
+                .HasDefaultValueSql("now()");
+
+            entity.HasIndex(e => new
+            {
+                e.NextAttemptAtUtc,
+                e.LeaseUntilUtc,
+                e.CreatedAtUtc
+            })
+                .HasDatabaseName("idx_audit_outbox_ready")
+                .HasFilter("\"FailedAtUtc\" IS NULL");
+
+            entity.HasIndex(e => e.FailedAtUtc)
+                .HasDatabaseName("idx_audit_outbox_failed")
+                .HasFilter("\"FailedAtUtc\" IS NOT NULL");
         });
 
         modelBuilder.Entity<Bank_Account>(entity =>
@@ -734,6 +780,12 @@ public partial class HomeCycleDbContext : DbContext
 
             entity.HasOne(d => d.Order).WithMany(p => p.Payments).HasConstraintName("FK_Payment_OrderId");
 
+            entity.HasOne(d => d.Subscription)
+                .WithOne(p => p.Payment)
+                .HasForeignKey<Payment>(d => d.SubscriptionId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("FK_Payment_SubscriptionId");
+
             entity.HasOne(d => d.Payer).WithMany(p => p.Payments)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("FK_Payment_PayerId");
@@ -997,6 +1049,22 @@ public partial class HomeCycleDbContext : DbContext
             entity.Property(e => e.UpdatedAt).HasDefaultValueSql("now()");
         });
 
+        modelBuilder.Entity<Subscription_Package_Entitlement>(entity =>
+        {
+            entity.HasKey(e => e.PackageEntitlementId)
+                .HasName("Subscription_Package_Entitlement_pkey");
+
+            entity.Property(e => e.PackageEntitlementId).ValueGeneratedNever();
+            entity.Property(e => e.IsUnlimited).HasDefaultValue(false);
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()");
+            entity.Property(e => e.UpdatedAt).HasDefaultValueSql("now()");
+
+            entity.HasOne(d => d.Package)
+                .WithMany(p => p.Subscription_Package_Entitlements)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("fk_subscription_package_entitlement_package");
+        });
+
         modelBuilder.Entity<User>(entity =>
         {
             entity.HasKey(e => e.UserId).HasName("Users_pkey");
@@ -1012,6 +1080,9 @@ public partial class HomeCycleDbContext : DbContext
 
             entity.Property(e => e.SubscriptionId).ValueGeneratedNever();
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()");
+            entity.HasIndex(e => e.UserId, "ux_user_subscription_open")
+                .IsUnique()
+                .HasFilter("\"Status\" IN (1, 2)");
 
             entity.HasOne(d => d.Package).WithMany(p => p.User_Subscriptions)
                 .OnDelete(DeleteBehavior.ClientSetNull)
@@ -1020,6 +1091,21 @@ public partial class HomeCycleDbContext : DbContext
             entity.HasOne(d => d.User).WithMany(p => p.User_Subscriptions)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("fk_us_user");
+        });
+
+        modelBuilder.Entity<User_Subscription_Entitlement>(entity =>
+        {
+            entity.HasKey(e => e.SubscriptionEntitlementId)
+                .HasName("User_Subscription_Entitlement_pkey");
+
+            entity.Property(e => e.SubscriptionEntitlementId).ValueGeneratedNever();
+            entity.Property(e => e.IsUnlimited).HasDefaultValue(false);
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()");
+
+            entity.HasOne(d => d.Subscription)
+                .WithMany(p => p.User_Subscription_Entitlements)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("fk_user_subscription_entitlement_subscription");
         });
 
         modelBuilder.Entity<Wallet>(entity =>

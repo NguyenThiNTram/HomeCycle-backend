@@ -1330,14 +1330,16 @@ namespace HomeCycle.Application.Services.PlatformPolicies
                 && config.MaximumWithdrawalAmount >= config.MinimumWithdrawalAmount
                 && config.MaximumWithdrawalAmount == decimal.Truncate(config.MaximumWithdrawalAmount)
                 && config.DailyWithdrawalLimit >= config.MaximumWithdrawalAmount
-                && config.DailyWithdrawalLimit == decimal.Truncate(config.DailyWithdrawalLimit);
+                && config.DailyWithdrawalLimit == decimal.Truncate(config.DailyWithdrawalLimit)
+                && config.DailyWithdrawalCountLimit > 0;
         }
 
         private static bool SameWithdrawalConfig(WithdrawalPolicyConfigDto current, WithdrawalPolicyConfigDto updated)
         {
             return current.MinimumWithdrawalAmount == updated.MinimumWithdrawalAmount
                 && current.MaximumWithdrawalAmount == updated.MaximumWithdrawalAmount
-                && current.DailyWithdrawalLimit == updated.DailyWithdrawalLimit;
+                && current.DailyWithdrawalLimit == updated.DailyWithdrawalLimit
+                && current.DailyWithdrawalCountLimit == updated.DailyWithdrawalCountLimit;
         }
 
         private static bool TryDeserialize<T>(

@@ -1,8 +1,10 @@
+using HomeCycle.API.Auditing;
 using HomeCycle.API.Hubs;
 using HomeCycle.API.Middlewares;
 using HomeCycle.Application.Interfaces.Repositories.Notifications;
 using HomeCycle.Application.Interfaces.Repositories.Offers;
 using HomeCycle.Application.Interfaces.Repositories.Orders;
+using HomeCycle.Application.Interfaces.Services.Audits;
 using HomeCycle.Application.Interfaces.Services.Negotiates;
 using HomeCycle.Application.Services.Negotiates;
 using HomeCycle.Infrastructure;
@@ -27,6 +29,10 @@ namespace HomeCycle.API
         public static void Main(string[] args)
         {
             var builder = WebApplication.CreateBuilder(args);
+
+            // HttpContext
+            builder.Services.AddHttpContextAccessor();
+            builder.Services.AddScoped<IAuditContextAccessor, HttpAuditContextAccessor>();
 
             // Add services to the container
             builder.Services.AddSignalR();
@@ -153,7 +159,10 @@ namespace HomeCycle.API
 
             builder.Services.AddHostedService<
                 HomeCycle.API.Workers.OrderLifecycleWorker>();
-
+            
+            // Worker AuditLog
+            builder.Services.AddHostedService<HomeCycle.API.Workers.AuditLogWorker>();
+            builder.Services.AddHostedService<HomeCycle.API.Workers.AuditRetentionWorker>();
 
             // Add DbContext with PostgreSQL configuration
             builder.Services.AddDbContext<HomeCycleDbContext>(options =>

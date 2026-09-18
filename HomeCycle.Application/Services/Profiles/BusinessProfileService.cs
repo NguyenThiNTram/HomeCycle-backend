@@ -1,6 +1,8 @@
 ﻿using AutoMapper;
 using FluentValidation;
+using HomeCycle.Application.Commons.Audits;
 using HomeCycle.Application.Commons.Errors;
+using HomeCycle.Application.Commons.Helpers;
 using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Requests.Banks;
 using HomeCycle.Application.DTOs.Requests.Profiles;
@@ -11,6 +13,7 @@ using HomeCycle.Application.Interfaces.Generics;
 using HomeCycle.Application.Interfaces.Repositories.Banks;
 using HomeCycle.Application.Interfaces.Repositories.Profiles;
 using HomeCycle.Application.Interfaces.Repositories.Users;
+using HomeCycle.Application.Interfaces.Services.Audits;
 using HomeCycle.Application.Interfaces.Services.Configs;
 using HomeCycle.Application.Interfaces.Services.Externals;
 using HomeCycle.Application.Interfaces.Services.Notifications;
@@ -39,6 +42,7 @@ namespace HomeCycle.Application.Services.Profiles
         private readonly IFileStorageService _fileStorageService;
         private readonly IFileValidationService _fileValidationService;
         private readonly INotificationService _notificationService;
+        private readonly IAuditService _auditService;
         private readonly IUnitOfWork _unitOfWork;
         private readonly IMapper _mapper;
         private readonly ILogger<BusinessProfileService> _logger;
@@ -64,6 +68,7 @@ namespace HomeCycle.Application.Services.Profiles
             IUserRepository userRepository,
             IFileValidationService fileValidationService,
             INotificationService notificationService,
+            IAuditService auditService,
             IUnitOfWork unitOfWork,
             IMapper mapper,
             ILogger<BusinessProfileService> logger,
@@ -89,6 +94,7 @@ namespace HomeCycle.Application.Services.Profiles
             _userRepository = userRepository;
             _fileValidationService = fileValidationService;
             _notificationService = notificationService;
+            _auditService = auditService;
             _unitOfWork = unitOfWork;
             _mapper = mapper;
             _logger = logger;
@@ -124,6 +130,10 @@ namespace HomeCycle.Application.Services.Profiles
             }
 
             bool isResubmit = existingProfile != null;
+
+            BusinessProfileStatus? previousProfileStatus = existingProfile is null
+                ? null
+                : (BusinessProfileStatus)existingProfile.Status;
 
             var existingActiveDocTypes = new List<int>();
             if (isResubmit)
@@ -275,6 +285,16 @@ namespace HomeCycle.Application.Services.Profiles
                     }
                 }
 
+                var submitProfileAuditDiff = new AuditDiffBuilder();
+
+                if (previousProfileStatus.HasValue)
+                {
+                    submitProfileAuditDiff.Add(
+                        "status",
+                        previousProfileStatus.Value.ToString(),
+                        BusinessProfileStatus.Pending.ToString());
+                }
+
                 var moderatorNotifications =
                     await _notificationService.AddPendingForActiveModeratorsAsync(
                         isResubmit
@@ -286,6 +306,29 @@ namespace HomeCycle.Application.Services.Profiles
                         NotificationTargetType.BusinessProfile,
                         targetProfileId,
                         cancellationToken);
+
+                await _auditService.EnqueueAsync(new AuditEvent
+                {
+                    Category = AuditCategory.BusinessOperation,
+                    Action = AuditActions.BusinessProfileSubmit,
+                    Outcome = AuditOutcome.Success,
+                    ActorType = AuditActorType.User,
+                    UserId = userId,
+                    TargetType = AuditTargetTypes.BusinessProfile,
+                    TargetId = targetProfileId,
+                    OldValues = submitProfileAuditDiff.OldValues,
+                    NewValues = previousProfileStatus.HasValue
+                        ? submitProfileAuditDiff.NewValues
+                        : new Dictionary<string, object?>
+                        {
+                            ["status"] = BusinessProfileStatus.Pending.ToString()
+                        },
+                    Metadata = new Dictionary<string, object?>
+                    {
+                        ["isResubmit"] = isResubmit
+                    }
+                }, cancellationToken);
+
 
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync();
@@ -644,13 +687,15 @@ namespace HomeCycle.Application.Services.Profiles
                 return Result.Fail(ValidationErrors.InvalidRequest(string.Join(" | ", valResult.Errors.Select(e => e.ErrorMessage))));
 
             var existingBank = await _bankAccountRepository.GetByUserIdAsync(userId, cancellationToken);
+            var isNewBankAccount = existingBank == null;
+            Guid bankAccountId;
 
             if (existingBank != null)
             {
 
                 _mapper.Map(request, existingBank);
                 existingBank.VerifyStatus = VerifyStatus.Verified;
-
+                bankAccountId = existingBank.UserBankId;
                 _bankAccountRepository.UpdateAsync(existingBank);
             }
             else
@@ -661,9 +706,27 @@ namespace HomeCycle.Application.Services.Profiles
                 newBank.UserId = userId;
                 newBank.VerifyStatus = VerifyStatus.Verified;
                 newBank.CreatedAt = DateTime.UtcNow;
-
+                bankAccountId = newBank.UserBankId;
                 await _bankAccountRepository.AddAsync(newBank, cancellationToken);
             }
+
+            var bankAccountAuditEvent = new AuditEvent
+            {
+                Category = AuditCategory.Security,
+                Action = AuditActions.BankAccountChange,
+                Outcome = AuditOutcome.Success,
+                ActorType = AuditActorType.User,
+                UserId = userId,
+                TargetType = AuditTargetTypes.BankAccount,
+                TargetId = bankAccountId,
+                Metadata = new Dictionary<string, object?>
+                {
+                    ["created"] = isNewBankAccount,
+                    ["verificationStatus"] = VerifyStatus.Verified.ToString()
+                }
+            };
+
+            await _auditService.EnqueueAsync(bankAccountAuditEvent, cancellationToken);
 
             await _unitOfWork.SaveChangesAsync(cancellationToken);
             return Result.Success();
@@ -686,6 +749,12 @@ namespace HomeCycle.Application.Services.Profiles
             var profile = await _businessProfileRepository.GetByUserIdAsync(userId, cancellationToken);
             if (profile == null)
                 return Result.Fail(new Error("BusinessProfile.NotFound", "Không tìm thấy hồ sơ doanh nghiệp."));
+
+            var updatedDocumentTypes = request.Documents
+                .Select(x => x.DocumentType)
+                .Distinct()
+                .OrderBy(x => x)
+                .ToArray();
 
             await _unitOfWork.BeginTransactionAsync();
             try
@@ -716,6 +785,22 @@ namespace HomeCycle.Application.Services.Profiles
                 }
 
                 await _businessDocumentRepository.AddRangeAsync(newDocs, cancellationToken);
+
+                await _auditService.EnqueueAsync(new AuditEvent
+                {
+                    Category = AuditCategory.BusinessOperation,
+                    Action = AuditActions.BusinessProfileUpdateDocuments,
+                    Outcome = AuditOutcome.Success,
+                    ActorType = AuditActorType.User,
+                    UserId = userId,
+                    TargetType = AuditTargetTypes.BusinessProfile,
+                    TargetId = profile.BusinessProfileId,
+                    Metadata = new Dictionary<string, object?>
+                    {
+                        ["documentTypes"] = updatedDocumentTypes,
+                        ["documentCount"] = request.Documents.Count
+                    }
+                }, cancellationToken);
 
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync();
@@ -847,6 +932,21 @@ namespace HomeCycle.Application.Services.Profiles
                 if (request.CccdBack != null)
                     await HandleDocumentSoftReplaceAsync(profile.BusinessProfileId, 1, request.CccdBack, cancellationToken);
 
+                await _auditService.EnqueueAsync(new AuditEvent
+                {
+                    Category = AuditCategory.BusinessOperation,
+                    Action = AuditActions.BusinessProfileUpdateIdentity,
+                    Outcome = AuditOutcome.Success,
+                    ActorType = AuditActorType.User,
+                    UserId = userId,
+                    TargetType = AuditTargetTypes.BusinessProfile,
+                    TargetId = profile.BusinessProfileId,
+                    Metadata = new Dictionary<string, object?>
+                    {
+                        ["frontDocumentReplaced"] = request.CccdFront is not null,
+                        ["backDocumentReplaced"] = request.CccdBack is not null
+                    }
+                }, cancellationToken);
 
                 // BẮT BUỘC CÓ SAVECHANGES TRƯỚC KHI COMMIT
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -903,6 +1003,21 @@ namespace HomeCycle.Application.Services.Profiles
                 {
                     await HandleDocumentSoftReplaceAsync(profile.BusinessProfileId, 2, request.BusinessRegistrationCertificate, cancellationToken);
                 }
+
+                await _auditService.EnqueueAsync(new AuditEvent
+                {
+                    Category = AuditCategory.BusinessOperation,
+                    Action = AuditActions.BusinessProfileUpdateRegistration,
+                    Outcome = AuditOutcome.Success,
+                    ActorType = AuditActorType.User,
+                    UserId = userId,
+                    TargetType = AuditTargetTypes.BusinessProfile,
+                    TargetId = profile.BusinessProfileId,
+                    Metadata = new Dictionary<string, object?>
+                    {
+                        ["certificateReplaced"] = request.BusinessRegistrationCertificate is not null
+                    }
+                }, cancellationToken);
 
                 // BẮT BUỘC CÓ SAVECHANGES
                 await _unitOfWork.SaveChangesAsync(cancellationToken);

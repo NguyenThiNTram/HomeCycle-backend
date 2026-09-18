@@ -1,10 +1,12 @@
 using FluentValidation;
+using HomeCycle.Application.Commons.Audits;
 using HomeCycle.Application.DTOs.Requests.Agreements;
 using HomeCycle.Application.Interfaces.Externals;
 using HomeCycle.Application.Interfaces.Generics;
 using HomeCycle.Application.Interfaces.Repositories;
 using HomeCycle.Application.Interfaces.Repositories.Agreements;
 using HomeCycle.Application.Interfaces.Repositories.Appointments;
+using HomeCycle.Application.Interfaces.Repositories.Audits;
 using HomeCycle.Application.Interfaces.Repositories.Banks;
 using HomeCycle.Application.Interfaces.Repositories.Carts;
 using HomeCycle.Application.Interfaces.Repositories.Disputes;
@@ -23,17 +25,20 @@ using HomeCycle.Application.Interfaces.Repositories.Products;
 using HomeCycle.Application.Interfaces.Repositories.Profiles;
 using HomeCycle.Application.Interfaces.Repositories.Reviews;
 using HomeCycle.Application.Interfaces.Repositories.Shipments;
+using HomeCycle.Application.Interfaces.Repositories.SubscriptionPackages;
 using HomeCycle.Application.Interfaces.Repositories.Users;
 using HomeCycle.Application.Interfaces.Repositories.Wallets;
 using HomeCycle.Application.Interfaces.Security;
 using HomeCycle.Application.Interfaces.Services.Agreements;
 using HomeCycle.Application.Interfaces.Services.Appointments;
 using HomeCycle.Application.Interfaces.Services.Appointments;
+using HomeCycle.Application.Interfaces.Services.Audits;
 using HomeCycle.Application.Interfaces.Services.Auths;
 using HomeCycle.Application.Interfaces.Services.Carts;
 using HomeCycle.Application.Interfaces.Services.Configs;
 using HomeCycle.Application.Interfaces.Services.Disputes;
 using HomeCycle.Application.Interfaces.Services.Disputes;
+using HomeCycle.Application.Interfaces.Services.Entitlements;
 using HomeCycle.Application.Interfaces.Services.Externals;
 using HomeCycle.Application.Interfaces.Services.GHN;
 using HomeCycle.Application.Interfaces.Services.GHN;
@@ -51,6 +56,7 @@ using HomeCycle.Application.Interfaces.Services.Products;
 using HomeCycle.Application.Interfaces.Services.Profiles;
 using HomeCycle.Application.Interfaces.Services.Reviews;
 using HomeCycle.Application.Interfaces.Services.Shipments;
+using HomeCycle.Application.Interfaces.Services.SubscriptionPackages;
 using HomeCycle.Application.Interfaces.Services.Users;
 using HomeCycle.Application.Interfaces.Services.Wallets;
 using HomeCycle.Application.Interfaces.Services.Wallets;
@@ -58,11 +64,13 @@ using HomeCycle.Application.Mappings;
 using HomeCycle.Application.Services.Agreements;
 using HomeCycle.Application.Services.Appointments;
 using HomeCycle.Application.Services.Appointments;
+using HomeCycle.Application.Services.Audits;
 using HomeCycle.Application.Services.Auths;
 using HomeCycle.Application.Services.Carts;
 using HomeCycle.Application.Services.Configs;
 using HomeCycle.Application.Services.Disputes;
 using HomeCycle.Application.Services.Disputes;
+using HomeCycle.Application.Services.Entitlements;
 using HomeCycle.Application.Services.GHN;
 using HomeCycle.Application.Services.GHN;
 using HomeCycle.Application.Services.Inspections;
@@ -80,11 +88,13 @@ using HomeCycle.Application.Services.Products;
 using HomeCycle.Application.Services.Profiles;
 using HomeCycle.Application.Services.Reviews;
 using HomeCycle.Application.Services.Shipments;
+using HomeCycle.Application.Services.SubscriptionPackages;
 using HomeCycle.Application.Services.Wallets;
 using HomeCycle.Application.Services.Wallets;
 using HomeCycle.Application.Validations.Agreements;
 using HomeCycle.Application.Validations.Auths;
 using HomeCycle.Application.Validations.Users;
+using HomeCycle.Infrastructure.Auditing;
 using HomeCycle.Infrastructure.DbContexts;
 using HomeCycle.Infrastructure.Externals;
 using HomeCycle.Infrastructure.Externals.Gemini;
@@ -93,6 +103,7 @@ using HomeCycle.Infrastructure.Externals.PayOS;
 using HomeCycle.Infrastructure.Externals.PayOS;
 using HomeCycle.Infrastructure.Repositories.Agreements;
 using HomeCycle.Infrastructure.Repositories.Appointments;
+using HomeCycle.Infrastructure.Repositories.Audits;
 using HomeCycle.Infrastructure.Repositories.Banks;
 using HomeCycle.Infrastructure.Repositories.Carts;
 using HomeCycle.Infrastructure.Repositories.Disputes;
@@ -110,6 +121,7 @@ using HomeCycle.Infrastructure.Repositories.Products;
 using HomeCycle.Infrastructure.Repositories.Profiles;
 using HomeCycle.Infrastructure.Repositories.Reviews;
 using HomeCycle.Infrastructure.Repositories.Shipments;
+using HomeCycle.Infrastructure.Repositories.SubscriptionPackages;
 using HomeCycle.Infrastructure.Repositories.Users;
 using HomeCycle.Infrastructure.Repositories.Wallets;
 using HomeCycle.Infrastructure.Security;
@@ -144,6 +156,38 @@ namespace HomeCycle.Infrastructure
 
             //register UOW
             services.AddScoped<IUnitOfWork, UnitOfWork>();
+
+            // AuditLog
+            services.AddOptions<AuditLogOptions>()
+                .Bind(configuration.GetSection(AuditLogOptions.SectionName))
+                .Validate(x => x.Payload.MaxBytes is >= 1024 and <= 65536,
+                    "AuditLog Payload MaxBytes phải từ 1024 đến 65536 bytes.")
+                .Validate(x => x.Worker.BatchSize is >= 1 and <= 500,
+                    "AuditLog Worker BatchSize phải từ 1 đến 500.")
+                .Validate(x => x.Worker.PollIntervalSeconds is >= 2 and <= 300,
+                    "AuditLog Worker PollIntervalSeconds phải từ 2 đến 300 giây.")
+                .Validate(x => x.Worker.RetryLimit is >= 1 and <= 20,
+                    "AuditLog Worker RetryLimit phải từ 1 đến 20.")
+                .Validate(x => x.Worker.RetryBaseDelaySeconds is >= 5 and <= 3600,
+                    "AuditLog Worker RetryBaseDelaySeconds phải từ 5 đến 3600 giây.")
+                .Validate(x => x.Worker.ProcessingLeaseSeconds is >= 30 and <= 3600,
+                    "AuditLog Worker ProcessingLeaseSeconds phải từ 30 đến 3600 giây.")
+                .Validate(x => x.Worker.ProcessingLeaseSeconds >= x.Worker.PollIntervalSeconds * 3,
+                    "AuditLog ProcessingLeaseSeconds phải ít nhất gấp 3 PollIntervalSeconds.")
+                .Validate(x => x.Retention.Days is >= 30 and <= 3650,
+                    "AuditLog Retention Days phải từ 30 đến 3650 ngày.")
+                .Validate(x => x.Retention.CleanupBatchSize is >= 50 and <= 5000,
+                    "AuditLog Retention CleanupBatchSize phải từ 50 đến 5000.")
+                .Validate(x => x.Retention.CleanupIntervalHours is >= 1 and <= 168,
+                    "AuditLog Retention CleanupIntervalHours phải từ 1 đến 168 giờ.")
+                .ValidateOnStart();
+
+            services.AddSingleton<AuditPayloadSanitizer>();
+            services.AddScoped<IAuditOutboxWriter, AuditOutboxWriter>();
+            services.AddScoped<IAuditOutboxProcessor, AuditOutboxProcessor>();
+            services.AddScoped<IAuditRetentionProcessor, AuditRetentionProcessor>();
+            services.AddScoped<IAuditLogRepository, AuditLogRepository>();
+            services.AddScoped<IAuditService, AuditService>();
 
             //register hash password
             services.AddScoped<
@@ -261,6 +305,8 @@ namespace HomeCycle.Infrastructure
             services.AddScoped<INotificationRepository, NotificationRepository>();
             services.AddScoped<IConversationRepository, ConversationRepository>();
             services.AddScoped<IDisputeCategoryRepository, DisputeCategoryRepository>();
+            services.AddScoped<ISubscriptionPackageRepository, SubscriptionPackageRepository>();
+            services.AddScoped<IUserSubscriptionRepository, UserSubscriptionRepository>();
 
             // register Services
             services.AddScoped<IAuthService, AuthService>();
@@ -317,6 +363,9 @@ namespace HomeCycle.Infrastructure
             services.AddScoped<IConversationService, ConversationService>();
             services.AddScoped<IFileValidationService, FileValidationService>();
             services.AddScoped<IDisputeCategoryService, DisputeCategoryService>();
+            services.AddScoped<ISubscriptionPackageService, SubscriptionPackageService>();
+            services.AddScoped<IEntitlementResolver, EntitlementResolver>();
+            services.AddScoped<IUserSubscriptionService, UserSubscriptionService>();
 
 
             services.AddScoped<INotificationService, NotificationService>();

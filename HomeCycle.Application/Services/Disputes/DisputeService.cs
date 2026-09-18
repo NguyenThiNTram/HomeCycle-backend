@@ -33,6 +33,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using HomeCycle.Application.Interfaces.Services.Audits;
+using HomeCycle.Application.Commons.Audits;
 
 namespace HomeCycle.Application.Services.Disputes
 {
@@ -64,6 +66,7 @@ namespace HomeCycle.Application.Services.Disputes
         private readonly IValidator<VerifyDisputeReturnRequest> _returnVerificationValidator;
         private readonly IReadOnlyDictionary<DisputeTargetType, IDisputeTargetHandler> _targetHandlers;
         private readonly IDisputeCategoryRepository _disputeCategoryRepository;
+        private readonly IAuditService _auditService;
 
         public DisputeService(IGhnShipmentCreationService ghnLifecycle,
             IDisputeRepository disputeRepository,
@@ -88,7 +91,8 @@ namespace HomeCycle.Application.Services.Disputes
             IValidator<ResolveDisputeRequest> resolveValidator,
             IValidator<VerifyDisputeReturnRequest> returnVerificationValidator,
             IEnumerable<IDisputeTargetHandler> targetHandlers,
-            IDisputeCategoryRepository disputeCategoryRepository)
+            IDisputeCategoryRepository disputeCategoryRepository,
+            IAuditService auditService)
         {
             _ghnLifecycle = ghnLifecycle;
             _disputeRepository = disputeRepository;
@@ -116,6 +120,7 @@ namespace HomeCycle.Application.Services.Disputes
                 .GroupBy(x => x.TargetType)
                 .ToDictionary(x => x.Key, x => x.First());
             _disputeCategoryRepository = disputeCategoryRepository;
+            _auditService = auditService;
         }
 
         public async Task<Result<DisputeDecisionResponse>> ResolveByModeratorAsync(
@@ -198,6 +203,11 @@ namespace HomeCycle.Application.Services.Disputes
                 if (stateError != null)
                     return await RollbackContentDecisionAsync(stateError, ct);
 
+                var previousDisputeStatus = (DisputeStatus)dispute!.DisputeStatus.Value;
+                var previousResolutionOutcome = dispute.ResolutionOutcome.HasValue
+                    ? (DisputeResolutionOutcome?)dispute.ResolutionOutcome.Value
+                    : null;
+
                 var now = DateTime.UtcNow;
                 var penaltyApplied = 0;
                 if (confirmed)
@@ -252,6 +262,39 @@ namespace HomeCycle.Application.Services.Disputes
                 dispute.ModeratorNote = request.ModeratorNote.Trim();
                 dispute.UpdatedAt = now;
                 dispute.ResolvedAt = now;
+
+                var contentDecisionAuditDiff = new AuditDiffBuilder()
+                    .Add("status", previousDisputeStatus.ToString(), ((DisputeStatus)dispute.DisputeStatus.Value).ToString())
+                    .Add("resolutionOutcome", previousResolutionOutcome?.ToString(), ((DisputeResolutionOutcome)dispute.ResolutionOutcome.Value).ToString());
+
+                var contentDecisionAuditMetadata = new Dictionary<string, object?>
+                {
+                    ["targetType"] = targetType.ToString(),
+                    ["targetId"] = targetId.Value
+                };
+
+                if (confirmed)
+                {
+                    contentDecisionAuditMetadata["penaltyPointsApplied"] = penaltyApplied;
+                    contentDecisionAuditMetadata["targetStatus"] = targetType == DisputeTargetType.Post
+                        ? PostStatus.Suspended.ToString()
+                        : ReviewStatus.Hidden.ToString();
+                }
+
+                var contentDecisionAuditEvent = new AuditEvent
+                {
+                    Category = AuditCategory.Administration,
+                    Action = confirmed ? AuditActions.DisputeResolve : AuditActions.DisputeReject,
+                    Outcome = AuditOutcome.Success,
+                    ActorType = AuditActorType.User,
+                    UserId = moderatorId,
+                    TargetType = AuditTargetTypes.Dispute,
+                    TargetId = dispute.DisputeId,
+                    OldValues = contentDecisionAuditDiff.OldValues,
+                    NewValues = contentDecisionAuditDiff.NewValues,
+                    Metadata = contentDecisionAuditMetadata
+                };
+
                 await _disputeRepository.UpdateAsync(dispute, ct);
 
                 var notifications = new List<notification>
@@ -271,6 +314,8 @@ namespace HomeCycle.Application.Services.Disputes
                         $"Điểm uy tín bị trừ trong lần xử lý này: {penaltyApplied}. {dispute.ModeratorNote}",
                         NotificationTargetType.Dispute, disputeId), ct));
                 }
+
+                await _auditService.EnqueueAsync(contentDecisionAuditEvent, ct);
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
                 foreach (var notification in notifications)
@@ -482,6 +527,27 @@ namespace HomeCycle.Application.Services.Disputes
 
                 await _disputeRepository.AddAsync(dispute, cancellationToken);
 
+                var createDisputeAuditEvent = new AuditEvent
+                {
+                    Category = AuditCategory.BusinessOperation,
+                    Action = AuditActions.DisputeCreate,
+                    Outcome = AuditOutcome.Success,
+                    ActorType = AuditActorType.User,
+                    UserId = senderId,
+                    TargetType = AuditTargetTypes.Dispute,
+                    TargetId = dispute.DisputeId,
+                    NewValues = new Dictionary<string, object?>
+                    {
+                        ["status"] = DisputeStatus.Pending.ToString()
+                    },
+                    Metadata = new Dictionary<string, object?>
+                    {
+                        ["targetType"] = target.TargetType.ToString(),
+                        ["targetId"] = target.TargetId,
+                        ["categoryCode"] = category.Code
+                    }
+                };
+
                 // Evidence bắt buộc 2-5 ảnh theo validator và luôn gắn vào DisputeId.
                 var mediaResult = await _mediaService.UploadAndSaveMediaAsync(
                     targetId: dispute.DisputeId,
@@ -519,6 +585,7 @@ namespace HomeCycle.Application.Services.Disputes
                         NotificationTargetType.Dispute,
                         dispute.DisputeId,
                         cancellationToken);
+                await _auditService.EnqueueAsync(createDisputeAuditEvent, cancellationToken);
 
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync(cancellationToken);
@@ -630,6 +697,8 @@ namespace HomeCycle.Application.Services.Disputes
                 }
 
                 var closedAt = DateTime.UtcNow;
+                var previousDisputeStatus = (DisputeStatus)dispute.DisputeStatus.Value;
+                OrderStatus? previousOrderStatus = null;
                 OrderStatus? restoredOrderStatus = null;
 
                 if (dispute.DisputeTargetType == (int)DisputeTargetType.Order)
@@ -656,6 +725,7 @@ namespace HomeCycle.Application.Services.Disputes
                         return Result<CloseDisputeResponse>.Fail(OrderErrors.NotDisputing);
                     }
 
+                    previousOrderStatus = (OrderStatus)order.OrderStatus.Value;
                     restoredOrderStatus = order.CompletedAt.HasValue
                         ? OrderStatus.Completed
                         : OrderStatus.Processing;
@@ -670,6 +740,28 @@ namespace HomeCycle.Application.Services.Disputes
                 // Không set ResolvedAt vì Closed != Moderator Resolved.
                 dispute.DisputeStatus = (int)DisputeStatus.Closed;
                 dispute.UpdatedAt = closedAt;
+
+                var closeDisputeAuditDiff = new AuditDiffBuilder()
+                    .Add("status", previousDisputeStatus.ToString(), DisputeStatus.Closed.ToString())
+                    .Add("orderStatus", previousOrderStatus?.ToString(), restoredOrderStatus?.ToString());
+
+                var closeDisputeAuditEvent = new AuditEvent
+                {
+                    Category = AuditCategory.BusinessOperation,
+                    Action = AuditActions.DisputeClose,
+                    Outcome = AuditOutcome.Success,
+                    ActorType = AuditActorType.User,
+                    UserId = currentUserId,
+                    TargetType = AuditTargetTypes.Dispute,
+                    TargetId = dispute.DisputeId,
+                    OldValues = closeDisputeAuditDiff.OldValues,
+                    NewValues = closeDisputeAuditDiff.NewValues,
+                    Metadata = new Dictionary<string, object?>
+                    {
+                        ["targetType"] = ((DisputeTargetType)dispute.DisputeTargetType.Value).ToString(),
+                        ["orderId"] = dispute.OrderId
+                    }
+                };
 
                 await _disputeRepository.UpdateAsync(dispute, cancellationToken);
 
@@ -688,6 +780,7 @@ namespace HomeCycle.Application.Services.Disputes
                         cancellationToken);
                 }
 
+                await _auditService.EnqueueAsync(closeDisputeAuditEvent, cancellationToken);
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync(cancellationToken);
                 if (closedNotification != null)
@@ -791,11 +884,28 @@ namespace HomeCycle.Application.Services.Disputes
                     return Result<ClaimDisputeResponse>.Fail(DisputeErrors.ClaimNotAllowed);
                 }
 
+                var previousDisputeStatus = status.Value;
                 var now = DateTime.UtcNow;
 
                 dispute.ModeratorId = moderatorId;
                 dispute.DisputeStatus = (int)DisputeStatus.UnderReview;
                 dispute.UpdatedAt = now;
+
+                var claimDisputeAuditDiff = new AuditDiffBuilder()
+                    .Add("status", previousDisputeStatus.ToString(), DisputeStatus.UnderReview.ToString());
+
+                var claimDisputeAuditEvent = new AuditEvent
+                {
+                    Category = AuditCategory.Administration,
+                    Action = AuditActions.DisputeClaim,
+                    Outcome = AuditOutcome.Success,
+                    ActorType = AuditActorType.User,
+                    UserId = moderatorId,
+                    TargetType = AuditTargetTypes.Dispute,
+                    TargetId = dispute.DisputeId,
+                    OldValues = claimDisputeAuditDiff.OldValues,
+                    NewValues = claimDisputeAuditDiff.NewValues
+                };
 
                 await _disputeRepository.UpdateAsync(dispute, cancellationToken);
 
@@ -824,6 +934,8 @@ namespace HomeCycle.Application.Services.Disputes
                                 dispute.DisputeId),
                             cancellationToken));
                 }
+
+                await _auditService.EnqueueAsync(claimDisputeAuditEvent, cancellationToken);
 
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync(cancellationToken);
@@ -919,6 +1031,13 @@ namespace HomeCycle.Application.Services.Disputes
                     await _unitOfWork.RollbackTransactionAsync(cancellationToken);
                     return Result<DisputeDecisionResponse>.Fail(AgreementErrors.NotFound);
                 }
+
+                var previousDisputeStatus = (DisputeStatus)dispute.DisputeStatus.Value;
+                var previousResolutionOutcome = dispute.ResolutionOutcome.HasValue
+                    ? (DisputeResolutionOutcome?)dispute.ResolutionOutcome.Value
+                    : null;
+                var previousOrderStatus = (OrderStatus)order.OrderStatus.Value;
+                var previousReturnDueAt = order.ReturnDueAt;
 
                 var policy = await _platformPolicyProvider.GetDisputeConfigAsync(cancellationToken);
                 var now = DateTime.UtcNow;
@@ -1019,6 +1138,30 @@ namespace HomeCycle.Application.Services.Disputes
                     return Result<DisputeDecisionResponse>.Fail(reputationResult.Error!);
                 }
 
+                var resolveDisputeAuditDiff = new AuditDiffBuilder()
+                    .Add("status", previousDisputeStatus.ToString(), ((DisputeStatus)dispute.DisputeStatus.Value).ToString())
+                    .Add("resolutionOutcome", previousResolutionOutcome?.ToString(), ((DisputeResolutionOutcome)dispute.ResolutionOutcome.Value).ToString())
+                    .Add("orderStatus", previousOrderStatus.ToString(), ((OrderStatus)order.OrderStatus.Value).ToString())
+                    .Add("returnDueAt", previousReturnDueAt, order.ReturnDueAt);
+
+                var resolveDisputeAuditEvent = new AuditEvent
+                {
+                    Category = AuditCategory.Administration,
+                    Action = AuditActions.DisputeResolve,
+                    Outcome = AuditOutcome.Success,
+                    ActorType = AuditActorType.User,
+                    UserId = moderatorId,
+                    TargetType = AuditTargetTypes.Dispute,
+                    TargetId = dispute.DisputeId,
+                    OldValues = resolveDisputeAuditDiff.OldValues,
+                    NewValues = resolveDisputeAuditDiff.NewValues,
+                    Metadata = new Dictionary<string, object?>
+                    {
+                        ["orderId"] = order.OrderId,
+                        ["buyerHasItem"] = buyerHasItem,
+                        ["returnRequired"] = dispute.DisputeStatus == (int)DisputeStatus.AwaitingReturn
+                    }
+                };
 
                 string buyerMessage;
                 string sellerMessage;
@@ -1065,6 +1208,7 @@ namespace HomeCycle.Application.Services.Disputes
 
                 await _orderRepository.UpdateAsync(order, cancellationToken);
                 await _disputeRepository.UpdateAsync(dispute, cancellationToken);
+                await _auditService.EnqueueAsync(resolveDisputeAuditEvent, cancellationToken);
 
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync(cancellationToken);
@@ -1171,6 +1315,9 @@ namespace HomeCycle.Application.Services.Disputes
                     return Result<DisputeDecisionResponse>.Fail(AgreementErrors.NotFound);
                 }
 
+                var previousDisputeStatus = (DisputeStatus)dispute.DisputeStatus.Value;
+                var previousOrderStatus = (OrderStatus)order.OrderStatus.Value;
+
                 var now = DateTime.UtcNow;
                 var restoredOrderStatus = order.CompletedAt.HasValue
                     ? OrderStatus.Completed
@@ -1185,6 +1332,27 @@ namespace HomeCycle.Application.Services.Disputes
                 dispute.ModeratorNote = request.ModeratorNote.Trim();
                 dispute.ResolvedAt = now;
                 dispute.UpdatedAt = now;
+
+                var rejectDisputeAuditDiff = new AuditDiffBuilder()
+                    .Add("status", previousDisputeStatus.ToString(), DisputeStatus.Rejected.ToString())
+                    .Add("orderStatus", previousOrderStatus.ToString(), restoredOrderStatus.ToString());
+
+                var rejectDisputeAuditEvent = new AuditEvent
+                {
+                    Category = AuditCategory.Administration,
+                    Action = AuditActions.DisputeReject,
+                    Outcome = AuditOutcome.Success,
+                    ActorType = AuditActorType.User,
+                    UserId = moderatorId,
+                    TargetType = AuditTargetTypes.Dispute,
+                    TargetId = dispute.DisputeId,
+                    OldValues = rejectDisputeAuditDiff.OldValues,
+                    NewValues = rejectDisputeAuditDiff.NewValues,
+                    Metadata = new Dictionary<string, object?>
+                    {
+                        ["orderId"] = order.OrderId
+                    }
+                };
 
                 await _orderRepository.UpdateAsync(order, cancellationToken);
                 await _disputeRepository.UpdateAsync(dispute, cancellationToken);
@@ -1209,6 +1377,8 @@ namespace HomeCycle.Application.Services.Disputes
                             dispute.DisputeId),
                         cancellationToken)
                 };
+
+                await _auditService.EnqueueAsync(rejectDisputeAuditEvent, cancellationToken);
 
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync(cancellationToken);
@@ -1345,6 +1515,13 @@ namespace HomeCycle.Application.Services.Disputes
                     return Result<DisputeDecisionResponse>.Fail(AgreementErrors.NotFound);
                 }
 
+                var previousDisputeStatus = (DisputeStatus)dispute.DisputeStatus.Value;
+                var previousOrderStatus = (OrderStatus)order.OrderStatus.Value;
+                var previousPaymentStatus = order.PaymentStatus.HasValue
+                    ? (PaymentStatus?)order.PaymentStatus.Value
+                    : null;
+                var previousReturnDueAt = order.ReturnDueAt;
+
                 var refundedAmount = 0m;
 
                 if (request.IsReturnCompleted)
@@ -1383,6 +1560,30 @@ namespace HomeCycle.Application.Services.Disputes
                 dispute.ResolvedAt = now;
                 dispute.UpdatedAt = now;
 
+                var verifyReturnAuditDiff = new AuditDiffBuilder()
+                    .Add("status", previousDisputeStatus.ToString(), DisputeStatus.Resolved.ToString())
+                    .Add("orderStatus", previousOrderStatus.ToString(), ((OrderStatus)order.OrderStatus.Value).ToString())
+                    .Add("paymentStatus", previousPaymentStatus?.ToString(), order.PaymentStatus.HasValue ? ((PaymentStatus)order.PaymentStatus.Value).ToString() : null)
+                    .Add("returnDueAt", previousReturnDueAt, order.ReturnDueAt);
+
+                var verifyReturnAuditEvent = new AuditEvent
+                {
+                    Category = AuditCategory.Administration,
+                    Action = AuditActions.DisputeReturnVerify,
+                    Outcome = AuditOutcome.Success,
+                    ActorType = AuditActorType.User,
+                    UserId = moderatorId,
+                    TargetType = AuditTargetTypes.Dispute,
+                    TargetId = dispute.DisputeId,
+                    OldValues = verifyReturnAuditDiff.OldValues,
+                    NewValues = verifyReturnAuditDiff.NewValues,
+                    Metadata = new Dictionary<string, object?>
+                    {
+                        ["orderId"] = order.OrderId,
+                        ["returnCompleted"] = request.IsReturnCompleted
+                    }
+                };
+
                 await _orderRepository.UpdateAsync(order, cancellationToken);
                 await _disputeRepository.UpdateAsync(dispute, cancellationToken);
 
@@ -1414,6 +1615,8 @@ namespace HomeCycle.Application.Services.Disputes
                             dispute.DisputeId),
                         cancellationToken)
                 };
+
+                await _auditService.EnqueueAsync(verifyReturnAuditEvent, cancellationToken);
 
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync(cancellationToken);

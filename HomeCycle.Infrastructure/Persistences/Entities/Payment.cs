@@ -10,6 +10,7 @@ namespace HomeCycle.Infrastructure;
 [Index("AgreementId", Name = "idx_payment_agreement")]
 [Index("OrderId", Name = "idx_payment_order")]
 [Index("PayerId", Name = "idx_payment_payer")]
+[Index("SubscriptionId", Name = "ux_payment_subscription", IsUnique = true)]
 public partial class Payment
 {
     [Key]
@@ -18,6 +19,7 @@ public partial class Payment
     public Guid? AgreementId { get; set; }
 
     public Guid? OrderId { get; set; }
+    public Guid? SubscriptionId { get; set; }
 
     public Guid PayerId { get; set; }
 
@@ -43,6 +45,10 @@ public partial class Payment
     [ForeignKey("OrderId")]
     [InverseProperty("Payments")]
     public virtual Order? Order { get; set; }
+
+    [ForeignKey("SubscriptionId")]
+    [InverseProperty("Payment")]
+    public virtual User_Subscription? Subscription { get; set; }
 
     [ForeignKey("PayerId")]
     [InverseProperty("Payments")]

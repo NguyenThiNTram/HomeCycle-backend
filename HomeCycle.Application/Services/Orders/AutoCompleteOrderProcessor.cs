@@ -1,9 +1,12 @@
-﻿using HomeCycle.Application.DTOs.Responses.Notifications;
+﻿using HomeCycle.Application.Commons.Audits;
+using HomeCycle.Application.Commons.Helpers;
+using HomeCycle.Application.DTOs.Responses.Notifications;
 using HomeCycle.Application.Interfaces.Generics;
 using HomeCycle.Application.Interfaces.Repositories.Agreements;
 using HomeCycle.Application.Interfaces.Repositories.Disputes;
 using HomeCycle.Application.Interfaces.Repositories.Orders;
 using HomeCycle.Application.Interfaces.Repositories.Shipments;
+using HomeCycle.Application.Interfaces.Services.Audits;
 using HomeCycle.Application.Interfaces.Services.Disputes;
 using HomeCycle.Application.Interfaces.Services.Notifications;
 using HomeCycle.Application.Interfaces.Services.Orders;
@@ -28,6 +31,7 @@ namespace HomeCycle.Application.Services.Orders
         private readonly IPlatformPolicyProvider _platformPolicyProvider;
         private readonly INotificationService _notificationService;
         private readonly IOrderTrackingRealtimeService _orderTrackingRealtimeService;
+        private readonly IAuditService _auditService;
         private readonly IUnitOfWork _unitOfWork;
         private readonly ILogger<AutoCompleteOrderProcessor> _logger;
 
@@ -42,6 +46,7 @@ namespace HomeCycle.Application.Services.Orders
             IPlatformPolicyProvider platformPolicyProvider,
             INotificationService notificationService,
             IOrderTrackingRealtimeService orderTrackingRealtimeService,
+            IAuditService auditService,
             IUnitOfWork unitOfWork,
             ILogger<AutoCompleteOrderProcessor> logger)
         {
@@ -53,6 +58,7 @@ namespace HomeCycle.Application.Services.Orders
             _platformPolicyProvider = platformPolicyProvider;
             _notificationService = notificationService;
             _orderTrackingRealtimeService = orderTrackingRealtimeService;
+            _auditService = auditService;
             _unitOfWork = unitOfWork;
             _logger = logger;
         }
@@ -201,6 +207,19 @@ namespace HomeCycle.Application.Services.Orders
                         agreement.SellerId,
                         ct);
 
+                var previousOrderStatus =
+                    (OrderStatus)order.OrderStatus;
+
+                var previousPaymentStatus =
+                    order.PaymentStatus.HasValue
+                        ? (PaymentStatus?)order.PaymentStatus.Value
+                        : null;
+
+                var previousCompletionSource =
+                    order.CompletionSource.HasValue
+                        ? (OrderCompletionSource?)order.CompletionSource.Value
+                        : null;
+
                 order.OrderStatus = (int)OrderStatus.Completed;
                 order.PaymentStatus = (int)PaymentStatus.Completed;
                 order.CompletedAt = now;
@@ -211,6 +230,41 @@ namespace HomeCycle.Application.Services.Orders
                     now.Add(disputeWindow);
 
                 order.UpdatedAt = now;
+
+                var autoCompleteOrderAuditDiff = new AuditDiffBuilder()
+                    .Add(
+                        "status",
+                        previousOrderStatus.ToString(),
+                        OrderStatus.Completed.ToString())
+                    .Add(
+                        "paymentStatus",
+                        previousPaymentStatus?.ToString(),
+                        PaymentStatus.Completed.ToString())
+                    .Add(
+                        "completionSource",
+                        previousCompletionSource?.ToString(),
+                        OrderCompletionSource.AutoConfirmed.ToString());
+
+                var autoCompleteOrderAuditEvent = new AuditEvent
+                {
+                    Category = AuditCategory.BusinessOperation,
+                    Action = AuditActions.OrderComplete,
+                    Outcome = AuditOutcome.Success,
+                    ActorType = AuditActorType.System,
+                    Source = AuditSource.BackgroundJob,
+                    TargetType = AuditTargetTypes.Order,
+                    TargetId = order.OrderId,
+                    OldValues = autoCompleteOrderAuditDiff.OldValues,
+                    NewValues = autoCompleteOrderAuditDiff.NewValues,
+                    Metadata = new Dictionary<string, object?>
+                    {
+                        ["confirmationDeadline"] =
+                            confirmationDeadline,
+
+                        ["disputeWindowEndsAt"] =
+                            order.DisputeWindowEndsAt
+                    }
+                };
 
                 await _orderRepository.UpdateAsync(order, ct);
 
@@ -223,6 +277,7 @@ namespace HomeCycle.Application.Services.Orders
                             NotificationTargetType.Order,
                             order.OrderId),
                         ct);
+                await _auditService.EnqueueAsync(autoCompleteOrderAuditEvent, ct);
 
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);

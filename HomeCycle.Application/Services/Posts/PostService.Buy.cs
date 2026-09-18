@@ -1,3 +1,4 @@
+using HomeCycle.Application.Commons.Audits;
 using HomeCycle.Application.Commons.Errors;
 using HomeCycle.Application.Commons.Helpers;
 using HomeCycle.Application.Commons.Paginations;
@@ -55,6 +56,26 @@ public partial class PostService
             requirement.ProductName = request.Title.Trim(); requirement.AttributeValues ??= [];
             var product = await _productService.PrepareForRequirementAsync(entity.PostId, requirement, cancellationToken);
             if (!product.IsSuccess) return Result<PostResponse>.Fail(product.Error!);
+
+            await _auditService.EnqueueAsync(new AuditEvent
+            {
+                Category = AuditCategory.BusinessOperation,
+                Action = AuditActions.PostCreate,
+                Outcome = AuditOutcome.Success,
+                ActorType = AuditActorType.User,
+                UserId = ownerId,
+                TargetType = AuditTargetTypes.Post,
+                TargetId = entity.PostId,
+                NewValues = new Dictionary<string, object?>
+                {
+                    ["postType"] = entity.PostType.ToString(),
+                    ["status"] = entity.Status.ToString(),
+                    ["minExpectedPrice"] = entity.MinExpectedPrice,
+                    ["basePrice"] = entity.BasePrice,
+                    ["quantity"] = entity.Quantity
+                }
+            }, cancellationToken);
+
             await _unitOfWork.SaveChangesAsync(cancellationToken);
             await _unitOfWork.CommitTransactionAsync(cancellationToken);
         }
@@ -95,7 +116,11 @@ public partial class PostService
                 }).ToList()
             };
             var before = System.Text.Json.JsonSerializer.SerializeToElement(merged);
+            var previousMinExpectedPrice = current.MinExpectedPrice;
+            var previousBasePrice = current.BasePrice;
             var previousQuantity = current.Quantity;
+            var previousPostStatus = current.Status;
+            var previousExpiryDate = current.ExpiryDate;
             foreach (var name in request.ChangedProperties)
                 typeof(CreateBuyPostRequest).GetProperty(name)!.SetValue(merged, typeof(UpdateBuyPostRequest).GetProperty(name)!.GetValue(request));
             if (merged.CategoryId == null && !request.ChangedProperties.Contains(nameof(request.ProductTypeId))) merged.ProductTypeId = null;
@@ -131,6 +156,27 @@ public partial class PostService
             if (!product.IsSuccess) return Result<PostResponse>.Fail(product.Error!);
             if (material || previousQuantity != current.Quantity || current.Status == PostStatus.Closed)
                 await _offerRepository.ClosePendingByPostAsync(postId, OfferStatus.Closed, cancellationToken);
+
+            var buyPostAuditDiff = new AuditDiffBuilder()
+                .Add("minExpectedPrice", previousMinExpectedPrice, current.MinExpectedPrice)
+                .Add("basePrice", previousBasePrice, current.BasePrice)
+                .Add("quantity", previousQuantity, current.Quantity)
+                .Add("status", previousPostStatus.ToString(), current.Status.ToString())
+                .Add("expiryDate", previousExpiryDate, current.ExpiryDate);
+
+            await _auditService.EnqueueAsync(new AuditEvent
+            {
+                Category = AuditCategory.BusinessOperation,
+                Action = AuditActions.PostUpdate,
+                Outcome = AuditOutcome.Success,
+                ActorType = AuditActorType.User,
+                UserId = ownerId,
+                TargetType = AuditTargetTypes.Post,
+                TargetId = current.PostId,
+                OldValues = buyPostAuditDiff.OldValues,
+                NewValues = buyPostAuditDiff.NewValues
+            }, cancellationToken);
+
             if (agreed < previousQuantity && agreed >= current.Quantity)
             {
                 var notification = await _notificationService.AddPendingAsync(
@@ -160,11 +206,28 @@ public partial class PostService
 
             if (await _postRepository.HasUnfinishedTransactionsAsync(postId, cancellationToken))
                 return Result<bool>.Fail(ValidationErrors.InvalidRequest("Bài đăng đang có giao dịch chưa hoàn tất."));
-
+            var previousPostStatus = post.Status;
             post.Status = PostStatus.Deleted;
             post.UpdatedAt = DateTime.UtcNow;
             await _postRepository.UpdateAsync(post, cancellationToken);
             await _offerRepository.ClosePendingByPostAsync(postId, OfferStatus.Closed, cancellationToken);
+
+            var deleteBuyPostAuditDiff = new AuditDiffBuilder()
+                .Add("status", previousPostStatus.ToString(), post.Status.ToString());
+
+            await _auditService.EnqueueAsync(new AuditEvent
+            {
+                Category = AuditCategory.Administration,
+                Action = AuditActions.PostDelete,
+                Outcome = AuditOutcome.Success,
+                ActorType = AuditActorType.User,
+                TargetType = AuditTargetTypes.Post,
+                TargetId = post.PostId,
+                OldValues = deleteBuyPostAuditDiff.OldValues,
+                NewValues = deleteBuyPostAuditDiff.NewValues
+            }, cancellationToken);
+
+
             await _unitOfWork.SaveChangesAsync(cancellationToken);
             await _unitOfWork.CommitTransactionAsync(cancellationToken);
             return Result<bool>.Success(true);
@@ -192,9 +255,35 @@ public partial class PostService
                 return Result<bool>.Fail(ValidationErrors.InvalidRequest("Tin đã đạt mục tiêu thu mua. Vui lòng kiểm tra và tăng số lượng trước khi mở lại."));
             if (status == PostStatus.Deleted && await _postRepository.HasUnfinishedTransactionsAsync(postId, ct))
                 return Result<bool>.Fail(ValidationErrors.InvalidRequest("Bài đăng đang có giao dịch chưa hoàn tất. Bạn có thể đóng nhận đề nghị mới."));
+            var previousPostStatus = p.Status;
             p.Status = status; p.UpdatedAt = DateTime.UtcNow;
             await _postRepository.UpdateAsync(p, ct);
             if (status != PostStatus.Active) await _offerRepository.ClosePendingByPostAsync(postId, OfferStatus.Closed, ct);
+
+            var lifecycleAuditAction = status switch
+            {
+                PostStatus.Closed => AuditActions.PostClose,
+                PostStatus.Active => AuditActions.PostReactivate,
+                PostStatus.Deleted => AuditActions.PostDelete,
+                _ => throw new InvalidOperationException($"Unsupported audited post status: {status}.")
+            };
+
+            var postLifecycleAuditDiff = new AuditDiffBuilder()
+                .Add("status", previousPostStatus.ToString(), p.Status.ToString());
+
+            await _auditService.EnqueueAsync(new AuditEvent
+            {
+                Category = AuditCategory.BusinessOperation,
+                Action = lifecycleAuditAction,
+                Outcome = AuditOutcome.Success,
+                ActorType = AuditActorType.User,
+                UserId = ownerId,
+                TargetType = AuditTargetTypes.Post,
+                TargetId = p.PostId,
+                OldValues = postLifecycleAuditDiff.OldValues,
+                NewValues = postLifecycleAuditDiff.NewValues
+            }, ct);
+
             await _unitOfWork.SaveChangesAsync(ct); await _unitOfWork.CommitTransactionAsync(ct);
             return Result<bool>.Success(true);
         }

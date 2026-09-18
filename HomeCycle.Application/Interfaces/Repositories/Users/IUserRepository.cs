@@ -43,5 +43,6 @@ namespace HomeCycle.Application.Interfaces.Repositories.Users
 
         Task<bool> ExistsByUsernameAsync(string username, Guid excludeUserId, CancellationToken cancellationToken = default);
         //void Update(user user);
+        Task<user?> GetByIdForUpdateAsync(Guid userId, CancellationToken cancellationToken = default);
     }
 }
