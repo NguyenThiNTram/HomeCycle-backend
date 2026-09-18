@@ -1,3 +1,4 @@
+using HomeCycle.Application.Commons.Audits;
 using HomeCycle.Application.Commons.Errors;
 using HomeCycle.Application.Commons.Helpers;
 using HomeCycle.Application.Commons.Results;
@@ -59,6 +60,31 @@ public partial class OfferService
             await _offerRepository.AddAsync(entity, ct);
             var notification = await AddOfferNotificationPendingAsync(entity, userId, "Bạn có đề nghị mới",
                 sellerRequest ? "Bạn vừa nhận được một chào hàng từ người bán." : "Bạn vừa nhận được đề nghị mua sản phẩm.", ct);
+
+            await _auditService.EnqueueAsync(new AuditEvent
+            {
+                Category = AuditCategory.BusinessOperation,
+                Action = AuditActions.OfferCreate,
+                Outcome = AuditOutcome.Success,
+                ActorType = AuditActorType.User,
+                UserId = userId,
+                TargetType = AuditTargetTypes.Offer,
+                TargetId = entity.OfferId,
+                NewValues = new Dictionary<string, object?>
+                {
+                    ["offerPrice"] = entity.OfferPrice,
+                    ["offerQuantity"] = entity.OfferQuantity,
+                    ["status"] = entity.OfferStatus?.ToString(),
+                    ["version"] = entity.Version
+                },
+                Metadata = new Dictionary<string, object?>
+                {
+                    ["sellerRequest"] = sellerRequest,
+                    ["sellPostId"] = entity.PostId,
+                    ["buyPostId"] = entity.BuyPostId
+                }
+            }, ct);
+
             await _unitOfWork.SaveChangesAsync(ct);
             var created = await _offerRepository.GetByIdAsync(entity.OfferId, ct);
             _unitOfWork.RegisterAfterCommit(async () => {

@@ -507,7 +507,10 @@ public sealed class PriceSuggestionService(
                     : "NONE";
 
     private static int CountSentences(string value) =>
-        value.Split(['.', '!', '?'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Length;
+    value.Split(
+        new char[] { '.', '!', '?' },
+        StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
+    ).Length;
 
     private static decimal RoundNearest(decimal value) =>
         Math.Round(value / 10_000m, 0, MidpointRounding.AwayFromZero) * 10_000m;

@@ -184,5 +184,18 @@ namespace HomeCycle.Infrastructure.Repositories.Users
             //await _db.SaveChangesAsync(cancellationToken);
             return Task.CompletedTask;
         }
+
+        public async Task<user?> GetByIdForUpdateAsync(Guid userId, CancellationToken cancellationToken = default)
+        {
+            if (_db.Database.CurrentTransaction == null)
+                throw new InvalidOperationException("FOR UPDATE requires an active database transaction.");
+
+            var entity = await _db.Users
+                .FromSqlInterpolated($@"SELECT * FROM public.""Users"" WHERE ""UserId"" = {userId} FOR UPDATE")
+                .AsNoTracking()
+                .SingleOrDefaultAsync(cancellationToken);
+
+            return entity?.ToDomain();
+        }
     }
 }

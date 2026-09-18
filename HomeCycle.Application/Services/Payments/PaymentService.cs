@@ -35,6 +35,11 @@ using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
+using HomeCycle.Application.Interfaces.Services.Audits;
+using HomeCycle.Application.Commons.Audits;
+using HomeCycle.Application.Interfaces.Repositories.SubscriptionPackages;
+using HomeCycle.Application.Interfaces.Services.SubscriptionPackages;
+using HomeCycle.Application.DTOs.Responses.SubscriptionPackages;
 
 namespace HomeCycle.Application.Services.Payments
 {
@@ -83,7 +88,10 @@ namespace HomeCycle.Application.Services.Payments
         private readonly IChatRealtimePublisher _chatRealtimePublisher;
         private readonly INotificationService _notificationService;
         //private readonly IOrderSettlementService _orderSettlementService;
+        private readonly IAuditService _auditService;
         private readonly IMapper _mapper;
+        private readonly IUserSubscriptionRepository _userSubscriptionRepo;
+        private readonly IUserSubscriptionService _userSubscriptionService;
         public PaymentService(
             IUnitOfWork unitOfWork,
             IPaymentGatewayService gatewayService,
@@ -112,7 +120,10 @@ namespace HomeCycle.Application.Services.Payments
             IChatRealtimePublisher chatRealtimePublisher,
             INotificationService notificationService,
             //IOrderSettlementService orderSettlementService,
-            IMapper mapper)
+            IAuditService auditService,
+            IMapper mapper,
+            IUserSubscriptionRepository userSubscriptionRepo,
+            IUserSubscriptionService userSubscriptionService)
         {
             _unitOfWork = unitOfWork;
             _gatewayService = gatewayService;
@@ -141,7 +152,10 @@ namespace HomeCycle.Application.Services.Payments
             _chatRealtimePublisher = chatRealtimePublisher;
             _notificationService = notificationService;
             //_orderSettlementService = orderSettlementService;
+            _auditService = auditService;
             _mapper = mapper;
+            _userSubscriptionRepo = userSubscriptionRepo;
+            _userSubscriptionService = userSubscriptionService;
         }
 
         public async Task<Result<PaymentQuoteResponseDto>> GetPaymentQuoteAsync(
@@ -269,6 +283,7 @@ namespace HomeCycle.Application.Services.Payments
                 var reconcileResult =
                     await ReconcilePayOsPaymentAsync(
                         pendingSnapshot.PaymentId,
+                        AuditSource.HttpApi,
                         ct);
 
                 if (!reconcileResult.IsSuccess)
@@ -362,85 +377,107 @@ namespace HomeCycle.Application.Services.Payments
 
 
                 long orderCode = 0;
-            const int maxOrderCodeAttempts = 5;
-            for (int attempt = 0; attempt < maxOrderCodeAttempts; attempt++)
-            {
-                orderCode = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() % 900000000 + 100000000;
-                if (!await _paymentTxRepo.ExistsByPayOSOrderCodeAsync(orderCode.ToString(), ct))
-                    break;
-                if (attempt == maxOrderCodeAttempts - 1)
+                const int maxOrderCodeAttempts = 5;
+                for (int attempt = 0; attempt < maxOrderCodeAttempts; attempt++)
+                {
+                    orderCode = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() % 900000000 + 100000000;
+                    if (!await _paymentTxRepo.ExistsByPayOSOrderCodeAsync(orderCode.ToString(), ct))
+                        break;
+                    if (attempt == maxOrderCodeAttempts - 1)
+                        {
+                            await _unitOfWork.RollbackTransactionAsync(ct);
+                            return Result<string>.Fail(new Error("Payment.OrderCodeConflict", "Không thể khởi tạo mã đơn hàng, vui lòng thử lại."));
+                        }
+                    await Task.Delay(5, ct); // đẩy timestamp sang millisecond khác
+                }
+
+                var expiresAt = now.AddMinutes(paymentPolicy.PaymentExpiryMinutes);
+                var payOsExpiredAt = new DateTimeOffset(expiresAt).ToUnixTimeSeconds();
+
+                var gatewayRequest = new GatewayPaymentRequest
+                {
+                    OrderCode = orderCode,
+                    Amount = (int)calc.AmountToPay,
+                    Description = $"TT AGREE {agreementId.ToString().Substring(0, 6)}",
+                    BuyerName = "Buyer",
+                    BuyerEmail = "buyer@homecycle.vn",
+                    ReturnUrl = returnUrl,
+                    CancelUrl = cancelUrl,
+                    ExpiredAt = payOsExpiredAt
+                };
+
+                var gatewayResult = await _gatewayService.CreatePaymentLinkAsync(gatewayRequest, ct);
+
+                if (!gatewayResult.IsSuccess)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    return Result<string>.Fail(gatewayResult.Error);
+                }
+
+
+                if (gatewayResult.Data == null || string.IsNullOrWhiteSpace(gatewayResult.Data.CheckoutUrl))
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    return Result<string>.Fail(new Error(
+                        "Payment.InvalidGatewayResponse",
+                        "PayOS không trả về đường dẫn thanh toán hợp lệ."));
+                }
+
+                var paymentId = Guid.NewGuid();
+
+                var payment = new payment
+                {
+                    PaymentId = paymentId,
+                    AgreementId = agreement.AgreementId,
+                    PayerId = payerId,
+                    PaymentType = agreement.PaymentType,
+                    PaymentMethod = (int)PaymentMethod.PayOS,
+                    Amount = calc.AmountToPay,
+                    Description = "Thanh toan qua PayOS",
+                    PaymentStatus = (int)PaymentStatus.Pending,
+                    CreatedAt = now,
+                    ExpiredAt = expiresAt
+                };
+
+                var paymentTx = new payment_transaction
+                {
+                    PaymentTransactionId = Guid.NewGuid(),
+                    PaymentId = paymentId,
+                    UserId = payerId,
+                    PayOSOrderCode = orderCode.ToString(),
+                    PayOSPaymentLinkId = gatewayResult.Data.PaymentLinkId,
+                    CheckoutUrl = gatewayResult.Data.CheckoutUrl,
+                    PaymentTransactionStatus = (int)PaymentTransactionStatus.Pending,
+                    CreatedAt = now,
+                    UpdatedAt = now
+                };
+
+                var paymentInitiatedAuditEvent = new AuditEvent
+                {
+                    Category = AuditCategory.BusinessOperation,
+                    Action = AuditActions.PaymentInitiate,
+                    Outcome = AuditOutcome.Success,
+                    ActorType = AuditActorType.User,
+                    UserId = payerId,
+                    TargetType = AuditTargetTypes.Payment,
+                    TargetId = paymentId,
+                    NewValues = new Dictionary<string, object?>
                     {
-                        await _unitOfWork.RollbackTransactionAsync(ct);
-                        return Result<string>.Fail(new Error("Payment.OrderCodeConflict", "Không thể khởi tạo mã đơn hàng, vui lòng thử lại."));
+                        ["status"] = PaymentStatus.Pending.ToString(),
+                        ["amount"] = calc.AmountToPay,
+                        ["method"] = PaymentMethod.PayOS.ToString()
+                    },
+                    Metadata = new Dictionary<string, object?>
+                    {
+                        ["agreementId"] = agreement.AgreementId,
+                        ["payOsOrderCode"] = orderCode.ToString()
                     }
-                await Task.Delay(5, ct); // đẩy timestamp sang millisecond khác
-            }
-
-            var expiresAt = now.AddMinutes(paymentPolicy.PaymentExpiryMinutes);
-            var payOsExpiredAt = new DateTimeOffset(expiresAt).ToUnixTimeSeconds();
-
-            var gatewayRequest = new GatewayPaymentRequest
-            {
-                OrderCode = orderCode,
-                Amount = (int)calc.AmountToPay,
-                Description = $"TT AGREE {agreementId.ToString().Substring(0, 6)}",
-                BuyerName = "Buyer",
-                BuyerEmail = "buyer@homecycle.vn",
-                ReturnUrl = returnUrl,
-                CancelUrl = cancelUrl,
-                ExpiredAt = payOsExpiredAt
-            };
-
-            var gatewayResult = await _gatewayService.CreatePaymentLinkAsync(gatewayRequest, ct);
-
-            if (!gatewayResult.IsSuccess)
-            {
-                await _unitOfWork.RollbackTransactionAsync(ct);
-                return Result<string>.Fail(gatewayResult.Error);
-            }
-
-
-            if (gatewayResult.Data == null || string.IsNullOrWhiteSpace(gatewayResult.Data.CheckoutUrl))
-            {
-                await _unitOfWork.RollbackTransactionAsync(ct);
-                return Result<string>.Fail(new Error(
-                    "Payment.InvalidGatewayResponse",
-                    "PayOS không trả về đường dẫn thanh toán hợp lệ."));
-            }
-
-            var paymentId = Guid.NewGuid();
-
-            var payment = new payment
-            {
-                PaymentId = paymentId,
-                AgreementId = agreement.AgreementId,
-                PayerId = payerId,
-                PaymentType = agreement.PaymentType,
-                PaymentMethod = (int)PaymentMethod.PayOS,
-                Amount = calc.AmountToPay,
-                Description = "Thanh toan qua PayOS",
-                PaymentStatus = (int)PaymentStatus.Pending,
-                CreatedAt = now,
-                ExpiredAt = expiresAt
-            };
-
-            var paymentTx = new payment_transaction
-            {
-                PaymentTransactionId = Guid.NewGuid(),
-                PaymentId = paymentId,
-                UserId = payerId,
-                PayOSOrderCode = orderCode.ToString(),
-                PayOSPaymentLinkId = gatewayResult.Data.PaymentLinkId,
-                CheckoutUrl = gatewayResult.Data.CheckoutUrl,
-                PaymentTransactionStatus = (int)PaymentTransactionStatus.Pending,
-                CreatedAt = now,
-                UpdatedAt = now
-            };
+                };
 
                 await _agreementRepo.UpdateAsync(agreement, ct);
                 await _paymentRepo.AddAsync(payment, ct);
                 await _paymentTxRepo.AddAsync(paymentTx, ct);
-
+                await _auditService.EnqueueAsync(paymentInitiatedAuditEvent, ct);
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync();
 
@@ -454,6 +491,210 @@ namespace HomeCycle.Application.Services.Payments
             }
         }
 
+        public async Task<Result<SubscriptionPayOSCheckoutResponseDto>> CreateSubscriptionPayOSCheckoutAsync(
+            Guid packageId,
+            Guid payerId,
+            string returnUrl,
+            string cancelUrl,
+            CancellationToken ct = default)
+        {
+            var urlValidation = await _payOSCheckoutValidator.ValidateAsync(
+                new PayOSCheckoutRequest { ReturnUrl = returnUrl, CancelUrl = cancelUrl },
+                ct);
+
+            if (!urlValidation.IsValid)
+            {
+                return Result<SubscriptionPayOSCheckoutResponseDto>.Fail(
+                    new Error(
+                        "Payment.InvalidRedirectUrl",
+                        string.Join(" ", urlValidation.Errors.Select(x => x.ErrorMessage))));
+            }
+
+            var paymentPolicy = await _platformPolicyProvider.GetPaymentConfigAsync(ct);
+
+            await _unitOfWork.BeginTransactionAsync(ct);
+
+            try
+            {
+                var eligibility = await _userSubscriptionService.ValidatePurchaseEligibilityAsync(
+                    payerId,
+                    packageId,
+                    DateTime.UtcNow,
+                    ct);
+
+                if (!eligibility.IsSuccess)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    _unitOfWork.ClearTrackedEntities();
+                    return Result<SubscriptionPayOSCheckoutResponseDto>.Fail(eligibility.Error!);
+                }
+
+                var user = eligibility.Data!.User;
+                var package = eligibility.Data.Package;
+
+                if (!IsValidSubscriptionPrice(package.Price))
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    _unitOfWork.ClearTrackedEntities();
+
+                    return Result<SubscriptionPayOSCheckoutResponseDto>.Fail(
+                        new Error("Payment.InvalidAmount", "Giá gói đăng ký không hợp lệ."));
+                }
+
+                long orderCode = 0;
+                const int maxOrderCodeAttempts = 5;
+
+                for (var attempt = 0; attempt < maxOrderCodeAttempts; attempt++)
+                {
+                    orderCode = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() % 900000000 + 100000000;
+
+                    if (!await _paymentTxRepo.ExistsByPayOSOrderCodeAsync(orderCode.ToString(), ct))
+                        break;
+
+                    if (attempt == maxOrderCodeAttempts - 1)
+                    {
+                        await _unitOfWork.RollbackTransactionAsync(ct);
+                        _unitOfWork.ClearTrackedEntities();
+
+                        return Result<SubscriptionPayOSCheckoutResponseDto>.Fail(
+                            new Error("Payment.OrderCodeConflict", "Không thể khởi tạo mã thanh toán, vui lòng thử lại."));
+                    }
+
+                    await Task.Delay(5, ct);
+                }
+
+                var now = DateTime.UtcNow;
+                var checkoutExpiresAt = now.AddMinutes(paymentPolicy.PaymentExpiryMinutes);
+
+                var gatewayResult = await _gatewayService.CreatePaymentLinkAsync(
+                    new GatewayPaymentRequest
+                    {
+                        OrderCode = orderCode,
+                        Amount = (int)package.Price,
+                        Description = $"SUB {package.PackageId.ToString("N")[..8]}",
+                        BuyerName = user.Username,
+                        BuyerEmail = user.Email,
+                        ReturnUrl = returnUrl,
+                        CancelUrl = cancelUrl,
+                        ExpiredAt = new DateTimeOffset(checkoutExpiresAt).ToUnixTimeSeconds()
+                    },
+                    ct);
+
+                if (!gatewayResult.IsSuccess)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    _unitOfWork.ClearTrackedEntities();
+                    return Result<SubscriptionPayOSCheckoutResponseDto>.Fail(gatewayResult.Error!);
+                }
+
+                if (gatewayResult.Data == null || string.IsNullOrWhiteSpace(gatewayResult.Data.CheckoutUrl))
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    _unitOfWork.ClearTrackedEntities();
+
+                    return Result<SubscriptionPayOSCheckoutResponseDto>.Fail(
+                        new Error("Payment.InvalidGatewayResponse", "PayOS không trả về đường dẫn thanh toán hợp lệ."));
+                }
+
+                var subscription = await _userSubscriptionService.CreatePendingSubscriptionAsync(
+                    payerId,
+                    package.PackageId,
+                    now,
+                    ct);
+
+                var paymentId = Guid.NewGuid();
+
+                var payment = new payment
+                {
+                    PaymentId = paymentId,
+                    SubscriptionId = subscription.SubscriptionId,
+                    PayerId = payerId,
+                    PaymentType = (int)PaymentType.Subscription,
+                    PaymentMethod = (int)PaymentMethod.PayOS,
+                    Amount = package.Price,
+                    Description = $"Mua gói {package.Name} qua PayOS",
+                    PaymentStatus = (int)PaymentStatus.Pending,
+                    CreatedAt = now,
+                    ExpiredAt = checkoutExpiresAt
+                };
+
+                var paymentTransaction = new payment_transaction
+                {
+                    PaymentTransactionId = Guid.NewGuid(),
+                    PaymentId = paymentId,
+                    UserId = payerId,
+                    PayOSOrderCode = orderCode.ToString(),
+                    PayOSPaymentLinkId = gatewayResult.Data.PaymentLinkId,
+                    CheckoutUrl = gatewayResult.Data.CheckoutUrl,
+                    PaymentTransactionStatus = (int)PaymentTransactionStatus.Pending,
+                    CreatedAt = now,
+                    UpdatedAt = now
+                };
+
+                await _paymentRepo.AddAsync(payment, ct);
+                await _paymentTxRepo.AddAsync(paymentTransaction, ct);
+
+                await _auditService.EnqueueAsync(
+                    new AuditEvent
+                    {
+                        Category = AuditCategory.BusinessOperation,
+                        Action = AuditActions.PaymentInitiate,
+                        Outcome = AuditOutcome.Success,
+                        ActorType = AuditActorType.User,
+                        Source = AuditSource.HttpApi,
+                        UserId = payerId,
+                        TargetType = AuditTargetTypes.Payment,
+                        TargetId = paymentId,
+                        NewValues = new Dictionary<string, object?>
+                        {
+                            ["status"] = PaymentStatus.Pending.ToString(),
+                            ["amount"] = package.Price,
+                            ["method"] = PaymentMethod.PayOS.ToString(),
+                            ["type"] = PaymentType.Subscription.ToString()
+                        },
+                        Metadata = new Dictionary<string, object?>
+                        {
+                            ["subscriptionId"] = subscription.SubscriptionId,
+                            ["packageId"] = package.PackageId,
+                            ["payOsOrderCode"] = orderCode.ToString()
+                        }
+                    },
+                    ct);
+
+                await _unitOfWork.SaveChangesAsync(ct);
+                await _unitOfWork.CommitTransactionAsync(ct);
+
+                return Result<SubscriptionPayOSCheckoutResponseDto>.Success(
+                    new SubscriptionPayOSCheckoutResponseDto
+                    {
+                        SubscriptionId = subscription.SubscriptionId,
+                        PaymentId = paymentId,
+                        CheckoutUrl = gatewayResult.Data.CheckoutUrl,
+                        CheckoutExpiresAt = checkoutExpiresAt
+                    });
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                await _unitOfWork.RollbackTransactionAsync(CancellationToken.None);
+                _unitOfWork.ClearTrackedEntities();
+                throw;
+            }
+            catch (Exception ex)
+            {
+                await _unitOfWork.RollbackTransactionAsync(CancellationToken.None);
+                _unitOfWork.ClearTrackedEntities();
+
+                _logger.LogError(
+                    ex,
+                    "Lỗi tạo PayOS checkout cho subscription package {PackageId}, User {UserId}",
+                    packageId,
+                    payerId);
+
+                return Result<SubscriptionPayOSCheckoutResponseDto>.Fail(
+                    new Error("Payment.CreateFailed", "Không thể khởi tạo thanh toán gói đăng ký."));
+            }
+        }
+
         public async Task<Result<bool>> HandlePaymentWebhookAsync(string webhookBody, CancellationToken ct = default)
         {
             var verifyResult = await _gatewayService.VerifyAndParseWebhookAsync(webhookBody);
@@ -464,7 +705,7 @@ namespace HomeCycle.Application.Services.Payments
             if (payload.Status != "Success")
                 return Result<bool>.Success(true);
 
-            await ExecuteSuccessfulPaymentCoreAsync(payload.OrderCode.ToString(), payload.ReferenceTransactionId, ct);
+            await ExecuteSuccessfulPaymentCoreAsync(payload.OrderCode.ToString(), payload.ReferenceTransactionId, AuditSource.Webhook, ct);
             return Result<bool>.Success(true);
         }
 
@@ -788,6 +1029,30 @@ namespace HomeCycle.Application.Services.Payments
                 // Hiện thực hóa Agreement -> Order/Appointment/trừ Quantity/Confirmed (dùng chung với PayOS)
                 var fulfillment = await FulfillAgreementAsync(agreement, basePrice, amountToPay, details, ct, orderIdOverride: orderId);
 
+                var walletPaymentAuditEvent = new AuditEvent
+                {
+                    Category = AuditCategory.BusinessOperation,
+                    Action = AuditActions.PaymentComplete,
+                    Outcome = AuditOutcome.Success,
+                    ActorType = AuditActorType.User,
+                    UserId = payerId,
+                    TargetType = AuditTargetTypes.Payment,
+                    TargetId = payment.PaymentId,
+                    NewValues = new Dictionary<string, object?>
+                    {
+                        ["status"] = PaymentStatus.Completed.ToString(),
+                        ["amount"] = amountToPay,
+                        ["method"] = PaymentMethod.Internal_Wallet.ToString()
+                    },
+                    Metadata = new Dictionary<string, object?>
+                    {
+                        ["agreementId"] = agreement.AgreementId,
+                        ["orderId"] = fulfillment.Order.OrderId,
+                        ["holdAmount"] = holdAmount,
+                        ["shippingFee"] = shippingFee
+                    }
+                };
+
                 var negotiation = await _negotiationRepo.GetByIdForUpdateAsync(
                     agreement.NegotiationId,
                     ct)
@@ -835,6 +1100,7 @@ namespace HomeCycle.Application.Services.Payments
                     fulfillment.Order.OrderId,
                     ct);
 
+                await _auditService.EnqueueAsync(walletPaymentAuditEvent, ct);
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
 
@@ -863,6 +1129,232 @@ namespace HomeCycle.Application.Services.Payments
             }
         }
 
+        public async Task<Result<SubscriptionPaymentStatusResponseDto>> ExecuteSubscriptionWalletPaymentAsync(
+            Guid packageId,
+            Guid payerId,
+            CancellationToken ct = default)
+        {
+            await _unitOfWork.BeginTransactionAsync(ct);
+
+            try
+            {
+                var eligibility = await _userSubscriptionService.ValidatePurchaseEligibilityAsync(
+                    payerId,
+                    packageId,
+                    DateTime.UtcNow,
+                    ct);
+
+                if (!eligibility.IsSuccess)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    _unitOfWork.ClearTrackedEntities();
+                    return Result<SubscriptionPaymentStatusResponseDto>.Fail(eligibility.Error!);
+                }
+
+                var package = eligibility.Data!.Package;
+
+                if (!IsValidSubscriptionPrice(package.Price))
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    _unitOfWork.ClearTrackedEntities();
+
+                    return Result<SubscriptionPaymentStatusResponseDto>.Fail(
+                        new Error("Payment.InvalidAmount", "Giá gói đăng ký không hợp lệ."));
+                }
+
+                var userWallet = await _walletRepo.GetUserWalletForUpdateAsync(payerId, ct);
+                var platformWallet = await _walletRepo.GetSystemWalletForUpdateAsync(
+                    SystemWalletPurpose.Platform_Revenue,
+                    ct);
+
+                if (userWallet == null)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    _unitOfWork.ClearTrackedEntities();
+                    return Result<SubscriptionPaymentStatusResponseDto>.Fail(UserSubscriptionErrors.WalletNotFound);
+                }
+
+                if (platformWallet == null)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    _unitOfWork.ClearTrackedEntities();
+                    return Result<SubscriptionPaymentStatusResponseDto>.Fail(UserSubscriptionErrors.PlatformRevenueWalletNotFound);
+                }
+
+                if (userWallet.AvailableBalance < package.Price)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    _unitOfWork.ClearTrackedEntities();
+                    return Result<SubscriptionPaymentStatusResponseDto>.Fail(UserSubscriptionErrors.InsufficientBalance);
+                }
+
+                var now = DateTime.UtcNow;
+                var subscription = await _userSubscriptionService.CreatePendingSubscriptionAsync(
+                    payerId,
+                    package.PackageId,
+                    now,
+                    ct);
+
+                // Persist Pending row trong transaction để ActivateSubscriptionAsync
+                // có thể lock chính row này bằng FOR UPDATE.
+                await _unitOfWork.SaveChangesAsync(ct);
+
+                var paymentId = Guid.NewGuid();
+                var walletTransactionId = Guid.NewGuid();
+
+                var payment = new payment
+                {
+                    PaymentId = paymentId,
+                    SubscriptionId = subscription.SubscriptionId,
+                    PayerId = payerId,
+                    PaymentType = (int)PaymentType.Subscription,
+                    PaymentMethod = (int)PaymentMethod.Internal_Wallet,
+                    Amount = package.Price,
+                    Description = $"Mua gói {package.Name} bằng ví nội bộ",
+                    PaymentStatus = (int)PaymentStatus.Completed,
+                    CreatedAt = now,
+                    PaidAt = now
+                };
+
+                var walletTransaction = new wallet_transaction
+                {
+                    WalletTransactionId = walletTransactionId,
+                    FromWalletId = userWallet.WalletId,
+                    ToWalletId = platformWallet.WalletId,
+                    PaymentId = paymentId,
+                    ReferenceId = subscription.SubscriptionId,
+                    ReferenceType = (int)ReferenceType.Subscription,
+                    TransactionType = (int)TransactionType.Subscription_Fee,
+                    Amount = package.Price,
+                    WalletTransactionStatus = (int)WalletTransactionStatus.Completed,
+                    CreatedAt = now
+                };
+
+                var userLedger = new wallet_ledger
+                {
+                    LedgerId = Guid.NewGuid(),
+                    WalletTransactionId = walletTransactionId,
+                    WalletId = userWallet.WalletId,
+                    Direction = (int)LedgerDirection.Out,
+                    BalanceType = (int)BalanceType.Available,
+                    Amount = package.Price,
+                    BalanceBefore = userWallet.AvailableBalance,
+                    BalanceAfter = userWallet.AvailableBalance - package.Price,
+                    ReferenceType = (int)ReferenceType.Subscription,
+                    ReferenceId = subscription.SubscriptionId,
+                    Description = $"Thanh toan subscription {subscription.SubscriptionId}",
+                    CreatedAt = now
+                };
+
+                var platformLedger = new wallet_ledger
+                {
+                    LedgerId = Guid.NewGuid(),
+                    WalletTransactionId = walletTransactionId,
+                    WalletId = platformWallet.WalletId,
+                    Direction = (int)LedgerDirection.In,
+                    BalanceType = (int)BalanceType.Available,
+                    Amount = package.Price,
+                    BalanceBefore = platformWallet.AvailableBalance,
+                    BalanceAfter = platformWallet.AvailableBalance + package.Price,
+                    ReferenceType = (int)ReferenceType.Subscription,
+                    ReferenceId = subscription.SubscriptionId,
+                    Description = $"Doanh thu subscription {subscription.SubscriptionId}",
+                    CreatedAt = now
+                };
+
+                userWallet.AvailableBalance -= package.Price;
+                userWallet.UpdatedAt = now;
+
+                platformWallet.AvailableBalance += package.Price;
+                platformWallet.UpdatedAt = now;
+
+                await _paymentRepo.AddAsync(payment, ct);
+                await _walletRepo.UpdateAsync(userWallet, ct);
+                await _walletRepo.UpdateAsync(platformWallet, ct);
+                await _walletTxRepo.AddAsync(walletTransaction, ct);
+                await _ledgerRepo.AddAsync(userLedger, ct);
+                await _ledgerRepo.AddAsync(platformLedger, ct);
+
+                var activation = await _userSubscriptionService.ActivateSubscriptionAsync(
+                    subscription.SubscriptionId,
+                    package.Price,
+                    now,
+                    AuditActorType.User,
+                    AuditSource.HttpApi,
+                    payerId,
+                    ct);
+
+                if (!activation.IsSuccess)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    _unitOfWork.ClearTrackedEntities();
+                    return Result<SubscriptionPaymentStatusResponseDto>.Fail(activation.Error!);
+                }
+
+                await _auditService.EnqueueAsync(
+                    new AuditEvent
+                    {
+                        Category = AuditCategory.BusinessOperation,
+                        Action = AuditActions.PaymentComplete,
+                        Outcome = AuditOutcome.Success,
+                        ActorType = AuditActorType.User,
+                        Source = AuditSource.HttpApi,
+                        UserId = payerId,
+                        TargetType = AuditTargetTypes.Payment,
+                        TargetId = paymentId,
+                        NewValues = new Dictionary<string, object?>
+                        {
+                            ["status"] = PaymentStatus.Completed.ToString(),
+                            ["amount"] = package.Price,
+                            ["method"] = PaymentMethod.Internal_Wallet.ToString(),
+                            ["type"] = PaymentType.Subscription.ToString()
+                        },
+                        Metadata = new Dictionary<string, object?>
+                        {
+                            ["subscriptionId"] = subscription.SubscriptionId,
+                            ["packageId"] = package.PackageId,
+                            ["walletTransactionId"] = walletTransactionId
+                        }
+                    },
+                    ct);
+
+                await _unitOfWork.SaveChangesAsync(ct);
+                await _unitOfWork.CommitTransactionAsync(ct);
+
+                var activatedSubscription = activation.Data!;
+
+                return Result<SubscriptionPaymentStatusResponseDto>.Success(
+                    new SubscriptionPaymentStatusResponseDto
+                    {
+                        SubscriptionId = activatedSubscription.SubscriptionId,
+                        PaymentId = paymentId,
+                        PaymentStatus = PaymentStatus.Completed,
+                        SubscriptionStatus = UserSubscriptionStatus.Active,
+                        ActivatedAt = activatedSubscription.ActivatedAt,
+                        ExpiresAt = activatedSubscription.ExpiresAt
+                    });
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                await _unitOfWork.RollbackTransactionAsync(CancellationToken.None);
+                _unitOfWork.ClearTrackedEntities();
+                throw;
+            }
+            catch (Exception ex)
+            {
+                await _unitOfWork.RollbackTransactionAsync(CancellationToken.None);
+                _unitOfWork.ClearTrackedEntities();
+
+                _logger.LogError(
+                    ex,
+                    "Lỗi thanh toán subscription bằng ví cho package {PackageId}, User {UserId}",
+                    packageId,
+                    payerId);
+
+                return Result<SubscriptionPaymentStatusResponseDto>.Fail(
+                    new Error("WalletPayment.TransactionFailed", "Giao dịch mua gói thất bại do lỗi hệ thống."));
+            }
+        }
 
         public async Task<Result<PaymentStatusResponseDto>> SyncPaymentStatusAsync(
             Guid agreementId,
@@ -917,6 +1409,7 @@ namespace HomeCycle.Application.Services.Payments
 
             var reconcileResult = await ReconcilePayOsPaymentAsync(
                 payment.PaymentId,
+                AuditSource.HttpApi,
                 ct);
 
             if (!reconcileResult.IsSuccess)
@@ -929,6 +1422,65 @@ namespace HomeCycle.Application.Services.Payments
                     agreementId,
                     reconciledStatus,
                     ct));
+        }
+
+        public async Task<Result<SubscriptionPaymentStatusResponseDto>> SyncSubscriptionPaymentStatusAsync(
+            Guid subscriptionId,
+            Guid payerId,
+            CancellationToken ct = default)
+        {
+            var subscription = await _userSubscriptionRepo.GetByIdAsync(subscriptionId, ct);
+
+            if (subscription == null)
+                return Result<SubscriptionPaymentStatusResponseDto>.Fail(UserSubscriptionErrors.NotFound);
+
+            if (subscription.UserId != payerId)
+            {
+                return Result<SubscriptionPaymentStatusResponseDto>.Fail(
+                    new Error("Auth.Forbidden", "Bạn không có quyền xem subscription này."));
+            }
+
+            var payment = await _paymentRepo.GetBySubscriptionIdAsync(subscriptionId, ct);
+
+            if (payment == null)
+            {
+                return Result<SubscriptionPaymentStatusResponseDto>.Fail(
+                    new Error("Payment.NotFound", "Không tìm thấy payment của subscription."));
+            }
+
+            var paymentStatus = payment.PaymentStatus.HasValue
+                ? (PaymentStatus)payment.PaymentStatus.Value
+                : PaymentStatus.Pending;
+
+            if (paymentStatus == PaymentStatus.Pending &&
+                payment.PaymentMethod == (int)PaymentMethod.PayOS)
+            {
+                var reconcileResult = await ReconcilePayOsPaymentAsync(
+                    payment.PaymentId,
+                    AuditSource.HttpApi,
+                    ct);
+
+                if (!reconcileResult.IsSuccess)
+                    return Result<SubscriptionPaymentStatusResponseDto>.Fail(reconcileResult.Error!);
+
+                paymentStatus = reconcileResult.Data;
+            }
+
+            subscription = await _userSubscriptionRepo.GetByIdAsync(subscriptionId, ct)
+                ?? subscription;
+
+            return Result<SubscriptionPaymentStatusResponseDto>.Success(
+                new SubscriptionPaymentStatusResponseDto
+                {
+                    SubscriptionId = subscription.SubscriptionId,
+                    PaymentId = payment.PaymentId,
+                    PaymentStatus = paymentStatus,
+                    SubscriptionStatus = subscription.Status.HasValue
+                        ? (UserSubscriptionStatus)subscription.Status.Value
+                        : UserSubscriptionStatus.Pending,
+                    ActivatedAt = subscription.ActivatedAt,
+                    ExpiresAt = subscription.ExpiresAt
+                });
         }
 
         public async Task<int> ProcessPendingPayOsSyncAsync(
@@ -968,6 +1520,7 @@ namespace HomeCycle.Application.Services.Payments
 
                     var result = await ReconcilePayOsPaymentAsync(
                         candidate.PaymentId,
+                        AuditSource.BackgroundJob,
                         ct);
 
                     if (!result.IsSuccess)
@@ -1342,6 +1895,23 @@ namespace HomeCycle.Application.Services.Payments
                 await _ledgerRepo.AddAsync(holdLedger, ct);
                 await _ledgerRepo.AddAsync(availableLedger, ct);
 
+                var paymentReleaseAuditEvent = new AuditEvent
+                {
+                    Category = AuditCategory.BusinessOperation,
+                    Action = AuditActions.PaymentRelease,
+                    Outcome = AuditOutcome.Success,
+                    ActorType = AuditActorType.System,
+                    Source = AuditSource.BackgroundJob,
+                    TargetType = AuditTargetTypes.Payment,
+                    TargetId = payment.PaymentId,
+                    Metadata = new Dictionary<string, object?>
+                    {
+                        ["orderId"] = order.OrderId,
+                        ["amount"] = orderHeldAmount,
+                        ["walletTransactionId"] = walletTransactionId
+                    }
+                };
+
                 var releaseNotification = await AddPaymentNotificationPendingAsync(
                     agreement.SellerId,
                     "Tiền đơn hàng đã được giải ngân",
@@ -1350,6 +1920,7 @@ namespace HomeCycle.Application.Services.Payments
                     order.OrderId,
                     ct);
 
+                await _auditService.EnqueueAsync(paymentReleaseAuditEvent, ct);
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
                 await _notificationService.PublishCreatedSafelyAsync(releaseNotification);
@@ -1378,8 +1949,269 @@ namespace HomeCycle.Application.Services.Payments
             return Result<IReadOnlyList<OrderFinancialEventDto>>.Success(response);
         }
 
+
+
+
+        // ==================== HELPER ====================
         #region HELPER
 
+        private static bool IsValidSubscriptionPrice(decimal price)
+        {
+            return price > 0 &&
+                   price <= int.MaxValue &&
+                   decimal.Truncate(price) == price;
+        }
+        private async Task<PaymentStatus> ApplySubscriptionPayOsTerminalStatusAsync(
+            Guid paymentId,
+            string payOsOrderCode,
+            PaymentStatus targetPaymentStatus,
+            PaymentTransactionStatus targetTransactionStatus,
+            AuditSource auditSource,
+            CancellationToken ct)
+        {
+            await _unitOfWork.BeginTransactionAsync(ct);
+
+            try
+            {
+                var paymentTransaction = await _paymentTxRepo.GetByPayOSOrderCodeForUpdateAsync(
+                    payOsOrderCode,
+                    ct)
+                    ?? throw new InvalidOperationException("Không tìm thấy giao dịch PayOS subscription.");
+
+                var payment = await _paymentRepo.GetByIdForUpdateAsync(paymentId, ct)
+                    ?? throw new InvalidOperationException("Không tìm thấy payment subscription.");
+
+                if (!payment.SubscriptionId.HasValue)
+                    throw new InvalidOperationException("Payment không tham chiếu subscription.");
+
+                if (paymentTransaction.PaymentTransactionStatus == (int)PaymentTransactionStatus.Success)
+                {
+                    await _unitOfWork.CommitTransactionAsync(ct);
+                    return PaymentStatus.Completed;
+                }
+
+                var currentPaymentStatus = payment.PaymentStatus.HasValue
+                    ? (PaymentStatus)payment.PaymentStatus.Value
+                    : PaymentStatus.Pending;
+
+                if (currentPaymentStatus != PaymentStatus.Pending)
+                {
+                    await _unitOfWork.CommitTransactionAsync(ct);
+                    return currentPaymentStatus;
+                }
+
+                var previousTransactionStatus =
+                    (PaymentTransactionStatus)paymentTransaction.PaymentTransactionStatus!.Value;
+
+                payment.PaymentStatus = (int)targetPaymentStatus;
+                paymentTransaction.PaymentTransactionStatus = (int)targetTransactionStatus;
+                paymentTransaction.UpdatedAt = DateTime.UtcNow;
+
+                var cancellation = await _userSubscriptionService.CancelPendingSubscriptionAsync(
+                    payment.SubscriptionId.Value,
+                    ct);
+
+                if (!cancellation.IsSuccess)
+                    throw new InvalidOperationException(cancellation.Error?.Message);
+
+                await _paymentRepo.UpdateAsync(payment, ct);
+                await _paymentTxRepo.UpdateAsync(paymentTransaction, ct);
+
+                var diff = new AuditDiffBuilder()
+                    .Add("paymentStatus", currentPaymentStatus.ToString(), targetPaymentStatus.ToString())
+                    .Add("transactionStatus", previousTransactionStatus.ToString(), targetTransactionStatus.ToString());
+
+                await _auditService.EnqueueAsync(
+                    new AuditEvent
+                    {
+                        Category = AuditCategory.BusinessOperation,
+                        Action = AuditActions.PaymentReconcile,
+                        Outcome = AuditOutcome.Success,
+                        ActorType = AuditActorType.ExternalSystem,
+                        Source = auditSource,
+                        TargetType = AuditTargetTypes.Payment,
+                        TargetId = payment.PaymentId,
+                        OldValues = diff.OldValues,
+                        NewValues = diff.NewValues,
+                        Metadata = new Dictionary<string, object?>
+                        {
+                            ["subscriptionId"] = payment.SubscriptionId.Value,
+                            ["payOsOrderCode"] = payOsOrderCode
+                        }
+                    },
+                    ct);
+
+                await _unitOfWork.SaveChangesAsync(ct);
+                await _unitOfWork.CommitTransactionAsync(ct);
+
+                return targetPaymentStatus;
+            }
+            catch
+            {
+                await _unitOfWork.RollbackTransactionAsync(CancellationToken.None);
+                _unitOfWork.ClearTrackedEntities();
+                throw;
+            }
+        }
+
+        private async Task ExecuteSuccessfulSubscriptionPaymentAsync(
+            string payOsOrderCode,
+            string payOsTransactionId,
+            AuditSource auditSource,
+            CancellationToken ct)
+        {
+            await _unitOfWork.BeginTransactionAsync(ct);
+
+            try
+            {
+                var paymentTransaction = await _paymentTxRepo.GetByPayOSOrderCodeForUpdateAsync(
+                    payOsOrderCode,
+                    ct)
+                    ?? throw new InvalidOperationException("Không tìm thấy giao dịch PayOS subscription.");
+
+                if (paymentTransaction.PaymentTransactionStatus == (int)PaymentTransactionStatus.Success)
+                {
+                    await _unitOfWork.CommitTransactionAsync(ct);
+                    return;
+                }
+
+                var payment = await _paymentRepo.GetByIdForUpdateAsync(
+                    paymentTransaction.PaymentId,
+                    ct)
+                    ?? throw new InvalidOperationException("Không tìm thấy payment subscription.");
+
+                if (!payment.SubscriptionId.HasValue)
+                    throw new InvalidOperationException("Payment không tham chiếu subscription.");
+
+                var currentPaymentStatus = payment.PaymentStatus.HasValue
+                    ? (PaymentStatus)payment.PaymentStatus.Value
+                    : PaymentStatus.Pending;
+
+                if (currentPaymentStatus == PaymentStatus.Completed)
+                {
+                    paymentTransaction.PaymentTransactionStatus = (int)PaymentTransactionStatus.Success;
+                    paymentTransaction.PayOSTransactionId = payOsTransactionId;
+                    paymentTransaction.UpdatedAt = DateTime.UtcNow;
+
+                    await _paymentTxRepo.UpdateAsync(paymentTransaction, ct);
+                    await _unitOfWork.SaveChangesAsync(ct);
+                    await _unitOfWork.CommitTransactionAsync(ct);
+                    return;
+                }
+
+                if (currentPaymentStatus != PaymentStatus.Pending)
+                    throw new InvalidOperationException("Payment subscription không còn ở trạng thái Pending.");
+
+                var amount = payment.Amount ?? 0;
+
+                if (amount <= 0)
+                    throw new InvalidOperationException("Số tiền subscription payment không hợp lệ.");
+
+                var platformWallet = await _walletRepo.GetSystemWalletForUpdateAsync(
+                    SystemWalletPurpose.Platform_Revenue,
+                    ct)
+                    ?? throw new InvalidOperationException("Không tìm thấy ví Platform_Revenue.");
+
+                var now = DateTime.UtcNow;
+                var walletTransactionId = Guid.NewGuid();
+
+                var walletTransaction = new wallet_transaction
+                {
+                    WalletTransactionId = walletTransactionId,
+                    FromWalletId = null,
+                    ToWalletId = platformWallet.WalletId,
+                    PaymentId = payment.PaymentId,
+                    ReferenceId = payment.SubscriptionId.Value,
+                    ReferenceType = (int)ReferenceType.Subscription,
+                    TransactionType = (int)TransactionType.Subscription_Fee,
+                    Amount = amount,
+                    WalletTransactionStatus = (int)WalletTransactionStatus.Completed,
+                    CreatedAt = now
+                };
+
+                var platformLedger = new wallet_ledger
+                {
+                    LedgerId = Guid.NewGuid(),
+                    WalletTransactionId = walletTransactionId,
+                    WalletId = platformWallet.WalletId,
+                    Direction = (int)LedgerDirection.In,
+                    BalanceType = (int)BalanceType.Available,
+                    Amount = amount,
+                    BalanceBefore = platformWallet.AvailableBalance,
+                    BalanceAfter = platformWallet.AvailableBalance + amount,
+                    ReferenceType = (int)ReferenceType.Subscription,
+                    ReferenceId = payment.SubscriptionId.Value,
+                    Description = $"Doanh thu PayOS subscription {payment.SubscriptionId.Value}",
+                    CreatedAt = now
+                };
+
+                platformWallet.AvailableBalance += amount;
+                platformWallet.UpdatedAt = now;
+
+                payment.PaymentStatus = (int)PaymentStatus.Completed;
+                payment.PaidAt = now;
+
+                paymentTransaction.PaymentTransactionStatus = (int)PaymentTransactionStatus.Success;
+                paymentTransaction.PayOSTransactionId = payOsTransactionId;
+                paymentTransaction.UpdatedAt = now;
+
+                var activation = await _userSubscriptionService.ActivateSubscriptionAsync(
+                    payment.SubscriptionId.Value,
+                    amount,
+                    now,
+                    AuditActorType.ExternalSystem,
+                    auditSource,
+                    null,
+                    ct);
+
+                if (!activation.IsSuccess)
+                    throw new InvalidOperationException(activation.Error?.Message);
+
+                await _walletRepo.UpdateAsync(platformWallet, ct);
+                await _walletTxRepo.AddAsync(walletTransaction, ct);
+                await _ledgerRepo.AddAsync(platformLedger, ct);
+                await _paymentRepo.UpdateAsync(payment, ct);
+                await _paymentTxRepo.UpdateAsync(paymentTransaction, ct);
+
+                await _auditService.EnqueueAsync(
+                    new AuditEvent
+                    {
+                        Category = AuditCategory.BusinessOperation,
+                        Action = AuditActions.PaymentComplete,
+                        Outcome = AuditOutcome.Success,
+                        ActorType = AuditActorType.ExternalSystem,
+                        Source = auditSource,
+                        TargetType = AuditTargetTypes.Payment,
+                        TargetId = payment.PaymentId,
+                        OldValues = new Dictionary<string, object?>
+                        {
+                            ["status"] = currentPaymentStatus.ToString()
+                        },
+                        NewValues = new Dictionary<string, object?>
+                        {
+                            ["status"] = PaymentStatus.Completed.ToString()
+                        },
+                        Metadata = new Dictionary<string, object?>
+                        {
+                            ["subscriptionId"] = payment.SubscriptionId.Value,
+                            ["amount"] = amount,
+                            ["method"] = PaymentMethod.PayOS.ToString(),
+                            ["payOsOrderCode"] = payOsOrderCode,
+                            ["walletTransactionId"] = walletTransactionId
+                        }
+                    },
+                    ct);
+
+                await _unitOfWork.SaveChangesAsync(ct);
+                await _unitOfWork.CommitTransactionAsync(ct);
+            }
+            catch
+            {
+                await _unitOfWork.RollbackTransactionAsync(CancellationToken.None);
+                _unitOfWork.ClearTrackedEntities();
+                throw;
+            }
+        }
         private static Error? ValidateAgreementScheduleForPayment(
             agreement_form agreement,
             AgreementDetailsDto? details)
@@ -1400,6 +2232,7 @@ namespace HomeCycle.Application.Services.Payments
 
         private async Task<Result<PaymentStatus>> ReconcilePayOsPaymentAsync(
             Guid paymentId,
+            AuditSource auditSource,
             CancellationToken ct)
         {
             var payment = await _paymentRepo.GetByIdAsync(
@@ -1473,6 +2306,7 @@ namespace HomeCycle.Application.Services.Payments
                     await ExecuteSuccessfulPaymentCoreAsync(
                         transaction.PayOSOrderCode,
                         statusResult.Data.TransactionId ?? string.Empty,
+                        auditSource,
                         ct);
 
                     return Result<PaymentStatus>.Success(
@@ -1487,6 +2321,7 @@ namespace HomeCycle.Application.Services.Payments
                             PaymentTransactionStatus.Cancelled,
                             "Thanh toán đã bị hủy",
                             "Giao dịch thanh toán đã bị hủy. Bạn có thể tạo lại thanh toán khi sẵn sàng.",
+                            auditSource,
                             ct);
 
                         return Result<PaymentStatus>.Success(status);
@@ -1501,6 +2336,7 @@ namespace HomeCycle.Application.Services.Payments
                             PaymentTransactionStatus.Failed,
                             "Thanh toán đã hết hạn",
                             "Giao dịch thanh toán đã hết hạn và chưa được ghi nhận thành công. Vui lòng tạo lại thanh toán.",
+                            auditSource,
                             ct);
 
                         return Result<PaymentStatus>.Success(status);
@@ -1515,6 +2351,7 @@ namespace HomeCycle.Application.Services.Payments
                             PaymentTransactionStatus.Failed,
                             "Thanh toán thất bại",
                             "Giao dịch thanh toán không thành công. Vui lòng tạo lại thanh toán.",
+                            auditSource,
                             ct);
 
                         return Result<PaymentStatus>.Success(status);
@@ -1562,8 +2399,22 @@ namespace HomeCycle.Application.Services.Payments
             PaymentTransactionStatus targetTransactionStatus,
             string notificationTitle,
             string notificationMessage,
+            AuditSource auditSource,
             CancellationToken ct)
         {
+            var paymentSnapshot = await _paymentRepo.GetByIdAsync(paymentId, ct);
+
+            if (paymentSnapshot?.SubscriptionId.HasValue == true)
+            {
+                return await ApplySubscriptionPayOsTerminalStatusAsync(
+                    paymentId,
+                    payOsOrderCode,
+                    targetPaymentStatus,
+                    targetTransactionStatus,
+                    auditSource,
+                    ct);
+            }
+
             notification? terminalNotification = null;
 
             await _unitOfWork.BeginTransactionAsync(ct);
@@ -1593,6 +2444,7 @@ namespace HomeCycle.Application.Services.Payments
                 var currentPaymentStatus = payment.PaymentStatus.HasValue
                     ? (PaymentStatus)payment.PaymentStatus.Value
                     : PaymentStatus.Pending;
+                var currentTransactionStatus = (PaymentTransactionStatus)transaction.PaymentTransactionStatus;
 
                 if (transaction.PaymentTransactionStatus ==
                     (int)PaymentTransactionStatus.Success)
@@ -1612,6 +2464,28 @@ namespace HomeCycle.Application.Services.Payments
                     (int)targetTransactionStatus;
                 transaction.UpdatedAt = DateTime.UtcNow;
 
+                var paymentReconcileAuditDiff = new AuditDiffBuilder()
+                    .Add("paymentStatus", currentPaymentStatus.ToString(), targetPaymentStatus.ToString())
+                    .Add("transactionStatus", currentTransactionStatus.ToString(), targetTransactionStatus.ToString());
+
+                var paymentReconcileAuditEvent = new AuditEvent
+                {
+                    Category = AuditCategory.BusinessOperation,
+                    Action = AuditActions.PaymentReconcile,
+                    Outcome = AuditOutcome.Success,
+                    ActorType = AuditActorType.ExternalSystem,
+                    Source = auditSource,
+                    TargetType = AuditTargetTypes.Payment,
+                    TargetId = payment.PaymentId,
+                    OldValues = paymentReconcileAuditDiff.OldValues,
+                    NewValues = paymentReconcileAuditDiff.NewValues,
+                    Metadata = new Dictionary<string, object?>
+                    {
+                        ["agreementId"] = payment.AgreementId.Value,
+                        ["payOsOrderCode"] = payOsOrderCode
+                    }
+                };
+
                 await _paymentRepo.UpdateAsync(payment, ct);
                 await _paymentTxRepo.UpdateAsync(transaction, ct);
 
@@ -1624,6 +2498,7 @@ namespace HomeCycle.Application.Services.Payments
                         payment.AgreementId.Value,
                         ct);
 
+                await _auditService.EnqueueAsync(paymentReconcileAuditEvent, ct);
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
             }
@@ -1876,6 +2751,10 @@ namespace HomeCycle.Application.Services.Payments
             if (payment.PaymentStatus == (int)PaymentStatus.Refunded)
                 return Result<decimal>.Fail(PaymentErrors.AlreadyRefunded);
 
+            var previousPaymentStatus = payment.PaymentStatus.HasValue
+                ? (PaymentStatus)payment.PaymentStatus.Value
+                : PaymentStatus.Completed;
+
             wallet? buyerWallet;
             wallet? sellerWallet;
 
@@ -1971,7 +2850,9 @@ namespace HomeCycle.Application.Services.Payments
             buyerWallet.AvailableBalance += amount;
             buyerWallet.UpdatedAt = now;
 
-            payment.PaymentStatus = amount >= currentOrderPaid - AmountEpsilon
+            var isFullRefund = amount >= currentOrderPaid - AmountEpsilon;
+
+            payment.PaymentStatus = isFullRefund
                 ? (int)PaymentStatus.Refunded
                 : (int)PaymentStatus.PartiallyRefunded;
 
@@ -1982,10 +2863,35 @@ namespace HomeCycle.Application.Services.Payments
             await _ledgerRepo.AddAsync(buyerLedger, ct);
             await _paymentRepo.UpdateAsync(payment, ct);
 
+            var refundAuditDiff = new AuditDiffBuilder()
+                .Add(
+                    "status",
+                    previousPaymentStatus.ToString(),
+                    ((PaymentStatus)payment.PaymentStatus.Value).ToString());
+
+            var paymentRefundAuditEvent = new AuditEvent
+            {
+                Category = AuditCategory.BusinessOperation,
+                Action = AuditActions.PaymentRefund,
+                Outcome = AuditOutcome.Success,
+                TargetType = AuditTargetTypes.Payment,
+                TargetId = payment.PaymentId,
+                OldValues = refundAuditDiff.OldValues,
+                NewValues = refundAuditDiff.NewValues,
+                Metadata = new Dictionary<string, object?>
+                {
+                    ["orderId"] = order.OrderId,
+                    ["amount"] = amount,
+                    ["fullRefund"] = isFullRefund
+                }
+            };
+
+            await _auditService.EnqueueAsync(paymentRefundAuditEvent, ct);
+
             return Result<decimal>.Success(amount);
         }
 
-        private async Task ExecuteSuccessfulPaymentCoreAsync(string payOsOrderCode, string payOsTransactionId, CancellationToken ct)
+        private async Task ExecuteSuccessfulPaymentCoreAsync(string payOsOrderCode, string payOsTransactionId, AuditSource auditSource, CancellationToken ct)
         {
             var paymentTxSnapshot = await _paymentTxRepo.GetByPayOSOrderCodeAsync(payOsOrderCode, ct);
             if (paymentTxSnapshot == null)
@@ -1999,18 +2905,16 @@ namespace HomeCycle.Application.Services.Payments
             if (paymentSnapshot == null)
                 throw new InvalidOperationException("Không tìm thấy payment của giao dịch PayOS.");
 
-            //if (paymentSnapshot.OrderId.HasValue)
-            //{
-            //    var settlementResult = await _orderSettlementService.CompletePayOsAsync(
-            //        payOsOrderCode,
-            //        payOsTransactionId,
-            //        ct);
+            if (paymentSnapshot.SubscriptionId.HasValue)
+            {
+                await ExecuteSuccessfulSubscriptionPaymentAsync(
+                    payOsOrderCode,
+                    payOsTransactionId,
+                    auditSource,
+                    ct);
 
-            //    if (!settlementResult.IsSuccess)
-            //        throw new InvalidOperationException(settlementResult.Error?.Message);
-
-            //    return;
-            //}
+                return;
+            }
 
 
             if (paymentSnapshot?.AgreementId == null)
@@ -2039,6 +2943,10 @@ namespace HomeCycle.Application.Services.Payments
 
                 var payment = await _paymentRepo.GetByIdAsync(paymentTx.PaymentId, ct)
                     ?? throw new InvalidOperationException("Không tìm thấy payment của giao dịch PayOS.");
+
+                var previousPaymentStatus = payment.PaymentStatus.HasValue
+                    ? (PaymentStatus)payment.PaymentStatus.Value
+                    : PaymentStatus.Pending;
 
                 AgreementDetailsDto? details;
                 try
@@ -2098,6 +3006,30 @@ namespace HomeCycle.Application.Services.Payments
 
                 var fulfillment = await FulfillAgreementAsync(agreement, basePrice, paidAmount, details, ct);
                 payment.OrderId = fulfillment.Order.OrderId;
+
+                var paymentCompleteAuditDiff = new AuditDiffBuilder()
+                    .Add("status", previousPaymentStatus.ToString(), PaymentStatus.Completed.ToString());
+
+                var paymentCompleteAuditEvent = new AuditEvent
+                {
+                    Category = AuditCategory.BusinessOperation,
+                    Action = AuditActions.PaymentComplete,
+                    Outcome = AuditOutcome.Success,
+                    ActorType = AuditActorType.ExternalSystem,
+                    Source = auditSource,
+                    TargetType = AuditTargetTypes.Payment,
+                    TargetId = payment.PaymentId,
+                    OldValues = paymentCompleteAuditDiff.OldValues,
+                    NewValues = paymentCompleteAuditDiff.NewValues,
+                    Metadata = new Dictionary<string, object?>
+                    {
+                        ["agreementId"] = agreement.AgreementId,
+                        ["orderId"] = fulfillment.Order.OrderId,
+                        ["amount"] = paidAmount,
+                        ["method"] = PaymentMethod.PayOS.ToString(),
+                        ["payOsOrderCode"] = payOsOrderCode
+                    }
+                };
 
                 var negotiation = await _negotiationRepo.GetByIdForUpdateAsync(agreement.NegotiationId, ct)
                     ?? throw new InvalidOperationException("Không tìm thấy cuộc thương lượng của thỏa thuận.");
@@ -2215,6 +3147,7 @@ namespace HomeCycle.Application.Services.Payments
                     fulfillment.Order.OrderId,
                     ct);
 
+                await _auditService.EnqueueAsync(paymentCompleteAuditEvent, ct);
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
 

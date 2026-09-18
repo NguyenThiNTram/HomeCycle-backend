@@ -29,6 +29,8 @@ using System.Linq;
 using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
+using HomeCycle.Application.Interfaces.Services.Audits;
+using HomeCycle.Application.Commons.Audits;
 
 namespace HomeCycle.Application.Services.Offers
 {
@@ -50,6 +52,7 @@ namespace HomeCycle.Application.Services.Offers
         private readonly IUnitOfWork _unitOfWork;
         private readonly IChatRealtimePublisher _realtimePublisher;
         private readonly INotificationService _notificationService;
+        private readonly IAuditService _auditService;
 
         public OfferService(
             IOfferRepository offerRepository,
@@ -67,7 +70,8 @@ namespace HomeCycle.Application.Services.Offers
             IMapper mapper,
             IUnitOfWork unitOfWork,
             IChatRealtimePublisher realtimePublisher,
-            INotificationService notificationService)
+            INotificationService notificationService,
+            IAuditService auditService)
         {
             _offerRepository = offerRepository;
             _offerTermsPolicy = offerTermsPolicy;
@@ -85,6 +89,7 @@ namespace HomeCycle.Application.Services.Offers
             _unitOfWork = unitOfWork;
             _realtimePublisher = realtimePublisher;
             _notificationService = notificationService;
+            _auditService = auditService;
         }
 
         // ================== GIAI ĐOẠN 1: NGOÀI NEGOTIATION ==================
@@ -190,9 +195,17 @@ namespace HomeCycle.Application.Services.Offers
                         _mapper.Map<OfferResponse>(offer));
                 }
 
+                var previousOfferPrice = offer.OfferPrice;
+                var previousOfferQuantity = offer.OfferQuantity;
+                var previousOfferVersion = offer.Version;
                 offer.OfferPrice = newPrice;
                 offer.OfferQuantity = newQuantity;
                 offer.Version = (offer.Version ?? 1) + 1;
+
+                var updateOfferAuditDiff = new AuditDiffBuilder()
+                    .Add("offerPrice", previousOfferPrice, offer.OfferPrice)
+                    .Add("offerQuantity", previousOfferQuantity, offer.OfferQuantity)
+                    .Add("version", previousOfferVersion, offer.Version);
 
                 updatedNotification =
                     await AddOfferNotificationPendingAsync(
@@ -203,6 +216,20 @@ namespace HomeCycle.Application.Services.Offers
                         cancellationToken);
 
                 await _offerRepository.UpdateAsync(offer, cancellationToken);
+                await _auditService.EnqueueAsync(new AuditEvent
+                {
+                    Category = AuditCategory.BusinessOperation,
+                    Action = AuditActions.OfferUpdate,
+                    Outcome = AuditOutcome.Success,
+                    ActorType = AuditActorType.User,
+                    UserId = userId,
+                    TargetType = AuditTargetTypes.Offer,
+                    TargetId = offer.OfferId,
+                    OldValues = updateOfferAuditDiff.OldValues,
+                    NewValues = updateOfferAuditDiff.NewValues
+                }, cancellationToken);
+
+
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync(cancellationToken);
 
@@ -250,7 +277,10 @@ namespace HomeCycle.Application.Services.Offers
                     return Result<OfferResponse>.Fail(OfferErrors.NotPending);
                 }
 
+                var previousOfferStatus = offer.OfferStatus;
                 offer.OfferStatus = OfferStatus.Cancelled;
+                var cancelOfferAuditDiff = new AuditDiffBuilder()
+                    .Add("status", previousOfferStatus?.ToString(), offer.OfferStatus?.ToString());
 
                 cancelledNotification = await AddOfferNotificationPendingAsync(
                     offer, userId,
@@ -259,6 +289,18 @@ namespace HomeCycle.Application.Services.Offers
                     cancellationToken);
 
                 await _offerRepository.UpdateAsync(offer, cancellationToken);
+                await _auditService.EnqueueAsync(new AuditEvent
+                {
+                    Category = AuditCategory.BusinessOperation,
+                    Action = AuditActions.OfferCancel,
+                    Outcome = AuditOutcome.Success,
+                    ActorType = AuditActorType.User,
+                    UserId = userId,
+                    TargetType = AuditTargetTypes.Offer,
+                    TargetId = offer.OfferId,
+                    OldValues = cancelOfferAuditDiff.OldValues,
+                    NewValues = cancelOfferAuditDiff.NewValues
+                }, cancellationToken);
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync(cancellationToken);
                 //await PublishOfferUpdatedSafelyAsync(offer);
@@ -306,7 +348,10 @@ namespace HomeCycle.Application.Services.Offers
                     return Result<OfferResponse>.Fail(OfferErrors.NotPending);
                 }
 
+                var previousOfferStatus = offer.OfferStatus;
                 offer.OfferStatus = OfferStatus.Rejected;
+                var rejectOfferAuditDiff = new AuditDiffBuilder()
+                    .Add("status", previousOfferStatus?.ToString(), offer.OfferStatus?.ToString());
 
                 // Người nhận từ chối -> thông báo ngược lại cho người gửi.
                 rejectedNotification =
@@ -318,6 +363,18 @@ namespace HomeCycle.Application.Services.Offers
                         cancellationToken);
 
                 await _offerRepository.UpdateAsync(offer, cancellationToken);
+                await _auditService.EnqueueAsync(new AuditEvent
+                {
+                    Category = AuditCategory.BusinessOperation,
+                    Action = AuditActions.OfferReject,
+                    Outcome = AuditOutcome.Success,
+                    ActorType = AuditActorType.User,
+                    UserId = userId,
+                    TargetType = AuditTargetTypes.Offer,
+                    TargetId = offer.OfferId,
+                    OldValues = rejectOfferAuditDiff.OldValues,
+                    NewValues = rejectOfferAuditDiff.NewValues
+                }, cancellationToken);
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync(cancellationToken);
 
@@ -420,8 +477,10 @@ namespace HomeCycle.Application.Services.Offers
                 var initialOfferMessage = CreateInitialOfferMessage(offer, conversation.ConversationId, negotiation.NegotiationId, post.BasePrice, MessageOfferStatus.Accepted, now);
 
                 // Offer Accepted nghĩa là Offer đã được xử lý và đưa vào Negotiation.
+                var previousOfferStatus = offer.OfferStatus;
                 offer.OfferStatus = OfferStatus.Accepted;
-
+                var acceptOfferAuditDiff = new AuditDiffBuilder()
+                    .Add("status", previousOfferStatus?.ToString(), offer.OfferStatus?.ToString());
                 var acceptedNotification =
                     await AddOfferNotificationPendingAsync(
                         offer,
@@ -434,7 +493,22 @@ namespace HomeCycle.Application.Services.Offers
                 await _negotiationRepository.AddAsync(negotiation, cancellationToken);
                 await _messageRepository.AddAsync(initialOfferMessage, cancellationToken);
                 await _conversationRepository.UpdateLastActivityAsync(conversation.ConversationId, now, cancellationToken);
-
+                await _auditService.EnqueueAsync(new AuditEvent
+                {
+                    Category = AuditCategory.BusinessOperation,
+                    Action = AuditActions.OfferAccept,
+                    Outcome = AuditOutcome.Success,
+                    ActorType = AuditActorType.User,
+                    UserId = userId,
+                    TargetType = AuditTargetTypes.Offer,
+                    TargetId = offer.OfferId,
+                    OldValues = acceptOfferAuditDiff.OldValues,
+                    NewValues = acceptOfferAuditDiff.NewValues,
+                    Metadata = new Dictionary<string, object?>
+                    {
+                        ["negotiationId"] = negotiation.NegotiationId
+                    }
+                }, cancellationToken);
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync(cancellationToken);
 
@@ -594,12 +668,22 @@ namespace HomeCycle.Application.Services.Offers
                     UpdatedAt = now
                 };
 
+                var previousOfferPrice = offer.OfferPrice;
+                var previousOfferQuantity = offer.OfferQuantity;
+                var previousOfferStatus = offer.OfferStatus;
+                var previousOfferVersion = offer.Version;
                 // snapshot mới + Messages giữ lịch sử thay đổi
                 offer.OfferPrice = request.OfferPrice;
                 offer.OfferQuantity = request.OfferQuantity;
                 offer.OfferStatus = OfferStatus.Accepted;
                 //offer.Version++;
                 offer.Version = (offer.Version ?? 1) + 1;
+
+                var counterOfferAuditDiff = new AuditDiffBuilder()
+                    .Add("offerPrice", previousOfferPrice, offer.OfferPrice)
+                    .Add("offerQuantity", previousOfferQuantity, offer.OfferQuantity)
+                    .Add("status", previousOfferStatus?.ToString(), offer.OfferStatus?.ToString())
+                    .Add("version", previousOfferVersion, offer.Version);
 
                 var counterNotification =
                     await AddOfferNotificationPendingAsync(
@@ -617,7 +701,22 @@ namespace HomeCycle.Application.Services.Offers
                 await _messageRepository.AddAsync(initialOfferMessage, cancellationToken);
                 await _messageRepository.AddAsync(counterMessage, cancellationToken);
                 await _conversationRepository.UpdateLastActivityAsync(conversation.ConversationId, now, cancellationToken);
-
+                await _auditService.EnqueueAsync(new AuditEvent
+                {
+                    Category = AuditCategory.BusinessOperation,
+                    Action = AuditActions.OfferCounter,
+                    Outcome = AuditOutcome.Success,
+                    ActorType = AuditActorType.User,
+                    UserId = userId,
+                    TargetType = AuditTargetTypes.Offer,
+                    TargetId = offer.OfferId,
+                    OldValues = counterOfferAuditDiff.OldValues,
+                    NewValues = counterOfferAuditDiff.NewValues,
+                    Metadata = new Dictionary<string, object?>
+                    {
+                        ["negotiationId"] = negotiation.NegotiationId
+                    }
+                }, cancellationToken);
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync(cancellationToken);
 

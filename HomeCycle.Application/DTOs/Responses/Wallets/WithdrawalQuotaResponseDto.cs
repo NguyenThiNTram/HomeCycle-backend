@@ -17,6 +17,10 @@ namespace HomeCycle.Application.DTOs.Responses.Wallets
         public decimal UsedDailyLimitAmount { get; set; }
         public decimal RemainingDailyLimitAmount { get; set; }
 
+        public int? DailyWithdrawalCountLimit { get; set; }
+        public int UsedDailyWithdrawalCount { get; set; }
+        public int? RemainingDailyWithdrawalCount { get; set; }
+
         public DateTimeOffset ResetAt { get; set; }
     }
 }

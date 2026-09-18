@@ -95,7 +95,7 @@ namespace HomeCycle.Infrastructure.Repositories.Payments
                     x.UpdatedAt <= staleCutoff &&
                     x.Payment.PaymentStatus == (int)PaymentStatus.Pending &&
                     x.Payment.PaymentMethod == (int)PaymentMethod.PayOS &&
-                    x.Payment.AgreementId.HasValue)
+                    (x.Payment.AgreementId.HasValue || x.Payment.SubscriptionId.HasValue))
                 .OrderBy(x => x.UpdatedAt)
                 .ThenBy(x => x.CreatedAt)
                 .Take(limit)
@@ -126,7 +126,7 @@ namespace HomeCycle.Infrastructure.Repositories.Payments
                     x.UpdatedAt <= staleCutoff &&
                     x.Payment.PaymentStatus == (int)PaymentStatus.Pending &&
                     x.Payment.PaymentMethod == (int)PaymentMethod.PayOS &&
-                    x.Payment.AgreementId.HasValue)
+                    (x.Payment.AgreementId.HasValue || x.Payment.SubscriptionId.HasValue))
                 .ExecuteUpdateAsync(
                     setters => setters
                         .SetProperty(x => x.UpdatedAt, now),

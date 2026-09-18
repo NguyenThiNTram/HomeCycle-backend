@@ -1,6 +1,8 @@
 ﻿using AutoMapper;
 using FluentValidation;
+using HomeCycle.Application.Commons.Audits;
 using HomeCycle.Application.Commons.Errors;
+using HomeCycle.Application.Commons.Helpers;
 using HomeCycle.Application.Commons.Paginations;
 using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Requests.Agreements;
@@ -13,6 +15,7 @@ using HomeCycle.Application.Interfaces.Repositories.Appointments;
 using HomeCycle.Application.Interfaces.Repositories.Inspections;
 using HomeCycle.Application.Interfaces.Repositories.Orders;
 using HomeCycle.Application.Interfaces.Services.Appointments;
+using HomeCycle.Application.Interfaces.Services.Audits;
 using HomeCycle.Application.Interfaces.Services.Notifications;
 using HomeCycle.Application.Interfaces.Services.Orders;
 using HomeCycle.Application.Interfaces.Services.PlatformPolicies;
@@ -38,6 +41,7 @@ namespace HomeCycle.Application.Services.Appointments
         private readonly IPlatformPolicyProvider _platformPolicyProvider;
         private readonly INotificationService _notificationService;
         private readonly IOrderTrackingRealtimeService _orderTrackingRealtimeService;
+        private readonly IAuditService _auditService;
         private readonly IMapper _mapper;
 
         private readonly IValidator<RescheduleAppointmentRequest> _rescheduleValidator;
@@ -54,6 +58,7 @@ namespace HomeCycle.Application.Services.Appointments
             IPlatformPolicyProvider platformPolicyProvider,
             INotificationService notificationService,
             IOrderTrackingRealtimeService orderTrackingRealtimeService,
+            IAuditService auditService,
             IUnitOfWork unitOfWork,
             IMapper mapper,
             IValidator<RescheduleAppointmentRequest> rescheduleValidator,
@@ -69,6 +74,7 @@ namespace HomeCycle.Application.Services.Appointments
             _platformPolicyProvider = platformPolicyProvider;
             _notificationService = notificationService;
             _orderTrackingRealtimeService = orderTrackingRealtimeService;
+            _auditService = auditService;
             _unitOfWork = unitOfWork;
             _mapper = mapper;
             _rescheduleValidator = rescheduleValidator;
@@ -391,6 +397,10 @@ namespace HomeCycle.Application.Services.Appointments
                     return Result<AppointmentCheckInResponseDto>.Fail(AppointmentErrors.CheckInNotOpen(checkInOpenAt));
                 }
 
+                var previousAppointmentStatus = (AppointmentStatus)appointment.AppointmentStatus.Value;
+                var previousBuyerCheckedIn = appointment.BuyerCheckAt.HasValue;
+                var previousSellerCheckedIn = appointment.SellerCheckAt.HasValue;
+
                 // QUAN TRỌNG:
                 // Không còn check "now > LateThresholdAt => Expired".
                 // Quá 2h vẫn được check-in; timestamp được giữ làm evidence nếu có dispute.
@@ -424,6 +434,24 @@ namespace HomeCycle.Application.Services.Appointments
 
                 appointment.UpdatedAt = now;
 
+                var checkInAuditDiff = new AuditDiffBuilder()
+                    .Add("status", previousAppointmentStatus.ToString(), ((AppointmentStatus)appointment.AppointmentStatus.Value).ToString())
+                    .Add("buyerCheckedIn", previousBuyerCheckedIn, appointment.BuyerCheckAt.HasValue)
+                    .Add("sellerCheckedIn", previousSellerCheckedIn, appointment.SellerCheckAt.HasValue);
+
+                var checkInAuditEvent = new AuditEvent
+                {
+                    Category = AuditCategory.BusinessOperation,
+                    Action = AuditActions.AppointmentCheckIn,
+                    Outcome = AuditOutcome.Success,
+                    ActorType = AuditActorType.User,
+                    UserId = userId,
+                    TargetType = AuditTargetTypes.Appointment,
+                    TargetId = appointment.AppointmentId,
+                    OldValues = checkInAuditDiff.OldValues,
+                    NewValues = checkInAuditDiff.NewValues
+                };
+
                 var isFullyCheckedIn = appointment.BuyerCheckAt.HasValue && appointment.SellerCheckAt.HasValue;
                 var checkInRecipientId = isBuyer ? agreement.SellerId : agreement.BuyerId;
                 var checkInMessage = isFullyCheckedIn
@@ -442,6 +470,7 @@ namespace HomeCycle.Application.Services.Appointments
                         NotificationTargetType.Appointment,
                         appointment.AppointmentId),
                     ct);
+                await _auditService.EnqueueAsync(checkInAuditEvent, ct);
 
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
@@ -608,6 +637,26 @@ namespace HomeCycle.Application.Services.Appointments
                     UpdatedAt = now
                 };
 
+                var requestRescheduleAuditEvent = new AuditEvent
+                {
+                    Category = AuditCategory.BusinessOperation,
+                    Action = AuditActions.AppointmentRescheduleRequest,
+                    Outcome = AuditOutcome.Success,
+                    ActorType = AuditActorType.User,
+                    UserId = userId,
+                    TargetType = AuditTargetTypes.Appointment,
+                    TargetId = original.AppointmentId,
+                    NewValues = new Dictionary<string, object?>
+                    {
+                        ["proposalStatus"] = AppointmentStatus.Proposed.ToString()
+                    },
+                    Metadata = new Dictionary<string, object?>
+                    {
+                        ["proposalAppointmentId"] = proposal.AppointmentId,
+                        ["proposedAt"] = proposedAt
+                    }
+                };
+
                 await _appointmentRepo.AddAsync(proposal, ct);
 
                 if (schedule.AppointmentType == AppointmentType.Inspection)
@@ -657,6 +706,7 @@ namespace HomeCycle.Application.Services.Appointments
                         NotificationTargetType.Appointment,
                         original.AppointmentId),
                     ct);
+                await _auditService.EnqueueAsync(requestRescheduleAuditEvent, ct);
 
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
@@ -769,7 +819,8 @@ namespace HomeCycle.Application.Services.Appointments
                     return Result<AppointmentRescheduleResponseDto>.Fail(
                         AppointmentErrors.RescheduleProposalExpired);
                 }
-
+                var previousOriginalStatus = (AppointmentStatus)original.AppointmentStatus.Value;
+                var previousProposalStatus = (AppointmentStatus)proposal.AppointmentStatus.Value;
                 original.AppointmentStatus = (int)AppointmentStatus.Cancelled;
 
                 original.CancelledAt = now;
@@ -779,6 +830,28 @@ namespace HomeCycle.Application.Services.Appointments
                 proposal.AppointmentStatus = (int)AppointmentStatus.Scheduled;
 
                 proposal.UpdatedAt = now;
+
+                var acceptRescheduleAuditDiff = new AuditDiffBuilder()
+                    .Add("originalStatus", previousOriginalStatus.ToString(), ((AppointmentStatus)original.AppointmentStatus.Value).ToString())
+                    .Add("proposalStatus", previousProposalStatus.ToString(), ((AppointmentStatus)proposal.AppointmentStatus.Value).ToString());
+
+                var acceptRescheduleAuditEvent = new AuditEvent
+                {
+                    Category = AuditCategory.BusinessOperation,
+                    Action = AuditActions.AppointmentRescheduleAccept,
+                    Outcome = AuditOutcome.Success,
+                    ActorType = AuditActorType.User,
+                    UserId = userId,
+                    TargetType = AuditTargetTypes.Appointment,
+                    TargetId = original.AppointmentId,
+                    OldValues = acceptRescheduleAuditDiff.OldValues,
+                    NewValues = acceptRescheduleAuditDiff.NewValues,
+                    Metadata = new Dictionary<string, object?>
+                    {
+                        ["replacementAppointmentId"] = proposal.AppointmentId,
+                        ["scheduledAt"] = proposedAt
+                    }
+                };
 
                 await _appointmentRepo.UpdateAsync(original, ct);
 
@@ -793,6 +866,7 @@ namespace HomeCycle.Application.Services.Appointments
                         proposal.AppointmentId),
                     ct);
 
+                await _auditService.EnqueueAsync(acceptRescheduleAuditEvent, ct);
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
                 await _notificationService.PublishCreatedSafelyAsync(rescheduleNotification);
@@ -897,6 +971,7 @@ namespace HomeCycle.Application.Services.Appointments
                 }
 
                 var now = DateTime.UtcNow;
+                var previousProposalStatus = (AppointmentStatus)proposal.AppointmentStatus.Value;
 
                 proposal.AppointmentStatus = (int)AppointmentStatus.Cancelled;
                 proposal.CancelledAt = now;
@@ -904,6 +979,26 @@ namespace HomeCycle.Application.Services.Appointments
                     ? "Reschedule request rejected."
                     : request.Reason.Trim();
                 proposal.UpdatedAt = now;
+
+                var rejectRescheduleAuditDiff = new AuditDiffBuilder()
+                    .Add("proposalStatus", previousProposalStatus.ToString(), ((AppointmentStatus)proposal.AppointmentStatus.Value).ToString());
+
+                var rejectRescheduleAuditEvent = new AuditEvent
+                {
+                    Category = AuditCategory.BusinessOperation,
+                    Action = AuditActions.AppointmentRescheduleReject,
+                    Outcome = AuditOutcome.Success,
+                    ActorType = AuditActorType.User,
+                    UserId = userId,
+                    TargetType = AuditTargetTypes.Appointment,
+                    TargetId = original.AppointmentId,
+                    OldValues = rejectRescheduleAuditDiff.OldValues,
+                    NewValues = rejectRescheduleAuditDiff.NewValues,
+                    Metadata = new Dictionary<string, object?>
+                    {
+                        ["proposalAppointmentId"] = proposal.AppointmentId
+                    }
+                };
 
                 await _appointmentRepo.UpdateAsync(proposal, ct);
 
@@ -915,6 +1010,7 @@ namespace HomeCycle.Application.Services.Appointments
                         NotificationTargetType.Appointment,
                         original.AppointmentId),
                     ct);
+                await _auditService.EnqueueAsync(rejectRescheduleAuditEvent, ct);
 
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
@@ -1045,11 +1141,27 @@ namespace HomeCycle.Application.Services.Appointments
                         await _appointmentRepo.UpdateAsync(lockedProposal, ct);
                     }
                 }
-
+                var previousAppointmentStatus = (AppointmentStatus)appointment.AppointmentStatus.Value;
                 appointment.AppointmentStatus = (int)AppointmentStatus.Cancelled;
                 appointment.CancelledAt = now;
                 appointment.CancellationReason = request.Reason.Trim();
                 appointment.UpdatedAt = now;
+
+                var cancelAppointmentAuditDiff = new AuditDiffBuilder()
+                    .Add("status", previousAppointmentStatus.ToString(), ((AppointmentStatus)appointment.AppointmentStatus.Value).ToString());
+
+                var cancelAppointmentAuditEvent = new AuditEvent
+                {
+                    Category = AuditCategory.BusinessOperation,
+                    Action = AuditActions.AppointmentCancel,
+                    Outcome = AuditOutcome.Success,
+                    ActorType = AuditActorType.User,
+                    UserId = userId,
+                    TargetType = AuditTargetTypes.Appointment,
+                    TargetId = appointment.AppointmentId,
+                    OldValues = cancelAppointmentAuditDiff.OldValues,
+                    NewValues = cancelAppointmentAuditDiff.NewValues
+                };
 
                 await _appointmentRepo.UpdateAsync(appointment, ct);
 
@@ -1065,6 +1177,7 @@ namespace HomeCycle.Application.Services.Appointments
                         NotificationTargetType.Appointment,
                         appointment.AppointmentId),
                     ct);
+                await _auditService.EnqueueAsync(cancelAppointmentAuditEvent, ct);
 
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
