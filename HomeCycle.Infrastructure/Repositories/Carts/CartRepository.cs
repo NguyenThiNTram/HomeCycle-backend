@@ -85,5 +85,16 @@ namespace HomeCycle.Infrastructure.Repositories.Carts
                 _db.Cart_Items.Remove(entity);
             }
         }
+
+        public async Task DeleteByUserAndPostAsync(Guid userId, Guid postId, CancellationToken cancellationToken = default)
+        {
+            var entity = await _db.Cart_Items
+                .FirstOrDefaultAsync(x => x.UserId == userId && x.PostId == postId, cancellationToken);
+
+            if (entity != null)
+            {
+                _db.Cart_Items.Remove(entity);
+            }
+        }
     }
 }
