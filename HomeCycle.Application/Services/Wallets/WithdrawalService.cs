@@ -251,8 +251,21 @@ namespace HomeCycle.Application.Services.Wallets
                 await _walletRepo.UpdateAsync(wallet, ct);
                 await _auditService.EnqueueAsync(withdrawalRequestAuditEvent, ct);
 
+                var moderatorNotifications =
+                    await _notificationService.AddPendingForActiveModeratorsAsync(
+                        "Có yêu cầu rút tiền mới",
+                        $"Có yêu cầu rút {amount:N0} VNĐ vừa được gửi và đang chờ duyệt.",
+                        NotificationTargetType.Withdrawal,
+                        withdrawalId,
+                        ct);
+
+
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
+
+                await Task.WhenAll(
+                    moderatorNotifications.Select(
+                        _notificationService.PublishCreatedSafelyAsync));
 
                 return Result<Guid>.Success(withdrawalId);
             }

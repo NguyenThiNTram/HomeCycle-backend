@@ -314,6 +314,18 @@ namespace HomeCycle.Application.Services.Disputes
                         $"Điểm uy tín bị trừ trong lần xử lý này: {penaltyApplied}. {dispute.ModeratorNote}",
                         NotificationTargetType.Dispute, disputeId), ct));
                 }
+                else if (!confirmed && dispute.TargetUserId is Guid targetUserId && targetUserId != dispute.SenderId)
+                {
+                    var targetName = targetType == DisputeTargetType.Post ? "bài đăng" : "đánh giá";
+
+                    notifications.Add(await _notificationService.AddPendingAsync(new CreateNotificationCommand(
+                        targetUserId,
+                        "Báo cáo đã được xem xét",
+                        $"Moderator không xác nhận vi phạm đối với {targetName} của bạn. " +
+                        $"Không có biện pháp xử lý nào được áp dụng. {dispute.ModeratorNote}",
+                        NotificationTargetType.Dispute,
+                        disputeId), ct));
+                }
 
                 await _auditService.EnqueueAsync(contentDecisionAuditEvent, ct);
                 await _unitOfWork.SaveChangesAsync(ct);
