@@ -1,93 +1,45 @@
-using System.Text.RegularExpressions;
+using HomeCycle.Application.Entitlements;
 using HomeCycle.Application.Interfaces.Services.SupplierMatching;
+using HomeCycle.Application.Interfaces.Services.Entitlements;
 using HomeCycle.Application.SupplierMatching.Models;
+using HomeCycle.Domain.Enums;
 using HomeCycle.Infrastructure.DbContexts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
 namespace HomeCycle.Infrastructure.SupplierMatching;
 
-public sealed partial class SupplierMatchEntitlementService(
+public sealed class SupplierMatchEntitlementService(
     HomeCycleDbContext db,
     IOptions<SupplierMatchingOptions> options,
-    TimeProvider clock) : ISupplierMatchEntitlementService
+    TimeProvider clock,
+    IEntitlementResolver resolver) : ISupplierMatchEntitlementService
 {
-    public async Task<SupplierMatchEntitlement> GetAsync(
-        Guid userId,
-        CancellationToken cancellationToken = default)
+    public async Task<SupplierMatchEntitlement> GetAsync(Guid userId, CancellationToken cancellationToken = default)
     {
+        var limit = await resolver.ResolveAiDailyLimitAsync(userId, UserRole.Business, clock.GetUtcNow().UtcDateTime, cancellationToken);
+        var isVip = limit == 100;
         var settings = options.Value;
-        var activeStatuses = settings.ActiveSubscriptionStatuses ?? [];
-        var now = clock.GetUtcNow().UtcDateTime;
-        var packageNames = await db.User_Subscriptions.AsNoTracking()
-            .Where(subscription =>
-                subscription.UserId == userId &&
-                subscription.Package.IsActive &&
-                (!subscription.ActivatedAt.HasValue || subscription.ActivatedAt <= now) &&
-                (!subscription.ExpiresAt.HasValue || subscription.ExpiresAt > now) &&
-                (!subscription.Status.HasValue || activeStatuses.Contains(subscription.Status.Value)))
-            .OrderByDescending(subscription => subscription.ExpiresAt)
-            .Select(subscription => subscription.Package.Name)
-            .ToListAsync(cancellationToken);
-
-        var isVip = packageNames
-            .Where(name => !string.IsNullOrWhiteSpace(name))
-            .Select(name => NormalizeCode(name!))
-            .Any(name => IsVipPackageName(name, settings));
-
-        return isVip
-            ? new SupplierMatchEntitlement(
-                SupplierMatchTier.Vip,
-                Math.Clamp(settings.VipResultLimit, 1, 100),
-                Math.Clamp(settings.VipDailyAiRefreshLimit, 1, 1000),
-                true,
-                true,
-                true)
-            : new SupplierMatchEntitlement(
-                SupplierMatchTier.Free,
-                Math.Clamp(settings.FreeResultLimit, 1, 100),
-                Math.Clamp(settings.FreeDailyAiRefreshLimit, 1, 1000),
-                true,
-                false,
-                false);
+        return new SupplierMatchEntitlement(
+            isVip ? SupplierMatchTier.Vip : SupplierMatchTier.Free,
+            Math.Clamp(isVip ? settings.VipResultLimit : settings.FreeResultLimit, 1, 100),
+            limit,
+            limit > 0,
+            isVip,
+            isVip);
     }
 
-    public async Task<IReadOnlyCollection<Guid>> GetActiveVipUserIdsAsync(
-        CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyCollection<Guid>> GetActiveVipUserIdsAsync(CancellationToken cancellationToken = default)
     {
-        var settings = options.Value;
-        var activeStatuses = settings.ActiveSubscriptionStatuses ?? [];
         var now = clock.GetUtcNow().UtcDateTime;
-        var subscriptions = await db.User_Subscriptions.AsNoTracking()
-            .Where(subscription =>
-                subscription.Package.IsActive &&
-                (!subscription.ActivatedAt.HasValue || subscription.ActivatedAt <= now) &&
-                (!subscription.ExpiresAt.HasValue || subscription.ExpiresAt > now) &&
-                (!subscription.Status.HasValue || activeStatuses.Contains(subscription.Status.Value)))
-            .Select(subscription => new
-            {
-                subscription.UserId,
-                subscription.Package.Name
-            })
-            .ToListAsync(cancellationToken);
-
-        return subscriptions
-            .Where(subscription => !string.IsNullOrWhiteSpace(subscription.Name) &&
-                IsVipPackageName(NormalizeCode(subscription.Name!), settings))
-            .Select(subscription => subscription.UserId)
+        return await db.User_Subscriptions.AsNoTracking()
+            .Where(x => x.Status == (int)UserSubscriptionStatus.Active &&
+                x.ActivatedAt.HasValue && x.ActivatedAt <= now && x.ExpiresAt.HasValue && x.ExpiresAt > now &&
+                x.User.Role == (int)UserRole.Business &&
+                x.User_Subscription_Entitlements.Any(e => e.EntitlementKey == EntitlementKeys.SupplierMatchDailyCount &&
+                    e.ValueType == (int)EntitlementValueType.Integer && e.NumericValue == 100 && !e.IsUnlimited && e.BooleanValue == null))
+            .Select(x => x.UserId)
             .Distinct()
-            .ToArray();
+            .ToArrayAsync(cancellationToken);
     }
-
-    private static bool IsVipPackageName(string normalizedName, SupplierMatchingOptions settings) =>
-        (settings.VipPackageCodes ?? [])
-        .Select(NormalizeCode)
-        .Where(code => code.Length > 0)
-        .Any(code => normalizedName.Contains(code, StringComparison.Ordinal));
-
-    private static string NormalizeCode(string value) =>
-        NonAlphaNumeric().Replace(value.Trim().ToUpperInvariant(), string.Empty);
-
-    [GeneratedRegex("[^A-Z0-9]")]
-    private static partial Regex NonAlphaNumeric();
 }

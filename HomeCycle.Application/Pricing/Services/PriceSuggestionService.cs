@@ -68,14 +68,15 @@ public sealed class PriceSuggestionService(
         var marketReferences = await evidenceRepository.GetVerifiedMarketAsync(
             product.ProductTypeId, product.BrandId, product.Model, now.UtcDateTime, cancellationToken);
 
-        var remaining = await quota.RemainingAsync(userId, cancellationToken);
+        var dailyLimit = await quota.GetDailyLimitAsync(userId, cancellationToken);
+        var remaining = await quota.RemainingAsync(userId, dailyLimit, cancellationToken);
         var reserved = false;
         var external = ExternalUsedPriceSearchResult.Empty;
         if (trades.Count + listings.Count < 2)
         {
-            var reservedRemaining = await quota.ReserveAsync(userId, cancellationToken);
+            var reservedRemaining = await quota.ReserveAsync(userId, dailyLimit, cancellationToken);
             if (reservedRemaining is null)
-                return CreateLimitResponse(quota);
+                return CreateLimitResponse(quota, dailyLimit);
 
             reserved = true;
             remaining = reservedRemaining.Value;
@@ -179,9 +180,9 @@ public sealed class PriceSuggestionService(
 
         if (!reserved)
         {
-            var reservedRemaining = await quota.ReserveAsync(userId, cancellationToken);
+            var reservedRemaining = await quota.ReserveAsync(userId, dailyLimit, cancellationToken);
             if (reservedRemaining is null)
-                return CreateLimitResponse(quota);
+                return CreateLimitResponse(quota, dailyLimit);
             response.RemainingToday = reservedRemaining.Value;
         }
 
@@ -297,10 +298,10 @@ public sealed class PriceSuggestionService(
         };
     }
 
-    private static AiPriceSuggestionResponse CreateLimitResponse(IPriceSuggestionQuota quota) => new()
+    private static AiPriceSuggestionResponse CreateLimitResponse(IPriceSuggestionQuota quota, int dailyLimit) => new()
     {
         Status = "DAILY_LIMIT_REACHED",
-        Explanation = $"Bạn đã dùng hết {quota.DailyLimit} lượt gợi ý giá hôm nay.",
+        Explanation = $"Bạn đã dùng hết {dailyLimit} lượt gợi ý giá hôm nay.",
         RemainingToday = 0,
         ResetsAt = quota.ResetsAt
     };

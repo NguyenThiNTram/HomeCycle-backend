@@ -225,6 +225,17 @@ namespace HomeCycle.API.Controllers
                 : MapError(result.Error);
         }
 
+        [HttpPost("me/subscriptions/{subscriptionId:guid}/cancel")]
+        [Authorize(Roles = nameof(UserRole.Personal) + "," + nameof(UserRole.Business))]
+        public async Task<IActionResult> CancelMySubscription(Guid subscriptionId, CancellationToken cancellationToken)
+        {
+            var userId = GetCurrentUserId();
+            if (userId == Guid.Empty)
+                return Unauthorized();
+            var result = await _userSubscriptionService.CancelActiveSubscriptionAsync(userId, subscriptionId, cancellationToken);
+            return result.IsSuccess ? Ok(result.Data) : MapError(result.Error);
+        }
+
         private IActionResult MapError(Error? error)
         {
             return error?.Code switch
@@ -238,6 +249,7 @@ namespace HomeCycle.API.Controllers
                     => NotFound(error),
 
                 "SubscriptionPackage.CodeAlreadyExists" or
+                "UserSubscription.InvalidStatus" or
                 "SubscriptionPackage.NameAlreadyExists"
                     => Conflict(error),
 

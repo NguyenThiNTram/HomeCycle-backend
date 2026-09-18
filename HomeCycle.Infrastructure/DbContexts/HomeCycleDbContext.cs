@@ -1077,6 +1077,8 @@ public partial class HomeCycleDbContext : DbContext
         modelBuilder.Entity<User_Subscription>(entity =>
         {
             entity.HasKey(e => e.SubscriptionId).HasName("User_Subscription_pkey");
+            entity.Property(e => e.PackageNameSnapshot).HasMaxLength(255);
+            entity.Property(e => e.DurationDaysSnapshot).HasColumnType("integer");
 
             entity.Property(e => e.SubscriptionId).ValueGeneratedNever();
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()");

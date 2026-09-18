@@ -32,8 +32,8 @@ namespace HomeCycle.Application.Validations.SubscriptionPackages
                 .When(x => x.Price.HasValue);
 
             RuleFor(x => x.Duration)
-                .GreaterThan(0)
-                .WithMessage("Package duration must be greater than zero.")
+                .Equal(30)
+                .WithMessage("VIP package duration must be 30 days.")
                 .When(x => x.Duration.HasValue);
 
             RuleFor(x => x.Entitlements)

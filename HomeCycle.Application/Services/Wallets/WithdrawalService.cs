@@ -142,10 +142,10 @@ namespace HomeCycle.Application.Services.Wallets
                 var usage = await _withdrawalRepo.GetDailyUsageAsync(userId, window.FromUtc, window.ToUtc, ct);
                 var usedLimit = usage.CompletedAmount + usage.ReservedAmount;
 
-                if (usedLimit + amount > effectiveEntitlements.DailyAmountLimit)
+                if (effectiveEntitlements.DailyAmountLimit.HasValue && usedLimit + amount > effectiveEntitlements.DailyAmountLimit.Value)
                 {
                     await _unitOfWork.RollbackTransactionAsync(ct);
-                    var remaining = Math.Max(effectiveEntitlements.DailyAmountLimit - usedLimit, 0m);
+                    var remaining = Math.Max(effectiveEntitlements.DailyAmountLimit.Value - usedLimit, 0m);
 
                     return Result<Guid>.Fail(new Error(
                         "Withdrawal.DailyLimitExceeded",
@@ -1037,9 +1037,9 @@ namespace HomeCycle.Application.Services.Wallets
                     CompletedTodayAmount = usage.CompletedAmount,
                     ActiveReservedAmount = usage.ReservedAmount,
                     UsedDailyLimitAmount = used,
-                    RemainingDailyLimitAmount = Math.Max(
-                        effectiveEntitlements.DailyAmountLimit - used,
-                        0m),
+                    RemainingDailyLimitAmount = effectiveEntitlements.DailyAmountLimit.HasValue
+                        ? Math.Max(effectiveEntitlements.DailyAmountLimit.Value - used, 0m)
+                        : null,
                     DailyWithdrawalCountLimit = effectiveEntitlements.DailyCountLimit,
                     UsedDailyWithdrawalCount = usage.UsedCount,
                     RemainingDailyWithdrawalCount = remainingCount,
