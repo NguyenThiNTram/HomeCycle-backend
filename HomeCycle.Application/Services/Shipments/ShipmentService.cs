@@ -1,5 +1,7 @@
 ﻿using AutoMapper;
+using HomeCycle.Application.Commons.Audits;
 using HomeCycle.Application.Commons.Errors;
+using HomeCycle.Application.Commons.Helpers;
 using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Responses.Notifications;
 using HomeCycle.Application.DTOs.Responses.Shipments;
@@ -7,6 +9,7 @@ using HomeCycle.Application.Interfaces.Generics;
 using HomeCycle.Application.Interfaces.Repositories.Agreements;
 using HomeCycle.Application.Interfaces.Repositories.Orders;
 using HomeCycle.Application.Interfaces.Repositories.Shipments;
+using HomeCycle.Application.Interfaces.Services.Audits;
 using HomeCycle.Application.Interfaces.Services.Notifications;
 using HomeCycle.Application.Interfaces.Services.Orders;
 using HomeCycle.Application.Interfaces.Services.Shipments;
@@ -26,6 +29,7 @@ namespace HomeCycle.Application.Services.Shipments
         private readonly IAgreementFormRepository _agreementRepo;
         private readonly INotificationService _notificationService;
         private readonly IOrderTrackingRealtimeService _orderTrackingRealtimeService;
+        private readonly IAuditService _auditService;
         private readonly IUnitOfWork _unitOfWork;
         private readonly IMapper _mapper;
 
@@ -35,6 +39,7 @@ namespace HomeCycle.Application.Services.Shipments
             IAgreementFormRepository agreementRepo,
             INotificationService notificationService,
             IOrderTrackingRealtimeService orderTrackingRealtimeService,
+            IAuditService auditService,
             IUnitOfWork unitOfWork,
             IMapper mapper)
         {
@@ -43,6 +48,7 @@ namespace HomeCycle.Application.Services.Shipments
             _agreementRepo = agreementRepo;
             _notificationService = notificationService;
             _orderTrackingRealtimeService = orderTrackingRealtimeService;
+            _auditService = auditService;
             _unitOfWork = unitOfWork;
             _mapper = mapper;
         }
@@ -120,10 +126,32 @@ namespace HomeCycle.Application.Services.Shipments
                     return Result<ShipmentSellerReadyResponseDto>.Fail(ShipmentErrors.UnsupportedDeliveryMethod);
                 }
 
+                var previousSellerReady = shipment.SellerReadyAt.HasValue;
                 var now = DateTime.UtcNow;
 
                 shipment.SellerReadyAt = now;
                 shipment.UpdatedAt = now;
+
+                var sellerReadyAuditDiff = new AuditDiffBuilder()
+                    .Add("sellerReady", previousSellerReady, true);
+
+                var sellerReadyAuditEvent = new AuditEvent
+                {
+                    Category = AuditCategory.BusinessOperation,
+                    Action = AuditActions.ShipmentSellerReady,
+                    Outcome = AuditOutcome.Success,
+                    ActorType = AuditActorType.User,
+                    UserId = sellerId,
+                    TargetType = AuditTargetTypes.Shipment,
+                    TargetId = shipment.ShipmentId,
+                    OldValues = sellerReadyAuditDiff.OldValues,
+                    NewValues = sellerReadyAuditDiff.NewValues,
+                    Metadata = new Dictionary<string, object?>
+                    {
+                        ["orderId"] = order.OrderId,
+                        ["deliveryMethod"] = shipment.DeliveryMethod.ToString()
+                    }
+                };
 
                 await _shipmentRepo.UpdateAsync(shipment, ct);
 
@@ -149,6 +177,7 @@ namespace HomeCycle.Application.Services.Shipments
                         NotificationTargetType.Order,
                         order.OrderId),
                     ct);
+                await _auditService.EnqueueAsync(sellerReadyAuditEvent, ct);
 
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);

@@ -1,5 +1,6 @@
 ﻿using AutoMapper;
 using FluentValidation;
+using HomeCycle.Application.Commons.Audits;
 using HomeCycle.Application.Commons.Errors;
 using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Requests.Banks;
@@ -9,6 +10,7 @@ using HomeCycle.Application.DTOs.Responses.Users;
 using HomeCycle.Application.Interfaces.Generics;
 using HomeCycle.Application.Interfaces.Repositories.Banks;
 using HomeCycle.Application.Interfaces.Repositories.Users;
+using HomeCycle.Application.Interfaces.Services.Audits;
 using HomeCycle.Application.Interfaces.Services.Configs;
 using HomeCycle.Application.Interfaces.Services.Externals;
 using HomeCycle.Application.Interfaces.Services.Notifications;
@@ -36,6 +38,7 @@ namespace HomeCycle.Application.Services.Personals
         private readonly IFileStorageService _fileStorageService;
         private readonly IFileValidationService _fileValidationService;
         private readonly INotificationService _notificationService;
+        private readonly IAuditService _auditService;
 
         private readonly IValidator<UpdatePersonalProfileRequest> _updateProfileValidator;
         private readonly IValidator<UpdateAvatarRequest> _updateAvatarValidator;
@@ -52,6 +55,7 @@ namespace HomeCycle.Application.Services.Personals
             IFileStorageService fileStorageService,
             IFileValidationService fileValidationService,
             INotificationService notificationService,
+            IAuditService auditService,
             IValidator<UpdatePersonalProfileRequest> updateProfileValidator,
             IValidator<UpdateAvatarRequest> updateAvatarValidator,
             IValidator<UpdateIdCardRequest> updateIdCardValidator,
@@ -70,6 +74,7 @@ namespace HomeCycle.Application.Services.Personals
             _fileStorageService = fileStorageService;
             _fileValidationService = fileValidationService;
             _notificationService = notificationService;
+            _auditService = auditService;
         }
 
         public async Task<Result<PersonalProfileResponse>> GetMyProfileAsync(Guid userId, CancellationToken cancellationToken = default)
@@ -181,6 +186,7 @@ namespace HomeCycle.Application.Services.Personals
             if (user is null) return Result.Fail(ProfileErrors.UserNotFound);
 
             var bank = await _bankAccountRepository.GetByUserIdAsync(userId, cancellationToken);
+            var isNewBankAccount = bank is null;
 
             if (bank is null)
             {
@@ -202,6 +208,24 @@ namespace HomeCycle.Application.Services.Personals
                 await _bankAccountRepository.UpdateAsync(bank, cancellationToken);
             }
 
+
+            var bankAccountAuditEvent = new AuditEvent
+            {
+                Category = AuditCategory.Security,
+                Action = AuditActions.BankAccountChange,
+                Outcome = AuditOutcome.Success,
+                ActorType = AuditActorType.User,
+                UserId = userId,
+                TargetType = AuditTargetTypes.BankAccount,
+                TargetId = bank.UserBankId,
+                Metadata = new Dictionary<string, object?>
+                {
+                    ["created"] = isNewBankAccount,
+                    ["verificationStatus"] = bank.VerifyStatus?.ToString()
+                }
+            };
+
+            await _auditService.EnqueueAsync(bankAccountAuditEvent, cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
             return Result.Success();

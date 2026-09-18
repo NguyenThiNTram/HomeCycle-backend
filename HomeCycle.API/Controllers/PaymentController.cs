@@ -1,8 +1,11 @@
-﻿using HomeCycle.Application.DTOs.Requests.Payments;
+﻿using HomeCycle.Application.Commons.Results;
+using HomeCycle.Application.DTOs.Requests.Payments;
+using HomeCycle.Application.DTOs.Responses.SubscriptionPackages;
 using HomeCycle.Application.Interfaces.Services.Payments;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Swashbuckle.AspNetCore.Annotations;
 using System.Security.Claims;
 
 namespace HomeCycle.API.Controllers
@@ -184,6 +187,122 @@ namespace HomeCycle.API.Controllers
         //    return result.IsSuccess ? Ok(result.Data) : BadRequest(result.Error);
         //}
 
+        [HttpPost("subscriptions/{packageId:guid}/payos/checkout")]
+        [Authorize]
+        [SwaggerOperation(
+            Summary = "Thanh toán gói đăng ký bằng PayOS",
+            Description = "Tạo Pending subscription, Payment và phiên checkout PayOS. Mỗi user chỉ được có tối đa một Pending hoặc Active subscription.")]
+        [ProducesResponseType(typeof(SubscriptionPayOSCheckoutResponseDto), StatusCodes.Status200OK)]
+        public async Task<IActionResult> CreateSubscriptionPayOSCheckout(
+            [FromRoute] Guid packageId,
+            [FromBody] PayOSCheckoutRequest request,
+            CancellationToken ct)
+        {
+            var result = await _paymentService.CreateSubscriptionPayOSCheckoutAsync(
+                packageId,
+                GetUserIdFromToken(),
+                request.ReturnUrl,
+                request.CancelUrl,
+                ct);
+
+            return result.IsSuccess
+                ? Ok(result.Data)
+                : MapSubscriptionPaymentError(result.Error);
+        }
+
+        [HttpPost("subscriptions/{packageId:guid}/wallet/checkout")]
+        [Authorize]
+        [SwaggerOperation(
+            Summary = "Thanh toán gói đăng ký bằng ví nội bộ",
+            Description = "Trừ Available Balance của user, cộng Platform_Revenue và kích hoạt subscription trong cùng database transaction.")]
+        [ProducesResponseType(typeof(SubscriptionPaymentStatusResponseDto), StatusCodes.Status200OK)]
+
+        public async Task<IActionResult> SubscriptionWalletCheckout(
+            [FromRoute] Guid packageId,
+            CancellationToken ct)
+        {
+            var result = await _paymentService.ExecuteSubscriptionWalletPaymentAsync(
+                packageId,
+                GetUserIdFromToken(),
+                ct);
+
+            return result.IsSuccess
+                ? Ok(result.Data)
+                : MapSubscriptionPaymentError(result.Error);
+        }
+
+
+        [HttpGet("subscriptions/{subscriptionId:guid}/status")]
+        [Authorize]
+        [SwaggerOperation(
+            Summary = "Đồng bộ trạng thái thanh toán subscription",
+            Description = "Trả trạng thái Payment và Subscription. Nếu Payment PayOS còn Pending, backend đồng bộ trạng thái mới nhất từ PayOS trước khi trả kết quả.")]
+        [ProducesResponseType(typeof(SubscriptionPaymentStatusResponseDto), StatusCodes.Status200OK)]
+        public async Task<IActionResult> SyncSubscriptionPaymentStatus(
+            [FromRoute] Guid subscriptionId,
+            CancellationToken ct)
+        {
+            var result = await _paymentService.SyncSubscriptionPaymentStatusAsync(
+                subscriptionId,
+                GetUserIdFromToken(),
+                ct);
+
+            return result.IsSuccess
+                ? Ok(result.Data)
+                : MapSubscriptionPaymentError(result.Error);
+        }
+
+
+        private IActionResult MapSubscriptionPaymentError(Error? error)
+        {
+            return error?.Code switch
+            {
+                "SubscriptionPackage.NotFound" or
+                "UserSubscription.NotFound" or
+                "Payment.NotFound" or
+                "AUTH_USER_NOT_FOUND"
+                    => NotFound(error),
+
+                "Auth.Forbidden" or
+                "UserSubscription.RoleNotEligible" or
+                "UserSubscription.UserInactive"
+                    => StatusCode(
+                        StatusCodes.Status403Forbidden,
+                        error),
+
+                "UserSubscription.OpenExists" or
+                "UserSubscription.InvalidStatus" or
+                "SubscriptionPackage.Inactive" or
+                "UserSubscription.InsufficientBalance"
+                    => Conflict(error),
+
+                "Payment.InvalidAmount" or
+                "Payment.InvalidRedirectUrl"
+                    => BadRequest(error),
+
+                "Payment.InvalidGatewayResponse"
+                    => StatusCode(
+                        StatusCodes.Status502BadGateway,
+                        error),
+
+                "Payment.OrderCodeConflict"
+                    => StatusCode(
+                        StatusCodes.Status503ServiceUnavailable,
+                        error),
+
+                "UserSubscription.WalletNotFound" or
+                "UserSubscription.PlatformRevenueWalletNotFound" or
+                "Payment.CreateFailed" or
+                "WalletPayment.TransactionFailed"
+                    => StatusCode(
+                        StatusCodes.Status500InternalServerError,
+                        error),
+
+                _ => StatusCode(
+                    StatusCodes.Status500InternalServerError,
+                    error)
+            };
+        }
 
         private Guid GetUserIdFromToken()
         {

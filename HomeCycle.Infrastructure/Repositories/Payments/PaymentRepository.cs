@@ -80,7 +80,8 @@ namespace HomeCycle.Infrastructure.Repositories.Payments
                     Amount = x.Amount ?? 0,
                     PaymentMethod = x.PaymentMethod.HasValue ? (PaymentMethod)x.PaymentMethod.Value : PaymentMethod.Unknown,
                     PaymentStatus = x.PaymentStatus.HasValue ? (PaymentStatus)x.PaymentStatus.Value : PaymentStatus.Pending,
-                    OrderId = x.OrderId
+                    OrderId = x.OrderId,
+                    SubscriptionId = x.SubscriptionId
                 })
                 .ToListAsync(ct);
 
@@ -133,6 +134,15 @@ namespace HomeCycle.Infrastructure.Repositories.Payments
                     $"SELECT * FROM public.\"Payment\" WHERE \"PaymentId\" = {paymentId} FOR UPDATE")
                 .AsNoTracking()
                 .FirstOrDefaultAsync(ct);
+
+            return entity?.ToDomain();
+        }
+
+        public async Task<payment?> GetBySubscriptionIdAsync(Guid subscriptionId, CancellationToken ct = default)
+        {
+            var entity = await _db.Payments
+                .AsNoTracking()
+                .SingleOrDefaultAsync(x => x.SubscriptionId == subscriptionId, ct);
 
             return entity?.ToDomain();
         }

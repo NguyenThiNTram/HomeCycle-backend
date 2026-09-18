@@ -13,7 +13,7 @@ namespace HomeCycle.Application.Validations.PlatformPolicies
         public UpdateWithdrawalPolicyRequestValidator()
         {
             RuleFor(x => x)
-                .Must(x => x.MinimumWithdrawalAmount.HasValue || x.MaximumWithdrawalAmount.HasValue || x.DailyWithdrawalLimit.HasValue)
+                .Must(x => x.MinimumWithdrawalAmount.HasValue || x.MaximumWithdrawalAmount.HasValue || x.DailyWithdrawalLimit.HasValue || x.DailyWithdrawalCountLimit.HasValue)
                 .WithMessage("Phải cung cấp ít nhất một cấu hình cần thay đổi.");
 
             RuleFor(x => x.MinimumWithdrawalAmount)
@@ -27,6 +27,10 @@ namespace HomeCycle.Application.Validations.PlatformPolicies
             RuleFor(x => x.DailyWithdrawalLimit)
                 .Must(IsValidAmount)
                 .WithMessage("DailyWithdrawalLimit phải là số nguyên dương theo đơn vị VNĐ.");
+
+            RuleFor(x => x.DailyWithdrawalCountLimit)
+                .Must(value => !value.HasValue || value.Value > 0)
+                .WithMessage("DailyWithdrawalCountLimit phải là số nguyên dương.");
         }
 
         private static bool IsValidAmount(decimal? value)

@@ -398,7 +398,7 @@ namespace HomeCycle.Application.Commons.Errors
             new("PlatformPolicy.UnsupportedType", $"Policy type '{policyType}' không được hệ thống hỗ trợ.");
 
         public static readonly Error InvalidWithdrawalPolicy =
-            new("PlatformPolicy.InvalidWithdrawalPolicy", "Withdrawal Policy không hợp lệ. Yêu cầu MinimumWithdrawalAmount <= MaximumWithdrawalAmount <= DailyWithdrawalLimit.");
+            new("PlatformPolicy.InvalidWithdrawalPolicy", "Withdrawal Policy không hợp lệ. Các hạn mức tiền phải là số nguyên dương, MinimumWithdrawalAmount <= MaximumWithdrawalAmount <= DailyWithdrawalLimit và DailyWithdrawalCountLimit > 0.");
     }
 
     public static class AgreementErrors
@@ -656,5 +656,59 @@ namespace HomeCycle.Application.Commons.Errors
 
         public static readonly Error TargetNotAllowed =
             new("DisputeCategory.TargetNotAllowed", "Loại tranh chấp không áp dụng cho đối tượng này.");
+    }
+
+    public static class AuditErrors
+    {
+        public static readonly Error NotFound = new("AuditLog.NotFound", "Không tìm thấy audit log.");
+        public static readonly Error InvalidDateRange = new("AuditLog.InvalidDateRange", "FromUtc không được lớn hơn ToUtc.");
+        public static Error InvalidFilter(string field) =>
+            new("AuditLog.InvalidFilter", $"Bộ lọc '{field}' không hợp lệ.");
+        public static Error FilterTooLong(string field, int maxLength) =>
+            new("AuditLog.FilterTooLong", $"Bộ lọc '{field}' không được vượt quá {maxLength} ký tự.");
+    }
+
+    public static class SubscriptionPackageErrors
+    {
+        public static readonly Error NotFound =
+            new("SubscriptionPackage.NotFound", "Không tìm thấy gói đăng ký.");
+
+        public static readonly Error CodeAlreadyExists =
+            new("SubscriptionPackage.CodeAlreadyExists", "Code của gói đăng ký đã tồn tại.");
+
+        public static readonly Error NameAlreadyExists =
+            new("SubscriptionPackage.NameAlreadyExists", "Tên gói đăng ký đã tồn tại.");
+        public static readonly Error Inactive =
+            new("SubscriptionPackage.Inactive", "Gói đăng ký hiện không còn hoạt động.");
+
+        public static Error InvalidEntitlement(string message) =>
+            new("SubscriptionPackage.InvalidEntitlement", message);
+    }
+
+    public static class UserSubscriptionErrors
+    {
+        public static readonly Error NotFound =
+            new("UserSubscription.NotFound", "Không tìm thấy subscription.");
+
+        public static readonly Error OpenSubscriptionExists =
+            new("UserSubscription.OpenExists", "Bạn đang có subscription Pending hoặc Active.");
+
+        public static readonly Error RoleNotEligible =
+            new("UserSubscription.RoleNotEligible", "Gói đăng ký không áp dụng cho loại tài khoản hiện tại.");
+
+        public static readonly Error UserInactive =
+            new("UserSubscription.UserInactive", "Tài khoản phải ở trạng thái Active để mua gói đăng ký.");
+
+        public static readonly Error InvalidStatus =
+            new("UserSubscription.InvalidStatus", "Trạng thái subscription hiện tại không cho phép thao tác này.");
+
+        public static readonly Error WalletNotFound =
+            new("UserSubscription.WalletNotFound", "Không tìm thấy ví người dùng.");
+
+        public static readonly Error InsufficientBalance =
+            new("UserSubscription.InsufficientBalance", "Số dư khả dụng không đủ để mua gói đăng ký.");
+
+        public static readonly Error PlatformRevenueWalletNotFound =
+            new("UserSubscription.PlatformRevenueWalletNotFound", "Không tìm thấy ví doanh thu hệ thống.");
     }
 }

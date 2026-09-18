@@ -1,4 +1,6 @@
-﻿using HomeCycle.Application.Commons.Errors;
+﻿using HomeCycle.Application.Commons.Audits;
+using HomeCycle.Application.Commons.Errors;
+using HomeCycle.Application.Commons.Helpers;
 using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Requests.Moderators;
 using HomeCycle.Application.DTOs.Responses.Moderators;
@@ -8,6 +10,7 @@ using HomeCycle.Application.Interfaces.Generics;
 using HomeCycle.Application.Interfaces.Repositories.Banks;
 using HomeCycle.Application.Interfaces.Repositories.Profiles;
 using HomeCycle.Application.Interfaces.Repositories.Users;
+using HomeCycle.Application.Interfaces.Services.Audits;
 using HomeCycle.Application.Interfaces.Services.Auths;
 using HomeCycle.Application.Interfaces.Services.Moderators;
 using HomeCycle.Application.Interfaces.Services.Notifications;
@@ -34,6 +37,7 @@ namespace HomeCycle.Application.Services.Moderators
         private readonly INotificationService _notificationService;
         private readonly IUnitOfWork _unitOfWork;
         private readonly ILogger<ModeratorService> _logger;
+        private readonly IAuditService _auditService;
 
         public ModeratorService(
             IBusinessProfileRepository businessProfileRepository,
@@ -45,7 +49,8 @@ namespace HomeCycle.Application.Services.Moderators
             IEmailService emailService,
             INotificationService notificationService,
             IUnitOfWork unitOfWork,
-            ILogger<ModeratorService> logger)
+            ILogger<ModeratorService> logger,
+            IAuditService auditService)
         {
             _businessProfileRepository = businessProfileRepository;
             _businessDocumentRepository = businessDocumentRepository;
@@ -57,6 +62,7 @@ namespace HomeCycle.Application.Services.Moderators
             _unitOfWork = unitOfWork;
             _logger = logger;
             _personalProfileRepository = personalProfileRepository;
+            _auditService = auditService;
         }
 
         public async Task<Result<string>> ReviewBusinessProfileAsync(
@@ -79,6 +85,8 @@ namespace HomeCycle.Application.Services.Moderators
                 return Result<string>.Fail(ValidationErrors.InvalidRequest(
                     "Hồ sơ này đã được duyệt hoặc từ chối trước đó, không còn ở trạng thái chờ duyệt."));
             }
+
+            var previousProfileStatus = (BusinessProfileStatus)profile.Status;
 
             // 3. Validation rule: Bắt buộc nhập lý do nếu Từ chối
             if (!request.IsApproved && string.IsNullOrWhiteSpace(request.RejectReason))
@@ -125,6 +133,22 @@ namespace HomeCycle.Application.Services.Moderators
                         NotificationTargetType.BusinessProfile,
                         profile.BusinessProfileId),
                     cancellationToken);
+
+                var reviewProfileAuditDiff = new AuditDiffBuilder()
+                    .Add("status", previousProfileStatus.ToString(), ((BusinessProfileStatus)profile.Status).ToString());
+
+                await _auditService.EnqueueAsync(new AuditEvent
+                {
+                    Category = AuditCategory.Administration,
+                    Action = AuditActions.BusinessProfileReview,
+                    Outcome = AuditOutcome.Success,
+                    ActorType = AuditActorType.User,
+                    UserId = moderatorId,
+                    TargetType = AuditTargetTypes.BusinessProfile,
+                    TargetId = profile.BusinessProfileId,
+                    OldValues = reviewProfileAuditDiff.OldValues,
+                    NewValues = reviewProfileAuditDiff.NewValues
+                }, cancellationToken);
 
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync();
@@ -387,7 +411,7 @@ namespace HomeCycle.Application.Services.Moderators
             }
 
             var now = DateTime.UtcNow;
-
+            var previousVerificationStatus = profile.VerificationStatus;
             notification? reviewNotification = null;
             await _unitOfWork.BeginTransactionAsync();
 
@@ -416,6 +440,22 @@ namespace HomeCycle.Application.Services.Moderators
                         NotificationTargetType.PersonalProfile,
                         profile.PersonalProfileId),
                     cancellationToken);
+
+                var personalReviewAuditDiff = new AuditDiffBuilder()
+                    .Add("verificationStatus", previousVerificationStatus?.ToString(), profile.VerificationStatus?.ToString());
+
+                await _auditService.EnqueueAsync(new AuditEvent
+                {
+                    Category = AuditCategory.Administration,
+                    Action = AuditActions.PersonalProfileReviewIdentity,
+                    Outcome = AuditOutcome.Success,
+                    ActorType = AuditActorType.User,
+                    UserId = moderatorId,
+                    TargetType = AuditTargetTypes.PersonalProfile,
+                    TargetId = profile.PersonalProfileId,
+                    OldValues = personalReviewAuditDiff.OldValues,
+                    NewValues = personalReviewAuditDiff.NewValues
+                }, cancellationToken);
 
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync();

@@ -19,7 +19,7 @@ public class user_subscription
     public DateTime? ActivatedAt { get; set; }
     public DateTime? ExpiresAt { get; set; }
     public DateTime CreatedAt { get; set; }
-
+    public List<user_subscription_entitlement> Entitlements { get; set; } = new();
     public user_subscription()
     {
     }

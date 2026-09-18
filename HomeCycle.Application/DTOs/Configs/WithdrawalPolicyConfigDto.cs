@@ -11,5 +11,6 @@ namespace HomeCycle.Application.DTOs.Configs
         public decimal MinimumWithdrawalAmount { get; set; }
         public decimal MaximumWithdrawalAmount { get; set; }
         public decimal DailyWithdrawalLimit { get; set; }
+        public int DailyWithdrawalCountLimit { get; set; }
     }
 }

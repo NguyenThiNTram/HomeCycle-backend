@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using HomeCycle.Infrastructure.Persistences.Entities;
 using Microsoft.EntityFrameworkCore;
 
 namespace HomeCycle.Infrastructure;
@@ -28,6 +29,13 @@ public partial class User_Subscription
     public int? Status { get; set; }
 
     public DateTime CreatedAt { get; set; }
+
+    [InverseProperty("Subscription")]
+    public virtual ICollection<User_Subscription_Entitlement> User_Subscription_Entitlements { get; set; } =
+    new List<User_Subscription_Entitlement>();
+
+    [InverseProperty("Subscription")]
+    public virtual Payment? Payment { get; set; }
 
     [ForeignKey("PackageId")]
     [InverseProperty("User_Subscriptions")]

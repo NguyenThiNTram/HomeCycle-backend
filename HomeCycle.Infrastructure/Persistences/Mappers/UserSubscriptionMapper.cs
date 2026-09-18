@@ -21,13 +21,15 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 ActivatedAt = entity.ActivatedAt,
                 ExpiresAt = entity.ExpiresAt,
                 Status = entity.Status,
-                CreatedAt = entity.CreatedAt
+                CreatedAt = entity.CreatedAt,
+                Entitlements = entity.User_Subscription_Entitlements
+                    .Select(x => x.ToDomain())
+                    .ToList()
             };
         }
-        public static User_Subscription ToInfrastructure(this user_subscription entity)
+        public static User_Subscription ToInfrastructure(this user_subscription entity, bool includeEntitlements = true)
         {
-            if (entity == null) return null;
-            return new User_Subscription
+            var result = new User_Subscription
             {
                 SubscriptionId = entity.SubscriptionId,
                 UserId = entity.UserId,
@@ -38,6 +40,15 @@ namespace HomeCycle.Infrastructure.Persistences.Mappers
                 Status = entity.Status,
                 CreatedAt = entity.CreatedAt
             };
+
+            if (includeEntitlements)
+            {
+                result.User_Subscription_Entitlements = entity.Entitlements
+                    .Select(x => x.ToInfrastructure())
+                    .ToList();
+            }
+
+            return result;
         }
     }
 }
