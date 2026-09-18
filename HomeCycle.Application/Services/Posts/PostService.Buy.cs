@@ -4,6 +4,7 @@ using HomeCycle.Application.Commons.Paginations;
 using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Requests.Posts;
 using HomeCycle.Application.DTOs.Requests.Products;
+using HomeCycle.Application.DTOs.Requests.SupplierMatching;
 using HomeCycle.Application.DTOs.Responses.Posts;
 using HomeCycle.Application.DTOs.Responses.Notifications;
 using HomeCycle.Application.DTOs.Responses.SupplierMatching;
@@ -229,7 +230,7 @@ public partial class PostService
             return Result<PagedResult<BuyPostMatchResponse>>.Fail(PostErrors.NotFound);
         if (buy.OwnerId != ownerId)
             return Result<PagedResult<BuyPostMatchResponse>>.Fail(PostErrors.Forbidden);
-        var matched = await _supplierMatchService.MatchAsync(
+        var matched = await _supplierMatchService.MatchBackendOnlyAsync(
             SupplierDemandContextBuilder.FromBuyPost(buy),
             (request.PageNumber - 1) * request.PageSize,
             request.PageSize,
@@ -245,6 +246,7 @@ public partial class PostService
     public async Task<Result<SupplierMatchResponse>> GetSupplierMatchesAsync(
         Guid ownerId,
         Guid buyPostId,
+        SupplierMatchAdvancedFilterRequest? advancedFilters,
         CancellationToken cancellationToken = default)
     {
         var buy = await _postRepository.GetDetailByIdAsync(buyPostId, cancellationToken);
@@ -255,7 +257,7 @@ public partial class PostService
             return Result<SupplierMatchResponse>.Fail(PostErrors.Forbidden);
 
         var response = await _supplierMatchService.MatchAsync(
-            SupplierDemandContextBuilder.FromBuyPost(buy), 0, int.MaxValue, cancellationToken);
+            SupplierDemandContextBuilder.FromBuyPost(buy, advancedFilters), 0, int.MaxValue, cancellationToken);
         response.BuyPostId = buyPostId;
         return Result<SupplierMatchResponse>.Success(response);
     }
@@ -264,11 +266,15 @@ public partial class PostService
     {
         try
         {
-            await GetSupplierMatchesAsync(ownerId, buyPostId, cancellationToken);
+            var buy = await _postRepository.GetDetailByIdAsync(buyPostId, cancellationToken);
+            if (buy?.Product is null || buy.OwnerId != ownerId || buy.PostType != PostType.Buy)
+                return;
+            await _supplierMatchService.MatchInitialBackendAsync(
+                SupplierDemandContextBuilder.FromBuyPost(buy), 3, cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            // Bài mua đã commit; request bị hủy chỉ dừng bước warm cache.
+            return;
         }
         catch (Exception exception)
         {

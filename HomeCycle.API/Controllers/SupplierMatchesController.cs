@@ -5,6 +5,7 @@ using HomeCycle.Application.Interfaces.Services.SupplierMatching;
 using HomeCycle.Application.Interfaces.Services.Posts;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
 
 namespace HomeCycle.API.Controllers;
 
@@ -46,10 +47,19 @@ public sealed class SupplierMatchesController(
     [HttpPost("buy-post/{buyPostId:guid}")]
     public async Task<IActionResult> MatchBuyPost(
         Guid buyPostId,
+        [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)]
+        SupplierMatchAdvancedFilterRequest? advancedFilters,
         CancellationToken cancellationToken)
     {
         if (UserId is not Guid userId) return Unauthorized();
-        var result = await posts.GetSupplierMatchesAsync(userId, buyPostId, cancellationToken);
+        if (advancedFilters?.MinimumSellerRating is < 0 or > 5)
+            return BadRequest(new
+            {
+                code = "INVALID_ADVANCED_FILTERS",
+                message = "Điểm đánh giá nhà cung cấp phải nằm trong khoảng từ 0 đến 5."
+            });
+        var result = await posts.GetSupplierMatchesAsync(
+            userId, buyPostId, advancedFilters, cancellationToken);
         if (result.IsSuccess) return Ok(result.Data);
         return result.Error?.Code switch
         {

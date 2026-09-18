@@ -9,7 +9,9 @@ public sealed record SupplierMatchCachedDecision(
 
 public sealed record SupplierMatchCacheEntry(
     IReadOnlyList<SupplierMatchCachedDecision> Decisions,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    string RankingSource,
+    string AiStatus);
 
 public sealed record SupplierCandidateLiveState(
     Guid SellPostId,

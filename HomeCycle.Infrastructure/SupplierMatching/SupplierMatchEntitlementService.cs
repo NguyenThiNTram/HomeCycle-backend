@@ -30,14 +30,10 @@ public sealed partial class SupplierMatchEntitlementService(
             .Select(subscription => subscription.Package.Name)
             .ToListAsync(cancellationToken);
 
-        var vipCodes = (settings.VipPackageCodes ?? [])
-            .Select(NormalizeCode)
-            .Where(code => code.Length > 0)
-            .ToArray();
         var isVip = packageNames
             .Where(name => !string.IsNullOrWhiteSpace(name))
             .Select(name => NormalizeCode(name!))
-            .Any(name => vipCodes.Any(code => name.Contains(code, StringComparison.Ordinal)));
+            .Any(name => IsVipPackageName(name, settings));
 
         return isVip
             ? new SupplierMatchEntitlement(
@@ -55,6 +51,39 @@ public sealed partial class SupplierMatchEntitlementService(
                 false,
                 false);
     }
+
+    public async Task<IReadOnlyCollection<Guid>> GetActiveVipUserIdsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var settings = options.Value;
+        var activeStatuses = settings.ActiveSubscriptionStatuses ?? [];
+        var now = clock.GetUtcNow().UtcDateTime;
+        var subscriptions = await db.User_Subscriptions.AsNoTracking()
+            .Where(subscription =>
+                subscription.Package.IsActive &&
+                (!subscription.ActivatedAt.HasValue || subscription.ActivatedAt <= now) &&
+                (!subscription.ExpiresAt.HasValue || subscription.ExpiresAt > now) &&
+                (!subscription.Status.HasValue || activeStatuses.Contains(subscription.Status.Value)))
+            .Select(subscription => new
+            {
+                subscription.UserId,
+                subscription.Package.Name
+            })
+            .ToListAsync(cancellationToken);
+
+        return subscriptions
+            .Where(subscription => !string.IsNullOrWhiteSpace(subscription.Name) &&
+                IsVipPackageName(NormalizeCode(subscription.Name!), settings))
+            .Select(subscription => subscription.UserId)
+            .Distinct()
+            .ToArray();
+    }
+
+    private static bool IsVipPackageName(string normalizedName, SupplierMatchingOptions settings) =>
+        (settings.VipPackageCodes ?? [])
+        .Select(NormalizeCode)
+        .Where(code => code.Length > 0)
+        .Any(code => normalizedName.Contains(code, StringComparison.Ordinal));
 
     private static string NormalizeCode(string value) =>
         NonAlphaNumeric().Replace(value.Trim().ToUpperInvariant(), string.Empty);

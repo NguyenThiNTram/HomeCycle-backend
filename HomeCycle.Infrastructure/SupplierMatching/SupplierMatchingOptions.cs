@@ -7,6 +7,7 @@ public sealed class SupplierMatchingOptions
     public int FreeDailyAiRefreshLimit { get; set; } = 3;
     public int VipDailyAiRefreshLimit { get; set; } = 25;
     public int CacheMinutes { get; set; } = 30;
+    public int FallbackCacheMinutes { get; set; } = 3;
     public int[] ActiveSubscriptionStatuses { get; set; } = [1];
     public string[] VipPackageCodes { get; set; } =
         ["VIP", "PREMIUM", "BUSINESS", "CAOCAP", "DOANHNGHIEP"];

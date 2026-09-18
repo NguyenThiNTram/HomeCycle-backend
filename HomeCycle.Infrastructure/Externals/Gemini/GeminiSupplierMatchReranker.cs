@@ -32,18 +32,34 @@ public sealed class GeminiSupplierMatchReranker(
         timeout.CancelAfter(TimeSpan.FromSeconds(Math.Max(1, settings.SupplierMatchRerankingTimeoutSeconds)));
         try
         {
+            var aliases = candidates.Select(candidate => candidate.Alias).Distinct(StringComparer.Ordinal).ToArray();
+            var configuredMaximum = Math.Clamp(
+                settings.SupplierMatchRerankingMaxOutputTokens, 500, 2000);
+            var maxOutputTokens = Math.Clamp(
+                300 + candidates.Count * 80, 500, configuredMaximum);
             var response = await gemini.GenerateContentAsync(
                 settings.BuyMatchingModel,
                 SupplierMatchRerankPrompt.Build(demand, candidates),
                 new GenerateContentConfig
                 {
                     ResponseMimeType = "application/json",
-                    ResponseJsonSchema = CreateSchema(Math.Min(candidates.Count, 20)),
+                    ResponseJsonSchema = CreateSchema(aliases),
                     Temperature = 0.1,
-                    MaxOutputTokens = Math.Clamp(settings.SupplierMatchRerankingMaxOutputTokens, 200, 2000)
+                    MaxOutputTokens = maxOutputTokens
                 },
                 timeout.Token);
-            var parsed = Parse(response.Text);
+            var responseText = response.Text?.Trim();
+            if (!LooksLikeCompleteJsonObject(responseText))
+            {
+                logger.LogWarning(
+                    "Gemini supplier reranking returned incomplete JSON: candidateCount={CandidateCount}, responseCharacters={ResponseCharacters}, promptTokens={PromptTokens}, outputTokens={OutputTokens}",
+                    candidates.Count, responseText?.Length ?? 0,
+                    response.UsageMetadata?.PromptTokenCount,
+                    response.UsageMetadata?.CandidatesTokenCount);
+                return null;
+            }
+
+            var parsed = Parse(responseText);
             logger.LogInformation(
                 "Gemini supplier reranking completed: candidateCount={CandidateCount}, generatedRankingCount={RankingCount}, promptTokens={PromptTokens}, outputTokens={OutputTokens}",
                 candidates.Count, parsed?.Rankings.Count ?? 0,
@@ -55,6 +71,10 @@ public sealed class GeminiSupplierMatchReranker(
             logger.LogWarning("Gemini supplier reranking timed out");
             return null;
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch (JsonException exception)
         {
             logger.LogWarning(exception, "Gemini supplier reranking returned invalid JSON");
@@ -65,9 +85,14 @@ public sealed class GeminiSupplierMatchReranker(
             logger.LogWarning(exception, "Gemini supplier reranking request failed");
             return null;
         }
+        catch (Exception exception)
+        {
+            logger.LogWarning(exception, "Gemini supplier reranking failed unexpectedly");
+            return null;
+        }
     }
 
-    private static object CreateSchema(int maxItems) => new
+    private static object CreateSchema(IReadOnlyCollection<string> aliases) => new
     {
         type = "object",
         properties = new
@@ -76,20 +101,25 @@ public sealed class GeminiSupplierMatchReranker(
             {
                 type = "array",
                 minItems = 1,
-                maxItems,
+                maxItems = aliases.Count,
                 items = new
                 {
                     type = "object",
                     properties = new
                     {
-                        alias = new { type = "string" },
+                        alias = new { type = "string", @enum = aliases.ToArray() },
                         aiScore = new { type = "number", minimum = 0, maximum = 10 },
                         reasonCodes = new
                         {
-                            type = "array", minItems = 1, maxItems = 4,
+                            type = "array", minItems = 1, maxItems = 3,
                             items = new { type = "string", @enum = AllowedReasons.ToArray() }
                         },
-                        shortExplanation = new { type = "string" }
+                        shortExplanation = new
+                        {
+                            type = "string",
+                            maxLength = 160,
+                            description = "Một câu tiếng Việt ngắn giải thích lý do xếp hạng."
+                        }
                     },
                     required = new[] { "alias", "aiScore", "reasonCodes", "shortExplanation" },
                     additionalProperties = false
@@ -102,9 +132,10 @@ public sealed class GeminiSupplierMatchReranker(
 
     private static SupplierMatchAiResult? Parse(string? text)
     {
-        if (string.IsNullOrWhiteSpace(text)) return null;
+        if (!LooksLikeCompleteJsonObject(text)) return null;
         using var document = JsonDocument.Parse(text);
-        if (!document.RootElement.TryGetProperty("rankings", out var rankings) ||
+        if (document.RootElement.ValueKind != JsonValueKind.Object ||
+            !document.RootElement.TryGetProperty("rankings", out var rankings) ||
             rankings.ValueKind != JsonValueKind.Array)
             return null;
 
@@ -129,13 +160,20 @@ public sealed class GeminiSupplierMatchReranker(
                 .Where(reason => reason is not null && AllowedReasons.Contains(reason))
                 .Select(reason => reason!)
                 .Distinct(StringComparer.Ordinal)
-                .Take(4)
+                .Take(3)
                 .ToArray();
             if (reasons.Length == 0) continue;
             var explanation = explanationElement.GetString()?.Trim() ?? string.Empty;
-            if (explanation.Length > 240) explanation = explanation[..240];
+            if (explanation.Length > 160) explanation = explanation[..160];
             items.Add(new SupplierMatchAiDecision(alias, score, reasons, explanation));
         }
         return items.Count == 0 ? null : new SupplierMatchAiResult(items);
+    }
+
+    private static bool LooksLikeCompleteJsonObject(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return false;
+        var value = text.AsSpan().Trim();
+        return value.Length >= 2 && value[0] == '{' && value[^1] == '}';
     }
 }

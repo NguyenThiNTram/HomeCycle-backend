@@ -1,6 +1,7 @@
 using HomeCycle.Application.Commons.Paginations;
 using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Requests.Posts;
+using HomeCycle.Application.DTOs.Requests.SupplierMatching;
 using HomeCycle.Application.DTOs.Responses.Posts;
 using System;
 using System.Collections.Generic;
@@ -15,7 +16,11 @@ namespace HomeCycle.Application.Interfaces.Services.Posts
         Task<Result<SellPostDetailResponse>> GetSellDetailAsync(Guid postId, CancellationToken cancellationToken = default);
         Task<Result<BuyPostDetailResponse>> GetBuyDetailAsync(Guid postId, CancellationToken cancellationToken = default);
         Task<Result<PagedResult<BuyPostMatchResponse>>> GetMatchesAsync(Guid ownerId, Guid buyPostId, PaginationRequest request, CancellationToken cancellationToken = default);
-        Task<Result<HomeCycle.Application.DTOs.Responses.SupplierMatching.SupplierMatchResponse>> GetSupplierMatchesAsync(Guid ownerId, Guid buyPostId, CancellationToken cancellationToken = default);
+        Task<Result<HomeCycle.Application.DTOs.Responses.SupplierMatching.SupplierMatchResponse>> GetSupplierMatchesAsync(
+            Guid ownerId,
+            Guid buyPostId,
+            SupplierMatchAdvancedFilterRequest? advancedFilters = null,
+            CancellationToken cancellationToken = default);
         Task<Result<bool>> DeleteBuyPostAsync(Guid ownerId, Guid postId, CancellationToken cancellationToken = default);
         Task ExpireBuyPostsAsync(CancellationToken cancellationToken = default);
         Task<Result<PostResponse>> CreateSellPostAsync(Guid ownerId, CreateSellPostRequest request, CancellationToken cancellationToken = default);

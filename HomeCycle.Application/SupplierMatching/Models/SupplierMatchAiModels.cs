@@ -3,15 +3,15 @@ namespace HomeCycle.Application.SupplierMatching.Models;
 public sealed record SupplierMatchAiCandidate(
     string Alias,
     decimal BackendScore,
-    string MatchLevel,
     string ModelMatchLevel,
-    decimal? Price,
-    int AvailableQuantity,
-    bool CanFulfillQuantity,
+    decimal? PriceFit,
+    decimal QuantityFit,
+    int AttributeMatched,
+    int AttributeConflicted,
+    int AttributeUnknown,
+    decimal? ConditionFit,
+    bool? CityMatched,
     double? SellerRating,
-    IReadOnlyList<string> MatchedCriteria,
-    IReadOnlyList<string> UnmatchedCriteria,
-    IReadOnlyList<string> UnknownCriteria,
     IReadOnlyList<string> ReasonCodes);
 
 public sealed record SupplierMatchAiDecision(
