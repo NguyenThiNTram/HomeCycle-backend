@@ -216,6 +216,52 @@ namespace HomeCycle.Infrastructure.Repositories.Posts
             return entity?.ToDomain();
         }
 
+        public async Task<PagedResult<post>> DiscoverBusinessAsync(
+            Guid userId,
+            HomeCycle.Application.DTOs.Responses.Profiles.BusinessSurveyDetailResponse survey,
+            PaginationRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            var cities = survey.TargetCities.Where(city => !string.IsNullOrWhiteSpace(city))
+                .Select(city => city.Trim().ToLowerInvariant()).Distinct().ToArray();
+            var productTypeIds = survey.ProductTypeIds.Distinct().ToArray();
+            var damageLevels = survey.AcceptableDamageLevels.Distinct().ToArray();
+            var functionalityStatuses = survey.AcceptableFunctionalityStatuses.Distinct().ToArray();
+            var retail = survey.ProcurementScales.Contains((int)ProcurementScale.Retail);
+            var bulkLot = survey.ProcurementScales.Contains((int)ProcurementScale.BulkLot);
+            var now = DateTime.UtcNow;
+
+            var query = _db.Posts.AsNoTracking()
+                .Include(x => x.User)
+                .Include(x => x.Product).ThenInclude(x => x!.Category)
+                .Include(x => x.Product).ThenInclude(x => x!.ProductType)
+                .Include(x => x.Product).ThenInclude(x => x!.Brand)
+                .Where(x => x.PostType == (int)PostType.Sell &&
+                    x.Status == (int)PostStatus.Active &&
+                    (!x.ExpiryDate.HasValue || x.ExpiryDate > now) &&
+                    x.RemainingQuantity > 0 && x.OwnerId != userId &&
+                    x.User != null && x.User.Status == (int)UserStatus.Active &&
+                    x.City != null && cities.Contains(x.City.Trim().ToLower()) &&
+                    x.Product != null &&
+                    x.Product.ProductTypeId.HasValue && productTypeIds.Contains(x.Product.ProductTypeId.Value) &&
+                    x.Product.DamageLevel.HasValue && damageLevels.Contains(x.Product.DamageLevel.Value) &&
+                    x.Product.FunctionalityStatus.HasValue && functionalityStatuses.Contains(x.Product.FunctionalityStatus.Value) &&
+                    ((retail && x.RemainingQuantity == 1) || (bulkLot && x.RemainingQuantity >= 2)));
+
+            var totalCount = await query.CountAsync(cancellationToken);
+            var entities = await query.OrderByDescending(x => x.CreatedAt).ThenBy(x => x.PostId)
+                .Skip(checked((request.PageNumber - 1) * request.PageSize))
+                .Take(request.PageSize).ToListAsync(cancellationToken);
+
+            return new PagedResult<post>
+            {
+                Items = entities.Select(x => x.ToDomain()).ToList(),
+                PageNumber = request.PageNumber,
+                PageSize = request.PageSize,
+                TotalCount = totalCount
+            };
+        }
+
         public async Task<PagedResult<post>> SearchAsync(PostSearchRequest request, CancellationToken cancellationToken = default)
         {
             var query = _db.Posts
