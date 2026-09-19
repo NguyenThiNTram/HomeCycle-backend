@@ -68,6 +68,20 @@ namespace HomeCycle.API.Controllers
             return Ok(result.Data);
         }
 
+        [HttpGet("free-plan")]
+        [AllowAnonymous]
+        [SwaggerOperation(
+            Summary = "Lấy định nghĩa gói Free",
+            Description = "Trả quyền lợi và hạn mức mặc định của gói Free theo loại tài khoản để hiển thị so sánh gói.")]
+        [ProducesResponseType(typeof(PlanDefinitionResponseDto), StatusCodes.Status200OK)]
+        public IActionResult GetFreePlan([FromQuery] UserRole targetRole)
+        {
+            var result = _userSubscriptionService.GetFreePlan(targetRole);
+            return result.IsSuccess
+                ? Ok(result.Data)
+                : MapError(result.Error);
+        }
+
         [HttpGet("me/subscription")]
         [Authorize]
         [SwaggerOperation(
@@ -83,6 +97,28 @@ namespace HomeCycle.API.Controllers
                 return Unauthorized();
 
             var result = await _userSubscriptionService.GetCurrentAsync(
+                userId,
+                DateTime.UtcNow,
+                cancellationToken);
+
+            return result.IsSuccess
+                ? Ok(result.Data)
+                : MapError(result.Error);
+        }
+
+        [HttpGet("me/benefits")]
+        [Authorize]
+        [SwaggerOperation(
+            Summary = "Lấy quyền lợi gói hiệu lực của người dùng",
+            Description = "Luôn trả quyền lợi Free hoặc VIP, hạn mức AI, số lượt còn lại và các tính năng được phép.")]
+        [ProducesResponseType(typeof(PlanBenefitsResponseDto), StatusCodes.Status200OK)]
+        public async Task<IActionResult> GetMyBenefits(CancellationToken cancellationToken)
+        {
+            var userId = GetCurrentUserId();
+            if (userId == Guid.Empty)
+                return Unauthorized();
+
+            var result = await _userSubscriptionService.GetBenefitsAsync(
                 userId,
                 DateTime.UtcNow,
                 cancellationToken);
