@@ -97,7 +97,7 @@ namespace HomeCycle.API.Controllers
         [HttpPatch("update/sell/{postId:guid}")]
         [SwaggerOperation(
             Summary = "Cập nhật bài đăng bán",
-            Description = "Cập nhật thông tin bài đăng bán sản phẩm."
+            Description = "Cập nhật thông tin bài đăng bán sản phẩm. Khi đã hết hàng, gửi Quantity > 0 để nhập hàng mới: tổng số lượng và số còn lại đều bằng Quantity, bài đăng được mở lại nếu đủ điều kiện. Khi vẫn còn hàng, Quantity là tổng số lượng mới và số đã bán/giao dịch được giữ nguyên. Không gửi Quantity thì không bổ sung hàng."
         )]
         [Authorize(Roles = "Personal")]
         [Consumes("multipart/form-data")]
