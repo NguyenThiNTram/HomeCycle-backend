@@ -10,7 +10,8 @@ public sealed class CreateBuyPostRequestValidator : AbstractValidator<CreateBuyP
     public CreateBuyPostRequestValidator()
     {
         RuleFor(x => x.Title).NotEmpty().MaximumLength(255);
-        RuleFor(x => x.Description).NotEmpty();
+        RuleFor(x => x.Description).NotEmpty().MaximumLength(PostValidationLimits.MaxDescriptionLength)
+            .WithMessage("Mô tả không được vượt quá 5.000 ký tự.");
         RuleFor(x => x.ModelNumber)
             .MaximumLength(100)
             .Must(value => string.IsNullOrWhiteSpace(value) || value.Any(char.IsLetterOrDigit))
@@ -20,8 +21,12 @@ public sealed class CreateBuyPostRequestValidator : AbstractValidator<CreateBuyP
         RuleFor(x => x.Ward).MaximumLength(100);
         RuleFor(x => x.City).MaximumLength(100);
         RuleFor(x => x.PriorityLevel).IsInEnum().When(x => x.PriorityLevel.HasValue);
-        RuleFor(x => x.PriceFrom).GreaterThanOrEqualTo(0).PrecisionScale(18, 2, true).When(x => x.PriceFrom.HasValue);
-        RuleFor(x => x.PriceTo).GreaterThanOrEqualTo(0).PrecisionScale(18, 2, true).When(x => x.PriceTo.HasValue);
+        RuleFor(x => x.PriceFrom).InclusiveBetween(PostValidationLimits.MinPrice, PostValidationLimits.MaxPrice)
+            .WithMessage("Giá tối thiểu phải từ 10.000 đến 500.000.000 đồng.")
+            .PrecisionScale(18, 2, true).When(x => x.PriceFrom.HasValue);
+        RuleFor(x => x.PriceTo).InclusiveBetween(PostValidationLimits.MinPrice, PostValidationLimits.MaxPrice)
+            .WithMessage("Giá tối đa phải từ 10.000 đến 500.000.000 đồng.")
+            .PrecisionScale(18, 2, true).When(x => x.PriceTo.HasValue);
         RuleFor(x => x).Must(x => !x.PriceFrom.HasValue || !x.PriceTo.HasValue || x.PriceFrom <= x.PriceTo)
             .WithMessage("Giá tối thiểu không được lớn hơn giá tối đa.");
         RuleFor(x => x.ExpiryDate).Must(x => !x.HasValue || (x.Value.ToUniversalTime() > DateTime.UtcNow && x.Value.ToUniversalTime() <= DateTime.UtcNow.AddMonths(6)))
@@ -43,7 +48,9 @@ public sealed class UpdateBuyPostRequestValidator : AbstractValidator<UpdateBuyP
     {
         RuleFor(x => x.ChangedProperties).NotEmpty();
         RuleFor(x => x.Title).NotEmpty().MaximumLength(255).When(x => x.ChangedProperties.Contains(nameof(x.Title)));
-        RuleFor(x => x.Description).NotEmpty().When(x => x.ChangedProperties.Contains(nameof(x.Description)));
+        RuleFor(x => x.Description).NotEmpty().MaximumLength(PostValidationLimits.MaxDescriptionLength)
+            .WithMessage("Mô tả không được vượt quá 5.000 ký tự.")
+            .When(x => x.ChangedProperties.Contains(nameof(x.Description)));
         RuleFor(x => x.Quantity).NotNull().InclusiveBetween(1, 99999).When(x => x.ChangedProperties.Contains(nameof(x.Quantity)));
         RuleFor(x => x.ExpiryDate).NotNull().When(x => x.ChangedProperties.Contains(nameof(x.ExpiryDate)));
         // Validate the merged document with CreateBuyPostRequestValidator in PostService.
