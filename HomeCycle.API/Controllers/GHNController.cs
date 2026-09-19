@@ -2,11 +2,17 @@
 using HomeCycle.Application.DTOs.Requests.GHN;
 using HomeCycle.Application.DTOs.Responses.GHN;
 using HomeCycle.Application.Interfaces.Externals;
+using HomeCycle.Application.Interfaces.Repositories.GHN;
+using HomeCycle.Application.Interfaces.Repositories.Shipments;
 using HomeCycle.Application.Interfaces.Services.GHN;
+using HomeCycle.Application.Services.GHN;
+using HomeCycle.Domain.Entities;
+using HomeCycle.Domain.Enums;
 using HomeCycle.Infrastructure.Externals.GHN;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 using Swashbuckle.AspNetCore.Annotations;
 
 namespace HomeCycle.API.Controllers
@@ -15,14 +21,53 @@ namespace HomeCycle.API.Controllers
     [ApiController]
     public class GHNController : ControllerBase
     {
+        private static readonly string[] SupportedOrderStatuses =
+        [
+            "ready_to_pick",
+            "picking",
+            "money_collect_picking",
+            "picked",
+            "storing",
+            "sorting",
+            "transporting",
+            "delivering",
+            "money_collect_delivering",
+            "delivered",
+            "delivery_fail",
+            "waiting_to_return",
+            "return",
+            "return_transporting",
+            "return_sorting",
+            "returning",
+            "return_fail",
+            "returned",
+            "cancel",
+            "exception",
+            "lost",
+            "damage",
+            "scrap"
+        ];
+
         private readonly IGhnService _ghnService;
         private readonly IGhnWebhookService _webhookService;
+        private readonly IGhnShipmentRepository _ghnShipmentRepository;
+        private readonly IShipmentRepository _shipmentRepository;
+        private readonly GhnSettings _settings;
         private readonly ILogger<GHNController> _logger;
 
-        public GHNController(IGhnService ghnService, IGhnWebhookService webhookService, ILogger<GHNController> logger)
+        public GHNController(
+            IGhnService ghnService,
+            IGhnWebhookService webhookService,
+            IGhnShipmentRepository ghnShipmentRepository,
+            IShipmentRepository shipmentRepository,
+            IOptions<GhnSettings> settings,
+            ILogger<GHNController> logger)
         {
             _ghnService = ghnService;
             _webhookService = webhookService;
+            _ghnShipmentRepository = ghnShipmentRepository;
+            _shipmentRepository = shipmentRepository;
+            _settings = settings.Value;
             _logger = logger;
         }
 
@@ -134,6 +179,83 @@ namespace HomeCycle.API.Controllers
             }
         }
 
+        [HttpGet("admin/orders/lookup")]
+        [Authorize(Roles = nameof(UserRole.Admin))]
+        [SwaggerOperation(
+            Summary = "Tra cứu vận đơn GHN để Admin mô phỏng callback trạng thái",
+            Description = "Chỉ truyền một trong hai tham số orderCode hoặc clientOrderCode.")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<IActionResult> LookupOrderForAdmin(
+            [FromQuery] string? orderCode,
+            [FromQuery] string? clientOrderCode,
+            CancellationToken cancellationToken)
+        {
+            var normalizedOrderCode = orderCode?.Trim();
+            var normalizedClientOrderCode = clientOrderCode?.Trim();
+            var hasOrderCode = !string.IsNullOrWhiteSpace(normalizedOrderCode);
+            var hasClientOrderCode = !string.IsNullOrWhiteSpace(normalizedClientOrderCode);
+
+            if (hasOrderCode == hasClientOrderCode)
+            {
+                return BadRequest(new Error(
+                    "Ghn.Lookup.InvalidIdentifier",
+                    "Chỉ truyền một trong hai mã OrderCode hoặc ClientOrderCode."));
+            }
+
+            ghn_shipment? ghnShipment = hasOrderCode
+                ? await _ghnShipmentRepository.GetByGhnOrderCodeAsync(
+                    normalizedOrderCode!, cancellationToken)
+                : await _ghnShipmentRepository.GetByClientOrderCodeAsync(
+                    normalizedClientOrderCode!, cancellationToken);
+
+            if (ghnShipment is null)
+            {
+                return NotFound(new Error(
+                    "Ghn.Lookup.NotFound",
+                    "Không tìm thấy vận đơn GHN theo mã đã cung cấp."));
+            }
+
+            var shipment = await _shipmentRepository.GetByIdAsync(
+                ghnShipment.ShipmentId,
+                cancellationToken);
+
+            if (shipment is null)
+            {
+                return NotFound(new Error(
+                    "Ghn.Lookup.ShipmentNotFound",
+                    "Không tìm thấy thông tin vận chuyển tương ứng."));
+            }
+
+            var isTerminal = GhnStatusMapper.IsTerminal(ghnShipment.GHNStatusCode);
+
+            return Ok(new
+            {
+                shopId = _settings.ShopId,
+                orderId = shipment.OrderId,
+                shipmentId = shipment.ShipmentId,
+                orderCode = ghnShipment.GHNOrderCode,
+                clientOrderCode = ghnShipment.ClientOrderCode,
+                creationStatus = ghnShipment.CreationStatus.ToString(),
+                carrierStatus = ghnShipment.GHNStatusCode,
+                shipmentStatus = shipment.ShipmentStatus?.ToString(),
+                pickedUpAt = shipment.PickedUpAt,
+                deliveredAt = shipment.DeliveredAt,
+                expectedDeliveryAt = ghnShipment.ExpectedDeliveryAt,
+                lastSyncedAt = ghnShipment.LastSyncedAt,
+                isTerminal,
+                codAmount = ghnShipment.CODAmount ?? 0,
+                weight = ghnShipment.Weight ?? 0,
+                length = ghnShipment.Length ?? 0,
+                width = ghnShipment.Width ?? 0,
+                height = ghnShipment.Height ?? 0,
+                paymentType = ghnShipment.PaymentTypeId,
+                supportedStatuses = SupportedOrderStatuses
+            });
+        }
+
         [HttpPost]
         [AllowAnonymous]
         [Consumes("application/json")]
@@ -170,7 +292,9 @@ namespace HomeCycle.API.Controllers
                     "GhnWebhook.InvalidShop" => Unauthorized(error),
                     "GhnWebhook.ShipmentNotFound" => NotFound(error),
                     "GhnWebhook.OrderCodeConflict" => Conflict(error),
-                    "GhnWebhook.GhnUnavailable" or "GhnWebhook.EmptyStatus" =>
+                    "GhnWebhook.GhnUnavailable"
+                        or "GhnWebhook.EmptyStatus"
+                        or "GhnWebhook.ConcurrentUpdate" =>
                         StatusCode(
                             StatusCodes.Status503ServiceUnavailable,
                             error),

@@ -223,15 +223,18 @@ namespace HomeCycle.Application.Services.Posts
                 var existing = await _postRepository.GetByIdForUpdateAsync(postId, cancellationToken);
 
                 var checkError = ValidateOwnershipAndComputeRemaining(
-                    existing, ownerId, PostType.Sell, request.Quantity ?? existing?.Quantity ?? 0, out int newRemainingQuantity);
+                    existing, ownerId, PostType.Sell, request.Quantity, out int newRemainingQuantity, out bool isRestock);
                 if (checkError is not null)
                     return Result<PostResponse>.Fail(checkError);
 
                 var reserved = await _postRepository.GetReservedQuantityAsync(postId, null, cancellationToken);
                 if (newRemainingQuantity < reserved)
-                    return Result<PostResponse>.Fail(PostErrors.InvalidUpdateQuantity(existing!.Quantity - existing.RemainingQuantity + reserved, request.Quantity ?? existing.Quantity));
+                    return Result<PostResponse>.Fail(PostErrors.InvalidUpdateQuantity(
+                        (isRestock ? 0 : existing!.Quantity - existing.RemainingQuantity) + reserved,
+                        request.Quantity ?? existing!.Quantity));
                 var previousPrice = existing!.BasePrice;
                 var previousQuantity = existing.Quantity;
+                var previousRemainingQuantity = existing.RemainingQuantity;
                 var previousPostStatus = existing.Status;
                 _mapper.Map(request, existing);
                 existing.Quantity = request.Quantity ?? previousQuantity;
@@ -244,7 +247,7 @@ namespace HomeCycle.Application.Services.Posts
                     existing.Status = PostStatus.Closed;
                     await _offerRepository.ClosePendingByPostAsync(postId, OfferStatus.Closed, cancellationToken);
                 }
-                else if (existing.Status == PostStatus.Closed && existing.Quantity > previousQuantity)
+                else if (existing.Status == PostStatus.Closed && (isRestock || existing.Quantity > previousQuantity))
                 {
                     existing.Status = PostStatus.Active;
                 }
@@ -281,6 +284,7 @@ namespace HomeCycle.Application.Services.Posts
                 var sellPostAuditDiff = new AuditDiffBuilder()
                     .Add("basePrice", previousPrice, existing.BasePrice)
                     .Add("quantity", previousQuantity, existing.Quantity)
+                    .Add("remainingQuantity", previousRemainingQuantity, existing.RemainingQuantity)
                     .Add("status", previousPostStatus.ToString(), existing.Status.ToString());
 
                 await _auditService.EnqueueAsync(new AuditEvent
@@ -695,9 +699,11 @@ namespace HomeCycle.Application.Services.Posts
         }
 
         private Error? ValidateOwnershipAndComputeRemaining(
-            post? existing, Guid ownerId, PostType postType, int newQuantity, out int newRemainingQuantity)
+            post? existing, Guid ownerId, PostType postType, int? requestedQuantity,
+            out int newRemainingQuantity, out bool isRestock)
         {
             newRemainingQuantity = 0;
+            isRestock = false;
 
             if (existing is null)
                 return PostErrors.NotFound;
@@ -708,8 +714,11 @@ namespace HomeCycle.Application.Services.Posts
             if (existing.PostType != postType)
                 return PostErrors.InvalidPostType;
 
+            var newQuantity = requestedQuantity ?? existing.Quantity;
+            // Only an explicit positive quantity can replenish an exhausted sell post.
+            isRestock = postType == PostType.Sell && existing.RemainingQuantity == 0 && requestedQuantity is > 0;
             if (existing.Status is PostStatus.Deleted or PostStatus.Suspended ||
-                (existing.Status == PostStatus.Closed && newQuantity <= existing.Quantity))
+                (existing.Status == PostStatus.Closed && !isRestock && newQuantity <= existing.Quantity))
                 return PostErrors.PostAlreadyClosedOrDeleted;
 
             // Spec: "Sửa hoặc xóa tin trong thời hạn cho phép"
@@ -717,7 +726,7 @@ namespace HomeCycle.Application.Services.Posts
                 return PostErrors.PostExpired;
 
             int soldQuantity = existing.Quantity - existing.RemainingQuantity;
-            newRemainingQuantity = newQuantity - soldQuantity;
+            newRemainingQuantity = isRestock ? newQuantity : newQuantity - soldQuantity;
 
             if (newRemainingQuantity < 0)
                 return PostErrors.InvalidUpdateQuantity(soldQuantity, newQuantity);

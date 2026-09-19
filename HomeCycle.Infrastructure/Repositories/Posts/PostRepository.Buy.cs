@@ -57,8 +57,18 @@ public partial class PostRepository
         foreach (var id in ids)
         {
             var post = await GetByIdForUpdateAsync(id, cancellationToken) ?? throw new InvalidOperationException("Không tìm thấy bài đăng cần hoàn số lượng.");
-            if (post.RemainingQuantity + order.Quantity > post.Quantity) throw new InvalidOperationException("Số lượng hoàn vượt tổng số lượng bài đăng.");
-            post.RemainingQuantity += order.Quantity; post.UpdatedAt = DateTime.UtcNow;
+            var restoredRemainingQuantity = checked(post.RemainingQuantity + order.Quantity);
+            if (post.PostType == PostType.Sell)
+            {
+                // A sell post may have been replenished since this order consumed stock.
+                post.Quantity = Math.Max(post.Quantity, restoredRemainingQuantity);
+            }
+            else if (restoredRemainingQuantity > post.Quantity)
+            {
+                throw new InvalidOperationException("Số lượng hoàn vượt tổng số lượng bài đăng.");
+            }
+            post.RemainingQuantity = restoredRemainingQuantity;
+            post.UpdatedAt = DateTime.UtcNow;
             await UpdateAsync(post, cancellationToken);
         }
     }
