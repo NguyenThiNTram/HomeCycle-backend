@@ -188,6 +188,8 @@ namespace HomeCycle.Application.Commons.Errors
 
         public static readonly Error DuplicatePending = new("OFFER_DUPLICATE_PENDING", "You already have a pending offer for this post.");
 
+        public static readonly Error UnfinishedNegotiation = new("OFFER_UNFINISHED_NEGOTIATION", "Chỉ có thể gửi đề nghị mới cho bài đăng này sau khi hủy thương lượng trước hoặc thanh toán thành công và tạo đơn hàng thành công.");
+
         public static readonly Error RoleNotAllowed = new("OFFER_ROLE_NOT_ALLOWED", "Your account role is not allowed to make this offer.");
 
         public static readonly Error BusinessCannotOfferBuyPost = new("OFFER_B2B_NOT_ALLOWED", "Business accounts cannot offer on a business buy post.");
