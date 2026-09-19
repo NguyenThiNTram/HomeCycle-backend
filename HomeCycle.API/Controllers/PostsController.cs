@@ -241,6 +241,22 @@ namespace HomeCycle.API.Controllers
             return Ok(result.Data);
         }
 
+        [HttpGet("discover/business")]
+        [Authorize(Roles = "Business")]
+        [SwaggerOperation(
+            Summary = "Khám phá bài bán theo khảo sát doanh nghiệp",
+            Description = "Tự lấy khảo sát của tài khoản đăng nhập, lọc đồng thời khu vực, loại sản phẩm, mức hư hỏng, tình trạng hoạt động và quy mô. Retail: còn 1 sản phẩm; BulkLot: còn từ 2. Chỉ trả bài còn hoạt động, chưa hết hạn, còn hàng; mới nhất trước. Không yêu cầu VIP hoặc hồ sơ đã được duyệt. Trả 409 với code SURVEY_REQUIRED nếu chưa có khảo sát.")]
+        [ProducesResponseType(typeof(PagedResult<PostResponse>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(Error), StatusCodes.Status409Conflict)]
+        public async Task<IActionResult> DiscoverBusiness([FromQuery] PaginationRequest request, CancellationToken cancellationToken)
+        {
+            var result = await _postService.DiscoverBusinessAsync(CurrentUserId, request, cancellationToken);
+            if (result.IsSuccess) return Ok(result.Data);
+            return result.Error?.Code == "SURVEY_REQUIRED"
+                ? Conflict(result.Error)
+                : MapErrorToResponse(result.Error!);
+        }
+
         [HttpPost("search")]
         [SwaggerOperation(
             Summary = "Tìm kiếm bài đăng",
