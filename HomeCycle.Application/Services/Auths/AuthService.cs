@@ -116,6 +116,116 @@ namespace HomeCycle.Application.Services.Auths
             _setModeratorPasswordValidator = setModeratorPasswordValidator;
         }
 
+        public async Task<Result<string>> ForgotPasswordAsync(ForgotPasswordRequest request, CancellationToken cancellationToken = default)
+        {
+            request.Email = request.Email?.Trim().ToLowerInvariant() ?? string.Empty;
+            var validationError = ValidatePasswordResetRequest(request);
+            if (validationError != null)
+                return Result<string>.Fail(validationError);
+
+            var user = await _userRepository.GetByEmailAsync(request.Email, cancellationToken);
+            if (user == null)
+                return Result<string>.Fail(AuthErrors.PasswordResetEmailNotFound);
+            if (!CanResetPassword(user))
+                return Result<string>.Fail(AuthErrors.PasswordResetUnavailable);
+
+            const string message = "Mã OTP đặt lại mật khẩu đã được gửi. Mã có hiệu lực trong 5 phút.";
+            var protectionKey = "password-reset:" + request.Email;
+            if (!_otpProtectionService.TryStartSend(protectionKey, out var remaining))
+                return Result<string>.Fail(AuthErrors.OtpRateLimited(Math.Max(1, (int)Math.Ceiling(remaining.TotalMinutes))));
+
+            otp? resetOtp = null;
+            try
+            {
+                var code = RandomNumberGenerator.GetInt32(100000, 1000000).ToString();
+                resetOtp = new otp
+                {
+                    OtpId = Guid.NewGuid(), UserId = user!.UserId, Email = request.Email,
+                    Code = HashPasswordResetOtp(request.Email, code), Purpose = "PasswordReset",
+                    CreatedAt = DateTime.UtcNow, ExpiredAt = DateTime.UtcNow.AddMinutes(5)
+                };
+                await _otpRepository.AddAsync(resetOtp);
+                await _emailService.SendOtpEmailAsync(request.Email, code, passwordReset: true);
+                return Result<string>.Success(message);
+            }
+            catch (Exception ex)
+            {
+                _otpProtectionService.SendFailed(protectionKey);
+                if (resetOtp != null)
+                    await _otpRepository.ConsumePasswordResetOtpAsync(resetOtp.OtpId, CancellationToken.None);
+                _logger.LogError(ex, "Failed to send password reset OTP to {Email}", MaskEmail(request.Email));
+                return Result<string>.Fail(AuthErrors.OtpSendFailed);
+            }
+        }
+
+        public async Task<Result<string>> ResetPasswordAsync(ResetPasswordRequest request, CancellationToken cancellationToken = default)
+        {
+            request.Email = request.Email?.Trim().ToLowerInvariant() ?? string.Empty;
+            var validationError = ValidatePasswordResetRequest(request);
+            if (validationError != null)
+                return Result<string>.Fail(validationError);
+
+            var account = await _userRepository.GetByEmailAsync(request.Email, cancellationToken);
+            if (account == null)
+                return Result<string>.Fail(AuthErrors.PasswordResetEmailNotFound);
+            if (!CanResetPassword(account))
+                return Result<string>.Fail(AuthErrors.PasswordResetUnavailable);
+
+            var protectionKey = "password-reset:" + request.Email;
+            if (_otpProtectionService.IsLocked(protectionKey, out _))
+                return Result<string>.Fail(AuthErrors.PasswordResetOtpLocked);
+
+            var stored = await _otpRepository.GetPasswordResetOtpAsync(
+                request.Email, HashPasswordResetOtp(request.Email, request.Otp), cancellationToken);
+            if (stored?.UserId == null || stored.UserId != account.UserId)
+            {
+                var locked = _otpProtectionService.RegisterFailedAttempt(protectionKey, out _, out _);
+                return Result<string>.Fail(locked ? AuthErrors.PasswordResetOtpLocked : AuthErrors.InvalidPasswordResetOtp);
+            }
+
+            var passwordHash = _passwordHasher.HashPassword(request.NewPassword);
+            await _unitOfWork.BeginTransactionAsync(cancellationToken);
+            try
+            {
+                var user = await _userRepository.GetByIdForUpdateAsync(stored.UserId.Value, cancellationToken);
+                if (!CanResetPassword(user) || !string.Equals(user!.Email, request.Email, StringComparison.OrdinalIgnoreCase) ||
+                    !await _otpRepository.ConsumePasswordResetOtpAsync(stored.OtpId, cancellationToken))
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<string>.Fail(AuthErrors.InvalidPasswordResetOtp);
+                }
+
+                user.Password = passwordHash;
+                await _userRepository.UpdateAsync(user, cancellationToken);
+                await _userRepository.RevokeRefreshTokensAsync(user.UserId, cancellationToken);
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+                await _unitOfWork.CommitTransactionAsync(cancellationToken);
+            }
+            catch
+            {
+                await _unitOfWork.RollbackTransactionAsync(CancellationToken.None);
+                throw;
+            }
+
+            _otpProtectionService.Clear(protectionKey);
+            return Result<string>.Success("Đặt lại mật khẩu thành công. Vui lòng đăng nhập bằng mật khẩu mới.");
+        }
+
+        private static bool CanResetPassword(user? user) => user != null &&
+            user.Role is UserRole.Personal or UserRole.Business &&
+            user.Status is UserStatus.Active or UserStatus.Pending;
+
+        private static string HashPasswordResetOtp(string email, string code) =>
+            Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes($"PasswordReset:{email}:{code}")));
+
+        private static Error? ValidatePasswordResetRequest(ForgotPasswordRequest request)
+        {
+            var errors = new List<System.ComponentModel.DataAnnotations.ValidationResult>();
+            return System.ComponentModel.DataAnnotations.Validator.TryValidateObject(request,
+                new System.ComponentModel.DataAnnotations.ValidationContext(request), errors, validateAllProperties: true)
+                ? null : new Error("AUTH_PASSWORD_RESET_VALIDATION", errors[0].ErrorMessage!);
+        }
+
         public async Task<Result<UserAdminResponse>> CreateModeratorAsync(Guid adminId, CreateModeratorRequest request, CancellationToken cancellationToken = default)
         {
             var admin = await _userRepository.GetByIdAsync(adminId, cancellationToken);

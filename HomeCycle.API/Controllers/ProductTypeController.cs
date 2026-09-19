@@ -4,6 +4,7 @@ using HomeCycle.Application.DTOs.Requests.Products;
 using HomeCycle.Application.DTOs.Responses.Products;
 using HomeCycle.Application.Interfaces.Services.Products;
 using HomeCycle.Application.Services.Products;
+using HomeCycle.Domain.Enums;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -28,6 +29,22 @@ namespace HomeCycle.API.Controllers
             _productTypeService = productTypeService;
             _productAttributeService = productAttributeService;
             _productAttributeOptionService = productAttributeOptionService;
+        }
+
+        [HttpGet("space-usages")]
+        [AllowAnonymous]
+        [SwaggerOperation(Summary = "Lấy danh sách tất cả không gian sử dụng")]
+        public IActionResult GetSpaceUsages()
+        {
+            var spaces = Enum.GetValues<SpaceUsage>()
+                .Select(space => new SpaceUsageResponse
+                {
+                    Value = (int)space,
+                    Name = space.ToString()
+                })
+                .ToArray();
+
+            return Ok(Result<SpaceUsageResponse[]>.Success(spaces));
         }
 
         // ==================== ProductType — CRUD cơ bản (giữ nguyên) ====================
