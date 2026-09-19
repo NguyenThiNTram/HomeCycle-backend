@@ -18,6 +18,7 @@ using HomeCycle.Application.Interfaces.Services.Notifications;
 using HomeCycle.Application.Interfaces.Services.PlatformPolicies;
 using HomeCycle.Application.Interfaces.Services.Posts;
 using HomeCycle.Application.Interfaces.Services.Products;
+using HomeCycle.Application.Interfaces.Services.Profiles;
 using HomeCycle.Application.Interfaces.Services.SupplierMatching;
 using HomeCycle.Domain.Entities;
 using HomeCycle.Domain.Enums;
@@ -54,6 +55,7 @@ namespace HomeCycle.Application.Services.Posts
         private readonly IAuditService _auditService;
         private readonly ISupplierMatchService _supplierMatchService;
         private readonly ILogger<PostService> _logger;
+        private readonly IBusinessProfileService _businessProfileService;
 
         private const string PostMediaTargetType = "Post";
         private const string PostMediaFolder = "posts";
@@ -76,7 +78,8 @@ namespace HomeCycle.Application.Services.Posts
             IPlatformPolicyProvider platformPolicyProvider,
             IAuditService auditService,
             ISupplierMatchService supplierMatchService,
-            ILogger<PostService> logger)
+            ILogger<PostService> logger,
+            IBusinessProfileService businessProfileService)
         {
             _postRepository = postRepository;
             _offerRepository = offerRepository;
@@ -96,6 +99,7 @@ namespace HomeCycle.Application.Services.Posts
             _auditService = auditService;
             _supplierMatchService = supplierMatchService;
             _logger = logger;
+            _businessProfileService = businessProfileService;
         }
 
         // ================== CREATE - SELL ==================
@@ -516,6 +520,26 @@ namespace HomeCycle.Application.Services.Posts
             return Result<PostDetailResponse>.Success(response);
         }
 
+        public async Task<Result<PagedResult<PostResponse>>> DiscoverBusinessAsync(
+            Guid userId, PaginationRequest request, CancellationToken cancellationToken = default)
+        {
+            if ((long)(request.PageNumber - 1) * request.PageSize > int.MaxValue)
+                return Result<PagedResult<PostResponse>>.Fail(
+                    ValidationErrors.InvalidRequest("Số trang vượt quá giới hạn hỗ trợ."));
+
+            var survey = await _businessProfileService.GetProcurementPreferenceAsync(userId, cancellationToken);
+            if (!survey.IsSuccess || survey.Data is null)
+            {
+                if (survey.Error?.Code is "Survey.NotFound" or "BusinessProfile.NotFound")
+                    return Result<PagedResult<PostResponse>>.Fail(
+                        new Error("SURVEY_REQUIRED", "Vui lòng hoàn tất khảo sát doanh nghiệp để khám phá bài đăng phù hợp."));
+                return Result<PagedResult<PostResponse>>.Fail(survey.Error!);
+            }
+
+            var paged = await _postRepository.DiscoverBusinessAsync(userId, survey.Data, request, cancellationToken);
+            return await MapPostPageAsync(paged, cancellationToken);
+        }
+
         public async Task<Result<PagedResult<PostResponse>>> SearchAsync(
             PostSearchRequest request,
             CancellationToken cancellationToken = default)
@@ -526,7 +550,12 @@ namespace HomeCycle.Application.Services.Posts
                     ValidationErrors.InvalidRequest(string.Join("\n", validation.Errors.Select(e => e.ErrorMessage))));
 
             var paged = await _postRepository.SearchAsync(request, cancellationToken);
+            return await MapPostPageAsync(paged, cancellationToken);
+        }
 
+        private async Task<Result<PagedResult<PostResponse>>> MapPostPageAsync(
+            PagedResult<post> paged, CancellationToken cancellationToken)
+        {
             var items = paged.Items.Select(x => _mapper.Map<PostResponse>(x)).ToList();
 
             if (items.Count > 0)
