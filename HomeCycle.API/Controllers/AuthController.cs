@@ -28,6 +28,18 @@ namespace HomeCycle.API.Controllers
             _userService = userService;
         }
 
+        [HttpGet("users/{userId:guid}/profile")]
+        [Authorize]
+        [Swashbuckle.AspNetCore.Annotations.SwaggerOperation(Summary = "Xem hồ sơ công khai, điểm uy tín và sao của người dùng")]
+        public async Task<IActionResult> GetPublicProfile(Guid userId, CancellationToken cancellationToken)
+        {
+            var result = await _userService.GetPublicProfileAsync(userId, cancellationToken);
+            if (!result.IsSuccess)
+                return NotFound(result.Error);
+
+            return Ok(result.Data);
+        }
+
         [HttpPost("login")]
         public async Task<IActionResult> Login( [FromBody] LoginRequest request, CancellationToken cancellationToken)
         {

@@ -13,6 +13,13 @@ using System.Threading.Tasks;
 
 namespace HomeCycle.Application.Validations.Posts
 {
+    public static class PostValidationLimits
+    {
+        public const decimal MinPrice = 10_000m;
+        public const decimal MaxPrice = 500_000_000m;
+        public const int MaxDescriptionLength = 5_000;
+    }
+
     public class CreatePostRequestValidator : AbstractValidator<CreatePostRequest>
     {
         public CreatePostRequestValidator()
@@ -24,10 +31,10 @@ namespace HomeCycle.Application.Validations.Posts
                 .MaximumLength(500).WithMessage("Địa chỉ không được vượt quá 500 ký tự.");
 
             RuleFor(x => x.Ward)
-                .MaximumLength(255).WithMessage("Phường/Xã không được vượt quá 255 ký tự.");
+                .MaximumLength(100).WithMessage("Phường/Xã không được vượt quá 100 ký tự.");
 
             RuleFor(x => x.City)
-                .MaximumLength(255).WithMessage("Thành phố/Tỉnh không được vượt quá 255 ký tự.");
+                .MaximumLength(100).WithMessage("Thành phố/Tỉnh không được vượt quá 100 ký tự.");
 
             RuleFor(x => x.PriorityLevel);
         }

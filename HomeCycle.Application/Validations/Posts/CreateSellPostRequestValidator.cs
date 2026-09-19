@@ -29,7 +29,9 @@ namespace HomeCycle.Application.Validations.Posts
             Include(new CreatePostRequestValidator());
 
             RuleFor(x => x.BasePrice)
-                .GreaterThanOrEqualTo(0).WithMessage("Giá bán phải lớn hơn hoặc bằng 0.");
+                .InclusiveBetween(PostValidationLimits.MinPrice, PostValidationLimits.MaxPrice)
+                .WithMessage("Giá bán phải từ 10.000 đến 500.000.000 đồng.")
+                .PrecisionScale(18, 2, true).WithMessage("Giá bán chỉ được có tối đa 2 chữ số thập phân.");
 
             // SRS: Upload hình ảnh sản phẩm bắt buộc cho bài đăng bán
             RuleFor(x => x.Medias)
@@ -180,13 +182,16 @@ namespace HomeCycle.Application.Validations.Posts
                 .MaximumLength(500).WithMessage("Địa chỉ không được vượt quá 500 ký tự.");
 
             RuleFor(x => x.Ward)
-                .MaximumLength(255).WithMessage("Phường/Xã không được vượt quá 255 ký tự.");
+                .MaximumLength(100).WithMessage("Phường/Xã không được vượt quá 100 ký tự.");
 
             RuleFor(x => x.City)
-                .MaximumLength(255).WithMessage("Thành phố/Tỉnh không được vượt quá 255 ký tự.");
+                .MaximumLength(100).WithMessage("Thành phố/Tỉnh không được vượt quá 100 ký tự.");
 
             RuleFor(x => x.BasePrice)
-                .GreaterThanOrEqualTo(0).WithMessage("Giá bán phải lớn hơn hoặc bằng 0.");
+                .InclusiveBetween(PostValidationLimits.MinPrice, PostValidationLimits.MaxPrice)
+                .WithMessage("Giá bán phải từ 10.000 đến 500.000.000 đồng.")
+                .PrecisionScale(18, 2, true).WithMessage("Giá bán chỉ được có tối đa 2 chữ số thập phân.")
+                .When(x => x.BasePrice.HasValue);
 
             RuleFor(x => x.Product)
                 .NotNull().WithMessage("Thông tin sản phẩm không được để trống.")

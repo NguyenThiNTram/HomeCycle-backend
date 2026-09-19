@@ -41,19 +41,8 @@ namespace HomeCycle.Application.Services.Auths
             Guid userId, CancellationToken cancellationToken = default)
         {
             var user = await _userRepository.GetByIdAsync(userId, cancellationToken);
-            if (user is null)
+            if (user is null || user.Status != UserStatus.Active)
                 return Result<PublicUserProfileResponse>.Fail(AuthErrors.UserNotFound);
-
-            Console.WriteLine($"UserId: {userId}");
-
-            if (user == null)
-            {
-                Console.WriteLine("USER NULL");
-            }
-            else
-            {
-                Console.WriteLine($"Role: {user.Role}");
-            }
 
             if (user.Role == UserRole.Moderator || user.Role == UserRole.Admin)
             {
