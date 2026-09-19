@@ -12,8 +12,31 @@ namespace HomeCycle.Application.Services.GHN
         public static bool IsTerminal(string? status) => status?.Trim().ToLowerInvariant() is
             "delivered" or "returned" or "cancel" or "exception" or "lost" or "damage" or "scrap";
 
-        public static bool CanApply(string? previous, string? incoming) =>
-            !IsTerminal(previous) || string.Equals(previous, incoming, StringComparison.OrdinalIgnoreCase);
+        public static bool CanApply(string? previous, string? incoming)
+        {
+            var normalizedPrevious = previous?.Trim().ToLowerInvariant();
+            var normalizedIncoming = incoming?.Trim().ToLowerInvariant();
+
+            if (string.IsNullOrWhiteSpace(normalizedIncoming))
+                return false;
+
+            if (string.IsNullOrWhiteSpace(normalizedPrevious) || normalizedPrevious == normalizedIncoming)
+                return true;
+
+            if (IsTerminal(normalizedPrevious))
+                return false;
+
+            // GHN sandbox vẫn giữ ready_to_pick trong khi Admin đang mô phỏng
+            // các callback picked/delivering. Không để lần đọc Order Info sau đó
+            // kéo vận đơn đã qua bước lấy hàng trở lại giai đoạn chờ lấy.
+            if (!IsBeforePickup(normalizedPrevious) && IsBeforePickup(normalizedIncoming))
+                return false;
+
+            return true;
+        }
+
+        private static bool IsBeforePickup(string status) => status is
+            "ready_to_pick" or "picking" or "money_collect_picking";
         // Chuyển mã trạng thái GHN thành trạng thái nghiệp vụ
         // Trả null nếu GHN gửi trạng thái chưa được hệ thống hỗ trợ
         public static ShipmentStatus? Map(string? ghnStatusCode)
