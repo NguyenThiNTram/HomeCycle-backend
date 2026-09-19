@@ -40,6 +40,7 @@ using HomeCycle.Application.Commons.Audits;
 using HomeCycle.Application.Interfaces.Repositories.SubscriptionPackages;
 using HomeCycle.Application.Interfaces.Services.SubscriptionPackages;
 using HomeCycle.Application.DTOs.Responses.SubscriptionPackages;
+using HomeCycle.Application.Interfaces.Repositories.Carts;
 
 namespace HomeCycle.Application.Services.Payments
 {
@@ -92,6 +93,7 @@ namespace HomeCycle.Application.Services.Payments
         private readonly IMapper _mapper;
         private readonly IUserSubscriptionRepository _userSubscriptionRepo;
         private readonly IUserSubscriptionService _userSubscriptionService;
+        private readonly ICartItemRepository _cartItemRepository;
         public PaymentService(
             IUnitOfWork unitOfWork,
             IPaymentGatewayService gatewayService,
@@ -123,7 +125,8 @@ namespace HomeCycle.Application.Services.Payments
             IAuditService auditService,
             IMapper mapper,
             IUserSubscriptionRepository userSubscriptionRepo,
-            IUserSubscriptionService userSubscriptionService)
+            IUserSubscriptionService userSubscriptionService,
+            ICartItemRepository cartItemRepository)
         {
             _unitOfWork = unitOfWork;
             _gatewayService = gatewayService;
@@ -156,6 +159,7 @@ namespace HomeCycle.Application.Services.Payments
             _mapper = mapper;
             _userSubscriptionRepo = userSubscriptionRepo;
             _userSubscriptionService = userSubscriptionService;
+            _cartItemRepository = cartItemRepository;
         }
 
         public async Task<Result<PaymentQuoteResponseDto>> GetPaymentQuoteAsync(
@@ -3653,6 +3657,8 @@ namespace HomeCycle.Application.Services.Payments
                     ct));
                 if (id == agreement.PostId) postForUpdate = relatedPost;
             }
+
+            await _cartItemRepository.DeleteByUserAndPostAsync(agreement.BuyerId, trade.PostId, ct);
 
             agreement.AgreementStatus = (int)AgreementStatus.Confirmed;
             await _agreementRepo.UpdateAsync(agreement, ct);

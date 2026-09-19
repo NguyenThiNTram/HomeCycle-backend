@@ -17,5 +17,6 @@ namespace HomeCycle.Application.Interfaces.Repositories.Carts
         Task AddAsync(cart_item entity, CancellationToken cancellationToken = default);
 
         Task DeleteAsync(Guid cartItemId, CancellationToken cancellationToken = default);
+        Task DeleteByUserAndPostAsync(Guid userId, Guid postId, CancellationToken cancellationToken = default);
     }
 }
