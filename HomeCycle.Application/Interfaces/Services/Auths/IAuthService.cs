@@ -13,6 +13,8 @@ namespace HomeCycle.Application.Interfaces.Services.Auths
 {
     public interface IAuthService
     {
+        Task<Result<string>> ForgotPasswordAsync(ForgotPasswordRequest request, CancellationToken cancellationToken = default);
+        Task<Result<string>> ResetPasswordAsync(ResetPasswordRequest request, CancellationToken cancellationToken = default);
         Task<Result<UserAdminResponse>> CreateModeratorAsync(Guid adminId, CreateModeratorRequest request, CancellationToken cancellationToken = default);
         Task<Result<VerifyModeratorEmailResponse>> VerifyModeratorEmailAsync(VerifyModeratorEmailRequest request, CancellationToken cancellationToken = default);
         Task<Result<UserAdminResponse>> SetModeratorPasswordAsync(SetModeratorPasswordRequest request, CancellationToken cancellationToken = default);

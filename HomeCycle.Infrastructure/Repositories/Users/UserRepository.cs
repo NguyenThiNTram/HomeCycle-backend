@@ -169,6 +169,12 @@ namespace HomeCycle.Infrastructure.Repositories.Users
             _db.Refresh_Tokens.Update(token.ToInfrastructure());
         }
 
+        public async Task RevokeRefreshTokensAsync(Guid userId, CancellationToken cancellationToken = default)
+        {
+            await _db.Refresh_Tokens.Where(x => x.UserId == userId && x.RevokedAt == null)
+                .ExecuteUpdateAsync(update => update.SetProperty(x => x.RevokedAt, (DateTime?)DateTime.UtcNow), cancellationToken);
+        }
+
         public Task UpdateAsync(user user, CancellationToken cancellationToken = default)
         {
             var entity = user.ToInfrastructure();

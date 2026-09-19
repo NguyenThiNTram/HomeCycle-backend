@@ -39,6 +39,28 @@ namespace HomeCycle.API.Controllers
             return Ok(result.Data);
         }
 
+        [HttpPost("forgot-password")]
+        [AllowAnonymous]
+        public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordRequest request, CancellationToken cancellationToken)
+        {
+            var result = await _authService.ForgotPasswordAsync(request, cancellationToken);
+            if (!result.IsSuccess)
+                return BadRequest(result.Error);
+
+            return Ok(new { Message = result.Data });
+        }
+
+        [HttpPost("reset-password")]
+        [AllowAnonymous]
+        public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordRequest request, CancellationToken cancellationToken)
+        {
+            var result = await _authService.ResetPasswordAsync(request, cancellationToken);
+            if (!result.IsSuccess)
+                return BadRequest(result.Error);
+
+            return Ok(new { Message = result.Data });
+        }
+
         [HttpPost("personal/register")]
         public async Task<IActionResult> RegisterPersonal(
             [FromHeader(Name = "X-Registration-Token")] string registrationToken, // Lấy token từ Header
