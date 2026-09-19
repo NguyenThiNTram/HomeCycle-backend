@@ -99,7 +99,7 @@ namespace HomeCycle.API.Controllers
             Summary = "Cập nhật bài đăng bán",
             Description = "Cập nhật thông tin bài đăng bán sản phẩm."
         )]
-        [Authorize(Roles = "Business")]
+        [Authorize(Roles = "Personal")]
         [Consumes("multipart/form-data")]
         [ProducesResponseType(StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status403Forbidden)]

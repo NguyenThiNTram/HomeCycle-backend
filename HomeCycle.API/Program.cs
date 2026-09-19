@@ -196,6 +196,16 @@ namespace HomeCycle.API
                 //Config SignalR
                 options.Events ??= new JwtBearerEvents();
 
+                options.Events.OnForbidden = context =>
+                {
+                    context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                    return context.Response.WriteAsJsonAsync(new
+                    {
+                        code = "AUTH_FORBIDDEN",
+                        message = "Bạn không có quyền thực hiện thao tác này."
+                    });
+                };
+
                 options.Events.OnMessageReceived = context =>
                 {
                     var accessToken =
