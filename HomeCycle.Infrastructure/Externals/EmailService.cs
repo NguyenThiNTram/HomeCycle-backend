@@ -98,7 +98,7 @@ namespace HomeCycle.Infrastructure.Externals
             await smtp.DisconnectAsync(true, cancellationToken);
         }
 
-        public async Task SendOtpEmailAsync(string toEmail, string otpCode)
+        public async Task SendOtpEmailAsync(string toEmail, string otpCode, bool passwordReset = false)
         {
             var settings = _config.GetSection("EmailSettings");
 
@@ -110,7 +110,8 @@ namespace HomeCycle.Infrastructure.Externals
 
             email.From.Add(new MailboxAddress(settings["SenderName"], settings["SenderEmail"]));
             email.To.Add(new MailboxAddress("", toEmail));
-            email.Subject = "Ma OTP xac thuc tai khoan";
+            email.Subject = passwordReset ? "[HomeCycle] Mã OTP đặt lại mật khẩu" : "Ma OTP xac thuc tai khoan";
+            var purpose = passwordReset ? "password reset" : "account verification";
 
             var builder = new BodyBuilder();
             //builder.HtmlBody = $"<h3>Mã xác thực OTP của bạn là: <b style='color:red;'>{otpCode}</b></h3>";
@@ -136,7 +137,7 @@ namespace HomeCycle.Infrastructure.Externals
                                     <tr>
                                         <td style='padding: 30px 25px; color: #374151; font-size: 15px; line-height: 1.6;'>
                                             <p style='margin-top: 0; margin-bottom: 16px;'>Hello,</p>
-                                            <p style='margin-top: 0; margin-bottom: 20px;'>Your One-Time Password (OTP) for account verification is:</p>
+                                            <p style='margin-top: 0; margin-bottom: 20px;'>Your One-Time Password (OTP) for {purpose} is:</p>
                                 
                                             <!-- OTP Box -->
                                             <div style='background-color: #f0f2f5; border-radius: 8px; padding: 18px; text-align: center; margin: 25px 0;'>

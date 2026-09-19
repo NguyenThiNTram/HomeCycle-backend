@@ -20,6 +20,17 @@ namespace HomeCycle.Infrastructure.Externals
             _db = dbContext;
         }
 
+        public async Task<otp?> GetPasswordResetOtpAsync(string email, string hash, CancellationToken cancellationToken = default)
+        {
+            var entity = await _db.OTPs.AsNoTracking().FirstOrDefaultAsync(x =>
+                x.Email == email && x.Code == hash && x.Purpose == "PasswordReset" &&
+                !x.IsUsed && x.ExpiredAt > DateTime.UtcNow, cancellationToken);
+            return entity?.ToDomain();
+        }
+
+        public Task<bool> ConsumePasswordResetOtpAsync(Guid tokenId, CancellationToken cancellationToken = default)
+            => ConsumeTokenAsync(tokenId, "PasswordReset", cancellationToken);
+
         public async Task AddModeratorTokenAsync(otp token, CancellationToken cancellationToken = default)
         {
             await _db.OTPs.AddAsync(token.ToInfrastructure(), cancellationToken);
@@ -33,7 +44,10 @@ namespace HomeCycle.Infrastructure.Externals
             return entity == null ? null : entity.ToDomain();
         }
 
-        public async Task<bool> ConsumeModeratorTokenAsync(Guid tokenId, string purpose, CancellationToken cancellationToken = default)
+        public Task<bool> ConsumeModeratorTokenAsync(Guid tokenId, string purpose, CancellationToken cancellationToken = default)
+            => ConsumeTokenAsync(tokenId, purpose, cancellationToken);
+
+        private async Task<bool> ConsumeTokenAsync(Guid tokenId, string purpose, CancellationToken cancellationToken)
         {
             var now = DateTime.UtcNow;
             return await _db.OTPs.Where(x => x.OtpId == tokenId && x.Purpose == purpose &&

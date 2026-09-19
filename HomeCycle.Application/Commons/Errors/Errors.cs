@@ -10,6 +10,10 @@ namespace HomeCycle.Application.Commons.Errors
 {
     public static class AuthErrors
     {
+        public static readonly Error PasswordResetEmailNotFound = new("AUTH_PASSWORD_RESET_EMAIL_NOT_FOUND", "Email chưa được đăng ký trong hệ thống.");
+        public static readonly Error PasswordResetUnavailable = new("AUTH_PASSWORD_RESET_UNAVAILABLE", "Chỉ tài khoản Personal hoặc Business không bị khóa hoặc xóa mới được đặt lại mật khẩu.");
+        public static readonly Error InvalidPasswordResetOtp = new("AUTH_PASSWORD_RESET_OTP_INVALID", "OTP không hợp lệ, đã hết hạn hoặc đã được sử dụng.");
+        public static readonly Error PasswordResetOtpLocked = new("AUTH_PASSWORD_RESET_OTP_LOCKED", "Bạn đã nhập sai OTP quá nhiều lần. Vui lòng thử lại sau 15 phút.");
         public static readonly Error ModeratorCreationForbidden = new("AUTH_MODERATOR_CREATION_FORBIDDEN", "Only an active admin can create moderators.");
         public static readonly Error InvalidModeratorToken = new("AUTH_MODERATOR_TOKEN_INVALID", "The activation link or password setup session is invalid, expired, or already used.");
         public static readonly Error ModeratorActivationUnavailable = new("AUTH_MODERATOR_ACTIVATION_UNAVAILABLE", "This moderator account cannot be activated.");

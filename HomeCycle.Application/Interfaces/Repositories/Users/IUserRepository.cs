@@ -11,6 +11,7 @@ namespace HomeCycle.Application.Interfaces.Repositories.Users
 {
     public interface IUserRepository
     {
+        Task RevokeRefreshTokensAsync(Guid userId, CancellationToken cancellationToken = default);
         Task<PagedResult<user>> GetPagedAsync(
             UserRole? role,
             UserStatus? status,
