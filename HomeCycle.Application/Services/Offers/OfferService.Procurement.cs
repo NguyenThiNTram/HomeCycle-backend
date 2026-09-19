@@ -53,6 +53,10 @@ public partial class OfferService
                 SenderId = userId, ReceiverId = receiverId, OfferPrice = request.OfferPrice,
                 OfferQuantity = request.OfferQuantity, OfferStatus = OfferStatus.Pending, Version = 1, CreatedAt = DateTime.UtcNow
             };
+            var participants = TradingPostRules.Participants(sell, entity);
+            if (await _negotiationRepository.ExistsActiveByPostAndParticipantsAsync(
+                sell.PostId, participants.SellerId, participants.BuyerId, ct, entity.BuyPostId))
+                return Result<OfferResponse>.Fail(OfferErrors.UnfinishedNegotiation);
             var error = await ValidateNewOfferAsync(entity, sell, request.OfferPrice, request.OfferQuantity, ct);
             if (error != null) return Result<OfferResponse>.Fail(error);
             if (await _offerRepository.ExistsPendingByPostAndSenderAsync(sell.PostId, userId, receiverId, entity.BuyPostId, ct))

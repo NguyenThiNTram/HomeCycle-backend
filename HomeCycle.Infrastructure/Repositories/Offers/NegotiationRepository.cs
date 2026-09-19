@@ -101,25 +101,19 @@ namespace HomeCycle.Infrastructure.Repositories.Offers
 
         public Task<bool> ExistsActiveByPostAndParticipantsAsync(Guid postId, Guid sellerId, Guid buyerId, CancellationToken cancellationToken = default, Guid? buyPostId = null)
         {
-            var open = (int)NegotiationStatus.Open;
-            var agreed = (int)NegotiationStatus.Agreed;
-            var agreementPending =
-                (int)NegotiationStatus.AgreementPending;
-
+            // Gate all trades for the same sell post and participants, regardless of BuyPostId.
+            // Confirmed alone is insufficient: payment fulfillment must also have created an order.
             return _db.Negotiations
                 .AsNoTracking()
                 .AnyAsync(
                     x =>
                         x.PostId == postId &&
                         x.SellerId == sellerId &&
-                        x.BuyerId == buyerId && x.Offer.BuyPostId == buyPostId &&
-                        (x.Agreement_Form == null || x.Agreement_Form.AgreementStatus == (int)AgreementStatus.Pending || x.Agreement_Form.AgreementStatus == (int)AgreementStatus.Awaiting_Payment) &&
-                        (
-                            x.NegotiationStatus == null ||
-                            x.NegotiationStatus == open ||
-                            x.NegotiationStatus == agreed ||
-                            x.NegotiationStatus == agreementPending
-                        ),
+                        x.BuyerId == buyerId &&
+                        (x.NegotiationStatus == null || x.NegotiationStatus != (int)NegotiationStatus.Cancelled) &&
+                        !(x.Agreement_Form != null &&
+                          x.Agreement_Form.AgreementStatus == (int)AgreementStatus.Confirmed &&
+                          x.Agreement_Form.Order != null),
                     cancellationToken);
         }
 
