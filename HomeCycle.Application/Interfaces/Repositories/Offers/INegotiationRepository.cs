@@ -1,4 +1,6 @@
 using HomeCycle.Application.Commons.Paginations;
+using HomeCycle.Application.DTOs.Requests.Negotiates;
+using HomeCycle.Application.DTOs.Responses.Negotiations;
 using HomeCycle.Domain.Entities;
 using System;
 using System.Collections.Generic;
@@ -25,5 +27,13 @@ namespace HomeCycle.Application.Interfaces.Repositories.Offers
         Task AddAsync(negotiation entity, CancellationToken cancellationToken = default);
 
         Task UpdateAsync(negotiation entity, CancellationToken cancellationToken = default);
+        Task<PagedResult<ModeratorNegotiationListItemDto>> GetDisputedForModeratorAsync(
+         ModeratorNegotiationSearchRequest request,
+         CancellationToken cancellationToken = default);
+
+        Task<ModeratorNegotiationDetailDto?> GetDisputedDetailForModeratorAsync(
+            Guid negotiationId,
+            CancellationToken cancellationToken = default);
+
     }
 }

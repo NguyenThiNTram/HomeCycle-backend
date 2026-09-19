@@ -1005,6 +1005,86 @@ namespace HomeCycle.Application.Services.Negotiates
             }
         }
 
+        public async Task<Result<PagedResult<ModeratorNegotiationListItemDto>>> GetDisputedForModeratorAsync(
+            ModeratorNegotiationSearchRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            var result = await _negotiationRepository.GetDisputedForModeratorAsync(request, cancellationToken);
+
+            return Result<PagedResult<ModeratorNegotiationListItemDto>>.Success(result);
+        }
+
+        public async Task<Result<ModeratorNegotiationDetailDto>> GetDisputedDetailForModeratorAsync(
+            Guid negotiationId,
+            CancellationToken cancellationToken = default)
+        {
+            var detail = await _negotiationRepository.GetDisputedDetailForModeratorAsync(
+                negotiationId,
+                cancellationToken);
+
+            if (detail is null)
+                return Result<ModeratorNegotiationDetailDto>.Fail(NegotiationErrors.NotFound);
+
+            return Result<ModeratorNegotiationDetailDto>.Success(detail);
+        }
+
+        public async Task<Result<PagedResult<ModeratorNegotiationMessageDto>>> GetDisputedMessagesForModeratorAsync(
+            Guid negotiationId,
+            PaginationRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            var negotiation = await _negotiationRepository.GetDisputedDetailForModeratorAsync(
+                negotiationId,
+                cancellationToken);
+
+            if (negotiation is null)
+                return Result<PagedResult<ModeratorNegotiationMessageDto>>
+                    .Fail(NegotiationErrors.NotFound);
+
+            var messages = await _messageRepository.GetByNegotiationIdAsync(
+                negotiationId,
+                request,
+                cancellationToken);
+
+            var items = messages.Items.Select(message =>
+            {
+                string? senderUsername = null;
+
+                if (message.SenderId == negotiation.BuyerId)
+                    senderUsername = negotiation.BuyerUsername;
+                else if (message.SenderId == negotiation.SellerId)
+                    senderUsername = negotiation.SellerUsername;
+
+                var isProposal = message.MessageType is MessageType.Offer or MessageType.CounterOffer;
+
+                return new ModeratorNegotiationMessageDto
+                {
+                    MessageId = message.MessageId,
+                    SenderId = message.SenderId,
+                    SenderUsername = senderUsername,
+                    MessageType = message.MessageType,
+                    MessageContent = message.MessageContent,
+
+                    OfferPrice = isProposal ? message.OfferPrice : null,
+                    OfferQuantity = isProposal ? message.OfferQuantity : null,
+                    OfferStatus = isProposal ? message.OfferStatus : null,
+                    BasePriceSnapshot = isProposal ? message.BasePriceSnapshot : null,
+
+                    MediaUrl = message.MediaUrl,
+                    CreatedAt = message.CreatedAt
+                };
+            }).ToList();
+
+            return Result<PagedResult<ModeratorNegotiationMessageDto>>.Success(
+                new PagedResult<ModeratorNegotiationMessageDto>
+                {
+                    Items = items,
+                    PageNumber = messages.PageNumber,
+                    PageSize = messages.PageSize,
+                    TotalCount = messages.TotalCount
+                });
+        }
+
         // ================== PRIVATE HELPERS ==================
 
         private NegotiationDetailResponse ToDetailResponse(negotiation negotiation, IReadOnlyList<message> messages)
