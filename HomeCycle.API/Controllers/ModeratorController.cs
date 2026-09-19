@@ -4,6 +4,7 @@ using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Requests.Appointments;
 using HomeCycle.Application.DTOs.Requests.Disputes;
 using HomeCycle.Application.DTOs.Requests.Moderators;
+using HomeCycle.Application.DTOs.Requests.Negotiates;
 using HomeCycle.Application.DTOs.Requests.Orders;
 using HomeCycle.Application.DTOs.Requests.Wallets;
 using HomeCycle.Application.DTOs.Responses.Appointments;
@@ -16,6 +17,7 @@ using HomeCycle.Application.Interfaces.Services.Appointments;
 using HomeCycle.Application.Interfaces.Services.Disputes;
 using HomeCycle.Application.Interfaces.Services.Inspections;
 using HomeCycle.Application.Interfaces.Services.Moderators;
+using HomeCycle.Application.Interfaces.Services.Negotiates;
 using HomeCycle.Application.Interfaces.Services.Orders;
 using HomeCycle.Application.Interfaces.Services.Payments;
 using HomeCycle.Application.Interfaces.Services.Posts;
@@ -41,8 +43,9 @@ namespace HomeCycle.API.Controllers
         private readonly IOrderService _orderService;
         private readonly IAppointmentService _appointmentService;
         private readonly IInspectionFormService _inspectionFormService;
+        private readonly INegotiationService _negotiationService;
         public ModeratorController(IModeratorService moderatorService, IPostService postService, IWithdrawalService withdrawalService, IDisputeService disputeService, IPaymentService paymentService,
-            IAppointmentService appointmentService, IOrderService orderService, IInspectionFormService inspectionFormService)
+            IAppointmentService appointmentService, IOrderService orderService, IInspectionFormService inspectionFormService, INegotiationService negotiationService)
         {
             _moderatorService = moderatorService;
             _postService = postService;
@@ -52,6 +55,7 @@ namespace HomeCycle.API.Controllers
             _orderService = orderService;
             _appointmentService = appointmentService;
             _inspectionFormService = inspectionFormService;
+            _negotiationService = negotiationService;
         }
 
         [HttpPost("business-profiles/review")]
@@ -626,6 +630,65 @@ namespace HomeCycle.API.Controllers
             return Ok(result.Data);
         }
 
+        [HttpGet("negotiations")]
+        [SwaggerOperation(
+            Summary = "Lấy danh sách thương lượng liên quan tranh chấp cho Moderator",
+            Description = "Chỉ trả về Negotiation đã phát sinh Order và Order đó có tranh chấp. Hỗ trợ tìm theo mã đơn hàng, sản phẩm, Buyer hoặc Seller và phân trang."
+        )]
+        public async Task<IActionResult> GetNegotiations(
+            [FromQuery] ModeratorNegotiationSearchRequest request,
+            CancellationToken cancellationToken)
+        {
+            var result = await _negotiationService.GetDisputedForModeratorAsync(
+                request,
+                cancellationToken);
+
+            if (!result.IsSuccess)
+                return MapModeratorReadError(result.Error!);
+
+            return Ok(result.Data);
+        }
+
+        [HttpGet("negotiations/{negotiationId:guid}")]
+        [SwaggerOperation(
+            Summary = "Lấy chi tiết thương lượng liên quan tranh chấp",
+            Description = "Trả về thông tin thương lượng, Order, tranh chấp mới nhất và hai bên tham gia. Negotiation không thuộc Order đã phát sinh tranh chấp sẽ không được trả về."
+        )]
+        public async Task<IActionResult> GetNegotiationDetail(
+            Guid negotiationId,
+            CancellationToken cancellationToken)
+        {
+            var result = await _negotiationService.GetDisputedDetailForModeratorAsync(
+                negotiationId,
+                cancellationToken);
+
+            if (!result.IsSuccess)
+                return MapModeratorReadError(result.Error!);
+
+            return Ok(result.Data);
+        }
+
+        [HttpGet("negotiations/{negotiationId:guid}/messages")]
+        [SwaggerOperation(
+            Summary = "Lấy lịch sử thương lượng cho Moderator",
+            Description = "Trả về timeline message và proposal của Negotiation thuộc Order đã phát sinh tranh chấp. API chỉ đọc, không cấp quyền gửi hoặc xử lý proposal."
+        )]
+        public async Task<IActionResult> GetNegotiationMessages(
+            Guid negotiationId,
+            [FromQuery] PaginationRequest request,
+            CancellationToken cancellationToken)
+        {
+            var result = await _negotiationService.GetDisputedMessagesForModeratorAsync(
+                negotiationId,
+                request,
+                cancellationToken);
+
+            if (!result.IsSuccess)
+                return MapModeratorReadError(result.Error!);
+
+            return Ok(result.Data);
+        }
+
         private IActionResult MapModeratorReadError(Error error)
         {
             if (error == OrderErrors.NotFound ||
@@ -633,6 +696,7 @@ namespace HomeCycle.API.Controllers
                 error == AppointmentErrors.NotFound ||
                 error == AppointmentErrors.InspectionDetailNotFound ||
                 error == InspectionErrors.NotFound ||
+                error == NegotiationErrors.NotFound ||
                 error.Code == "Withdrawal.NotFound")
             {
                 return NotFound(error);

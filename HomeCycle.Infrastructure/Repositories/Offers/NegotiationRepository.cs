@@ -1,4 +1,6 @@
 using HomeCycle.Application.Commons.Paginations;
+using HomeCycle.Application.DTOs.Requests.Negotiates;
+using HomeCycle.Application.DTOs.Responses.Negotiations;
 using HomeCycle.Application.Interfaces.Repositories.Offers;
 using HomeCycle.Domain.Entities;
 using HomeCycle.Domain.Enums;
@@ -160,6 +162,163 @@ namespace HomeCycle.Infrastructure.Repositories.Offers
             var infraEntity = entity.ToInfrastructure();
             _db.Negotiations.Update(infraEntity);
             return Task.CompletedTask;
+        }
+
+        public async Task<PagedResult<ModeratorNegotiationListItemDto>> GetDisputedForModeratorAsync(
+            ModeratorNegotiationSearchRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            var orderDisputeTarget = (int)DisputeTargetType.Order;
+
+            var query = _db.Negotiations
+                .AsNoTracking()
+                .Where(n =>
+                    n.Agreement_Form != null &&
+                    n.Agreement_Form.Order != null &&
+                    n.Agreement_Form.Order.Disputes.Any(d => d.DisputeTargetType == orderDisputeTarget));
+
+            if (!string.IsNullOrWhiteSpace(request.Keyword))
+            {
+                var pattern = $"%{request.Keyword.Trim()}%";
+
+                query = query.Where(n =>
+                    EF.Functions.ILike(n.Agreement_Form!.Order!.OrderCode, pattern) ||
+                    (n.Agreement_Form.Order.ProductName != null &&
+                     EF.Functions.ILike(n.Agreement_Form.Order.ProductName, pattern)) ||
+                    EF.Functions.ILike(n.Buyer.Username, pattern) ||
+                    EF.Functions.ILike(n.Seller.Username, pattern));
+            }
+
+            var totalCount = await query.CountAsync(cancellationToken);
+
+            var items = await query
+                .OrderByDescending(n => n.Agreement_Form!.Order!.Disputes
+                    .Where(d => d.DisputeTargetType == orderDisputeTarget)
+                    .Max(d => d.CreatedAt))
+                .ThenByDescending(n => n.LastMessageAt)
+                .ThenByDescending(n => n.CreatedAt)
+                .Skip((request.PageNumber - 1) * request.PageSize)
+                .Take(request.PageSize)
+                .Select(n => new ModeratorNegotiationListItemDto
+                {
+                    NegotiationId = n.NegotiationId,
+
+                    OrderId = n.Agreement_Form!.Order!.OrderId,
+                    OrderCode = n.Agreement_Form.Order.OrderCode,
+                    ProductName = n.Agreement_Form.Order.ProductName,
+
+                    DisputeId = n.Agreement_Form.Order.Disputes
+                        .Where(d => d.DisputeTargetType == orderDisputeTarget)
+                        .OrderByDescending(d => d.CreatedAt)
+                        .ThenByDescending(d => d.DisputeId)
+                        .Select(d => d.DisputeId)
+                        .First(),
+
+                    DisputeStatus = n.Agreement_Form.Order.Disputes
+                        .Where(d => d.DisputeTargetType == orderDisputeTarget)
+                        .OrderByDescending(d => d.CreatedAt)
+                        .ThenByDescending(d => d.DisputeId)
+                        .Select(d => d.DisputeStatus.HasValue
+                            ? (DisputeStatus?)d.DisputeStatus.Value
+                            : null)
+                        .FirstOrDefault(),
+
+                    DisputeCreatedAt = n.Agreement_Form.Order.Disputes
+                        .Where(d => d.DisputeTargetType == orderDisputeTarget)
+                        .OrderByDescending(d => d.CreatedAt)
+                        .ThenByDescending(d => d.DisputeId)
+                        .Select(d => d.CreatedAt)
+                        .First(),
+
+                    BuyerUsername = n.Buyer.Username,
+                    SellerUsername = n.Seller.Username,
+
+                    NegotiationStatus = n.NegotiationStatus.HasValue
+                        ? (NegotiationStatus?)n.NegotiationStatus.Value
+                        : null,
+
+                    FinalPrice = n.FinalPrice,
+                    FinalQuantity = n.FinalQuantity,
+                    LastMessageAt = n.LastMessageAt
+                })
+                .ToListAsync(cancellationToken);
+
+            return new PagedResult<ModeratorNegotiationListItemDto>
+            {
+                Items = items,
+                PageNumber = request.PageNumber,
+                PageSize = request.PageSize,
+                TotalCount = totalCount
+            };
+        }
+
+        public async Task<ModeratorNegotiationDetailDto?> GetDisputedDetailForModeratorAsync(
+            Guid negotiationId,
+            CancellationToken cancellationToken = default)
+        {
+            var orderDisputeTarget = (int)DisputeTargetType.Order;
+
+            return await _db.Negotiations
+                .AsNoTracking()
+                .Where(n =>
+                    n.NegotiationId == negotiationId &&
+                    n.Agreement_Form != null &&
+                    n.Agreement_Form.Order != null &&
+                    n.Agreement_Form.Order.Disputes.Any(d => d.DisputeTargetType == orderDisputeTarget))
+                .Select(n => new ModeratorNegotiationDetailDto
+                {
+                    NegotiationId = n.NegotiationId,
+
+                    NegotiationStatus = n.NegotiationStatus.HasValue
+                        ? (NegotiationStatus?)n.NegotiationStatus.Value
+                        : null,
+
+                    FinalPrice = n.FinalPrice,
+                    FinalQuantity = n.FinalQuantity,
+                    CreatedAt = n.CreatedAt,
+                    LastMessageAt = n.LastMessageAt,
+
+                    OrderId = n.Agreement_Form!.Order!.OrderId,
+                    OrderCode = n.Agreement_Form.Order.OrderCode,
+                    ProductName = n.Agreement_Form.Order.ProductName,
+
+                    DisputeId = n.Agreement_Form.Order.Disputes
+                        .Where(d => d.DisputeTargetType == orderDisputeTarget)
+                        .OrderByDescending(d => d.CreatedAt)
+                        .ThenByDescending(d => d.DisputeId)
+                        .Select(d => d.DisputeId)
+                        .First(),
+
+                    DisputeStatus = n.Agreement_Form.Order.Disputes
+                        .Where(d => d.DisputeTargetType == orderDisputeTarget)
+                        .OrderByDescending(d => d.CreatedAt)
+                        .ThenByDescending(d => d.DisputeId)
+                        .Select(d => d.DisputeStatus.HasValue
+                            ? (DisputeStatus?)d.DisputeStatus.Value
+                            : null)
+                        .FirstOrDefault(),
+
+                    DisputeCreatedAt = n.Agreement_Form.Order.Disputes
+                        .Where(d => d.DisputeTargetType == orderDisputeTarget)
+                        .OrderByDescending(d => d.CreatedAt)
+                        .ThenByDescending(d => d.DisputeId)
+                        .Select(d => d.CreatedAt)
+                        .First(),
+
+                    DisputeResolvedAt = n.Agreement_Form.Order.Disputes
+                        .Where(d => d.DisputeTargetType == orderDisputeTarget)
+                        .OrderByDescending(d => d.CreatedAt)
+                        .ThenByDescending(d => d.DisputeId)
+                        .Select(d => d.ResolvedAt)
+                        .FirstOrDefault(),
+
+                    BuyerId = n.BuyerId,
+                    BuyerUsername = n.Buyer.Username,
+
+                    SellerId = n.SellerId,
+                    SellerUsername = n.Seller.Username
+                })
+                .SingleOrDefaultAsync(cancellationToken);
         }
 
         //tái sử dụng đoạn guard clause

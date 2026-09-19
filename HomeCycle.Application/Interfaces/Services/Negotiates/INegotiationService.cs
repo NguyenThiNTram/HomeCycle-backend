@@ -38,5 +38,18 @@ namespace HomeCycle.Application.Interfaces.Services.Negotiates
 
         // Chỉ gọi nội bộ sau khi Agreement/Order hoàn tất
         Task<Result> CloseAsync(Guid negotiationId, CancellationToken cancellationToken = default);
+        Task<Result<PagedResult<ModeratorNegotiationListItemDto>>> GetDisputedForModeratorAsync(
+            ModeratorNegotiationSearchRequest request,
+            CancellationToken cancellationToken = default);
+
+        Task<Result<ModeratorNegotiationDetailDto>> GetDisputedDetailForModeratorAsync(
+            Guid negotiationId,
+            CancellationToken cancellationToken = default);
+
+        Task<Result<PagedResult<ModeratorNegotiationMessageDto>>> GetDisputedMessagesForModeratorAsync(
+            Guid negotiationId,
+            PaginationRequest request,
+            CancellationToken cancellationToken = default);
+
     }
 }
