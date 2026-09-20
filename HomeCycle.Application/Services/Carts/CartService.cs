@@ -29,19 +29,22 @@ namespace HomeCycle.Application.Services.Carts
         private readonly IMediaService _mediaService;
         private readonly IUnitOfWork _unitOfWork;
         private readonly IMapper _mapper;
+        private readonly ICartRealtimeService _cartRealtimeService;
 
         public CartService(
             ICartItemRepository cartItemRepository,
             IPostRepository postRepository,
             IMediaService mediaService,
             IUnitOfWork unitOfWork,
-            IMapper mapper)
+            IMapper mapper,
+            ICartRealtimeService cartRealtimeService)
         {
             _cartItemRepository = cartItemRepository;
             _postRepository = postRepository;
             _mediaService = mediaService;
             _unitOfWork = unitOfWork;
             _mapper = mapper;
+            _cartRealtimeService = cartRealtimeService;
         }
 
         // ================== GET ==================
@@ -115,7 +118,7 @@ namespace HomeCycle.Application.Services.Carts
 
             await _cartItemRepository.AddAsync(cartItem, cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
-
+            await _cartRealtimeService.PublishUpdatedSafelyAsync(userId, cartItem.CreatedAt);
             var created = await _cartItemRepository.GetByIdAsync(cartItem.CartItemId, cancellationToken);
             if (created is null)
                 return Result<CartItemResponse>.Fail(CartErrors.ItemNotFound);
@@ -145,7 +148,7 @@ namespace HomeCycle.Application.Services.Carts
 
             await _cartItemRepository.DeleteAsync(cartItemId, cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
-
+            await _cartRealtimeService.PublishUpdatedSafelyAsync(userId, DateTime.UtcNow);
             return Result<bool>.Success(true);
         }
 

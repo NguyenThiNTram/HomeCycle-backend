@@ -122,9 +122,8 @@ namespace HomeCycle.Application.Services.Disputes
                 nowUtc >= latestCollection.LateThresholdAt.Value;
 
             var noShowEligible =
-                agreement.AgreementType == (int)AgreementType.Inspection
-                    ? inspectionNoShowEligible
-                    : agreement.AgreementType == (int)AgreementType.No_Inspection && directCollectionNoShowEligible;
+                inspectionNoShowEligible ||
+                directCollectionNoShowEligible;
 
             var deliveryStarted =
                 shipment != null &&

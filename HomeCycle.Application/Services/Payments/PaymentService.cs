@@ -41,6 +41,8 @@ using HomeCycle.Application.Interfaces.Repositories.SubscriptionPackages;
 using HomeCycle.Application.Interfaces.Services.SubscriptionPackages;
 using HomeCycle.Application.DTOs.Responses.SubscriptionPackages;
 using HomeCycle.Application.Interfaces.Repositories.Carts;
+using HomeCycle.Application.Interfaces.Services.Appointments;
+using HomeCycle.Application.Interfaces.Services.Carts;
 
 namespace HomeCycle.Application.Services.Payments
 {
@@ -94,6 +96,8 @@ namespace HomeCycle.Application.Services.Payments
         private readonly IUserSubscriptionRepository _userSubscriptionRepo;
         private readonly IUserSubscriptionService _userSubscriptionService;
         private readonly ICartItemRepository _cartItemRepository;
+        private readonly IAppointmentRealtimeService _appointmentRealtimeService;
+        private readonly ICartRealtimeService _cartRealtimeService;
         public PaymentService(
             IUnitOfWork unitOfWork,
             IPaymentGatewayService gatewayService,
@@ -126,7 +130,9 @@ namespace HomeCycle.Application.Services.Payments
             IMapper mapper,
             IUserSubscriptionRepository userSubscriptionRepo,
             IUserSubscriptionService userSubscriptionService,
-            ICartItemRepository cartItemRepository)
+            ICartItemRepository cartItemRepository,
+            IAppointmentRealtimeService appointmentRealtimeService,
+            ICartRealtimeService cartRealtimeService)
         {
             _unitOfWork = unitOfWork;
             _gatewayService = gatewayService;
@@ -160,6 +166,8 @@ namespace HomeCycle.Application.Services.Payments
             _userSubscriptionRepo = userSubscriptionRepo;
             _userSubscriptionService = userSubscriptionService;
             _cartItemRepository = cartItemRepository;
+            _appointmentRealtimeService = appointmentRealtimeService;
+            _cartRealtimeService = cartRealtimeService;
         }
 
         public async Task<Result<PaymentQuoteResponseDto>> GetPaymentQuoteAsync(
@@ -1116,6 +1124,13 @@ namespace HomeCycle.Application.Services.Payments
 
                 foreach (var postNotification in fulfillment.PostNotifications)
                     await _notificationService.PublishCreatedSafelyAsync(postNotification);
+                await _appointmentRealtimeService.PublishUpdatedSafelyAsync(
+                    fulfillment.Appointment.AppointmentId,
+                    now);
+
+                await _cartRealtimeService.PublishUpdatedSafelyAsync(
+                    agreement.BuyerId,
+                    now);
 
                 return Result<PaymentStatusResponseDto>.Success(
                     new PaymentStatusResponseDto
@@ -3164,6 +3179,14 @@ namespace HomeCycle.Application.Services.Payments
 
                 foreach (var postNotification in fulfillment.PostNotifications)
                     await _notificationService.PublishCreatedSafelyAsync(postNotification);
+
+                await _appointmentRealtimeService.PublishUpdatedSafelyAsync(
+                    fulfillment.Appointment.AppointmentId,
+                    now);
+
+                await _cartRealtimeService.PublishUpdatedSafelyAsync(
+                    agreement.BuyerId,
+                    now);
 
             }
             catch (Exception ex)

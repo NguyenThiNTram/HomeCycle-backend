@@ -1,6 +1,8 @@
 using HomeCycle.API.Auditing;
 using HomeCycle.API.Hubs;
 using HomeCycle.API.Middlewares;
+using HomeCycle.Application.Interfaces.Repositories.Appointments;
+using HomeCycle.Application.Interfaces.Repositories.Carts;
 using HomeCycle.Application.Interfaces.Repositories.Notifications;
 using HomeCycle.Application.Interfaces.Repositories.Offers;
 using HomeCycle.Application.Interfaces.Repositories.Orders;
@@ -40,6 +42,8 @@ namespace HomeCycle.API
             builder.Services.AddSingleton<IChatRealtimePublisher, SignalRChatRealtimePublisher>();
             builder.Services.AddSingleton<INotificationRealtimePublisher, SignalRNotificationRealtimePublisher>();
             builder.Services.AddSingleton<IOrderTrackingRealtimePublisher, SignalROrderTrackingRealtimePublisher>();
+            builder.Services.AddSingleton<IAppointmentRealtimePublisher, SignalRAppointmentRealtimePublisher>();
+            builder.Services.AddSingleton<ICartRealtimePublisher, SignalRCartRealtimePublisher>();
 
             builder.Services.AddScoped<IAuthorizationHandler, ActiveUserHandler>();
 

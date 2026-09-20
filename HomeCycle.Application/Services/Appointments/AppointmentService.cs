@@ -48,6 +48,7 @@ namespace HomeCycle.Application.Services.Appointments
         private readonly IValidator<RejectAppointmentRescheduleRequest> _rejectRescheduleValidator;
         private readonly IValidator<CancelAppointmentRequest> _cancelValidator;
         private readonly IInspectionFormRepository _inspectionFormRepo;
+        private readonly IAppointmentRealtimeService _appointmentRealtimeService;
 
         public AppointmentService(
             IAppointmentRepository appointmentRepo,
@@ -64,7 +65,8 @@ namespace HomeCycle.Application.Services.Appointments
             IValidator<RescheduleAppointmentRequest> rescheduleValidator,
             IValidator<RejectAppointmentRescheduleRequest> rejectRescheduleValidator,
             IValidator<CancelAppointmentRequest> cancelValidator, 
-            IInspectionFormRepository inspectionFormRepository)
+            IInspectionFormRepository inspectionFormRepository,
+            IAppointmentRealtimeService appointmentRealtimeService)
         {
             _appointmentRepo = appointmentRepo;
             _inspectionRepo = inspectionRepo;
@@ -81,6 +83,7 @@ namespace HomeCycle.Application.Services.Appointments
             _rejectRescheduleValidator = rejectRescheduleValidator;
             _cancelValidator = cancelValidator;
             _inspectionFormRepo = inspectionFormRepository;
+            _appointmentRealtimeService = appointmentRealtimeService;
         }
 
         public async Task<Result<PagedResult<InspectionAppointmentListItemDto>>> GetInspectionListAsync(
@@ -475,6 +478,9 @@ namespace HomeCycle.Application.Services.Appointments
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
                 await _notificationService.PublishCreatedSafelyAsync(checkInNotification);
+                await _appointmentRealtimeService.PublishUpdatedSafelyAsync(
+                    appointment.AppointmentId,
+                    appointment.UpdatedAt);
                 await _orderTrackingRealtimeService.PublishByAgreementIdSafelyAsync(
                     appointment.AgreementId,
                     appointment.UpdatedAt);
@@ -711,6 +717,9 @@ namespace HomeCycle.Application.Services.Appointments
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
                 await _notificationService.PublishCreatedSafelyAsync(rescheduleNotification);
+                await _appointmentRealtimeService.PublishUpdatedSafelyAsync(
+                    original.AppointmentId,
+                    now);
 
                 return Result<AppointmentRescheduleResponseDto>.Success(
                     new AppointmentRescheduleResponseDto
@@ -870,6 +879,9 @@ namespace HomeCycle.Application.Services.Appointments
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
                 await _notificationService.PublishCreatedSafelyAsync(rescheduleNotification);
+                await _appointmentRealtimeService.PublishUpdatedSafelyAsync(
+                    original.AppointmentId,
+                    now);
                 await _orderTrackingRealtimeService.PublishByAgreementIdSafelyAsync(
                     agreement.AgreementId,
                     now);
@@ -1015,7 +1027,9 @@ namespace HomeCycle.Application.Services.Appointments
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
                 await _notificationService.PublishCreatedSafelyAsync(rescheduleNotification);
-
+                await _appointmentRealtimeService.PublishUpdatedSafelyAsync(
+                    original.AppointmentId,
+                    now);
                 return Result<AppointmentRescheduleResponseDto>.Success(
                     new AppointmentRescheduleResponseDto
                     {
@@ -1182,6 +1196,9 @@ namespace HomeCycle.Application.Services.Appointments
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
                 await _notificationService.PublishCreatedSafelyAsync(cancelNotification);
+                await _appointmentRealtimeService.PublishUpdatedSafelyAsync(
+                    appointment.AppointmentId,
+                    appointment.UpdatedAt);
                 await _orderTrackingRealtimeService.PublishByAgreementIdSafelyAsync(
                     agreement.AgreementId,
                     appointment.UpdatedAt);

@@ -34,6 +34,7 @@ using System.Threading.Tasks;
 using HomeCycle.Application.Interfaces.Services.Audits;
 using HomeCycle.Application.Commons.Audits;
 using HomeCycle.Application.Interfaces.Services.GHN;
+using HomeCycle.Application.Interfaces.Services.Appointments;
 
 namespace HomeCycle.Application.Services.Orders
 {
@@ -61,6 +62,7 @@ namespace HomeCycle.Application.Services.Orders
         private readonly IAuditService _auditService;
         private readonly IMapper _mapper;
         private readonly IGhnShipmentCreationService _ghnLifecycle;
+        private readonly IAppointmentRealtimeService _appointmentRealtimeService;
 
         public OrderService(
             IOrderRepository orderRepo,
@@ -83,7 +85,8 @@ namespace HomeCycle.Application.Services.Orders
             IOrderTrackingRealtimeService orderTrackingRealtimeService,
             IAuditService auditService,
             IMapper mapper,
-            IGhnShipmentCreationService ghnLifecycle)
+            IGhnShipmentCreationService ghnLifecycle,
+            IAppointmentRealtimeService appointmentRealtimeService)
         {
             _orderRepo = orderRepo;
             _postRepo = postRepo;
@@ -106,6 +109,7 @@ namespace HomeCycle.Application.Services.Orders
             _auditService = auditService;
             _mapper = mapper;
             _ghnLifecycle = ghnLifecycle;
+            _appointmentRealtimeService = appointmentRealtimeService;
         }
 
         public async Task<Result<PagedResult<OrderListItemDto>>> GetMyOrdersAsync(
@@ -361,6 +365,7 @@ namespace HomeCycle.Application.Services.Orders
 
                 var confirmedAt = DateTime.UtcNow;
                 var changed = false;
+                var appointmentChanged = false;
                 notification? handoverNotification = null;
                 AuditEvent? handoverAuditEvent = null;
 
@@ -417,21 +422,15 @@ namespace HomeCycle.Application.Services.Orders
                     changed = true;
                 }
 
-                if (
-                    lockedCollection != null &&
-                    lockedCollection.AppointmentStatus ==
-                        (int)AppointmentStatus.Scheduled)
+                if (lockedCollection != null && lockedCollection.AppointmentStatus == (int)AppointmentStatus.Scheduled)
                 {
-                    lockedCollection.AppointmentStatus =
-                        (int)AppointmentStatus.InProgress;
-
+                    lockedCollection.AppointmentStatus = (int)AppointmentStatus.InProgress;
                     lockedCollection.UpdatedAt = confirmedAt;
 
-                    await _appointmentRepo.UpdateAsync(
-                        lockedCollection,
-                        ct);
+                    await _appointmentRepo.UpdateAsync(lockedCollection, ct);
 
                     changed = true;
+                    appointmentChanged = true;
                 }
 
                 if (handoverAuditEvent != null)
@@ -455,6 +454,13 @@ namespace HomeCycle.Application.Services.Orders
                     await _orderTrackingRealtimeService.PublishByOrderIdSafelyAsync(
                         order.OrderId,
                         order.UpdatedAt);
+                }
+
+                if (appointmentChanged)
+                {
+                    await _appointmentRealtimeService.PublishUpdatedSafelyAsync(
+                        lockedCollection!.AppointmentId,
+                        lockedCollection.UpdatedAt);
                 }
 
                 return Result<OrderConfirmationResponseDto>.Success(
@@ -781,6 +787,13 @@ namespace HomeCycle.Application.Services.Orders
                 await _orderTrackingRealtimeService.PublishByOrderIdSafelyAsync(
                     order.OrderId,
                     order.UpdatedAt);
+
+                if (directCollection != null)
+                {
+                    await _appointmentRealtimeService.PublishUpdatedSafelyAsync(
+                        directCollection.AppointmentId,
+                        directCollection.UpdatedAt);
+                }
 
                 return Result<OrderConfirmationResponseDto>.Success(
                     new OrderConfirmationResponseDto
@@ -1109,6 +1122,12 @@ namespace HomeCycle.Application.Services.Orders
 
                 await _notificationService.PublishCreatedSafelyAsync(cancellationNotification);
                 await _orderTrackingRealtimeService.PublishByOrderIdSafelyAsync(order.OrderId, order.UpdatedAt);
+                if (appointmentToCancel != null)
+                {
+                    await _appointmentRealtimeService.PublishUpdatedSafelyAsync(
+                        appointmentToCancel.AppointmentId,
+                        appointmentToCancel.UpdatedAt);
+                }
 
                 if (isGhnDelivery)
                     await _ghnLifecycle.CancelForOrderSafelyAsync(order.OrderId, CancellationToken.None);
@@ -1782,9 +1801,8 @@ namespace HomeCycle.Application.Services.Orders
                 now >= latestCollection.LateThresholdAt.Value;
 
             var noShowEligible =
-                agreement.AgreementType == (int)AgreementType.Inspection
-                    ? inspectionNoShowEligible
-                    : agreement.AgreementType == (int)AgreementType.No_Inspection && directCollectionNoShowEligible;
+                inspectionNoShowEligible ||
+                directCollectionNoShowEligible;
 
             var deliveryStarted =
                 shipment != null &&
