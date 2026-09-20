@@ -1,17 +1,13 @@
 ﻿using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Responses.GHN;
-using HomeCycle.Application.Interfaces.Externals;
-using HomeCycle.Application.Interfaces.Generics;
 using HomeCycle.Application.Interfaces.Repositories.Agreements;
 using HomeCycle.Application.Interfaces.Repositories.GHN;
 using HomeCycle.Application.Interfaces.Repositories.Orders;
 using HomeCycle.Application.Interfaces.Repositories.Shipments;
 using HomeCycle.Application.Interfaces.Services.GHN;
-using HomeCycle.Application.Interfaces.Services.Orders;
 using HomeCycle.Application.Services.GHN;
 using HomeCycle.Domain.Entities;
 using HomeCycle.Domain.Enums;
-using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -26,29 +22,17 @@ namespace HomeCycle.Infrastructure.Externals.GHN
         private readonly IAgreementFormRepository _agreementRepo;
         private readonly IShipmentRepository _shipmentRepo;
         private readonly IGhnShipmentRepository _ghnShipmentRepo;
-        private readonly IGhnService _ghnService;
-        private readonly IOrderTrackingRealtimeService _orderTrackingRealtimeService;
-        private readonly IUnitOfWork _unitOfWork;
-        private readonly ILogger<GhnTrackingSyncService> _logger;
 
         public GhnTrackingSyncService(
             IOrderRepository orderRepo,
             IAgreementFormRepository agreementRepo,
             IShipmentRepository shipmentRepo,
-            IGhnShipmentRepository ghnShipmentRepo,
-            IGhnService ghnService,
-            IOrderTrackingRealtimeService orderTrackingRealtimeService,
-            IUnitOfWork unitOfWork,
-            ILogger<GhnTrackingSyncService> logger)
+            IGhnShipmentRepository ghnShipmentRepo)
         {
             _orderRepo = orderRepo;
             _agreementRepo = agreementRepo;
             _shipmentRepo = shipmentRepo;
             _ghnShipmentRepo = ghnShipmentRepo;
-            _ghnService = ghnService;
-            _orderTrackingRealtimeService = orderTrackingRealtimeService;
-            _unitOfWork = unitOfWork;
-            _logger = logger;
         }
 
         public async Task<Result<ShipmentTrackingResponse>> SyncByOrderIdAsync(Guid orderId, Guid currentUserId, CancellationToken cancellationToken = default)
@@ -120,143 +104,13 @@ namespace HomeCycle.Infrastructure.Externals.GHN
                         isStale: false));
             }
 
-            try
-            {
-                var expected = GhnStateVersion.Capture(ghnShipment);
-                var detail = await _ghnService.GetOrderDetailAsync(
-                    ghnShipment.GHNOrderCode,
-                    cancellationToken);
-
-                // Chụp các mốc timeline trước khi cập nhật.
-                var previousCarrierStatus = ghnShipment.GHNStatusCode;
-                var previousEta = ghnShipment.ExpectedDeliveryAt;
-                var previousShipmentStatus = shipment.ShipmentStatus;
-                var previousPickedUpAt = shipment.PickedUpAt;
-                var previousDeliveredAt = shipment.DeliveredAt;
-
-
-                var syncedAt = DateTime.UtcNow;
-
-                if (!string.IsNullOrWhiteSpace(detail.CarrierStatus) && GhnStatusMapper.CanApply(ghnShipment.GHNStatusCode, detail.CarrierStatus))
-                {
-                    ghnShipment.GHNStatusCode = detail.CarrierStatus
-                        .Trim()
-                        .ToLowerInvariant();
-
-                    var mappedStatus = GhnStatusMapper.Map(
-                        ghnShipment.GHNStatusCode);
-
-                    // GHN gửi status mới/không nhận diện:
-                    // giữ trạng thái HomeCycle cũ, không cập nhật sai.
-                    if (mappedStatus.HasValue)
-                    {
-                        shipment.ShipmentStatus = mappedStatus.Value;
-
-                        var carrierHasPickedUp =
-                            mappedStatus.Value == ShipmentStatus.Delivering ||
-                            mappedStatus.Value == ShipmentStatus.Delivered ||
-                            mappedStatus.Value == ShipmentStatus.Returning ||
-                            mappedStatus.Value == ShipmentStatus.Returned ||
-                            mappedStatus.Value == ShipmentStatus.Damage_Lost;
-
-                        if (carrierHasPickedUp)
-                        {
-                            // Chỉ dùng sự kiện lấy hàng thật, không suy thời điểm lấy từ các chặng sau.
-                            var pickedUpLog = detail.Timeline
-                                .Where(x =>
-                                    x.OccurredAt.HasValue &&
-                                    x.Status == "picked")
-                                .OrderBy(x => x.OccurredAt)
-                                .FirstOrDefault();
-
-                            var detectedPickedUpAt = pickedUpLog?.OccurredAt?.UtcDateTime;
-
-                            if (detectedPickedUpAt.HasValue && (!shipment.PickedUpAt.HasValue ||
-                                detectedPickedUpAt < shipment.PickedUpAt.Value))
-                            {
-                                shipment.PickedUpAt = detectedPickedUpAt;
-                            }
-                        }
-                    }
-                }
-
-                if (detail.ExpectedDeliveryAt.HasValue)
-                    ghnShipment.ExpectedDeliveryAt = detail.ExpectedDeliveryAt.Value.UtcDateTime;
-
-                if (detail.FinishedAt.HasValue && detail.CarrierStatus == "delivered" && shipment.ShipmentStatus == ShipmentStatus.Delivered)
-                    shipment.DeliveredAt = detail.FinishedAt.Value.UtcDateTime;
-
-                // Nếu trước đó là Uncertain nhưng Detail đọc được thành công,
-                // có thể khẳng định vận đơn tồn tại trên GHN.
-                ghnShipment.CreationStatus = GHNCreationStatus.Success;
-                ghnShipment.LastSyncedAt = syncedAt;
-                if (ghnShipment.LastErrorCode?.StartsWith("CANCEL:") != true) ghnShipment.LastErrorCode = null;
-
-                shipment.UpdatedAt = syncedAt;
-
-                if (!await _ghnShipmentRepo.TrySaveCarrierStateAsync(ghnShipment, shipment, expected, cancellationToken))
-                    return Result<ShipmentTrackingResponse>.Fail(new Error("Ghn.TrackingChanged", "Trạng thái vừa thay đổi, vui lòng tải lại."));
-                var trackingChanged =
-                    previousCarrierStatus != ghnShipment.GHNStatusCode || previousEta != ghnShipment.ExpectedDeliveryAt ||
-                    previousShipmentStatus != shipment.ShipmentStatus ||
-                    previousPickedUpAt != shipment.PickedUpAt ||
-                    previousDeliveredAt != shipment.DeliveredAt;
-
-                // Không phát khi chỉ LastSyncedAt hoặc raw GHN status thay đổi.
-                if (trackingChanged)
-                {
-                    await _orderTrackingRealtimeService.PublishByOrderIdSafelyAsync(
-                        shipment.OrderId,
-                        shipment.UpdatedAt);
-                }
-
-                return Result<ShipmentTrackingResponse>.Success(
-                    BuildResponse(
-                        orderId,
-                        shipment,
-                        ghnShipment,
-                        isStale: false));
-            }
-            catch (OperationCanceledException exception)
-                when (!cancellationToken.IsCancellationRequested)
-            {
-                return await ReturnStaleResponseAsync(orderId, shipment, ghnShipment, "TRACKING:TIMEOUT", exception, cancellationToken);
-            }
-            catch (HttpRequestException exception)
-            {
-                return await ReturnStaleResponseAsync(orderId, shipment, ghnShipment, "TRACKING:NETWORK_ERROR", exception, cancellationToken);
-            }
-            catch (Exception exception)
-                when (exception is IGhnApiError)
-            {
-                var ghnError = (IGhnApiError)exception;
-
-                var errorCode = string.IsNullOrWhiteSpace(ghnError.CodeMessage)
-                    ? "TRACKING:GHN_SERVICE_ERROR"
-                    : $"TRACKING:{ghnError.CodeMessage}";
-
-                return await ReturnStaleResponseAsync(orderId, shipment, ghnShipment, errorCode, exception, cancellationToken);
-            }
-        }
-
-        private async Task<Result<ShipmentTrackingResponse>> ReturnStaleResponseAsync(Guid orderId, shipment shipment, ghn_shipment ghnShipment, string errorCode, Exception exception, CancellationToken cancellationToken)
-        {
-            _logger.LogWarning(
-                exception,
-                "Không thể đồng bộ tracking GHN cho Order {OrderId}, GHNOrderCode {GHNOrderCode}",
-                orderId,
-                ghnShipment.GHNOrderCode);
-
-            // Không ghi toàn bộ bản cũ sau lỗi mạng: webhook có thể đã cập nhật trong lúc chờ.
-            ghnShipment = await _ghnShipmentRepo.GetByShipmentIdAsync(shipment.ShipmentId, cancellationToken) ?? ghnShipment;
-            shipment = await _shipmentRepo.GetByIdAsync(shipment.ShipmentId, cancellationToken) ?? shipment;
             return Result<ShipmentTrackingResponse>.Success(
                 BuildResponse(
                     orderId,
                     shipment,
                     ghnShipment,
-                    isStale: true,
-                    message: "GHN hiện chưa phản hồi. Hệ thống đang hiển thị trạng thái gần nhất."));
+                    isStale: false,
+                    message: "Trạng thái vận chuyển được cập nhật qua webhook GHN."));
         }
 
         private static ShipmentTrackingResponse BuildResponse(  Guid orderId, shipment shipment, ghn_shipment ghnShipment, bool isStale, string? message = null)

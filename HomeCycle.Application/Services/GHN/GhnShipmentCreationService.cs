@@ -90,18 +90,21 @@ namespace HomeCycle.Application.Services.GHN
                 }
                 else
                 {
-                    var detail = await _ghnService.GetOrderDetailAsync(row.GHNOrderCode, cancellationToken);
-                    if (detail.CarrierStatus != "cancel")
+                    // Không đọc trạng thái Order Detail từ GHN trước khi hủy.
+                    // var detail = await _ghnService.GetOrderDetailAsync(row.GHNOrderCode, cancellationToken);
+                    // if (detail.CarrierStatus != "cancel")
+                    // {
+                    //     ... gửi lệnh hủy nếu vận đơn chưa ở trạng thái cancel ...
+                    // }
+                    // Thay thế: gửi lệnh hủy trực tiếp; kết quả CancelOrders là nguồn xác nhận.
+                    var result = await _ghnService.CancelOrdersAsync(new[] { row.GHNOrderCode }, "GHN-CANCEL-OTHER",
+                        order.CancellationReason ?? "Hủy đơn HomeCycle", cancellationToken);
+                    if (!result.Single().Result)
                     {
-                        var result = await _ghnService.CancelOrdersAsync(new[] { row.GHNOrderCode }, "GHN-CANCEL-OTHER",
-                            order.CancellationReason ?? "Hủy đơn HomeCycle", cancellationToken);
-                        if (!result.Single().Result)
-                        {
-                            row.LastErrorCode = "CANCEL:REFUSED";
-                            row.LastSyncedAt = DateTime.UtcNow;
-                            await _ghnShipmentRepo.TrySaveCarrierStateAsync(row, shipment, expected, cancellationToken);
-                            return Result.Fail(new Error("Ghn.CancellationRefused", result.Single().Message));
-                        }
+                        row.LastErrorCode = "CANCEL:REFUSED";
+                        row.LastSyncedAt = DateTime.UtcNow;
+                        await _ghnShipmentRepo.TrySaveCarrierStateAsync(row, shipment, expected, cancellationToken);
+                        return Result.Fail(new Error("Ghn.CancellationRefused", result.Single().Message));
                     }
                     row.GHNStatusCode = "cancel";
                 }
