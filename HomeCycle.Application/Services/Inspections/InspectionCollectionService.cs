@@ -18,6 +18,7 @@ using HomeCycle.Application.Interfaces.Repositories.Orders;
 using HomeCycle.Application.Interfaces.Repositories.Payments;
 using HomeCycle.Application.Interfaces.Repositories.Products;
 using HomeCycle.Application.Interfaces.Repositories.Shipments;
+using HomeCycle.Application.Interfaces.Services.Appointments;
 using HomeCycle.Application.Interfaces.Services.Audits;
 using HomeCycle.Application.Interfaces.Services.Inspections;
 using HomeCycle.Application.Interfaces.Services.Notifications;
@@ -62,7 +63,7 @@ namespace HomeCycle.Application.Services.Inspections
         private readonly IValidator<CalculateGhnFeeRequest> _ghnFeeValidator;
         private readonly ILogger<InspectionCollectionService> _logger;
         private readonly Microsoft.Extensions.Configuration.IConfiguration _configuration;
-
+        private readonly IAppointmentRealtimeService _appointmentRealtimeService;
         public InspectionCollectionService(
             IInspectionFormRepository inspectionFormRepo,
             IOrderRepository orderRepo,
@@ -82,7 +83,8 @@ namespace HomeCycle.Application.Services.Inspections
             IValidator<ScheduleInspectionCollectionRequest> validator,
             IValidator<CalculateGhnFeeRequest> ghnFeeValidator,
             ILogger<InspectionCollectionService> logger,
-            Microsoft.Extensions.Configuration.IConfiguration configuration)
+            Microsoft.Extensions.Configuration.IConfiguration configuration,
+            IAppointmentRealtimeService appointmentRealtimeService)
         {
             _inspectionFormRepo = inspectionFormRepo;
             _orderRepo = orderRepo;
@@ -103,6 +105,7 @@ namespace HomeCycle.Application.Services.Inspections
             _ghnFeeValidator = ghnFeeValidator;
             _logger = logger;
             _configuration = configuration;
+            _appointmentRealtimeService = appointmentRealtimeService;
         }
 
         public async Task<Result<ScheduleInspectionCollectionResponse>> ScheduleAsync(
@@ -593,7 +596,9 @@ namespace HomeCycle.Application.Services.Inspections
                 await _unitOfWork.CommitTransactionAsync(cancellationToken);
 
                 await _notificationService.PublishCreatedSafelyAsync(collectionNotification);
-
+                await _appointmentRealtimeService.PublishUpdatedSafelyAsync(
+                    appointmentId,
+                    now);
                 await _orderTrackingRealtimeService.PublishByOrderIdSafelyAsync(
                     order.OrderId,
                     now);

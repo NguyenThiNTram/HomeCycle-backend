@@ -1,4 +1,6 @@
-﻿using HomeCycle.Application.DTOs.Responses.Conversations;
+﻿using HomeCycle.Application.DTOs.Responses.Appointments;
+using HomeCycle.Application.DTOs.Responses.Carts;
+using HomeCycle.Application.DTOs.Responses.Conversations;
 using HomeCycle.Application.DTOs.Responses.Messages;
 using HomeCycle.Application.DTOs.Responses.Notifications;
 using HomeCycle.Application.DTOs.Responses.Offers;
@@ -43,5 +45,10 @@ namespace HomeCycle.Application.Interfaces.Repositories.Offers
         // Order tracking
         Task OrderTrackingUpdated(OrderTrackingUpdatedResponse response);
 
+        // Appointment
+        Task AppointmentUpdated(AppointmentUpdatedResponse response);
+
+        // Cart
+        Task CartUpdated(CartUpdatedResponse response);
     }
 }

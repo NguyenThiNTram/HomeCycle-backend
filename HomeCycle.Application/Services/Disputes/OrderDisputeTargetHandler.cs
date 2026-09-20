@@ -81,9 +81,69 @@ namespace HomeCycle.Application.Services.Disputes
                 order.AgreementId,
                 cancellationToken);
 
-            var deliveryMethod = TryResolveDeliveryMethod(agreement);
+            var shipment = await _shipmentRepository.GetByOrderIdAsync(order.OrderId, cancellationToken);
 
-            if (!OrderDisputeCategoryPolicy.IsAllowed(categoryCode, appointments.Count > 0, deliveryMethod))
+            DeliveryMethod? deliveryMethod = shipment?.DeliveryMethod;
+
+            if (!deliveryMethod.HasValue || deliveryMethod.Value == DeliveryMethod.Unknown)
+                deliveryMethod = TryResolveDeliveryMethod(agreement);
+
+            var latestInspection = appointments
+                .Where(x => x.AppointmentType == AppointmentType.Inspection)
+                .OrderByDescending(x => x.CreatedAt)
+                .FirstOrDefault();
+
+            var latestCollection = appointments
+                .Where(x => x.AppointmentType == AppointmentType.Collection)
+                .OrderByDescending(x => x.CreatedAt)
+                .FirstOrDefault();
+
+            var inspectionStarted =
+                latestInspection?.InspectionCheckIn?.BuyerCheckAt.HasValue == true ||
+                latestInspection?.InspectionCheckIn?.SellerCheckAt.HasValue == true;
+
+            var inspectionNoShowEligible =
+                latestInspection != null &&
+                latestInspection.AppointmentStatus is AppointmentStatus.Scheduled or AppointmentStatus.InProgress &&
+                latestInspection.LateThresholdAt.HasValue &&
+                nowUtc >= latestInspection.LateThresholdAt.Value &&
+                (latestInspection.InspectionCheckIn?.BuyerCheckAt == null ||
+                 latestInspection.InspectionCheckIn?.SellerCheckAt == null);
+
+            var isDirectCollection =
+                deliveryMethod == DeliveryMethod.BuyerPickUp ||
+                deliveryMethod == DeliveryMethod.SellerDelivers;
+
+            var directCollectionNoShowEligible =
+                isDirectCollection &&
+                latestCollection != null &&
+                latestCollection.AppointmentStatus is AppointmentStatus.Scheduled or AppointmentStatus.InProgress &&
+                latestCollection.LateThresholdAt.HasValue &&
+                nowUtc >= latestCollection.LateThresholdAt.Value;
+
+            var noShowEligible =
+                inspectionNoShowEligible ||
+                directCollectionNoShowEligible;
+
+            var deliveryStarted =
+                shipment != null &&
+                (shipment.SellerReadyAt.HasValue ||
+                 shipment.PickedUpAt.HasValue ||
+                 (shipment.ShipmentStatus.HasValue &&
+                  shipment.ShipmentStatus != ShipmentStatus.ReadyToPick));
+
+            if (orderStatus == OrderStatus.Processing)
+            {
+                var canDispute = agreement.AgreementType == (int)AgreementType.Inspection
+                    ? inspectionStarted || inspectionNoShowEligible
+                    : agreement.AgreementType == (int)AgreementType.No_Inspection &&
+                      (deliveryStarted || directCollectionNoShowEligible);
+
+                if (!canDispute)
+                    return Result<DisputeTargetCreateContext>.Fail(OrderErrors.InvalidStatus);
+            }
+
+            if (!OrderDisputeCategoryPolicy.IsAllowed(categoryCode, noShowEligible, deliveryMethod))
                 return Result<DisputeTargetCreateContext>.Fail(DisputeErrors.InvalidCategory(categoryCode));
 
             // Order đã được lock trước khi check duplicate nên 2 request tạo dispute song song
@@ -110,7 +170,6 @@ namespace HomeCycle.Application.Services.Disputes
 
                     if (!fallbackWindowStart.HasValue)
                     {
-                        var shipment = await _shipmentRepository.GetByOrderIdAsync(order.OrderId, cancellationToken);
                         fallbackWindowStart = shipment?.DeliveredAt;
                     }
 

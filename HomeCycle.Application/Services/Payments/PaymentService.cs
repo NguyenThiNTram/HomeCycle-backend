@@ -41,6 +41,8 @@ using HomeCycle.Application.Interfaces.Repositories.SubscriptionPackages;
 using HomeCycle.Application.Interfaces.Services.SubscriptionPackages;
 using HomeCycle.Application.DTOs.Responses.SubscriptionPackages;
 using HomeCycle.Application.Interfaces.Repositories.Carts;
+using HomeCycle.Application.Interfaces.Services.Appointments;
+using HomeCycle.Application.Interfaces.Services.Carts;
 
 namespace HomeCycle.Application.Services.Payments
 {
@@ -94,6 +96,8 @@ namespace HomeCycle.Application.Services.Payments
         private readonly IUserSubscriptionRepository _userSubscriptionRepo;
         private readonly IUserSubscriptionService _userSubscriptionService;
         private readonly ICartItemRepository _cartItemRepository;
+        private readonly IAppointmentRealtimeService _appointmentRealtimeService;
+        private readonly ICartRealtimeService _cartRealtimeService;
         public PaymentService(
             IUnitOfWork unitOfWork,
             IPaymentGatewayService gatewayService,
@@ -126,7 +130,9 @@ namespace HomeCycle.Application.Services.Payments
             IMapper mapper,
             IUserSubscriptionRepository userSubscriptionRepo,
             IUserSubscriptionService userSubscriptionService,
-            ICartItemRepository cartItemRepository)
+            ICartItemRepository cartItemRepository,
+            IAppointmentRealtimeService appointmentRealtimeService,
+            ICartRealtimeService cartRealtimeService)
         {
             _unitOfWork = unitOfWork;
             _gatewayService = gatewayService;
@@ -160,6 +166,8 @@ namespace HomeCycle.Application.Services.Payments
             _userSubscriptionRepo = userSubscriptionRepo;
             _userSubscriptionService = userSubscriptionService;
             _cartItemRepository = cartItemRepository;
+            _appointmentRealtimeService = appointmentRealtimeService;
+            _cartRealtimeService = cartRealtimeService;
         }
 
         public async Task<Result<PaymentQuoteResponseDto>> GetPaymentQuoteAsync(
@@ -1120,6 +1128,13 @@ namespace HomeCycle.Application.Services.Payments
 
                 foreach (var postNotification in fulfillment.PostNotifications)
                     await _notificationService.PublishCreatedSafelyAsync(postNotification);
+                await _appointmentRealtimeService.PublishUpdatedSafelyAsync(
+                    fulfillment.Appointment.AppointmentId,
+                    now);
+
+                await _cartRealtimeService.PublishUpdatedSafelyAsync(
+                    agreement.BuyerId,
+                    now);
 
                 return Result<PaymentStatusResponseDto>.Success(
                     new PaymentStatusResponseDto
@@ -1250,7 +1265,7 @@ namespace HomeCycle.Application.Services.Payments
                     BalanceAfter = userWallet.AvailableBalance - package.Price,
                     ReferenceType = (int)ReferenceType.Subscription,
                     ReferenceId = subscription.SubscriptionId,
-                    Description = $"Thanh toan subscription {subscription.SubscriptionId}",
+                    Description = $"Thanh toán gói {package.Name} bằng ví nội bộ",
                     CreatedAt = now
                 };
 
@@ -1266,7 +1281,7 @@ namespace HomeCycle.Application.Services.Payments
                     BalanceAfter = platformWallet.AvailableBalance + package.Price,
                     ReferenceType = (int)ReferenceType.Subscription,
                     ReferenceId = subscription.SubscriptionId,
-                    Description = $"Doanh thu subscription {subscription.SubscriptionId}",
+                    Description = $"Doanh thu gói {package.Name} bằng ví nội bộ",
                     CreatedAt = now
                 };
 
@@ -1889,7 +1904,7 @@ namespace HomeCycle.Application.Services.Payments
                     BalanceAfter = sellerWallet.HoldBalance - orderHeldAmount,
                     ReferenceType = (int)ReferenceType.Order,
                     ReferenceId = order.OrderId,
-                    Description = $"Giai ngan tien tam giu cho Order {order.OrderId}",
+                    Description = $"Giải ngân tiền tạm giữ - Đơn {order.OrderCode} - {order.ProductName}",
                     CreatedAt = now
                 };
 
@@ -1905,7 +1920,7 @@ namespace HomeCycle.Application.Services.Payments
                     BalanceAfter = sellerWallet.AvailableBalance + orderHeldAmount,
                     ReferenceType = (int)ReferenceType.Order,
                     ReferenceId = order.OrderId,
-                    Description = $"Nhan tien giai ngan tu Order {order.OrderId}",
+                    Description = $"Nhận tiền giải ngân - Đơn {order.OrderCode} - {order.ProductName}",
                     CreatedAt = now
                 };
 
@@ -2867,7 +2882,7 @@ namespace HomeCycle.Application.Services.Payments
                 BalanceAfter = sellerWallet.HoldBalance - amount,
                 ReferenceType = (int)ReferenceType.Order,
                 ReferenceId = order.OrderId,
-                Description = $"Hoan tien tam giu cho Order {order.OrderId}",
+                Description = $"Hoàn tiền tạm giữ - Đơn {order.OrderCode} - {order.ProductName}",
                 CreatedAt = now
             };
 
@@ -2883,7 +2898,7 @@ namespace HomeCycle.Application.Services.Payments
                 BalanceAfter = buyerWallet.AvailableBalance + amount,
                 ReferenceType = (int)ReferenceType.Order,
                 ReferenceId = order.OrderId,
-                Description = $"Nhan hoan tien tu Order {order.OrderId}",
+                Description = $"Nhận hoàn tiền - Đơn {order.OrderCode} - {order.ProductName}",
                 CreatedAt = now
             };
 
@@ -3113,7 +3128,7 @@ namespace HomeCycle.Application.Services.Payments
                     BalanceAfter = sellerWallet.HoldBalance + holdAmount,
                     ReferenceType = (int)ReferenceType.Order,
                     ReferenceId = fulfillment.Order.OrderId,
-                    Description = $"Tam giu tien cho don hang {fulfillment.Order.OrderId}",
+                    Description = $"Tạm giữ tiền - Đơn {fulfillment.Order.OrderCode} - {fulfillment.Order.ProductName}",
                     CreatedAt = now
                 };
 
@@ -3148,7 +3163,7 @@ namespace HomeCycle.Application.Services.Payments
                         BalanceAfter = systemWallet.AvailableBalance + shippingFee,
                         ReferenceType = (int)ReferenceType.Order,
                         ReferenceId = fulfillment.Order.OrderId,
-                        Description = $"Phi van chuyen GHN thu qua PayOS cho don hang {fulfillment.Order.OrderId}",
+                        Description = $"Phí vận chuyển GHN qua PayOS - Đơn {fulfillment.Order.OrderCode}",
                         CreatedAt = now
                     };
 
@@ -3204,6 +3219,13 @@ namespace HomeCycle.Application.Services.Payments
 
                 foreach (var postNotification in fulfillment.PostNotifications)
                     await _notificationService.PublishCreatedSafelyAsync(postNotification);
+                await _appointmentRealtimeService.PublishUpdatedSafelyAsync(
+                    fulfillment.Appointment.AppointmentId,
+                    now);
+
+                await _cartRealtimeService.PublishUpdatedSafelyAsync(
+                    agreement.BuyerId,
+                    now);
 
             }
             catch (Exception ex)
