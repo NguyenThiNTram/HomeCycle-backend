@@ -350,8 +350,8 @@ namespace HomeCycle.Application.Commons.Errors
         public static readonly Error SellerReadyRequired =
             new("Order.SellerReadyRequired", "Người bán phải xác nhận đã chuẩn bị hàng trước khi xác nhận bàn giao.");
 
-        public static readonly Error CancellationRequiresRejectedInspection =
-            new("Order.CancellationRequiresRejectedInspection", "Chỉ có thể hủy đơn theo luồng này sau khi Seller từ chối kết quả kiểm định.");
+        public static readonly Error CancellationNotAllowed =
+            new("Order.CancellationNotAllowed", "Đơn hàng đã vượt mốc cho phép hủy trực tiếp. Nếu phát sinh vấn đề, vui lòng sử dụng tranh chấp.");
 
         public static readonly Error ActiveDisputeBlocksCancellation =
             new("Order.ActiveDisputeBlocksCancellation", "Đơn hàng đang có tranh chấp nên không thể hủy trực tiếp.");

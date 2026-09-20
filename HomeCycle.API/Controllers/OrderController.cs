@@ -123,21 +123,18 @@ namespace HomeCycle.API.Controllers
         }
 
         [HttpPost("{orderId:guid}/cancel")]
-        public async Task<IActionResult> CancelAfterRejectedInspection(
-            Guid orderId,
-            CancellationToken cancellationToken)
+        [SwaggerOperation(
+            Summary = "Hủy đơn hàng trước khi giao dịch bắt đầu",
+            Description = "Buyer hoặc Seller có thể hủy Inspection Order trước khi có check-in, hoặc Collection Order trước khi Seller xác nhận đã chuẩn bị hàng. Sau mốc này đơn chỉ có thể xử lý qua Dispute. Phí GHN đã phát sinh không được hoàn."
+        )]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        public async Task<IActionResult> CancelOrder(Guid orderId, CancellationToken cancellationToken)
         {
             var currentUserId = GetCurrentUserId();
-
-            var result =
-                await _orderService
-                    .CancelAfterRejectedInspectionAsync(
-                        orderId,
-                        currentUserId,
-                        cancellationToken);
+            var result = await _orderService.CancelOrderAsync(orderId, currentUserId, cancellationToken);
 
             if (!result.IsSuccess)
-                return BadRequest(result.Error);
+                return MapOrderCancellationError(result.Error!);
 
             return Ok(result.Data);
         }
@@ -187,6 +184,30 @@ namespace HomeCycle.API.Controllers
             return Ok(result.Data);
         }
 
+
+        private IActionResult MapOrderCancellationError(Error error)
+        {
+            if (error == OrderErrors.NotFound ||
+                error == AgreementErrors.NotFound ||
+                error == AppointmentErrors.NotFound ||
+                error == OrderErrors.ShipmentNotFound)
+            {
+                return NotFound(error);
+            }
+
+            if (error == OrderErrors.Forbidden)
+                return StatusCode(StatusCodes.Status403Forbidden, error);
+
+            if (error == OrderErrors.InvalidStatus ||
+                error == OrderErrors.ActiveDisputeBlocksCancellation ||
+                error == OrderErrors.CancellationNotAllowed ||
+                error.Code.StartsWith("Payment."))
+            {
+                return Conflict(error);
+            }
+
+            return BadRequest(error);
+        }
 
         private IActionResult MapOrderReturnError(Error error)
         {

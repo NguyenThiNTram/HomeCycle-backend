@@ -326,6 +326,7 @@ namespace HomeCycle.Infrastructure
             services.AddScoped<HomeCycle.Application.Interfaces.Services.SupplierMatching.ISupplierMatchMonitorService,
                 HomeCycle.Application.SupplierMatching.Services.SupplierMatchMonitorService>();
             services.AddScoped<ICartService, CartService>();
+            services.AddScoped<ICartRealtimeService, CartRealtimeService>();
             services.AddScoped<IProductService, ProductService>();
             services.AddScoped<IMediaService, MediaService>();
             services.AddScoped<IProductAttributeOptionService, ProductAttributeOptionService>();
@@ -343,6 +344,7 @@ namespace HomeCycle.Infrastructure
             services.AddScoped<IPaymentService, PaymentService>();
             //services.AddScoped<IOrderSettlementService, OrderSettlementService>();
             services.AddScoped<IAppointmentService, AppointmentService>();
+            services.AddScoped<IAppointmentRealtimeService, AppointmentRealtimeService>();
             services.AddScoped<IOrderService, OrderService>();
             services.AddScoped<IOrderLifecycleProcessor, BuyerReturnTimeoutProcessor>();
             services.AddScoped<IOrderLifecycleProcessor, AutoCompleteOrderProcessor>();

@@ -9,13 +9,13 @@ namespace HomeCycle.Application.Services.Disputes
 {
     public static class OrderDisputeCategoryPolicy
     {
-        public static bool IsAllowed(string code, bool hasAppointments, DeliveryMethod? deliveryMethod)
+        public static bool IsAllowed(string code, bool noShowEligible, DeliveryMethod? deliveryMethod)
         {
             var normalizedCode = code.Trim().ToUpperInvariant();
 
             return normalizedCode switch
             {
-                "NO_SHOW" => hasAppointments,
+                "NO_SHOW" => noShowEligible,
 
                 "SELLER_NOT_SHIPPED" or
                 "DAMAGED_OR_LOST" or

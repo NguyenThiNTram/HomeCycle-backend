@@ -16,6 +16,7 @@ using HomeCycle.Application.Interfaces.Repositories.Orders;
 using HomeCycle.Application.Interfaces.Repositories.Payments;
 using HomeCycle.Application.Interfaces.Repositories.Shipments;
 using HomeCycle.Application.Interfaces.Repositories.Wallets;
+using HomeCycle.Application.Interfaces.Services.Appointments;
 using HomeCycle.Application.Interfaces.Services.Audits;
 using HomeCycle.Application.Interfaces.Services.Inspections;
 using HomeCycle.Application.Interfaces.Services.Notifications;
@@ -51,13 +52,14 @@ namespace HomeCycle.Application.Services.Inspections
         private readonly IOrderTrackingRealtimeService _orderTrackingRealtimeService;
         private readonly IAuditService _auditService;
         private readonly IUnitOfWork _unitOfWork;
+        private readonly IAppointmentRealtimeService _appointmentRealtimeService;
 
         private readonly IValidator<CreateInspectionFormRequest> _createValidator;
         private readonly IValidator<UpdateInspectionFormRequest> _updateValidator;
         private readonly IValidator<InspectionRevisionRequest> _revisionValidator;
         private readonly IValidator<RejectInspectionFormRequest> _rejectValidator;
 
-        public InspectionFormService(IInspectionFormRepository inspectionFormRepo, IInspectionAppointmentRepository inspectionAppointmentRepo, IAppointmentRepository appointmentRepo, IAgreementFormRepository agreementRepo, IOrderRepository orderRepo, IDisputeRepository disputeRepo, IMediaService mediaService, IPaymentService paymentService, INotificationService notificationService, IShipmentRepository shipmentRepo, IOrderTrackingRealtimeService orderTrackingRealtimeService, IAuditService auditService, IUnitOfWork unitOfWork, IValidator<CreateInspectionFormRequest> createValidator, IValidator<UpdateInspectionFormRequest> updateValidator, IValidator<InspectionRevisionRequest> revisionValidator, IValidator<RejectInspectionFormRequest> rejectValidator)
+        public InspectionFormService(IInspectionFormRepository inspectionFormRepo, IInspectionAppointmentRepository inspectionAppointmentRepo, IAppointmentRepository appointmentRepo, IAgreementFormRepository agreementRepo, IOrderRepository orderRepo, IDisputeRepository disputeRepo, IMediaService mediaService, IPaymentService paymentService, INotificationService notificationService, IShipmentRepository shipmentRepo, IOrderTrackingRealtimeService orderTrackingRealtimeService, IAuditService auditService, IUnitOfWork unitOfWork, IAppointmentRealtimeService appointmentRealtimeService, IValidator<CreateInspectionFormRequest> createValidator, IValidator<UpdateInspectionFormRequest> updateValidator, IValidator<InspectionRevisionRequest> revisionValidator, IValidator<RejectInspectionFormRequest> rejectValidator)
         {
             _inspectionFormRepo = inspectionFormRepo;
             _inspectionAppointmentRepo = inspectionAppointmentRepo;
@@ -72,6 +74,7 @@ namespace HomeCycle.Application.Services.Inspections
             _orderTrackingRealtimeService = orderTrackingRealtimeService;
             _auditService = auditService;
             _unitOfWork = unitOfWork;
+            _appointmentRealtimeService = appointmentRealtimeService;
             _createValidator = createValidator;
             _updateValidator = updateValidator;
             _revisionValidator = revisionValidator;
@@ -495,6 +498,9 @@ namespace HomeCycle.Application.Services.Inspections
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
                 await _notificationService.PublishCreatedSafelyAsync(inspectionNotification);
+                await _appointmentRealtimeService.PublishUpdatedSafelyAsync(
+                    appointment.AppointmentId,
+                    form.UpdatedAt);
 
                 return Result<InspectionFormResponseDto>.Success(await BuildResponseAsync(form, buyerId, ct));
             }
@@ -612,6 +618,9 @@ namespace HomeCycle.Application.Services.Inspections
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
                 await _notificationService.PublishCreatedSafelyAsync(inspectionNotification);
+                await _appointmentRealtimeService.PublishUpdatedSafelyAsync(
+                    inspection.AppointmentId,
+                    form.UpdatedAt);
 
                 return Result<InspectionFormResponseDto>.Success(await BuildResponseAsync(form, sellerId, ct));
             }
@@ -933,6 +942,9 @@ namespace HomeCycle.Application.Services.Inspections
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
                 await _notificationService.PublishCreatedSafelyAsync(inspectionNotification);
+                await _appointmentRealtimeService.PublishUpdatedSafelyAsync(
+                    appointment.AppointmentId,
+                    appointment.UpdatedAt);
 
                 await _orderTrackingRealtimeService.PublishByOrderIdSafelyAsync(
                     order.OrderId,
@@ -1094,6 +1106,9 @@ namespace HomeCycle.Application.Services.Inspections
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
                 await _notificationService.PublishCreatedSafelyAsync(collectNotification);
+                await _appointmentRealtimeService.PublishUpdatedSafelyAsync(
+                    inspection.AppointmentId,
+                    form.UpdatedAt);
 
                 await _orderTrackingRealtimeService.PublishByAgreementIdSafelyAsync(
                     agreement.AgreementId,
@@ -1294,11 +1309,7 @@ namespace HomeCycle.Application.Services.Inspections
                         !collectAction.HasValue &&
                         order.OrderStatus == (int)OrderStatus.Processing,
 
-                    CanCancelTransaction =
-                        (isBuyer || isSeller) &&
-                        status == InspectionStatus.Rejected &&
-                        order.OrderStatus == (int)OrderStatus.Processing &&
-                        !hasActiveDispute
+                    CanCancelTransaction = false
                 }
             };
         }
