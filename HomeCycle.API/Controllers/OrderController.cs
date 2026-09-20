@@ -81,7 +81,7 @@ namespace HomeCycle.API.Controllers
             Summary = "Lấy trạng thái vận chuyển GHN của đơn hàng",
             Description =
                 "Chỉ Buyer hoặc Seller thuộc đơn hàng được phép xem. " +
-                "Backend tự lấy GHNOrderCode và đồng bộ với GHN."
+                "Backend trả trạng thái đang lưu trong HomeCycle; trạng thái được cập nhật qua webhook GHN."
         )]
         public async Task<IActionResult> GetShipmentTracking(Guid orderId, CancellationToken cancellationToken)
         {

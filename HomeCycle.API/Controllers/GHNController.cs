@@ -14,6 +14,8 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using Swashbuckle.AspNetCore.Annotations;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace HomeCycle.API.Controllers
 {
@@ -21,6 +23,9 @@ namespace HomeCycle.API.Controllers
     [ApiController]
     public class GHNController : ControllerBase
     {
+        private const string WebhookSecretHeader = "X-HomeCycle-Webhook-Secret";
+        private const string WebhookDemoHeader = "X-HomeCycle-Demo";
+
         private static readonly string[] SupportedOrderStatuses =
         [
             "ready_to_pick",
@@ -53,6 +58,7 @@ namespace HomeCycle.API.Controllers
         private readonly IGhnShipmentRepository _ghnShipmentRepository;
         private readonly IShipmentRepository _shipmentRepository;
         private readonly GhnSettings _settings;
+        private readonly IWebHostEnvironment _environment;
         private readonly ILogger<GHNController> _logger;
 
         public GHNController(
@@ -61,6 +67,7 @@ namespace HomeCycle.API.Controllers
             IGhnShipmentRepository ghnShipmentRepository,
             IShipmentRepository shipmentRepository,
             IOptions<GhnSettings> settings,
+            IWebHostEnvironment environment,
             ILogger<GHNController> logger)
         {
             _ghnService = ghnService;
@@ -68,6 +75,7 @@ namespace HomeCycle.API.Controllers
             _ghnShipmentRepository = ghnShipmentRepository;
             _shipmentRepository = shipmentRepository;
             _settings = settings.Value;
+            _environment = environment;
             _logger = logger;
         }
 
@@ -182,7 +190,7 @@ namespace HomeCycle.API.Controllers
         [HttpGet("admin/orders/lookup")]
         [Authorize(Roles = nameof(UserRole.Admin))]
         [SwaggerOperation(
-            Summary = "Tra cứu vận đơn GHN để Admin mô phỏng callback trạng thái",
+            Summary = "Tra cứu vận đơn GHN phục vụ công cụ kiểm thử webhook staging",
             Description = "Chỉ truyền một trong hai tham số orderCode hoặc clientOrderCode.")]
         [ProducesResponseType(StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -268,6 +276,13 @@ namespace HomeCycle.API.Controllers
         [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
         public async Task<IActionResult> HandleAsync([FromBody] GhnWebhookRequest request, CancellationToken cancellationToken)
         {
+            if (!IsAuthorizedWebhookRequest())
+            {
+                return Unauthorized(new Error(
+                    "GhnWebhook.UnauthorizedSource",
+                    "Nguồn gửi webhook GHN không được xác thực."));
+            }
+
             try
             {
                 var result = await _webhookService.ProcessAsync(
@@ -316,6 +331,40 @@ namespace HomeCycle.API.Controllers
                     StatusCodes.Status503ServiceUnavailable,
                     new Error( "GhnWebhook.ProcessingFailed", "Hệ thống tạm thời chưa thể xử lý webhook GHN."));
             }
+        }
+
+        private bool IsAuthorizedWebhookRequest()
+        {
+            var configuredSecret = _settings.WebhookSecret;
+            var receivedSecret = Request.Headers[WebhookSecretHeader].ToString();
+
+            var isGhnCallback =
+                !string.IsNullOrWhiteSpace(configuredSecret) &&
+                FixedTimeEquals(configuredSecret, receivedSecret);
+
+            if (isGhnCallback)
+                return true;
+
+            var isDemoRequest =
+                _settings.EnableWebhookDemo &&
+                !_environment.IsProduction() &&
+                User.Identity?.IsAuthenticated == true &&
+                User.IsInRole(nameof(UserRole.Admin)) &&
+                string.Equals(
+                    Request.Headers[WebhookDemoHeader].ToString(),
+                    "true",
+                    StringComparison.OrdinalIgnoreCase);
+
+            return isDemoRequest;
+        }
+
+        private static bool FixedTimeEquals(string expected, string actual)
+        {
+            var expectedBytes = Encoding.UTF8.GetBytes(expected);
+            var actualBytes = Encoding.UTF8.GetBytes(actual);
+
+            return expectedBytes.Length == actualBytes.Length &&
+                   CryptographicOperations.FixedTimeEquals(expectedBytes, actualBytes);
         }
 
         private ActionResult HandleGhnException(GhnApiException ex)

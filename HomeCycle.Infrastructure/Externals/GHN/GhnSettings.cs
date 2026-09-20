@@ -16,6 +16,13 @@ namespace HomeCycle.Infrastructure.Externals.GHN
         public int TimeoutSeconds { get; init; } = 60;
         public int AddressCacheHours { get; init; } = 12;
 
+        // Bảo vệ callback thật bằng custom header cấu hình trên GHN.
+        // Giá trị thật chỉ được truyền qua biến môi trường, không lưu trong source.
+        public string? WebhookSecret { get; init; }
+
+        // Chỉ cho phép Admin gửi callback mô phỏng khi backend không chạy Production.
+        public bool EnableWebhookDemo { get; init; } = false;
+
         // Worker tự tạo đơn GHN (hosted service) chạy nền
         public int CreationWorkerPollSeconds { get; init; } = 10;
         public int CreationWorkerBatchSize { get; init; } = 20;
