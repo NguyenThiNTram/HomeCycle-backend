@@ -24,6 +24,9 @@ namespace HomeCycle.Application.DTOs.Responses.Disputes
         public Guid? TargetId { get; set; }
 
         public string? OrderCode { get; set; }
+        public decimal? OrderValue { get; set; }
+        public DateTime? ResolvedAt { get; set; }
+        public DateTime UpdatedAt { get; set; }
 
         public DisputeCategoryOptionDto? Category { get; set; }
 

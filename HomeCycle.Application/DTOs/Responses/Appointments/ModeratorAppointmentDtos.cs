@@ -16,6 +16,17 @@ namespace HomeCycle.Application.DTOs.Responses.Appointments
 
     public class ModeratorAppointmentListItemDto
     {
+        public bool HasOpenDispute { get; set; }
+        public string? CancellationReason { get; set; }
+        public DeliveryMethod? DeliveryMethod { get; set; }
+        public ShipmentStatus? ShipmentStatus { get; set; }
+        public DateTime? ExpectedDeliveryAt { get; set; }
+        public double? SecondsUntilLateThreshold { get; set; }
+        public string Lifecycle => CancellationReason == "Rescheduled" ? "Rescheduled"
+            : HasOpenDispute || IsOverdue ? "Exception"
+            : AppointmentStatus == HomeCycle.Domain.Enums.AppointmentStatus.Proposed ? "PendingConfirmation"
+            : AppointmentStatus == HomeCycle.Domain.Enums.AppointmentStatus.Scheduled ? "Confirmed"
+            : AppointmentStatus?.ToString() ?? "Unspecified";
         public Guid AppointmentId { get; set; }
         public Guid AgreementId { get; set; }
         public AppointmentType? AppointmentType { get; set; }
@@ -95,6 +106,11 @@ namespace HomeCycle.Application.DTOs.Responses.Appointments
 
     public sealed class ModeratorAppointmentReadModel
     {
+        public bool HasOpenDispute { get; init; }
+        public string? CancellationReason { get; init; }
+        public DeliveryMethod? DeliveryMethod { get; init; }
+        public ShipmentStatus? ShipmentStatus { get; init; }
+        public DateTime? ExpectedDeliveryAt { get; init; }
         public Guid AppointmentId { get; init; }
         public Guid AgreementId { get; init; }
         public AppointmentType? AppointmentType { get; init; }

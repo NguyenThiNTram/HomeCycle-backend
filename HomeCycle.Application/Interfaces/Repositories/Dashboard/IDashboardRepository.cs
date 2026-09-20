@@ -8,6 +8,12 @@ namespace HomeCycle.Application.Interfaces.Repositories.Dashboard;
 
 public interface IDashboardRepository
 {
+    Task<IReadOnlyList<BusinessGrowthDay>> GetBusinessGrowthAsync(BusinessOverviewRequest request, DashboardPeriod period, CancellationToken ct);
+    Task<ListingDashboardData> GetListingsAsync(DashboardPeriod period, CancellationToken ct);
+    Task<PagedResult<ReportedListingItem>> GetReportedListingsAsync(ReportedListingRequest request, CancellationToken ct);
+    Task<SubscriptionDashboardData> GetSubscriptionsAsync(DashboardPeriod period, DateTime nowUtc, CancellationToken ct);
+    Task<UserActivityResponse> GetUserActivityAsync(DateTime nowUtc, CancellationToken ct);
+    Task<DashboardAccountDetail?> GetAccountDetailAsync(Guid userId, CancellationToken ct);
     Task<IReadOnlyList<UserAccountGroup>> GetAccountGroupsAsync(UserRole? role, CancellationToken ct);
     Task<PagedResult<UserAdminResponse>> GetUsersAsync(DashboardUserListRequest request, CancellationToken ct);
     Task<IReadOnlyList<RegistrationDay>> GetRegistrationsAsync(UserRole? role, DateTime fromUtc, DateTime toUtc, CancellationToken ct);

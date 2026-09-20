@@ -7,6 +7,15 @@ using HomeCycle.Domain.Enums;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Swashbuckle.AspNetCore.Annotations;
+using HomeCycle.Application.Commons.Results;
+using HomeCycle.Application.DTOs.Requests.Orders;
+using HomeCycle.Application.DTOs.Requests.Appointments;
+using HomeCycle.Application.DTOs.Requests.Disputes;
+using HomeCycle.Application.DTOs.Responses.Disputes;
+using HomeCycle.Application.Interfaces.Services.Orders;
+using HomeCycle.Application.Interfaces.Services.Appointments;
+using HomeCycle.Application.Interfaces.Services.Disputes;
+using HomeCycle.Application.Interfaces.Services.Payments;
 
 namespace HomeCycle.API.Controllers;
 
@@ -15,6 +24,66 @@ namespace HomeCycle.API.Controllers;
 [Authorize(Roles = nameof(UserRole.Admin))]
 public sealed class DashboardController(IDashboardService service) : ControllerBase
 {
+    [HttpGet("listings")]
+    public async Task<ActionResult<ListingDashboardResponse>> GetListings([FromQuery] DashboardPeriodRequest request, CancellationToken ct)
+        => Ok(await service.GetListingDashboardAsync(request, ct));
+
+    [HttpGet("listings/reported")]
+    public async Task<ActionResult<PagedResult<ReportedListingItem>>> GetReportedListings([FromQuery] ReportedListingRequest request, CancellationToken ct)
+        => Ok(await service.GetReportedListingsAsync(request, ct));
+
+    [HttpGet("subscription-packages")]
+    public async Task<ActionResult<SubscriptionDashboardResponse>> GetSubscriptions([FromQuery] DashboardPeriodRequest request, CancellationToken ct)
+        => Ok(await service.GetSubscriptionDashboardAsync(request, ct));
+
+    [HttpGet("users/activity")]
+    public async Task<ActionResult<UserActivityResponse>> GetUserActivity(CancellationToken ct)
+        => Ok(await service.GetUserActivityAsync(ct));
+
+    [HttpGet("users/{userId:guid}")]
+    public async Task<ActionResult<DashboardAccountDetail>> GetUserDetail(Guid userId, CancellationToken ct)
+    {
+        var detail = await service.GetAccountDetailAsync(userId, ct);
+        return detail == null ? NotFound() : Ok(detail);
+    }
+
+    [HttpGet("orders/history")]
+    public async Task<IActionResult> GetOrderHistory([FromQuery] ModeratorOrderSearchRequest request, [FromServices] IOrderService orders, CancellationToken ct)
+        => ReadResult(await orders.GetAllForModeratorAsync(request, ct));
+
+    [HttpGet("orders/{orderId:guid}")]
+    public async Task<IActionResult> GetOrderDetail(Guid orderId, [FromServices] IOrderService orders, CancellationToken ct)
+        => ReadResult(await orders.GetDetailForModeratorAsync(orderId, ct));
+
+    [HttpGet("orders/{orderId:guid}/financial-history")]
+    public async Task<IActionResult> GetOrderFinancialHistory(Guid orderId, [FromServices] IPaymentService payments, CancellationToken ct)
+        => ReadResult(await payments.GetOrderFinancialHistoryForModeratorAsync(orderId, ct));
+
+    [HttpGet("appointments/history")]
+    public async Task<IActionResult> GetAppointmentHistory([FromQuery] ModeratorAppointmentSearchRequest request, [FromServices] IAppointmentService appointments, CancellationToken ct)
+        => ReadResult(await appointments.GetAllForModeratorAsync(request, ct));
+
+    [HttpGet("appointments/{appointmentId:guid}")]
+    public async Task<IActionResult> GetAppointmentDetail(Guid appointmentId, [FromServices] IAppointmentService appointments, CancellationToken ct)
+        => ReadResult(await appointments.GetDetailForModeratorAsync(appointmentId, ct));
+
+    [HttpGet("disputes/history")]
+    public async Task<IActionResult> GetDisputeHistory([FromQuery] DisputeSearchRequest request, [FromServices] IDisputeService disputes, CancellationToken ct)
+        => ReadResult(await disputes.GetAllForModeratorAsync(request, ct));
+
+    [HttpGet("disputes/{disputeId:guid}")]
+    public async Task<IActionResult> GetDisputeDetail(Guid disputeId, [FromServices] IDisputeService disputes, CancellationToken ct)
+    {
+        var result = await disputes.GetDetailForModeratorAsync(disputeId, Guid.Empty, ct);
+        if (result.IsSuccess && result.Data != null) result.Data.Actions = new DisputeActionDto();
+        return ReadResult(result);
+    }
+
+    private IActionResult ReadResult<T>(Result<T> result)
+        => result.IsSuccess ? Ok(result.Data)
+            : result.Error?.Code.EndsWith("NOT_FOUND", StringComparison.OrdinalIgnoreCase) == true
+                ? NotFound(result.Error) : BadRequest(result.Error);
+
     [HttpGet("users/overview")]
     [SwaggerOperation(Summary = "Tổng quan tài khoản và số lượng theo trạng thái/role",
         Description = "Mặc định bao gồm mọi role và trạng thái Deleted. Role là bộ lọc tùy chọn. Active là trạng thái tài khoản, không phải đang online.")]
@@ -52,14 +121,14 @@ public sealed class DashboardController(IDashboardService service) : ControllerB
 
     [HttpGet("orders")]
     [SwaggerOperation(Summary = "Thống kê kết quả và tồn đọng đơn hàng",
-        Description = "Tổng, active, phân bố trạng thái và tuổi active là snapshot hiện tại. Chuỗi kết quả dùng CompletedAt, CancelledAt và ReturnedAt trong kỳ. Active gồm Pending, Processing và Disputing.")]
+        Description = "Snapshot và OutcomeSeries cũ được giữ. GMV/AOV dùng đơn hiện Completed theo CompletedAt; AOV null nếu thiếu giá trị. Tỷ lệ hủy/hoàn và hoàn tất dùng trạng thái hiện tại của nhóm đơn tạo trong kỳ. DeliveryMethod dùng shipment mới nhất. PaymentMethodDistribution đếm sự kiện thanh toán cọc/toàn phần đã trả trong kỳ, kể cả đã hoàn tiền; không phải số đơn.")]
     public async Task<ActionResult<OrderDashboardResponse>> GetOrders(
         [FromQuery] OrderDashboardRequest request, CancellationToken ct)
         => Ok(await service.GetOrderDashboardAsync(request, ct));
 
     [HttpGet("appointments")]
     [SwaggerOperation(Summary = "Báo cáo và giám sát hoạt động lịch hẹn toàn hệ thống",
-        Description = "Dashboard read-only gồm snapshot lịch effective hiện tại, cơ cấu Inspection/Collection theo ngày hẹn, outcome của lịch finalized và check-in Inspection. Proposal đổi lịch chưa được accept và lịch bị thay thế với CancellationReason='Rescheduled' không được tính là lịch effective hoặc failed. Check-in dùng BuyerCheckAt/SellerCheckAt trên Inspection đủ điều kiện; không phân tích đúng giờ, trễ, grace period hoặc check-out. From/To là ngày UTC+7, To không được tính.")]
+        Description = "Dashboard read-only loại proposal chưa nhận và lịch bị thay thế. Check-in theo Inspection đủ điều kiện; trễ đối chiếu LateThresholdAt đã lưu. Khu vực dùng City/Ward của bài đăng, hiệu quả theo phương thức shipment mới nhất và trạng thái lịch hiện tại; không suy diễn tỷ lệ Carrier nhận lịch. From/To theo UTC+7, To không tính.")]
     public async Task<ActionResult<AppointmentDashboardResponse>> GetAppointments(
         [FromQuery] AppointmentDashboardRequest request, CancellationToken ct)
         => Ok(await service.GetAppointmentDashboardAsync(request, ct));
@@ -73,7 +142,7 @@ public sealed class DashboardController(IDashboardService service) : ControllerB
 
     [HttpGet("businesses/overview")]
     [SwaggerOperation(Summary = "Tổng quan khách hàng doanh nghiệp",
-        Description = "Theo role Business hiện tại, bao gồm Deleted nếu không lọc. Lọc model/profileStatus loại tài khoản chưa có hồ sơ. Survey coverage dùng số có hồ sơ làm mẫu số.")]
+        Description = "Theo role Business hiện tại, bao gồm Deleted nếu không lọc. Lọc model/profileStatus loại tài khoản chưa có hồ sơ. Survey coverage dùng số có hồ sơ làm mẫu số. GrowthSeries nhóm ngày đăng ký trong kỳ và trạng thái hiện tại; không tái dựng lịch sử Active/Suspended.")]
     public async Task<ActionResult<BusinessOverviewResponse>> GetBusinessOverview(
         [FromQuery] BusinessOverviewRequest request, CancellationToken ct)
         => Ok(await service.GetBusinessOverviewAsync(request, ct));

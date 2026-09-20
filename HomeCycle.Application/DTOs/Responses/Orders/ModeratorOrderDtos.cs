@@ -18,6 +18,10 @@ namespace HomeCycle.Application.DTOs.Responses.Orders
 
     public class ModeratorOrderListItemDto
     {
+        public DateTime? LastPaidAt { get; set; }
+        public DeliveryMethod? DeliveryMethod { get; set; }
+        public ShipmentStatus? ShipmentStatus { get; set; }
+        public DateTime? CollectionDate { get; set; }
         public Guid OrderId { get; set; }
 
         public string OrderCode { get; set; } = string.Empty;

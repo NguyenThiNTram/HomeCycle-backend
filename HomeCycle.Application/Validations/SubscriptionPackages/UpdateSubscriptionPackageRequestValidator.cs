@@ -32,8 +32,8 @@ namespace HomeCycle.Application.Validations.SubscriptionPackages
                 .When(x => x.Price.HasValue);
 
             RuleFor(x => x.Duration)
-                .Equal(30)
-                .WithMessage("VIP package duration must be 30 days.")
+                .InclusiveBetween(1, 3650)
+                .WithMessage("Package duration must be between 1 and 3650 days.")
                 .When(x => x.Duration.HasValue);
 
             RuleFor(x => x.Entitlements)

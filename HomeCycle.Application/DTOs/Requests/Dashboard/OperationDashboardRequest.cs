@@ -11,7 +11,14 @@ public sealed class PaymentDashboardRequest : DashboardPeriodRequest
 }
 public sealed class OrderDashboardRequest : DashboardPeriodRequest
 {
+    [EnumDataType(typeof(DeliveryMethod))] public DeliveryMethod? DeliveryMethod { get; set; }
     [EnumDataType(typeof(OrderStatus))] public OrderStatus? OrderStatus { get; set; }
+}
+
+public sealed class ReportedListingRequest : HomeCycle.Application.Commons.Paginations.PaginationRequest
+{
+    public bool OpenOnly { get; set; } = true;
+    [StringLength(200)] public string? Keyword { get; set; }
 }
 public sealed class AppointmentDashboardRequest : DashboardPeriodRequest
 {

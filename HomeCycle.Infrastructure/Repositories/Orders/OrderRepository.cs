@@ -465,6 +465,24 @@ namespace HomeCycle.Infrastructure.Repositories.Orders
                 .AsNoTracking()
                 .AsQueryable();
 
+            if (request.DeliveryMethod.HasValue)
+                query = query.Where(o => o.Shipments.OrderByDescending(s => s.CreatedAt).ThenByDescending(s => s.ShipmentId)
+                    .Select(s => (int?)s.DeliveryMethod).FirstOrDefault() == (int)request.DeliveryMethod.Value);
+
+            var shipmentIssueStatuses = new int?[] { (int)ShipmentStatus.Cancelled, (int)ShipmentStatus.Exception,
+                (int)ShipmentStatus.Damage_Lost, (int)ShipmentStatus.Returning, (int)ShipmentStatus.Returned };
+            var issues = query.Where(o => o.OrderStatus == (int)OrderStatus.Cancelled || o.OrderStatus == (int)OrderStatus.Returned
+                || o.OrderStatus == (int)OrderStatus.Disputing
+                || o.Disputes.Any(d => d.DisputeStatus == (int)DisputeStatus.Pending || d.DisputeStatus == (int)DisputeStatus.UnderReview || d.DisputeStatus == (int)DisputeStatus.AwaitingReturn)
+                || shipmentIssueStatuses.Contains(o.Shipments.OrderByDescending(s => s.CreatedAt).ThenByDescending(s => s.ShipmentId)
+                    .Select(s => s.ShipmentStatus).FirstOrDefault()));
+            if (request.Group == OrderHistoryGroup.Issue) query = issues;
+            else if (request.Group == OrderHistoryGroup.Successful)
+                query = query.Where(o => o.OrderStatus == (int)OrderStatus.Completed && !issues.Any(i => i.OrderId == o.OrderId));
+            else if (request.Group == OrderHistoryGroup.Trading)
+                query = query.Where(o => (o.OrderStatus == (int)OrderStatus.Pending || o.OrderStatus == (int)OrderStatus.Processing)
+                    && !issues.Any(i => i.OrderId == o.OrderId));
+
             if (request.Status.HasValue)
             {
                 query = query.Where(o =>
@@ -565,6 +583,7 @@ namespace HomeCycle.Infrastructure.Repositories.Orders
 
             var page = query
                 .OrderByDescending(o => o.CreatedAt)
+                .ThenBy(o => o.OrderId)
                 .Skip((request.PageNumber - 1) * request.PageSize)
                 .Take(request.PageSize);
 
@@ -598,6 +617,19 @@ namespace HomeCycle.Infrastructure.Repositories.Orders
             return query.Select(o =>
                 new ModeratorOrderReadModel
                 {
+                    LastPaidAt = _db.Payments.Where(p => (p.OrderId == o.OrderId || p.AgreementId == o.AgreementId)
+                            && (p.PaymentType == (int)PaymentType.Deposit || p.PaymentType == (int)PaymentType.Full_Payment)
+                            && (p.PaymentStatus == (int)PaymentStatus.Completed || p.PaymentStatus == (int)PaymentStatus.Refunded
+                                || p.PaymentStatus == (int)PaymentStatus.PartiallyRefunded))
+                        .Max(p => p.PaidAt),
+                    DeliveryMethod = o.Shipments.OrderByDescending(s => s.CreatedAt).ThenByDescending(s => s.ShipmentId)
+                        .Select(s => (int?)s.DeliveryMethod).FirstOrDefault(),
+                    ShipmentStatus = o.Shipments.OrderByDescending(s => s.CreatedAt).ThenByDescending(s => s.ShipmentId)
+                        .Select(s => s.ShipmentStatus).FirstOrDefault(),
+                    CollectionDate = o.Agreement.Appointments.Where(a => a.AppointmentType == (int)AppointmentType.Collection
+                            && a.AppointmentStatus != (int)AppointmentStatus.Proposed && a.CancellationReason != "Rescheduled")
+                        .OrderByDescending(a => a.CreatedAt).ThenByDescending(a => a.AppointmentId)
+                        .Select(a => a.Collection_Appointment!.CollectionDate).FirstOrDefault(),
                     OrderId = o.OrderId,
                     AgreementId = o.AgreementId,
                     PostId = o.PostId,

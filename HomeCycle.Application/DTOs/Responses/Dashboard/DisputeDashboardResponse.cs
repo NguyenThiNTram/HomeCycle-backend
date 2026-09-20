@@ -2,6 +2,14 @@ namespace HomeCycle.Application.DTOs.Responses.Dashboard;
 
 public sealed class DisputeDashboardResponse
 {
+    public int OpenedInPeriodCount { get; init; }
+    public int OrdersCreatedInPeriodCount { get; init; }
+    public int DisputedOrdersCreatedInPeriodCount { get; init; }
+    public decimal? OrderDisputeRate { get; init; }
+    public string DisputeRateBasis => "DistinctOrdersCreatedInPeriodWithMatchingOrderDisputes/OrdersCreatedInPeriod";
+    public decimal CurrentDisputedHeldAmount { get; init; }
+    public string HeldAmountBasis => "CurrentPositiveNetCompletedHoldLedgerByDistinctUnresolvedOrder";
+    public IReadOnlyList<DistributionItem> ResolutionDistribution { get; init; } = [];
     public DateTime GeneratedAtUtc { get; init; }
     public DashboardPeriod Period { get; init; } = new();
     public int TotalDisputes { get; init; }

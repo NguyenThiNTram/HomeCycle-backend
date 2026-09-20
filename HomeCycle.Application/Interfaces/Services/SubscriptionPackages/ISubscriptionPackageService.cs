@@ -12,6 +12,7 @@ namespace HomeCycle.Application.Interfaces.Services.SubscriptionPackages
 {
     public interface ISubscriptionPackageService
     {
+        Task<Result<bool>> DeleteAsync(Guid adminId, Guid packageId, CancellationToken cancellationToken = default);
         Task<Result<IReadOnlyList<SubscriptionPackageResponseDto>>> GetAllAsync(bool? isActive, UserRole? targetRole, CancellationToken cancellationToken = default);
         Task<Result<SubscriptionPackageResponseDto>> GetByIdAsync(Guid packageId, CancellationToken cancellationToken = default);
         Result<IReadOnlyList<EntitlementDefinitionResponseDto>> GetEntitlementDefinitions();

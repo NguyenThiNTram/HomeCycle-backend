@@ -17,6 +17,13 @@ public sealed class DashboardAgingData
 
 public sealed class AppointmentDashboardData
 {
+    public int CancelledInPeriodCount { get; set; }
+    public int OpenDisputeAppointmentCount { get; set; }
+    public int LateInspectionCount { get; set; }
+    public int MissingLateThresholdCount { get; set; }
+    public List<CheckInRoleData> CheckInRoles { get; set; } = [];
+    public List<AppointmentRegionMetric> Regions { get; set; } = [];
+    public List<DeliveryPerformanceData> DeliveryPerformance { get; set; } = [];
     public int TotalAppointments { get; set; }
     public int TodayCount { get; set; }
     public int UpcomingCount { get; set; }
@@ -44,6 +51,15 @@ public sealed class InspectionCheckInData
 
 public sealed class OrderDashboardData
 {
+    public int CreatedInPeriodCount { get; set; }
+    public int SuccessfulInPeriodCount { get; set; }
+    public int SuccessfulOrdersMissingAmountCount { get; set; }
+    public decimal Gmv { get; set; }
+    public List<DashboardCodeCount> CreatedStatuses { get; set; } = [];
+    public List<DashboardCodeCount> DeliveryMethods { get; set; } = [];
+    public List<DashboardCodeCount> PaymentMethods { get; set; } = [];
+    public List<DashboardDailyCount> CreatedDaily { get; set; } = [];
+    public List<DashboardAmountDay> GmvDaily { get; set; } = [];
     public int TotalOrders { get; set; }
     public int ActiveOrderCount { get; set; }
     public int CompletedInPeriodCount { get; set; }
@@ -71,6 +87,11 @@ public sealed class PaymentDashboardData
 
 public sealed class DisputeDashboardData
 {
+    public int OpenedInPeriodCount { get; set; }
+    public int OrdersCreatedInPeriodCount { get; set; }
+    public int DisputedOrdersCreatedInPeriodCount { get; set; }
+    public decimal CurrentDisputedHeldAmount { get; set; }
+    public List<DashboardCodeCount> Resolutions { get; set; } = [];
     public int TotalDisputes { get; set; }
     public int UnresolvedDisputeCount { get; set; }
     public int ResolvedInPeriodCount { get; set; }
@@ -82,6 +103,11 @@ public sealed class DisputeDashboardData
     public List<DashboardDailyCount> ResolvedDaily { get; set; } = [];
     public DashboardAgingData UnresolvedAging { get; set; } = new();
 }
+
+public sealed record CheckInRoleData(int Role, int EligibleCount, int CheckedInCount);
+public sealed record DeliveryPerformanceData(int? Method, int TotalCount, int CompletedCount, int CancelledCount);
+
+public sealed record DashboardAmountDay(DateTime Date, int Count, decimal Amount);
 
 public sealed class OperationOverviewData
 {

@@ -3,6 +3,12 @@ using HomeCycle.Domain.Enums;
 namespace HomeCycle.Infrastructure.Repositories.Dashboard;
 internal sealed class AppointmentDashboardRow
 {
+    public int BuyerRole { get; init; }
+    public int SellerRole { get; init; }
+    public int? DeliveryMethod { get; init; }
+    public string? City { get; init; }
+    public string? Ward { get; init; }
+    public bool HasOpenDispute { get; init; }
     public Guid AppointmentId { get; init; }
     public int? Type { get; init; }
     public int? Status { get; init; }

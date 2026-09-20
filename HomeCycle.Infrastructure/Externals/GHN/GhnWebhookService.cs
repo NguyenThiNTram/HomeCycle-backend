@@ -1,6 +1,5 @@
 ﻿using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Requests.GHN;
-using HomeCycle.Application.Interfaces.Externals;
 using HomeCycle.Application.Interfaces.Generics;
 using HomeCycle.Application.Interfaces.Repositories.GHN;
 using HomeCycle.Application.Interfaces.Repositories.Shipments;
@@ -23,7 +22,6 @@ namespace HomeCycle.Infrastructure.Externals.GHN
     {
         private readonly IGhnShipmentRepository _ghnShipmentRepository;
         private readonly IShipmentRepository _shipmentRepository;
-        private readonly IGhnService _ghnService;
         private readonly IOrderTrackingRealtimeService _orderTrackingRealtimeService;
         private readonly IUnitOfWork _unitOfWork;
         private readonly GhnSettings _settings;
@@ -32,7 +30,6 @@ namespace HomeCycle.Infrastructure.Externals.GHN
         public GhnWebhookService(
             IGhnShipmentRepository ghnShipmentRepository,
             IShipmentRepository shipmentRepository,
-            IGhnService ghnService,
             IOrderTrackingRealtimeService orderTrackingRealtimeService,
             IUnitOfWork unitOfWork,
             IOptions<GhnSettings> settings,
@@ -40,7 +37,6 @@ namespace HomeCycle.Infrastructure.Externals.GHN
         {
             _ghnShipmentRepository = ghnShipmentRepository;
             _shipmentRepository = shipmentRepository;
-            _ghnService = ghnService;
             _orderTrackingRealtimeService = orderTrackingRealtimeService;
             _unitOfWork = unitOfWork;
             _settings = settings.Value;
@@ -133,15 +129,9 @@ namespace HomeCycle.Infrastructure.Externals.GHN
             var expected = GhnStateVersion.Capture(ghnShipment);
             if (!GhnStatusMapper.CanApply(ghnShipment.GHNStatusCode, carrierStatus))
                 return Result.Success();
-            // LastSyncedAt là thời điểm quan sát local, không phải timestamp sự kiện GHN.
-            // Xác minh callback có vẻ cũ thay vì bỏ nhầm callback đến chậm nhưng hợp lệ.
-            if (!string.IsNullOrWhiteSpace(ghnShipment.GHNOrderCode) && carrierStatus != ghnShipment.GHNStatusCode &&
-                (!request.Time.HasValue || ghnShipment.LastSyncedAt.HasValue && request.Time.Value.UtcDateTime < ghnShipment.LastSyncedAt.Value))
-            {
-                var current = await _ghnService.GetOrderDetailAsync(orderCode, cancellationToken);
-                if (!string.Equals(current.CarrierStatus, carrierStatus, StringComparison.OrdinalIgnoreCase))
-                    return Result.Success();
-            }
+
+            // Callback là nguồn cập nhật trạng thái. Không gọi ngược Order Detail GHN
+            // vì sandbox có thể vẫn trả ready_to_pick và ghi đè luồng demo webhook.
             var previousCarrierStatus = ghnShipment.GHNStatusCode;
             // Chụp các mốc timeline trước khi cập nhật.
             var previousShipmentStatus = shipment.ShipmentStatus;
