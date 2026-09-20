@@ -1294,11 +1294,7 @@ namespace HomeCycle.Application.Services.Inspections
                         !collectAction.HasValue &&
                         order.OrderStatus == (int)OrderStatus.Processing,
 
-                    CanCancelTransaction =
-                        (isBuyer || isSeller) &&
-                        status == InspectionStatus.Rejected &&
-                        order.OrderStatus == (int)OrderStatus.Processing &&
-                        !hasActiveDispute
+                    CanCancelTransaction = false
                 }
             };
         }

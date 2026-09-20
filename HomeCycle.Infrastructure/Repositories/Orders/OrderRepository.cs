@@ -329,8 +329,10 @@ namespace HomeCycle.Infrastructure.Repositories.Orders
                             entity.OrderStatus.Value
                         : null,
 
-                DeliveryMethod =
-                    agreementDetails?.DeliveryMethod,
+                DeliveryMethod = latestShipment != null &&
+                             latestShipment.DeliveryMethod != (int)DeliveryMethod.Unknown
+                ? (DeliveryMethod?)latestShipment.DeliveryMethod
+                : agreementDetails?.DeliveryMethod,
 
                 CreatedAt = entity.CreatedAt,
                 UpdatedAt = entity.UpdatedAt,
