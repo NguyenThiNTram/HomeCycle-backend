@@ -2,6 +2,9 @@ namespace HomeCycle.Application.DTOs.Responses.Dashboard;
 
 public sealed class BusinessOverviewResponse
 {
+    public DashboardPeriod Period { get; set; } = new();
+    public string GrowthBasis => "CurrentStatusOfBusinessAccountsRegisteredInEachPeriod.NotHistoricalStatusSnapshots";
+    public IReadOnlyList<BusinessGrowthPoint> GrowthSeries { get; set; } = [];
     public DateTime GeneratedAtUtc { get; set; }
     public int TotalBusinessAccounts { get; set; }
     public int WithProfileCount { get; set; }
@@ -39,6 +42,16 @@ public sealed class BusinessDemandResponse
 public sealed record BusinessTradeGroup(string BuyerRole, string SellerRole, int Count, decimal Amount);
 public sealed class BusinessPerformanceResponse
 {
+    public int CreatedBusinessOrderCount { get; init; }
+    public decimal? CancellationRate { get; init; }
+    public decimal? DisputeRate { get; init; }
+    public string RateBasis => "OrdersCreatedInPeriod.WithCurrentBusinessBuyerOrSeller";
+    public IReadOnlyList<DistributionItem> CancellationReasons { get; init; } = [];
+    public IReadOnlyList<DistributionItem> DisputeReasons { get; init; } = [];
+    public IReadOnlyList<BusinessRankingItem> TopSellers { get; init; } = [];
+    public IReadOnlyList<BusinessRankingItem> TopBuyers { get; init; } = [];
+    public IReadOnlyList<BusinessContributionPoint> ContributionSeries { get; init; } = [];
+    public IReadOnlyList<BusinessRegionMetric> TransactionRegions { get; init; } = [];
     public DateTime GeneratedAtUtc { get; init; }
     public DashboardPeriod Period { get; init; } = new();
     public int EligiblePaidPaymentCount { get; init; }
@@ -66,9 +79,24 @@ public sealed class BusinessPerformanceResponse
 public sealed record DashboardTradeDay(DateTime Date, int? BuyerRole, int? SellerRole, int Count, decimal Amount);
 public sealed class BusinessPerformanceData
 {
+    public int CreatedBusinessOrderCount { get; set; }
+    public int CancelledBusinessOrderCount { get; set; }
+    public int DisputedBusinessOrderCount { get; set; }
+    public List<DashboardReasonCount> CancellationReasons { get; set; } = [];
+    public List<DashboardReasonCount> DisputeReasons { get; set; } = [];
+    public List<BusinessRankingItem> TopSellers { get; set; } = [];
+    public List<BusinessRankingItem> TopBuyers { get; set; } = [];
+    public List<BusinessRegionMetric> TransactionRegions { get; set; } = [];
     public List<DashboardTradeDay> Payments { get; set; } = [];
     public List<DashboardTradeDay> Orders { get; set; } = [];
     public int OrdersWithMissingAmountCount { get; set; }
     public int PurchasingBusinessCount { get; set; }
     public int SellingBusinessCount { get; set; }
 }
+
+public sealed record BusinessGrowthDay(DateTime Date, int Status, int Count);
+public sealed record BusinessGrowthPoint(DateOnly From, DateOnly ToExclusive, int RegisteredCount, int CurrentlyActiveCount, int CurrentlySuspendedCount);
+public sealed record BusinessRankingItem(Guid UserId, string Name, int CompletedOrderCount, decimal Gmv);
+public sealed record BusinessContributionPoint(DateOnly From, DateOnly ToExclusive, int BusinessOrderCount, decimal BusinessGmv, int PersonalOrderCount, decimal PersonalGmv);
+public sealed record BusinessRegionMetric(string City, int OrderCount);
+public sealed record DashboardReasonCount(string Key, string Label, int Count);

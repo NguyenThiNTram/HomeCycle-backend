@@ -3,7 +3,7 @@ using HomeCycle.Domain.Enums;
 
 namespace HomeCycle.Application.DTOs.Requests.Dashboard;
 
-public class BusinessOverviewRequest
+public class BusinessOverviewRequest : DashboardPeriodRequest
 {
     [EnumDataType(typeof(BusinessModel))] public BusinessModel? BusinessModel { get; set; }
     [EnumDataType(typeof(BusinessProfileStatus))] public BusinessProfileStatus? ProfileStatus { get; set; }

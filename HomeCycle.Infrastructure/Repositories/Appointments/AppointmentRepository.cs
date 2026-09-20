@@ -268,6 +268,15 @@ namespace HomeCycle.Infrastructure.Repositories.Appointments
         {
             var query = _db.Appointments.AsNoTracking().AsQueryable();
 
+            if (request.HasOpenDispute.HasValue)
+                query = query.Where(a => _db.Disputes.Any(d => d.Order != null && d.Order.AgreementId == a.AgreementId
+                    && (d.DisputeStatus == (int)DisputeStatus.Pending || d.DisputeStatus == (int)DisputeStatus.UnderReview
+                        || d.DisputeStatus == (int)DisputeStatus.AwaitingReturn)) == request.HasOpenDispute.Value);
+            if (request.DeliveryMethod.HasValue)
+                query = query.Where(a => _db.Shipments.Where(s => s.Order.AgreementId == a.AgreementId)
+                    .OrderByDescending(s => s.CreatedAt).ThenByDescending(s => s.ShipmentId)
+                    .Select(s => (int?)s.DeliveryMethod).FirstOrDefault() == (int)request.DeliveryMethod.Value);
+
             if (request.Type.HasValue)
                 query = query.Where(a => a.AppointmentType == (int)request.Type.Value);
 
@@ -371,6 +380,7 @@ namespace HomeCycle.Infrastructure.Repositories.Appointments
 
             var items = await ProjectModeratorAppointments(query, request.NowUtc)
                 .OrderByDescending(x => x.CreatedAt)
+                .ThenBy(x => x.AppointmentId)
                 .Skip((request.PageNumber - 1) * request.PageSize)
                 .Take(request.PageSize)
                 .ToListAsync(ct);
@@ -404,6 +414,19 @@ namespace HomeCycle.Infrastructure.Repositories.Appointments
         {
             return query.Select(a => new ModeratorAppointmentReadModel
             {
+                HasOpenDispute = _db.Disputes.Any(d => d.Order != null && d.Order.AgreementId == a.AgreementId
+                    && (d.DisputeStatus == (int)DisputeStatus.Pending || d.DisputeStatus == (int)DisputeStatus.UnderReview
+                        || d.DisputeStatus == (int)DisputeStatus.AwaitingReturn)),
+                CancellationReason = a.CancellationReason,
+                DeliveryMethod = _db.Shipments.Where(s => s.Order.AgreementId == a.AgreementId)
+                    .OrderByDescending(s => s.CreatedAt).ThenByDescending(s => s.ShipmentId)
+                    .Select(s => (DeliveryMethod?)s.DeliveryMethod).FirstOrDefault(),
+                ShipmentStatus = _db.Shipments.Where(s => s.Order.AgreementId == a.AgreementId)
+                    .OrderByDescending(s => s.CreatedAt).ThenByDescending(s => s.ShipmentId)
+                    .Select(s => (ShipmentStatus?)s.ShipmentStatus).FirstOrDefault(),
+                ExpectedDeliveryAt = _db.Shipments.Where(s => s.Order.AgreementId == a.AgreementId)
+                    .OrderByDescending(s => s.CreatedAt).ThenByDescending(s => s.ShipmentId)
+                    .Select(s => s.GHN_Shipment == null ? null : s.GHN_Shipment.ExpectedDeliveryAt).FirstOrDefault(),
                 AppointmentId = a.AppointmentId,
                 AgreementId = a.AgreementId,
 

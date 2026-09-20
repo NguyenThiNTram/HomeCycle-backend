@@ -10,6 +10,8 @@ namespace HomeCycle.Application.Interfaces.Repositories.SubscriptionPackages
 {
     public interface ISubscriptionPackageRepository
     {
+        Task<bool> HasSubscriptionsAsync(Guid packageId, CancellationToken cancellationToken = default);
+        Task DeleteAsync(Guid packageId, CancellationToken cancellationToken = default);
         Task<IReadOnlyList<subscription_package>> GetAllAsync(bool? isActive, UserRole? targetRole, CancellationToken cancellationToken = default);
         Task<subscription_package?> GetByIdAsync(Guid packageId, CancellationToken cancellationToken = default);
         Task<subscription_package?> GetByIdForUpdateAsync(Guid packageId, CancellationToken cancellationToken = default);

@@ -8,6 +8,10 @@ namespace HomeCycle.Application.DTOs.Responses.Orders
 {
     public sealed class ModeratorOrderReadModel
     {
+        public DateTime? LastPaidAt { get; init; }
+        public int? DeliveryMethod { get; init; }
+        public int? ShipmentStatus { get; init; }
+        public DateTime? CollectionDate { get; init; }
         public Guid OrderId { get; init; }
         public Guid AgreementId { get; init; }
         public Guid PostId { get; init; }

@@ -13,6 +13,8 @@ public sealed class UserDashboardOverviewResponse
     public UserRole? Role { get; init; }
     public int TotalAccounts { get; init; }
     public int EmailVerifiedAccounts { get; init; }
+    public int SuspendedAccounts { get; init; }
+    public decimal? SuspendedPercent { get; init; }
     public IReadOnlyList<UserStatusCount> ByStatus { get; init; } = [];
     public IReadOnlyList<UserRoleCount> ByRole { get; init; } = [];
 }

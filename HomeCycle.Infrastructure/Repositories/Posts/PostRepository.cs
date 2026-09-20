@@ -18,6 +18,11 @@ namespace HomeCycle.Infrastructure.Repositories.Posts
     {
         private readonly HomeCycleDbContext _db;
 
+        public Task<bool> HasOpenReportAsync(Guid postId, CancellationToken cancellationToken = default)
+            => _db.Disputes.AsNoTracking().AnyAsync(x => x.PostId == postId
+                && x.DisputeTargetType == (int)DisputeTargetType.Post
+                && (x.DisputeStatus == (int)DisputeStatus.Pending || x.DisputeStatus == (int)DisputeStatus.UnderReview), cancellationToken);
+
         public PostRepository(HomeCycleDbContext db)
         {
             _db = db;

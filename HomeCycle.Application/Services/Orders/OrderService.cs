@@ -1407,6 +1407,8 @@ namespace HomeCycle.Application.Services.Orders
                 await _orderRepo.GetPagedForModeratorAsync(
                     new ModeratorOrderQuery
                     {
+                        Group = request.Group,
+                        DeliveryMethod = request.DeliveryMethod,
                         Keyword = request.Keyword,
 
                         Status = request.Status,
@@ -1430,6 +1432,10 @@ namespace HomeCycle.Application.Services.Orders
                 .Select(x =>
                     new ModeratorOrderListItemDto
                     {
+                        LastPaidAt = x.LastPaidAt,
+                        DeliveryMethod = (DeliveryMethod?)x.DeliveryMethod,
+                        ShipmentStatus = (ShipmentStatus?)x.ShipmentStatus,
+                        CollectionDate = x.CollectionDate,
                         OrderId = x.OrderId,
                         OrderCode = x.OrderCode,
                         ProductName = x.ProductName,

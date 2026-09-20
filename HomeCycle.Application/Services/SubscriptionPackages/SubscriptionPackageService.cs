@@ -47,6 +47,41 @@ namespace HomeCycle.Application.Services.SubscriptionPackages
             _updateValidator = updateValidator;
         }
 
+        public async Task<Result<bool>> DeleteAsync(Guid adminId, Guid packageId, CancellationToken cancellationToken = default)
+        {
+            await _unitOfWork.BeginTransactionAsync(cancellationToken);
+            try
+            {
+                var package = await _repository.GetByIdForUpdateAsync(packageId, cancellationToken);
+                if (package == null)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<bool>.Fail(SubscriptionPackageErrors.NotFound);
+                }
+                if (package.TargetRole != UserRole.Business || await _repository.HasSubscriptionsAsync(packageId, cancellationToken))
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<bool>.Fail(ValidationErrors.InvalidRequest("Chỉ xóa gói Business chưa có đăng ký. Gói đã có lịch sử phải dùng chức năng đóng gói."));
+                }
+                await _repository.DeleteAsync(packageId, cancellationToken);
+                await _auditService.EnqueueAsync(new AuditEvent
+                {
+                    Category = AuditCategory.Administration, Action = AuditActions.SubscriptionPackageDelete,
+                    Outcome = AuditOutcome.Success, ActorType = AuditActorType.User, UserId = adminId,
+                    TargetType = AuditTargetTypes.SubscriptionPackage, TargetId = packageId,
+                    OldValues = new Dictionary<string, object?> { ["code"] = package.Code, ["name"] = package.Name, ["price"] = package.Price }
+                }, cancellationToken);
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+                await _unitOfWork.CommitTransactionAsync(cancellationToken);
+                return Result<bool>.Success(true);
+            }
+            catch
+            {
+                await _unitOfWork.RollbackTransactionAsync(CancellationToken.None);
+                throw;
+            }
+        }
+
         public async Task<Result<IReadOnlyList<SubscriptionPackageResponseDto>>> GetAllAsync(
             bool? isActive,
             UserRole? targetRole,
@@ -368,25 +403,28 @@ namespace HomeCycle.Application.Services.SubscriptionPackages
 
         internal static Error? ValidateVipConfiguration(int duration, IReadOnlyCollection<PackageEntitlementRequest> entitlements, UserRole role)
         {
-            if (duration != 30 || role is not (UserRole.Personal or UserRole.Business))
-                return SubscriptionPackageErrors.InvalidEntitlement("VIP chỉ áp dụng cho Personal/Business và có thời hạn 30 ngày.");
+            if (role == UserRole.Business)
+            {
+                if (duration is < 1 or > 3650)
+                    return SubscriptionPackageErrors.InvalidEntitlement("Thời hạn gói Business phải từ 1 đến 3650 ngày.");
+                if (entitlements.Count == 0 || entitlements.Any(x => string.IsNullOrWhiteSpace(x.Key))
+                    || entitlements.Select(x => x.Key.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).Count() != entitlements.Count)
+                    return SubscriptionPackageErrors.InvalidEntitlement("Quyền lợi phải có ít nhất một mục và không trùng key.");
+                return ValidateEntitlements(entitlements, role);
+            }
+            if (duration != 30 || role != UserRole.Personal)
+                return SubscriptionPackageErrors.InvalidEntitlement("Gói Personal VIP phải có thời hạn 30 ngày.");
 
             var error = ValidateEntitlements(entitlements, role);
             if (error != null)
                 return error;
 
-            var aiKey = role == UserRole.Personal ? EntitlementKeys.PriceSuggestionDailyCount : EntitlementKeys.SupplierMatchDailyCount;
-            var expectedCount = role == UserRole.Personal ? 1 : 3;
-            if (entitlements.Count != expectedCount || entitlements.Select(x => x.Key.Trim().ToLowerInvariant()).Distinct().Count() != expectedCount)
+            if (entitlements.Count != 1)
                 return SubscriptionPackageErrors.InvalidEntitlement("Bộ quyền lợi VIP không đúng với role của gói.");
 
-            var ai = entitlements.SingleOrDefault(x => string.Equals(x.Key.Trim(), aiKey, StringComparison.OrdinalIgnoreCase));
-            if (ai == null || ai.IsUnlimited || ai.NumericValue != (role == UserRole.Personal ? 50 : 100))
-                return SubscriptionPackageErrors.InvalidEntitlement("Personal VIP cần 50 lượt AI giá; Business VIP cần 100 lượt AI nhà cung cấp.");
-
-            if (role == UserRole.Business && (!entitlements.Any(x => x.Key.Trim().Equals(EntitlementKeys.WithdrawalDailyCount, StringComparison.OrdinalIgnoreCase) && x.IsUnlimited) ||
-                !entitlements.Any(x => x.Key.Trim().Equals(EntitlementKeys.WithdrawalDailyAmount, StringComparison.OrdinalIgnoreCase) && x.IsUnlimited)))
-                return SubscriptionPackageErrors.InvalidEntitlement("Business VIP cần unlimited số lượt và tổng tiền rút mỗi ngày.");
+            var ai = entitlements.SingleOrDefault(x => string.Equals(x.Key.Trim(), EntitlementKeys.PriceSuggestionDailyCount, StringComparison.OrdinalIgnoreCase));
+            if (ai == null || ai.IsUnlimited || ai.NumericValue != 50)
+                return SubscriptionPackageErrors.InvalidEntitlement("Personal VIP cần 50 lượt AI giá.");
 
             return null;
         }
@@ -454,7 +492,8 @@ namespace HomeCycle.Application.Services.SubscriptionPackages
                 }
 
                 if (definition.ValueType == EntitlementValueType.Integer &&
-                    decimal.Truncate(entitlement.NumericValue.Value) != entitlement.NumericValue.Value)
+                    (decimal.Truncate(entitlement.NumericValue.Value) != entitlement.NumericValue.Value
+                        || entitlement.NumericValue.Value > int.MaxValue))
                 {
                     return SubscriptionPackageErrors.InvalidEntitlement(
                         $"Entitlement '{key}' requires an integer value.");

@@ -12,6 +12,124 @@ namespace HomeCycle.Infrastructure.Repositories.Dashboard;
 
 public sealed class DashboardRepository(HomeCycleDbContext db) : IDashboardRepository
 {
+    public async Task<ListingDashboardData> GetListingsAsync(DashboardPeriod period, CancellationToken ct)
+    {
+        var posts = db.Posts.AsNoTracking().Where(x => x.CreatedAt >= period.FromUtc && x.CreatedAt < period.EndUtc);
+        var orders = db.Orders.AsNoTracking().Where(x => x.OrderStatus == (int)OrderStatus.Completed
+            && x.CompletedAt >= period.FromUtc && x.CompletedAt < period.EndUtc);
+        return new()
+        {
+            CurrentlyReportedListingCount = await db.Disputes.AsNoTracking()
+                .Where(x => x.DisputeTargetType == (int)DisputeTargetType.Post && x.PostId != null
+                    && UnresolvedDisputeStatuses.Contains(x.DisputeStatus)).Select(x => x.PostId).Distinct().CountAsync(ct),
+            Statuses = await posts.GroupBy(x => x.Status).Select(g => new DashboardCodeCount(g.Key, g.Count())).ToListAsync(ct),
+            ListingsDaily = await posts.GroupBy(x => x.CreatedAt.AddHours(7).Date)
+                .Select(g => new DashboardDailyCount(g.Key, g.Count())).ToListAsync(ct),
+            CompletedDaily = await orders.GroupBy(x => x.CompletedAt!.Value.AddHours(7).Date)
+                .Select(g => new DashboardDailyCount(g.Key, g.Count())).ToListAsync(ct),
+            TopCategoriesByListings = await posts.GroupBy(x => new { Id = x.Product == null ? null : x.Product.CategoryId,
+                    Name = x.Product == null || x.Product.Category == null ? "Unspecified" : x.Product.Category.CategoryName })
+                .Select(g => new { g.Key.Id, g.Key.Name, Count = g.Count() })
+                .OrderByDescending(x => x.Count).ThenBy(x => x.Id).Take(10)
+                .Select(x => new ListingCategoryMetric(x.Id, x.Name ?? "Unspecified", x.Count, null, null)).ToListAsync(ct),
+            TopCategoriesByGmv = await orders.GroupBy(x => new { Id = x.Post.Product == null ? null : x.Post.Product.CategoryId,
+                    Name = x.Post.Product == null || x.Post.Product.Category == null ? "Unspecified" : x.Post.Product.Category.CategoryName })
+                .Select(g => new { g.Key.Id, g.Key.Name, Count = g.Count(), Gmv = g.Sum(x => x.FinalTotalAmount ?? 0) })
+                .OrderByDescending(x => x.Gmv).ThenBy(x => x.Id).Take(10)
+                .Select(x => new ListingCategoryMetric(x.Id, x.Name ?? "Unspecified", null, x.Count, x.Gmv)).ToListAsync(ct)
+        };
+    }
+
+    public async Task<PagedResult<ReportedListingItem>> GetReportedListingsAsync(ReportedListingRequest request, CancellationToken ct)
+    {
+        var reports = db.Disputes.AsNoTracking().Where(x => x.DisputeTargetType == (int)DisputeTargetType.Post && x.PostId != null);
+        if (request.OpenOnly) reports = reports.Where(x => UnresolvedDisputeStatuses.Contains(x.DisputeStatus));
+        var posts = db.Posts.AsNoTracking().Where(p => reports.Any(d => d.PostId == p.PostId));
+        if (!string.IsNullOrWhiteSpace(request.Keyword))
+        {
+            var pattern = $"%{request.Keyword.Trim()}%";
+            posts = posts.Where(p => (p.Product != null && EF.Functions.ILike(p.Product.ProductName!, pattern))
+                || (p.User != null && EF.Functions.ILike(p.User.Username, pattern)));
+        }
+        var total = await posts.CountAsync(ct);
+        var items = await posts.Select(p => new ReportedListingItem
+        {
+            LatestReportId = reports.Where(d => d.PostId == p.PostId).OrderByDescending(d => d.CreatedAt)
+                .ThenByDescending(d => d.DisputeId).Select(d => d.DisputeId).FirstOrDefault(),
+            PostId = p.PostId, ProductName = p.Product == null ? null : p.Product.ProductName,
+            OwnerId = p.OwnerId, OwnerName = p.User == null ? null : p.User.Username, Status = p.Status,
+            ReportCount = reports.Count(d => d.PostId == p.PostId),
+            ReporterCount = reports.Where(d => d.PostId == p.PostId).Select(d => d.SenderId).Distinct().Count(),
+            LatestReportedAt = reports.Where(d => d.PostId == p.PostId).Max(d => d.CreatedAt)
+        }).OrderByDescending(x => x.LatestReportedAt).ThenBy(x => x.PostId)
+            .Skip((request.PageNumber - 1) * request.PageSize).Take(request.PageSize).ToListAsync(ct);
+        var ids = items.Select(x => x.PostId).ToArray();
+        var reasons = await reports.Where(x => ids.Contains(x.PostId!.Value))
+            .GroupBy(x => new { x.PostId, x.DisputeCategory, Name = x.DisputeCategoryNavigation == null ? null : x.DisputeCategoryNavigation.Name })
+            .Select(g => new { g.Key.PostId, g.Key.DisputeCategory, g.Key.Name, Count = g.Count() }).ToListAsync(ct);
+        foreach (var item in items)
+            item.Reasons = reasons.Where(x => x.PostId == item.PostId).OrderByDescending(x => x.Count)
+                .Select(x => new ReportReasonItem(x.DisputeCategory, x.Name ?? "Unspecified", x.Count)).ToArray();
+        return new() { Items = items, TotalCount = total, PageNumber = request.PageNumber, PageSize = request.PageSize };
+    }
+
+    public async Task<SubscriptionDashboardData> GetSubscriptionsAsync(DashboardPeriod period, DateTime nowUtc, CancellationToken ct)
+    {
+        var active = db.User_Subscriptions.AsNoTracking().Where(x => x.Package.TargetRole == (int)UserRole.Business
+            && x.User.Role == (int)UserRole.Business && x.Status == (int)UserSubscriptionStatus.Active
+            && x.ActivatedAt <= nowUtc && x.ExpiresAt > nowUtc);
+        var revenue = db.Wallet_Transactions.AsNoTracking().Where(x => x.CreatedAt >= period.FromUtc && x.CreatedAt < period.EndUtc
+            && x.TransactionType == (int)TransactionType.Subscription_Fee
+            && x.WalletTransactionStatus == (int)WalletTransactionStatus.Completed
+            && x.ToWallet != null && x.ToWallet.WalletType == (int)WalletTypeEnum.System
+            && x.ToWallet.Purpose == (int)SystemWalletPurpose.Platform_Revenue
+            && x.Payment != null && x.Payment.Subscription != null
+            && x.Payment.Subscription.Package.TargetRole == (int)UserRole.Business);
+        return new()
+        {
+            ActiveBusinessCount = await active.Select(x => x.UserId).Distinct().CountAsync(ct),
+            Packages = await db.Subscription_Packages.AsNoTracking().Where(x => x.TargetRole == (int)UserRole.Business)
+                .OrderBy(x => x.Price).ThenBy(x => x.PackageId)
+                .Select(p => new SubscriptionPackageMetric(p.PackageId, p.Name, p.IsActive,
+                    active.Where(s => s.PackageId == p.PackageId).Select(s => s.UserId).Distinct().Count(),
+                    revenue.Where(t => t.Payment!.Subscription!.PackageId == p.PackageId).Select(t => t.Payment!.SubscriptionId).Distinct().Count(),
+                    revenue.Where(t => t.Payment!.Subscription!.PackageId == p.PackageId).Sum(t => Math.Abs(t.Amount ?? 0)))).ToListAsync(ct),
+            RevenueDaily = await revenue.GroupBy(x => x.CreatedAt.AddHours(7).Date)
+                .Select(g => new DashboardAmountDay(g.Key, g.Count(), g.Sum(x => Math.Abs(x.Amount ?? 0)))).ToListAsync(ct)
+        };
+    }
+
+    public async Task<UserActivityResponse> GetUserActivityAsync(DateTime nowUtc, CancellationToken ct)
+    {
+        var (today, _) = CurrentVietnamDay(nowUtc);
+        var monthStart = today.AddDays(-29);
+        var activity = db.Audit_Logs.AsNoTracking().Where(x => x.OccurredAtUtc >= monthStart && x.OccurredAtUtc <= nowUtc
+            && x.ActorType == (int)AuditActorType.User && x.UserId != null && x.Outcome == (int)AuditOutcome.Success
+            && (x.UserRole == (int)UserRole.Personal || x.UserRole == (int)UserRole.Business));
+        return new()
+        {
+            GeneratedAtUtc = nowUtc,
+            DailyRecordedActiveUsers = await activity.Where(x => x.OccurredAtUtc >= today).Select(x => x.UserId).Distinct().CountAsync(ct),
+            MonthlyRecordedActiveUsers = await activity.Select(x => x.UserId).Distinct().CountAsync(ct),
+            ByRole = await activity.GroupBy(x => x.UserRole!.Value).Select(g => new RecordedActivityByRole(g.Key,
+                g.Where(x => x.OccurredAtUtc >= today).Select(x => x.UserId).Distinct().Count(),
+                g.Select(x => x.UserId).Distinct().Count())).ToListAsync(ct),
+            PendingBusinessVerificationCount = await db.Business_Profiles.CountAsync(x => x.Status == (int)BusinessProfileStatus.Pending, ct),
+            PendingPersonalVerificationCount = await db.Personal_Profiles.CountAsync(x => x.VerificationStatus == (int)VerifyStatus.Pending, ct)
+        };
+    }
+
+    public Task<DashboardAccountDetail?> GetAccountDetailAsync(Guid userId, CancellationToken ct)
+        => db.Users.AsNoTracking().Where(x => x.UserId == userId).Select(x => new DashboardAccountDetail
+        {
+            UserId = x.UserId, Username = x.Username, Email = x.Email, PhoneNumber = x.PhoneNumber,
+            Role = x.Role, Status = x.Status, IsEmailVerified = x.IsEmailVerified, CreatedAt = x.CreatedAt,
+            ProfileName = x.Role == (int)UserRole.Business ? x.Business_Profile!.BusinessName : x.Personal_ProfileUser!.FullName,
+            ProfileStatus = x.Role == (int)UserRole.Business ? (int?)x.Business_Profile!.Status : x.Personal_ProfileUser!.VerificationStatus,
+            ReputationScore = x.Role == (int)UserRole.Business ? (int?)x.Business_Profile!.ReputationScore : x.Personal_ProfileUser == null ? null : x.Personal_ProfileUser.ReputationScore,
+            VerifiedAt = x.Role == (int)UserRole.Business ? x.Business_Profile!.VerifiedAt : x.Personal_ProfileUser!.VerifiedAt
+        }).SingleOrDefaultAsync(ct);
+
     private static readonly int?[] ActiveOrderStatuses =
         [(int)OrderStatus.Pending, (int)OrderStatus.Processing, (int)OrderStatus.Disputing];
 
@@ -81,6 +199,14 @@ public sealed class DashboardRepository(HomeCycleDbContext db) : IDashboardRepos
     private IQueryable<AppointmentDashboardRow> AppointmentDashboardRows()
         => db.Appointments.AsNoTracking().Select(x => new AppointmentDashboardRow
         {
+            BuyerRole = x.Agreement.Buyer.Role,
+            SellerRole = x.Agreement.Seller.Role,
+            City = x.Agreement.Post.City,
+            Ward = x.Agreement.Post.Ward,
+            DeliveryMethod = db.Shipments.Where(s => s.Order.AgreementId == x.AgreementId)
+                .OrderByDescending(s => s.CreatedAt).ThenByDescending(s => s.ShipmentId).Select(s => (int?)s.DeliveryMethod).FirstOrDefault(),
+            HasOpenDispute = db.Disputes.Any(d => d.Order != null && d.Order.AgreementId == x.AgreementId
+                && UnresolvedDisputeStatuses.Contains(d.DisputeStatus)),
             AppointmentId = x.AppointmentId,
             Type = x.AppointmentType,
             Status = x.AppointmentStatus,
@@ -179,6 +305,18 @@ public sealed class DashboardRepository(HomeCycleDbContext db) : IDashboardRepos
         var query = db.Orders.AsNoTracking();
         if (request.OrderStatus.HasValue)
             query = query.Where(x => x.OrderStatus == (int)request.OrderStatus.Value);
+        if (request.DeliveryMethod.HasValue)
+            query = query.Where(x => x.Shipments.OrderByDescending(s => s.CreatedAt).ThenByDescending(s => s.ShipmentId)
+                .Select(s => (int?)s.DeliveryMethod).FirstOrDefault() == (int)request.DeliveryMethod.Value);
+
+        var created = query.Where(x => x.CreatedAt >= period.FromUtc && x.CreatedAt < period.EndUtc);
+        var successful = query.Where(x => x.OrderStatus == (int)OrderStatus.Completed
+            && x.CompletedAt >= period.FromUtc && x.CompletedAt < period.EndUtc);
+        var paid = db.Payments.AsNoTracking().Where(x => x.PaidAt >= period.FromUtc && x.PaidAt < period.EndUtc
+            && (x.PaymentType == (int)PaymentType.Deposit || x.PaymentType == (int)PaymentType.Full_Payment)
+            && (x.PaymentStatus == (int)PaymentStatus.Completed || x.PaymentStatus == (int)PaymentStatus.Refunded
+                || x.PaymentStatus == (int)PaymentStatus.PartiallyRefunded)
+            && query.Any(o => o.OrderId == x.OrderId || o.AgreementId == x.AgreementId));
 
         var active = query.Where(x => ActiveOrderStatuses.Contains(x.OrderStatus));
         var completed = query.Where(x => x.CompletedAt >= period.FromUtc && x.CompletedAt < period.EndUtc);
@@ -187,6 +325,21 @@ public sealed class DashboardRepository(HomeCycleDbContext db) : IDashboardRepos
 
         return new OrderDashboardData
         {
+            CreatedInPeriodCount = await created.CountAsync(ct),
+            SuccessfulInPeriodCount = await successful.CountAsync(ct),
+            SuccessfulOrdersMissingAmountCount = await successful.CountAsync(x => x.FinalTotalAmount == null, ct),
+            Gmv = await successful.SumAsync(x => x.FinalTotalAmount ?? 0, ct),
+            CreatedStatuses = await created.GroupBy(x => x.OrderStatus)
+                .Select(g => new DashboardCodeCount(g.Key, g.Count())).ToListAsync(ct),
+            CreatedDaily = await created.GroupBy(x => x.CreatedAt.AddHours(7).Date)
+                .Select(g => new DashboardDailyCount(g.Key, g.Count())).ToListAsync(ct),
+            GmvDaily = await successful.GroupBy(x => x.CompletedAt!.Value.AddHours(7).Date)
+                .Select(g => new DashboardAmountDay(g.Key, g.Count(), g.Sum(x => x.FinalTotalAmount ?? 0))).ToListAsync(ct),
+            DeliveryMethods = await created.Select(x => x.Shipments.OrderByDescending(s => s.CreatedAt)
+                    .ThenByDescending(s => s.ShipmentId).Select(s => (int?)s.DeliveryMethod).FirstOrDefault())
+                .GroupBy(x => x).Select(g => new DashboardCodeCount(g.Key, g.Count())).ToListAsync(ct),
+            PaymentMethods = await paid.GroupBy(x => x.PaymentMethod)
+                .Select(g => new DashboardCodeCount(g.Key, g.Count())).ToListAsync(ct),
             TotalOrders = await query.CountAsync(ct),
             ActiveOrderCount = await active.CountAsync(ct),
             CompletedInPeriodCount = await completed.CountAsync(ct),
@@ -265,6 +418,22 @@ public sealed class DashboardRepository(HomeCycleDbContext db) : IDashboardRepos
 
         return new AppointmentDashboardData
         {
+            CancelledInPeriodCount = await effective.CountAsync(x => x.Status == (int)AppointmentStatus.Cancelled
+                && x.CancelledAt >= period.FromUtc && x.CancelledAt < period.EndUtc, ct),
+            OpenDisputeAppointmentCount = await effective.CountAsync(x => x.HasOpenDispute, ct),
+            LateInspectionCount = await eligibleInspections.CountAsync(x => x.LateThresholdAt != null
+                && (x.BuyerCheckAt > x.LateThresholdAt || x.SellerCheckAt > x.LateThresholdAt
+                    || (x.LateThresholdAt < nowUtc && (x.BuyerCheckAt == null || x.SellerCheckAt == null)
+                        && (x.Status != (int)AppointmentStatus.Cancelled || x.CancelledAt > x.LateThresholdAt))), ct),
+            MissingLateThresholdCount = await eligibleInspections.CountAsync(x => x.LateThresholdAt == null, ct),
+            CheckInRoles = await eligibleInspections.Select(x => new { Role = x.BuyerRole, CheckedIn = x.BuyerCheckAt == null ? 0 : 1 })
+                .Concat(eligibleInspections.Select(x => new { Role = x.SellerRole, CheckedIn = x.SellerCheckAt == null ? 0 : 1 }))
+                .GroupBy(x => x.Role).Select(g => new CheckInRoleData(g.Key, g.Count(), g.Sum(x => x.CheckedIn))).ToListAsync(ct),
+            Regions = await scheduledInPeriod.GroupBy(x => new { x.City, x.Ward, x.DeliveryMethod })
+                .Select(g => new AppointmentRegionMetric(g.Key.City ?? "Unspecified", g.Key.Ward ?? "Unspecified", g.Key.DeliveryMethod, g.Count())).ToListAsync(ct),
+            DeliveryPerformance = await scheduledInPeriod.GroupBy(x => x.DeliveryMethod)
+                .Select(g => new DeliveryPerformanceData(g.Key, g.Count(), g.Count(x => x.Status == (int)AppointmentStatus.Completed),
+                    g.Count(x => x.Status == (int)AppointmentStatus.Cancelled))).ToListAsync(ct),
             TotalAppointments = await effective.CountAsync(ct),
             TodayCount = await effective.CountAsync(x =>
                 x.ScheduledAt >= todayStartUtc && x.ScheduledAt < todayEndUtc, ct),
@@ -300,9 +469,24 @@ public sealed class DashboardRepository(HomeCycleDbContext db) : IDashboardRepos
         var opened = query.Where(x => x.CreatedAt >= period.FromUtc && x.CreatedAt < period.EndUtc);
         var resolved = query.Where(x =>
             x.ResolvedAt >= period.FromUtc && x.ResolvedAt < period.EndUtc);
+        var cohort = db.Orders.AsNoTracking().Where(x => x.CreatedAt >= period.FromUtc && x.CreatedAt < period.EndUtc);
+        var held = db.Wallet_Ledgers.AsNoTracking().Where(x => x.BalanceType == (int)BalanceType.Hold
+            && x.ReferenceType == (int)ReferenceType.Order && x.ReferenceId != null
+            && x.WalletTransaction.WalletTransactionStatus == (int)WalletTransactionStatus.Completed
+            && unresolved.Any(d => d.OrderId == x.ReferenceId))
+            .GroupBy(x => x.ReferenceId)
+            .Select(g => g.Sum(x => x.Direction == (int)LedgerDirection.In ? x.Amount : -x.Amount))
+            .Where(amount => amount > 0);
 
         return new DisputeDashboardData
         {
+            OpenedInPeriodCount = await opened.CountAsync(ct),
+            OrdersCreatedInPeriodCount = await cohort.CountAsync(ct),
+            DisputedOrdersCreatedInPeriodCount = await cohort.CountAsync(o => query.Any(d =>
+                d.OrderId == o.OrderId && d.DisputeTargetType == (int)DisputeTargetType.Order), ct),
+            CurrentDisputedHeldAmount = await held.SumAsync(ct),
+            Resolutions = await resolved.GroupBy(x => x.ResolutionOutcome)
+                .Select(g => new DashboardCodeCount(g.Key, g.Count())).ToListAsync(ct),
             TotalDisputes = await query.CountAsync(ct),
             UnresolvedDisputeCount = await unresolved.CountAsync(ct),
             ResolvedInPeriodCount = await resolved.CountAsync(ct),
@@ -332,6 +516,11 @@ public sealed class DashboardRepository(HomeCycleDbContext db) : IDashboardRepos
             query = query.Where(x => x.Business_Profile != null && x.Business_Profile.BusinessModel == (int)request.BusinessModel.Value);
         return query;
     }
+
+    public async Task<IReadOnlyList<BusinessGrowthDay>> GetBusinessGrowthAsync(BusinessOverviewRequest request, DashboardPeriod period, CancellationToken ct)
+        => await BusinessAccounts(request).Where(x => x.CreatedAt >= period.FromUtc && x.CreatedAt < period.EndUtc)
+            .GroupBy(x => new { Date = x.CreatedAt.AddHours(7).Date, x.Status })
+            .Select(g => new BusinessGrowthDay(g.Key.Date, g.Key.Status, g.Count())).ToListAsync(ct);
 
     public async Task<BusinessOverviewResponse> GetBusinessOverviewAsync(BusinessOverviewRequest request, CancellationToken ct)
     {
@@ -464,8 +653,33 @@ public sealed class DashboardRepository(HomeCycleDbContext db) : IDashboardRepos
                 Amount = x.Amount ?? 0
             });
         var orders = db.Orders.AsNoTracking().Where(x => x.OrderStatus == (int)OrderStatus.Completed && x.CompletedAt >= from && x.CompletedAt < to);
+        var cohort = db.Orders.AsNoTracking().Where(x => x.CreatedAt >= from && x.CreatedAt < to
+            && (x.Agreement.Buyer.Role == (int)UserRole.Business || x.Agreement.Seller.Role == (int)UserRole.Business));
+        var cancellations = await cohort.Where(x => x.OrderStatus == (int)OrderStatus.Cancelled)
+            .GroupBy(x => x.CancellationReason).Select(g => new { Reason = g.Key, Count = g.Count() }).ToListAsync(ct);
+        var disputes = await db.Disputes.AsNoTracking().Where(d => d.DisputeTargetType == (int)DisputeTargetType.Order
+                && cohort.Any(o => o.OrderId == d.OrderId))
+            .GroupBy(d => new { d.DisputeCategory, Name = d.DisputeCategoryNavigation == null ? null : d.DisputeCategoryNavigation.Name })
+            .Select(g => new { g.Key.DisputeCategory, g.Key.Name, Count = g.Count() }).ToListAsync(ct);
         return new()
         {
+            CreatedBusinessOrderCount = await cohort.CountAsync(ct),
+            CancelledBusinessOrderCount = cancellations.Sum(x => x.Count),
+            DisputedBusinessOrderCount = await cohort.CountAsync(x => x.Disputes.Any(d => d.DisputeTargetType == (int)DisputeTargetType.Order), ct),
+            CancellationReasons = cancellations.Select(x => new DashboardReasonCount(x.Reason ?? "Unspecified", x.Reason ?? "Unspecified", x.Count)).ToList(),
+            DisputeReasons = disputes.Select(x => new DashboardReasonCount(x.DisputeCategory?.ToString() ?? "Unspecified", x.Name ?? "Unspecified", x.Count)).ToList(),
+            TopSellers = await orders.Where(x => x.Agreement.Seller.Role == (int)UserRole.Business)
+                .GroupBy(x => new { Id = x.Agreement.SellerId, Name = x.Agreement.Seller.Business_Profile == null ? x.Agreement.Seller.Username : x.Agreement.Seller.Business_Profile.BusinessName })
+                .Select(g => new { g.Key.Id, g.Key.Name, Count = g.Count(), Amount = g.Sum(x => x.FinalTotalAmount ?? 0) })
+                .OrderByDescending(x => x.Amount).ThenBy(x => x.Id).Take(10)
+                .Select(x => new BusinessRankingItem(x.Id, x.Name ?? "Unspecified", x.Count, x.Amount)).ToListAsync(ct),
+            TopBuyers = await orders.Where(x => x.Agreement.Buyer.Role == (int)UserRole.Business)
+                .GroupBy(x => new { Id = x.Agreement.BuyerId, Name = x.Agreement.Buyer.Business_Profile == null ? x.Agreement.Buyer.Username : x.Agreement.Buyer.Business_Profile.BusinessName })
+                .Select(g => new { g.Key.Id, g.Key.Name, Count = g.Count(), Amount = g.Sum(x => x.FinalTotalAmount ?? 0) })
+                .OrderByDescending(x => x.Amount).ThenBy(x => x.Id).Take(10)
+                .Select(x => new BusinessRankingItem(x.Id, x.Name ?? "Unspecified", x.Count, x.Amount)).ToListAsync(ct),
+            TransactionRegions = await cohort.GroupBy(x => x.Post.City)
+                .Select(g => new BusinessRegionMetric(g.Key ?? "Unspecified", g.Count())).ToListAsync(ct),
             Payments = await payments.GroupBy(x => new { x.Date, x.BuyerRole, x.SellerRole })
                 .Select(g => new DashboardTradeDay(g.Key.Date, g.Key.BuyerRole, g.Key.SellerRole, g.Count(), g.Sum(x => x.Amount))).ToListAsync(ct),
             Orders = await orders.GroupBy(x => new { Date = x.CompletedAt!.Value.AddHours(7).Date, BuyerRole = (int?)x.Agreement.Buyer.Role, SellerRole = (int?)x.Agreement.Seller.Role })

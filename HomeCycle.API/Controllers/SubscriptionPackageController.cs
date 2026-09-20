@@ -261,6 +261,17 @@ namespace HomeCycle.API.Controllers
                 : MapError(result.Error);
         }
 
+        [HttpDelete("~/api/admin/subscription-packages/{packageId:guid}")]
+        [Authorize(Roles = nameof(UserRole.Admin))]
+        [SwaggerOperation(Summary = "Xóa gói Business chưa có đăng ký", Description = "Gói từng có đăng ký phải đóng bằng endpoint status để giữ lịch sử.")]
+        public async Task<IActionResult> Delete(Guid packageId, CancellationToken cancellationToken)
+        {
+            var adminId = GetCurrentUserId();
+            if (adminId == Guid.Empty) return Unauthorized();
+            var result = await _service.DeleteAsync(adminId, packageId, cancellationToken);
+            return result.IsSuccess ? NoContent() : MapError(result.Error);
+        }
+
         [HttpPost("me/subscriptions/{subscriptionId:guid}/cancel")]
         [Authorize(Roles = nameof(UserRole.Personal) + "," + nameof(UserRole.Business))]
         public async Task<IActionResult> CancelMySubscription(Guid subscriptionId, CancellationToken cancellationToken)

@@ -8,6 +8,11 @@ namespace HomeCycle.Application.Interfaces.Services.Dashboard;
 
 public interface IDashboardService
 {
+    Task<ListingDashboardResponse> GetListingDashboardAsync(DashboardPeriodRequest request, CancellationToken ct);
+    Task<PagedResult<ReportedListingItem>> GetReportedListingsAsync(ReportedListingRequest request, CancellationToken ct);
+    Task<SubscriptionDashboardResponse> GetSubscriptionDashboardAsync(DashboardPeriodRequest request, CancellationToken ct);
+    Task<UserActivityResponse> GetUserActivityAsync(CancellationToken ct);
+    Task<DashboardAccountDetail?> GetAccountDetailAsync(Guid userId, CancellationToken ct);
     Task<UserDashboardOverviewResponse> GetUserOverviewAsync(UserRole? role, CancellationToken ct);
     Task<PagedResult<UserAdminResponse>> GetUsersAsync(DashboardUserListRequest request, CancellationToken ct);
     Task<UserRegistrationTrendResponse> GetUserRegistrationTrendAsync(UserRegistrationTrendRequest request, CancellationToken ct);

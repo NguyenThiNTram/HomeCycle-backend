@@ -8,8 +8,14 @@ using System.Threading.Tasks;
 
 namespace HomeCycle.Application.DTOs.Requests.Orders
 {
+    public enum OrderHistoryGroup { Trading, Issue, Successful }
+
     public class ModeratorOrderSearchRequest : PaginationRequest
     {
+        [System.ComponentModel.DataAnnotations.EnumDataType(typeof(OrderHistoryGroup))]
+        public OrderHistoryGroup? Group { get; set; }
+        [System.ComponentModel.DataAnnotations.EnumDataType(typeof(DeliveryMethod))]
+        public DeliveryMethod? DeliveryMethod { get; set; }
         public string? Keyword { get; set; }
 
         public OrderStatus? Status { get; set; }

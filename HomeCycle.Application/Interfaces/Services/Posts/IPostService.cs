@@ -13,6 +13,7 @@ namespace HomeCycle.Application.Interfaces.Services.Posts
 {
     public interface IPostService
     {
+        Task<Result<bool>> WarnOwnerAsync(Guid moderatorId, Guid postId, string message, CancellationToken cancellationToken = default);
         Task<Result<PagedResult<PostResponse>>> DiscoverBusinessAsync(Guid userId, PaginationRequest request, CancellationToken cancellationToken = default);
         Task<Result<SellPostDetailResponse>> GetSellDetailAsync(Guid postId, CancellationToken cancellationToken = default);
         Task<Result<BuyPostDetailResponse>> GetBuyDetailAsync(Guid postId, CancellationToken cancellationToken = default);

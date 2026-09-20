@@ -18,8 +18,9 @@ public sealed class SupplierMatchEntitlementService(
 {
     public async Task<SupplierMatchEntitlement> GetAsync(Guid userId, CancellationToken cancellationToken = default)
     {
-        var limit = await resolver.ResolveAiDailyLimitAsync(userId, UserRole.Business, clock.GetUtcNow().UtcDateTime, cancellationToken);
-        var isVip = limit != freePlan.Business.SupplierMatchDailyLimit;
+        var now = clock.GetUtcNow().UtcDateTime;
+        var limit = await resolver.ResolveAiDailyLimitAsync(userId, UserRole.Business, now, cancellationToken);
+        var isVip = await ActiveAiSubscriptions(now).AnyAsync(x => x.UserId == userId, cancellationToken);
         var settings = options.Value;
         return new SupplierMatchEntitlement(
             isVip ? SupplierMatchTier.Vip : SupplierMatchTier.Free,
@@ -33,14 +34,15 @@ public sealed class SupplierMatchEntitlementService(
     public async Task<IReadOnlyCollection<Guid>> GetActiveVipUserIdsAsync(CancellationToken cancellationToken = default)
     {
         var now = clock.GetUtcNow().UtcDateTime;
-        return await db.User_Subscriptions.AsNoTracking()
+        return await ActiveAiSubscriptions(now).Select(x => x.UserId).Distinct().ToArrayAsync(cancellationToken);
+    }
+
+    private IQueryable<User_Subscription> ActiveAiSubscriptions(DateTime now)
+        => db.User_Subscriptions.AsNoTracking()
             .Where(x => x.Status == (int)UserSubscriptionStatus.Active &&
                 x.ActivatedAt.HasValue && x.ActivatedAt <= now && x.ExpiresAt.HasValue && x.ExpiresAt > now &&
                 x.User.Role == (int)UserRole.Business &&
                 x.User_Subscription_Entitlements.Any(e => e.EntitlementKey == EntitlementKeys.SupplierMatchDailyCount &&
-                    e.ValueType == (int)EntitlementValueType.Integer && e.NumericValue == 100 && !e.IsUnlimited && e.BooleanValue == null))
-            .Select(x => x.UserId)
-            .Distinct()
-            .ToArrayAsync(cancellationToken);
-    }
+                    e.ValueType == (int)EntitlementValueType.Integer && e.NumericValue.HasValue && e.NumericValue > 0 && e.NumericValue <= int.MaxValue
+                    && e.NumericValue == Math.Truncate(e.NumericValue.Value) && !e.IsUnlimited && e.BooleanValue == null));
 }

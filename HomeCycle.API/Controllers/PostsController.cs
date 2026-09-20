@@ -293,6 +293,7 @@ namespace HomeCycle.API.Controllers
         }
 
         [HttpPatch("{postId:guid}/reactivate")]
+        [Authorize(Roles = "Personal,Business")]
         [SwaggerOperation(
             Summary = "Kích hoạt lại bài đăng",
             Description = "Kích hoạt lại bài đăng đã bị đóng (Closed) của người dùng hiện tại."
@@ -312,16 +313,16 @@ namespace HomeCycle.API.Controllers
 
         [HttpDelete("delete/{id:guid}")]
         [SwaggerOperation(
-            Summary = "Xóa bài đăng",
-            Description = "Admin xóa bài đăng của người dùng khỏi hệ thống."
+            Summary = "Gỡ bài đăng bị báo cáo khỏi sàn",
+            Description = "Moderator đình chỉ bài đăng có báo cáo đang mở; giữ dữ liệu và lịch sử giao dịch."
         )]
-        [Authorize(Roles = "Admin")]
+        [Authorize(Roles = "Moderator")]
         [ProducesResponseType(StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status403Forbidden)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
         {
-            var result = await _postService.DeleteAsync(id, cancellationToken);
+            var result = await _postService.SuspendAsync(id, cancellationToken);
 
             if (!result.IsSuccess)
                 return MapErrorToResponse(result.Error!);
