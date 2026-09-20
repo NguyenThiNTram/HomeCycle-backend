@@ -1,3 +1,5 @@
+using HomeCycle.Domain.Enums;
+
 namespace HomeCycle.Application.DTOs.Responses.Dashboard;
 
 public sealed class AppointmentDashboardResponse
@@ -36,7 +38,7 @@ public sealed class AppointmentDashboardResponse
     public IReadOnlyList<CheckInParticipantItem> CheckInByParticipant { get; init; } = [];
 }
 
-public sealed record AppointmentRegionMetric(string City, string Ward, int? DeliveryMethod, int AppointmentCount);
+public sealed record AppointmentRegionMetric(string City, string Ward, DeliveryMethod? DeliveryMethod, int AppointmentCount);
 public sealed record DeliveryPerformanceMetric(string Method, int TotalCount, int CompletedCount, int CancelledCount, decimal? CompletionRate);
 
 public sealed record AppointmentTypeSeriesPoint(

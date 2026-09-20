@@ -1,5 +1,6 @@
 using System.Text.Json.Serialization;
 using HomeCycle.Application.DTOs.Requests.Dashboard;
+using HomeCycle.Domain.Enums;
 
 namespace HomeCycle.Application.DTOs.Responses.Dashboard;
 
@@ -49,7 +50,7 @@ public sealed class ReportedListingItem
     public string? ProductName { get; init; }
     public Guid OwnerId { get; init; }
     public string? OwnerName { get; init; }
-    public int? Status { get; init; }
+    public PostStatus? Status { get; init; }
     public int ReportCount { get; init; }
     public int ReporterCount { get; init; }
     public DateTime LatestReportedAt { get; init; }
@@ -86,19 +87,21 @@ public sealed class UserActivityResponse
     public int PendingBusinessVerificationCount { get; set; }
     public int PendingPersonalVerificationCount { get; set; }
 }
-public sealed record RecordedActivityByRole(int Role, int DailyUsers, int MonthlyUsers);
+public sealed record RecordedActivityByRole(UserRole Role, int DailyUsers, int MonthlyUsers);
 public sealed class DashboardAccountDetail
 {
     public Guid UserId { get; init; }
     public string Username { get; init; } = "";
     public string Email { get; init; } = "";
     public string? PhoneNumber { get; init; }
-    public int Role { get; init; }
-    public int Status { get; init; }
+    public UserRole Role { get; init; }
+    public UserStatus Status { get; init; }
     public bool IsEmailVerified { get; init; }
     public DateTime CreatedAt { get; init; }
     public string? ProfileName { get; init; }
-    public int? ProfileStatus { get; init; }
+    public BusinessProfileStatus? BusinessProfileStatus { get; init; }
+    public VerifyStatus? PersonalVerificationStatus { get; init; }
+    public string? VerificationRejectReason { get; init; }
     public int? ReputationScore { get; init; }
     public DateTime? VerifiedAt { get; init; }
 }

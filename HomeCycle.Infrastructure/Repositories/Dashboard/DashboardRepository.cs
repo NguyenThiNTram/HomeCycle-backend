@@ -57,7 +57,7 @@ public sealed class DashboardRepository(HomeCycleDbContext db) : IDashboardRepos
             LatestReportId = reports.Where(d => d.PostId == p.PostId).OrderByDescending(d => d.CreatedAt)
                 .ThenByDescending(d => d.DisputeId).Select(d => d.DisputeId).FirstOrDefault(),
             PostId = p.PostId, ProductName = p.Product == null ? null : p.Product.ProductName,
-            OwnerId = p.OwnerId, OwnerName = p.User == null ? null : p.User.Username, Status = p.Status,
+            OwnerId = p.OwnerId, OwnerName = p.User == null ? null : p.User.Username, Status = (PostStatus?)p.Status,
             ReportCount = reports.Count(d => d.PostId == p.PostId),
             ReporterCount = reports.Where(d => d.PostId == p.PostId).Select(d => d.SenderId).Distinct().Count(),
             LatestReportedAt = reports.Where(d => d.PostId == p.PostId).Max(d => d.CreatedAt)
@@ -111,7 +111,7 @@ public sealed class DashboardRepository(HomeCycleDbContext db) : IDashboardRepos
             GeneratedAtUtc = nowUtc,
             DailyRecordedActiveUsers = await activity.Where(x => x.OccurredAtUtc >= today).Select(x => x.UserId).Distinct().CountAsync(ct),
             MonthlyRecordedActiveUsers = await activity.Select(x => x.UserId).Distinct().CountAsync(ct),
-            ByRole = await activity.GroupBy(x => x.UserRole!.Value).Select(g => new RecordedActivityByRole(g.Key,
+            ByRole = await activity.GroupBy(x => x.UserRole!.Value).Select(g => new RecordedActivityByRole((UserRole)g.Key,
                 g.Where(x => x.OccurredAtUtc >= today).Select(x => x.UserId).Distinct().Count(),
                 g.Select(x => x.UserId).Distinct().Count())).ToListAsync(ct),
             PendingBusinessVerificationCount = await db.Business_Profiles.CountAsync(x => x.Status == (int)BusinessProfileStatus.Pending, ct),
@@ -123,9 +123,11 @@ public sealed class DashboardRepository(HomeCycleDbContext db) : IDashboardRepos
         => db.Users.AsNoTracking().Where(x => x.UserId == userId).Select(x => new DashboardAccountDetail
         {
             UserId = x.UserId, Username = x.Username, Email = x.Email, PhoneNumber = x.PhoneNumber,
-            Role = x.Role, Status = x.Status, IsEmailVerified = x.IsEmailVerified, CreatedAt = x.CreatedAt,
+            Role = (UserRole)x.Role, Status = (UserStatus)x.Status, IsEmailVerified = x.IsEmailVerified, CreatedAt = x.CreatedAt,
             ProfileName = x.Role == (int)UserRole.Business ? x.Business_Profile!.BusinessName : x.Personal_ProfileUser!.FullName,
-            ProfileStatus = x.Role == (int)UserRole.Business ? (int?)x.Business_Profile!.Status : x.Personal_ProfileUser!.VerificationStatus,
+            BusinessProfileStatus = x.Role == (int)UserRole.Business && x.Business_Profile != null ? (BusinessProfileStatus?)x.Business_Profile.Status : null,
+            PersonalVerificationStatus = x.Role == (int)UserRole.Personal && x.Personal_ProfileUser != null ? (VerifyStatus?)x.Personal_ProfileUser.VerificationStatus : null,
+            VerificationRejectReason = x.Role == (int)UserRole.Business ? x.Business_Profile!.RejectReason : x.Personal_ProfileUser!.RejectReason,
             ReputationScore = x.Role == (int)UserRole.Business ? (int?)x.Business_Profile!.ReputationScore : x.Personal_ProfileUser == null ? null : x.Personal_ProfileUser.ReputationScore,
             VerifiedAt = x.Role == (int)UserRole.Business ? x.Business_Profile!.VerifiedAt : x.Personal_ProfileUser!.VerifiedAt
         }).SingleOrDefaultAsync(ct);
@@ -430,7 +432,7 @@ public sealed class DashboardRepository(HomeCycleDbContext db) : IDashboardRepos
                 .Concat(eligibleInspections.Select(x => new { Role = x.SellerRole, CheckedIn = x.SellerCheckAt == null ? 0 : 1 }))
                 .GroupBy(x => x.Role).Select(g => new CheckInRoleData(g.Key, g.Count(), g.Sum(x => x.CheckedIn))).ToListAsync(ct),
             Regions = await scheduledInPeriod.GroupBy(x => new { x.City, x.Ward, x.DeliveryMethod })
-                .Select(g => new AppointmentRegionMetric(g.Key.City ?? "Unspecified", g.Key.Ward ?? "Unspecified", g.Key.DeliveryMethod, g.Count())).ToListAsync(ct),
+                .Select(g => new AppointmentRegionMetric(g.Key.City ?? "Unspecified", g.Key.Ward ?? "Unspecified", (DeliveryMethod?)g.Key.DeliveryMethod, g.Count())).ToListAsync(ct),
             DeliveryPerformance = await scheduledInPeriod.GroupBy(x => x.DeliveryMethod)
                 .Select(g => new DeliveryPerformanceData(g.Key, g.Count(), g.Count(x => x.Status == (int)AppointmentStatus.Completed),
                     g.Count(x => x.Status == (int)AppointmentStatus.Cancelled))).ToListAsync(ct),
