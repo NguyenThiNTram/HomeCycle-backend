@@ -343,7 +343,6 @@ namespace HomeCycle.Infrastructure
             services.AddScoped<IAppointmentService, AppointmentService>();
             services.AddScoped<IAppointmentRealtimeService, AppointmentRealtimeService>();
             services.AddScoped<IOrderService, OrderService>();
-            services.AddScoped<IOrderTrackingRealtimeService, OrderTrackingRealtimeService>();
             services.AddScoped<IOrderLifecycleProcessor, BuyerReturnTimeoutProcessor>();
             services.AddScoped<IOrderLifecycleProcessor, AutoCompleteOrderProcessor>();
             services.AddScoped<IOrderLifecycleProcessor, AutoReleaseOrderProcessor>();
