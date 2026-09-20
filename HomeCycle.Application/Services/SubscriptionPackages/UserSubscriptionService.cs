@@ -174,7 +174,7 @@ namespace HomeCycle.Application.Services.SubscriptionPackages
                 return Result<user_subscription>.Fail(UserSubscriptionErrors.InvalidStatus);
 
             if (string.IsNullOrWhiteSpace(subscription.PackageNameSnapshot) ||
-                subscription.DurationDaysSnapshot != 30 || subscription.Entitlements.Count == 0)
+                subscription.DurationDaysSnapshot is null or < 1 or > 3650 || subscription.Entitlements.Count == 0)
                 return Result<user_subscription>.Fail(UserSubscriptionErrors.InvalidSnapshot);
 
             subscription.PricePaid = pricePaid;

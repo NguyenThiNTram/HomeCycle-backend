@@ -16,6 +16,15 @@ namespace HomeCycle.Infrastructure.Repositories.SubscriptionPackages
     {
         private readonly HomeCycleDbContext _db;
 
+        public Task<bool> HasSubscriptionsAsync(Guid packageId, CancellationToken cancellationToken = default)
+            => _db.User_Subscriptions.AnyAsync(x => x.PackageId == packageId, cancellationToken);
+
+        public async Task DeleteAsync(Guid packageId, CancellationToken cancellationToken = default)
+        {
+            await _db.Subscription_Package_Entitlements.Where(x => x.PackageId == packageId).ExecuteDeleteAsync(cancellationToken);
+            await _db.Subscription_Packages.Where(x => x.PackageId == packageId).ExecuteDeleteAsync(cancellationToken);
+        }
+
         public SubscriptionPackageRepository(HomeCycleDbContext db)
         {
             _db = db;

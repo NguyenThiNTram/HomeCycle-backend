@@ -8,6 +8,13 @@ using System.Threading.Tasks;
 
 namespace HomeCycle.Application.DTOs.Requests.Posts
 {
+    public sealed class PostWarningRequest
+    {
+        [System.ComponentModel.DataAnnotations.Required]
+        [System.ComponentModel.DataAnnotations.StringLength(1000, MinimumLength = 1)]
+        public string Message { get; set; } = string.Empty;
+    }
+
     public class PostSearchRequest : PaginationRequest
     {
         public string? Keyword { get; set; }

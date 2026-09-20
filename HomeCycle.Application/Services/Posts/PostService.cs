@@ -609,6 +609,45 @@ namespace HomeCycle.Application.Services.Posts
         public Task<Result<bool>> ReactivateAsync(Guid ownerId, Guid postId, CancellationToken cancellationToken = default) =>
             ChangeLifecycleAsync(ownerId, postId, PostStatus.Active, false, cancellationToken);
 
+        public async Task<Result<bool>> WarnOwnerAsync(Guid moderatorId, Guid postId, string message, CancellationToken cancellationToken = default)
+        {
+            if (moderatorId == Guid.Empty || string.IsNullOrWhiteSpace(message) || message.Length > 1000)
+                return Result<bool>.Fail(ValidationErrors.InvalidRequest("Nội dung cảnh cáo phải từ 1 đến 1000 ký tự."));
+            await _unitOfWork.BeginTransactionAsync(cancellationToken);
+            notification warning;
+            try
+            {
+                var post = await _postRepository.GetByIdForUpdateAsync(postId, cancellationToken);
+                if (post == null || post.Status == PostStatus.Deleted)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<bool>.Fail(PostErrors.NotFound);
+                }
+                if (!await _postRepository.HasOpenReportAsync(postId, cancellationToken))
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<bool>.Fail(ValidationErrors.InvalidRequest("Bài đăng không có báo cáo vi phạm đang mở."));
+                }
+                warning = await _notificationService.AddPendingAsync(new CreateNotificationCommand(
+                    post.OwnerId, "Cảnh cáo về bài đăng", message.Trim(), NotificationTargetType.Post, postId), cancellationToken);
+                await _auditService.EnqueueAsync(new AuditEvent
+                {
+                    Category = AuditCategory.Administration, Action = AuditActions.PostWarn, Outcome = AuditOutcome.Success,
+                    ActorType = AuditActorType.User, UserId = moderatorId, TargetType = AuditTargetTypes.Post, TargetId = postId,
+                    Metadata = new Dictionary<string, object?> { ["message"] = message.Trim(), ["ownerId"] = post.OwnerId }
+                }, cancellationToken);
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+                await _unitOfWork.CommitTransactionAsync(cancellationToken);
+            }
+            catch
+            {
+                await _unitOfWork.RollbackTransactionAsync(CancellationToken.None);
+                throw;
+            }
+            await _notificationService.PublishCreatedSafelyAsync(warning);
+            return Result<bool>.Success(true);
+        }
+
         public async Task<Result<bool>> DeleteAsync(
             Guid postId,
             CancellationToken cancellationToken = default)
@@ -661,6 +700,8 @@ namespace HomeCycle.Application.Services.Posts
                 var existing = await _postRepository.GetByIdForUpdateAsync(postId, cancellationToken);
                 if (existing is null || existing.Status == PostStatus.Deleted) return Result<bool>.Fail(PostErrors.NotFound);
                 if (existing.Status == PostStatus.Suspended) return Result<bool>.Fail(PostErrors.PostAlreadySuspended);
+                if (!await _postRepository.HasOpenReportAsync(postId, cancellationToken))
+                    return Result<bool>.Fail(ValidationErrors.InvalidRequest("Chỉ đình chỉ bài đăng có báo cáo vi phạm đang mở."));
                 var previousPostStatus = existing.Status;
                 existing.Status = PostStatus.Suspended;
                 existing.UpdatedAt = DateTime.UtcNow;

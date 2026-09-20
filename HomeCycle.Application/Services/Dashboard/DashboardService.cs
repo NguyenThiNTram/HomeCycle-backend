@@ -11,6 +11,46 @@ namespace HomeCycle.Application.Services.Dashboard;
 
 public sealed class DashboardService(IDashboardRepository repository, IDisputeCategoryRepository disputeCategoryRepository, TimeProvider clock) : IDashboardService
 {
+    public async Task<ListingDashboardResponse> GetListingDashboardAsync(DashboardPeriodRequest request, CancellationToken ct)
+    {
+        var period = ResolvePeriod(request);
+        var data = await repository.GetListingsAsync(period, ct);
+        return new()
+        {
+            GeneratedAtUtc = clock.GetUtcNow().UtcDateTime, Period = period,
+            NewListingCount = data.Statuses.Sum(x => x.Count),
+            CurrentlyReportedListingCount = data.CurrentlyReportedListingCount,
+            StatusDistribution = Distribution<PostStatus>(data.Statuses),
+            TopCategoriesByListings = data.TopCategoriesByListings, TopCategoriesByGmv = data.TopCategoriesByGmv,
+            SupplyDemandSeries = Buckets(period).Select(b => new SupplyDemandPoint(b.From, b.To,
+                data.ListingsDaily.Where(x => DateOnly.FromDateTime(x.Date) >= b.From && DateOnly.FromDateTime(x.Date) < b.To).Sum(x => x.Count),
+                data.CompletedDaily.Where(x => DateOnly.FromDateTime(x.Date) >= b.From && DateOnly.FromDateTime(x.Date) < b.To).Sum(x => x.Count))).ToArray()
+        };
+    }
+
+    public Task<PagedResult<ReportedListingItem>> GetReportedListingsAsync(ReportedListingRequest request, CancellationToken ct)
+        => repository.GetReportedListingsAsync(request, ct);
+
+    public async Task<SubscriptionDashboardResponse> GetSubscriptionDashboardAsync(DashboardPeriodRequest request, CancellationToken ct)
+    {
+        var period = ResolvePeriod(request);
+        var now = clock.GetUtcNow().UtcDateTime;
+        var data = await repository.GetSubscriptionsAsync(period, now, ct);
+        return new()
+        {
+            GeneratedAtUtc = now, Period = period, ActiveBusinessCount = data.ActiveBusinessCount,
+            Revenue = data.Packages.Sum(x => x.Revenue), Packages = data.Packages,
+            RevenueSeries = Buckets(period).Select(b => new ValueSeriesPoint(b.From, b.To,
+                data.RevenueDaily.Where(x => DateOnly.FromDateTime(x.Date) >= b.From && DateOnly.FromDateTime(x.Date) < b.To).Sum(x => x.Amount))).ToArray()
+        };
+    }
+
+    public Task<UserActivityResponse> GetUserActivityAsync(CancellationToken ct)
+        => repository.GetUserActivityAsync(clock.GetUtcNow().UtcDateTime, ct);
+
+    public Task<DashboardAccountDetail?> GetAccountDetailAsync(Guid userId, CancellationToken ct)
+        => repository.GetAccountDetailAsync(userId, ct);
+
     private DashboardPeriod ResolvePeriod(DashboardPeriodRequest request)
     {
         var context = new System.ComponentModel.DataAnnotations.ValidationContext(request,
@@ -32,6 +72,7 @@ public sealed class DashboardService(IDashboardRepository repository, IDisputeCa
     }
 
     private static decimal Percent(decimal count, decimal total) => total == 0 ? 0 : Math.Round(count * 100m / total, 2);
+    private static decimal? OptionalPercent(decimal count, decimal total) => total == 0 ? null : Percent(count, total);
 
     private static decimal? Hours(double? value) => value.HasValue ? Math.Round((decimal)value.Value, 2) : null;
 
@@ -223,6 +264,22 @@ public sealed class DashboardService(IDashboardRepository repository, IDisputeCa
         var data = await repository.GetOrdersAsync(request, period, nowUtc, ct);
         return new()
         {
+            CreatedInPeriodCount = data.CreatedInPeriodCount,
+            SuccessfulInPeriodCount = data.SuccessfulInPeriodCount,
+            SuccessfulOrdersMissingAmountCount = data.SuccessfulOrdersMissingAmountCount,
+            Gmv = data.Gmv,
+            AverageOrderValue = data.SuccessfulInPeriodCount == 0 || data.SuccessfulOrdersMissingAmountCount > 0
+                ? null : Math.Round(data.Gmv / data.SuccessfulInPeriodCount, 2),
+            CancellationReturnRate = OptionalPercent(data.CreatedStatuses.Where(x => x.Code == (int)OrderStatus.Cancelled
+                || x.Code == (int)OrderStatus.Returned).Sum(x => x.Count), data.CreatedInPeriodCount),
+            CompletionRate = OptionalPercent(data.CreatedStatuses.Where(x => x.Code == (int)OrderStatus.Completed).Sum(x => x.Count), data.CreatedInPeriodCount),
+            CreatedStatusDistribution = Distribution<OrderStatus>(data.CreatedStatuses),
+            DeliveryMethodDistribution = Distribution<DeliveryMethod>(data.DeliveryMethods),
+            PaymentMethodDistribution = Distribution<PaymentMethod>(data.PaymentMethods),
+            TradeSeries = Buckets(period).Select(b => new OrderTradePoint(b.From, b.To,
+                data.CreatedDaily.Where(x => DateOnly.FromDateTime(x.Date) >= b.From && DateOnly.FromDateTime(x.Date) < b.To).Sum(x => x.Count),
+                data.GmvDaily.Where(x => DateOnly.FromDateTime(x.Date) >= b.From && DateOnly.FromDateTime(x.Date) < b.To).Sum(x => x.Count),
+                data.GmvDaily.Where(x => DateOnly.FromDateTime(x.Date) >= b.From && DateOnly.FromDateTime(x.Date) < b.To).Sum(x => x.Amount))).ToArray(),
             GeneratedAtUtc = nowUtc,
             Period = period,
             TotalOrders = data.TotalOrders,
@@ -265,6 +322,21 @@ public sealed class DashboardService(IDashboardRepository repository, IDisputeCa
             GeneratedAtUtc = nowUtc,
             Period = period,
             TotalAppointments = data.TotalAppointments,
+            CancelledInPeriodCount = data.CancelledInPeriodCount,
+            OpenDisputeAppointmentCount = data.OpenDisputeAppointmentCount,
+            LateInspectionCount = data.LateInspectionCount,
+            MissingLateThresholdCount = data.MissingLateThresholdCount,
+            Regions = data.Regions.OrderByDescending(x => x.AppointmentCount).ThenBy(x => x.City).ThenBy(x => x.Ward).ToArray(),
+            DeliveryPerformance = data.DeliveryPerformance.Select(x => new DeliveryPerformanceMetric(
+                x.Method.HasValue && Enum.IsDefined(typeof(DeliveryMethod), x.Method.Value) ? ((DeliveryMethod)x.Method.Value).ToString() : "Unspecified",
+                x.TotalCount, x.CompletedCount, x.CancelledCount, OptionalPercent(x.CompletedCount, x.TotalCount)))
+                .OrderByDescending(x => x.CompletionRate).ThenBy(x => x.Method).ToArray(),
+            CheckInByAccountRole = data.CheckInRoles.Select(x => new CheckInParticipantItem
+            {
+                ParticipantType = Enum.IsDefined(typeof(UserRole), x.Role) ? ((UserRole)x.Role).ToString() : "Unspecified",
+                EligibleCount = x.EligibleCount, CheckedInCount = x.CheckedInCount,
+                MissingCount = x.EligibleCount - x.CheckedInCount, CheckInRate = Percent(x.CheckedInCount, x.EligibleCount)
+            }).ToArray(),
             TodayCount = data.TodayCount,
             UpcomingCount = data.UpcomingCount,
             OverdueCount = data.OverdueCount,
@@ -378,6 +450,13 @@ public sealed class DashboardService(IDashboardRepository repository, IDisputeCa
             TotalDisputes = data.TotalDisputes,
             UnresolvedDisputeCount = data.UnresolvedDisputeCount,
             ResolvedInPeriodCount = data.ResolvedInPeriodCount,
+            OpenedInPeriodCount = data.OpenedInPeriodCount,
+            OrdersCreatedInPeriodCount = data.OrdersCreatedInPeriodCount,
+            DisputedOrdersCreatedInPeriodCount = data.DisputedOrdersCreatedInPeriodCount,
+            OrderDisputeRate = request.TargetType.HasValue && request.TargetType != DisputeTargetType.Order
+                ? null : OptionalPercent(data.DisputedOrdersCreatedInPeriodCount, data.OrdersCreatedInPeriodCount),
+            CurrentDisputedHeldAmount = data.CurrentDisputedHeldAmount,
+            ResolutionDistribution = Distribution<DisputeResolutionOutcome>(data.Resolutions),
             AverageResolutionTimeHours = Hours(data.AverageResolutionTimeHours),
             OldestUnresolvedAgeHours = Hours(data.UnresolvedAging.OldestAgeHours),
             CurrentStatusDistribution = Distribution<DisputeStatus>(data.CurrentStatuses),
@@ -395,7 +474,17 @@ public sealed class DashboardService(IDashboardRepository repository, IDisputeCa
 
     public async Task<BusinessOverviewResponse> GetBusinessOverviewAsync(BusinessOverviewRequest request, CancellationToken ct)
     {
+        var period = ResolvePeriod(request);
+        var growth = await repository.GetBusinessGrowthAsync(request, period, ct);
         var result = await repository.GetBusinessOverviewAsync(request, ct);
+        result.Period = period;
+        result.GrowthSeries = Buckets(period).Select(b =>
+        {
+            var rows = growth.Where(x => DateOnly.FromDateTime(x.Date) >= b.From && DateOnly.FromDateTime(x.Date) < b.To).ToArray();
+            return new BusinessGrowthPoint(b.From, b.To, rows.Sum(x => x.Count),
+                rows.Where(x => x.Status == (int)UserStatus.Active).Sum(x => x.Count),
+                rows.Where(x => x.Status == (int)UserStatus.Suspended).Sum(x => x.Count));
+        }).ToArray();
         result.GeneratedAtUtc = clock.GetUtcNow().UtcDateTime;
         result.SurveyCoveragePercent = Percent(result.WithSurveyCount, result.WithProfileCount);
         result.ByUserStatus = CompleteDistribution<UserStatus>(result.ByUserStatus);
@@ -419,6 +508,13 @@ public sealed class DashboardService(IDashboardRepository repository, IDisputeCa
                 .OrderByDescending(x => x.BusinessCount).ThenBy(x => x.Key).ToArray();
         }
         return result;
+    }
+
+    private static IReadOnlyList<DistributionItem> ReasonDistribution(IReadOnlyList<DashboardReasonCount> rows)
+    {
+        var total = rows.Sum(x => x.Count);
+        return rows.OrderByDescending(x => x.Count).ThenBy(x => x.Key)
+            .Select(x => new DistributionItem(x.Key, x.Label, x.Count, Percent(x.Count, total))).ToArray();
     }
 
     private static bool IsBusiness(int? role) => role == (int)UserRole.Business;
@@ -448,6 +544,21 @@ public sealed class DashboardService(IDashboardRepository repository, IDisputeCa
         var salesValue = sales.Sum(x => x.Amount);
         return new()
         {
+            CreatedBusinessOrderCount = data.CreatedBusinessOrderCount,
+            CancellationRate = OptionalPercent(data.CancelledBusinessOrderCount, data.CreatedBusinessOrderCount),
+            DisputeRate = OptionalPercent(data.DisputedBusinessOrderCount, data.CreatedBusinessOrderCount),
+            CancellationReasons = ReasonDistribution(data.CancellationReasons),
+            DisputeReasons = ReasonDistribution(data.DisputeReasons),
+            TopSellers = data.TopSellers, TopBuyers = data.TopBuyers,
+            TransactionRegions = data.TransactionRegions.OrderByDescending(x => x.OrderCount).ThenBy(x => x.City).ToArray(),
+            ContributionSeries = Buckets(period).Select(b =>
+            {
+                var rows = data.Orders.Where(x => DateOnly.FromDateTime(x.Date) >= b.From && DateOnly.FromDateTime(x.Date) < b.To).ToArray();
+                var business = rows.Where(x => IsBusiness(x.BuyerRole) || IsBusiness(x.SellerRole)).ToArray();
+                var personal = rows.Where(x => x.BuyerRole == (int)UserRole.Personal && x.SellerRole == (int)UserRole.Personal).ToArray();
+                return new BusinessContributionPoint(b.From, b.To, business.Sum(x => x.Count), business.Sum(x => x.Amount),
+                    personal.Sum(x => x.Count), personal.Sum(x => x.Amount));
+            }).ToArray(),
             GeneratedAtUtc = clock.GetUtcNow().UtcDateTime, Period = period,
             EligiblePaidPaymentCount = payments, BusinessPaymentCount = businessPaymentCount,
             BusinessPaymentSharePercent = payments == 0 ? null : Percent(businessPaymentCount, payments),
@@ -475,6 +586,8 @@ public sealed class DashboardService(IDashboardRepository repository, IDisputeCa
             Role = role,
             TotalAccounts = groups.Sum(x => x.Count),
             EmailVerifiedAccounts = groups.Where(x => x.IsEmailVerified).Sum(x => x.Count),
+            SuspendedAccounts = groups.Where(x => x.Status == UserStatus.Suspended).Sum(x => x.Count),
+            SuspendedPercent = OptionalPercent(groups.Where(x => x.Status == UserStatus.Suspended).Sum(x => x.Count), groups.Sum(x => x.Count)),
             ByStatus = Enum.GetValues<UserStatus>()
                 .Select(status => new UserStatusCount(status, groups.Where(x => x.Status == status).Sum(x => x.Count))).ToArray(),
             ByRole = Enum.GetValues<UserRole>()

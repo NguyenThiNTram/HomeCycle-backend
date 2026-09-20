@@ -1209,6 +1209,8 @@ namespace HomeCycle.Application.Services.Appointments
         {
             var query = new ModeratorAppointmentQuery
             {
+                HasOpenDispute = request.HasOpenDispute,
+                DeliveryMethod = request.DeliveryMethod,
                 Keyword = request.Keyword,
                 Type = request.Type,
                 Status = request.Status,
@@ -1225,11 +1227,16 @@ namespace HomeCycle.Application.Services.Appointments
             };
 
             var result = await _appointmentRepo.GetPagedForModeratorAsync(query, ct);
+            var items = _mapper.Map<List<ModeratorAppointmentListItemDto>>(result.Items);
+            foreach (var item in items)
+                item.SecondsUntilLateThreshold = item.LateThresholdAt.HasValue
+                    && item.AppointmentStatus is AppointmentStatus.Scheduled or AppointmentStatus.InProgress
+                    ? Math.Max(0, (item.LateThresholdAt.Value - query.NowUtc).TotalSeconds) : null;
 
             return Result<PagedResult<ModeratorAppointmentListItemDto>>.Success(
                 new PagedResult<ModeratorAppointmentListItemDto>
                 {
-                    Items = _mapper.Map<List<ModeratorAppointmentListItemDto>>(result.Items),
+                    Items = items,
                     PageNumber = result.PageNumber,
                     PageSize = result.PageSize,
                     TotalCount = result.TotalCount

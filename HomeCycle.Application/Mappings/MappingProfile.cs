@@ -725,6 +725,7 @@ namespace HomeCycle.Application.Mappings
             // ----- Moderator Appointment -----
 
             CreateMap<ModeratorAppointmentReadModel, ModeratorAppointmentListItemDto>()
+                .ForMember(dest => dest.SecondsUntilLateThreshold, opt => opt.Ignore())
                 .ForMember(dest => dest.AppointmentType,
                     opt => opt.MapFrom(src => src.AppointmentType.HasValue
                         ? (AppointmentType?)src.AppointmentType.Value

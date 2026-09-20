@@ -84,10 +84,12 @@ namespace HomeCycle.Application.Services.Entitlements
                 return role == UserRole.Personal
                     ? Math.Max(0, _freePlan.Personal.PriceSuggestionDailyLimit)
                     : Math.Max(0, _freePlan.Business.SupplierMatchDailyLimit);
-            var expected = role == UserRole.Personal ? 50 : 100;
-            if (entitlement.ValueType != EntitlementValueType.Integer || entitlement.IsUnlimited || entitlement.BooleanValue.HasValue || entitlement.NumericValue != expected)
+            if (entitlement.ValueType != EntitlementValueType.Integer || entitlement.IsUnlimited || entitlement.BooleanValue.HasValue
+                || !entitlement.NumericValue.HasValue || entitlement.NumericValue.Value <= 0 || entitlement.NumericValue.Value > int.MaxValue
+                || decimal.Truncate(entitlement.NumericValue.Value) != entitlement.NumericValue.Value
+                || (role == UserRole.Personal && entitlement.NumericValue.Value != 50))
                 throw new InvalidOperationException($"Invalid snapshot value for entitlement '{key}'.");
-            return expected;
+            return decimal.ToInt32(entitlement.NumericValue.Value);
         }
 
         private static decimal? ResolveDailyAmount(

@@ -245,6 +245,7 @@ namespace HomeCycle.Infrastructure.Repositories.Disputes
 
             var entities = await query
                 .OrderByDescending(x => x.CreatedAt)
+                .ThenBy(x => x.DisputeId)
                 .Skip((request.PageNumber - 1) * request.PageSize)
                 .Take(request.PageSize)
                 .ToListAsync(cancellationToken);
@@ -279,6 +280,9 @@ namespace HomeCycle.Infrastructure.Repositories.Disputes
                     _ => entity.OrderId ?? entity.ReviewId
                 },
                 OrderCode = entity.Order?.OrderCode,
+                OrderValue = entity.DisputeTargetType == (int)DisputeTargetType.Order ? entity.Order?.FinalTotalAmount : null,
+                ResolvedAt = entity.ResolvedAt,
+                UpdatedAt = entity.UpdatedAt,
                 Category = entity.DisputeCategoryNavigation == null
                     ? null
                     : new DisputeCategoryOptionDto

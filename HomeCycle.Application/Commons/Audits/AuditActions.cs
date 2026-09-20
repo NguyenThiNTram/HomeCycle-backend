@@ -91,6 +91,8 @@ namespace HomeCycle.Application.Commons.Audits
         public const string DisputeReturnVerify = "DISPUTE.RETURN_VERIFY";
 
         public const string SubscriptionPackageCreate = "SUBSCRIPTION_PACKAGE.CREATE";
+        public const string PostWarn = "POST.WARN";
+        public const string SubscriptionPackageDelete = "SUBSCRIPTION_PACKAGE.DELETE";
         public const string SubscriptionPackageUpdate = "SUBSCRIPTION_PACKAGE.UPDATE";
         public const string SubscriptionPackageUpdateStatus = "SUBSCRIPTION_PACKAGE.UPDATE_STATUS";
         public const string SubscriptionActivate = "SUBSCRIPTION.ACTIVATE";

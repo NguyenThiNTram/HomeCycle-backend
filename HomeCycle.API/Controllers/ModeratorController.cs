@@ -35,6 +35,20 @@ namespace HomeCycle.API.Controllers
     [Authorize(Roles = "Moderator")]
     public class ModeratorController : ControllerBase
     {
+        [HttpGet("dashboard/listings")]
+        public async Task<IActionResult> GetListingDashboard(
+            [FromQuery] HomeCycle.Application.DTOs.Requests.Dashboard.DashboardPeriodRequest request,
+            [FromServices] HomeCycle.Application.Interfaces.Services.Dashboard.IDashboardService dashboard,
+            CancellationToken ct)
+            => Ok(await dashboard.GetListingDashboardAsync(request, ct));
+
+        [HttpGet("posts/reported")]
+        public async Task<IActionResult> GetReportedListings(
+            [FromQuery] HomeCycle.Application.DTOs.Requests.Dashboard.ReportedListingRequest request,
+            [FromServices] HomeCycle.Application.Interfaces.Services.Dashboard.IDashboardService dashboard,
+            CancellationToken ct)
+            => Ok(await dashboard.GetReportedListingsAsync(request, ct));
+
         private readonly IModeratorService _moderatorService;
         private readonly IPostService _postService;
         private readonly IWithdrawalService _withdrawalService;
@@ -239,6 +253,16 @@ namespace HomeCycle.API.Controllers
                 success = true,
                 message = "Bài đăng đã bị đình chỉ (Suspended). Bài đăng sẽ không còn hiển thị trên trang chủ người dùng."
             });
+        }
+
+        [HttpPost("posts/{postId:guid}/warn")]
+        public async Task<IActionResult> WarnPostOwner(Guid postId,
+            [FromBody] HomeCycle.Application.DTOs.Requests.Posts.PostWarningRequest request, CancellationToken ct)
+        {
+            var moderatorId = GetCurrentUserId();
+            if (moderatorId == Guid.Empty) return Unauthorized();
+            var result = await _postService.WarnOwnerAsync(moderatorId, postId, request.Message, ct);
+            return result.IsSuccess ? NoContent() : MapModeratorReadError(result.Error!);
         }
 
         [HttpPost("withdrawals/{withdrawalId:guid}/approve")]

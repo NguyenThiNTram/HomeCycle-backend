@@ -9,6 +9,8 @@ namespace HomeCycle.Application.DTOs.Requests.Orders
 {
     public sealed class ModeratorOrderQuery
     {
+        public OrderHistoryGroup? Group { get; init; }
+        public DeliveryMethod? DeliveryMethod { get; init; }
         public string? Keyword { get; init; }
 
         public OrderStatus? Status { get; init; }

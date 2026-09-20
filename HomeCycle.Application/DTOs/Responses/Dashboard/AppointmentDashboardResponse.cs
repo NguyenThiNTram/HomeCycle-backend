@@ -1,7 +1,19 @@
+using HomeCycle.Domain.Enums;
+
 namespace HomeCycle.Application.DTOs.Responses.Dashboard;
 
 public sealed class AppointmentDashboardResponse
 {
+    public int CancelledInPeriodCount { get; init; }
+    public int OpenDisputeAppointmentCount { get; init; }
+    public int LateInspectionCount { get; init; }
+    public int MissingLateThresholdCount { get; init; }
+    public string LateBasis => "EligibleInspection.AnyCheckInAfterLateThresholdOrStillMissingAfterThreshold";
+    public string RegionBasis => "EffectiveAppointmentsScheduledInPeriod.LinkedPostCityAndWard";
+    public string DeliveryPerformanceBasis => "CurrentOutcomesOfEffectiveAppointmentsScheduledInPeriod.LatestShipmentMethod";
+    public IReadOnlyList<CheckInParticipantItem> CheckInByAccountRole { get; init; } = [];
+    public IReadOnlyList<AppointmentRegionMetric> Regions { get; init; } = [];
+    public IReadOnlyList<DeliveryPerformanceMetric> DeliveryPerformance { get; init; } = [];
     public DateTime GeneratedAtUtc { get; init; }
     public DashboardPeriod Period { get; init; } = new();
 
@@ -25,6 +37,9 @@ public sealed class AppointmentDashboardResponse
     public InspectionCheckInSummary InspectionCheckIn { get; init; } = new();
     public IReadOnlyList<CheckInParticipantItem> CheckInByParticipant { get; init; } = [];
 }
+
+public sealed record AppointmentRegionMetric(string City, string Ward, DeliveryMethod? DeliveryMethod, int AppointmentCount);
+public sealed record DeliveryPerformanceMetric(string Method, int TotalCount, int CompletedCount, int CancelledCount, decimal? CompletionRate);
 
 public sealed record AppointmentTypeSeriesPoint(
     DateOnly From,
