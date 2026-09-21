@@ -93,9 +93,12 @@ namespace HomeCycle.API.Controllers
             return Ok(result.Data);
         }
 
-        // Chỉ Moderator/Admin xem được tổng tiền hệ thống đang giữ hộ
+        // Chỉ Moderator/Admin xem được số dư các ví hệ thống.
         [HttpGet("system")]
         [Authorize(Roles = nameof(UserRole.Moderator) + "," + nameof(UserRole.Admin))]
+        [SwaggerOperation(
+        Summary = "Lấy số dư các ví hệ thống",
+        Description = "Trả số dư hiện tại theo từng SystemWalletPurpose và tổng số dư hệ thống. Balance của System Wallet lấy từ AvailableBalance; không expose HoldBalance vì business flow hiện tại không sử dụng System Hold.")]
         public async Task<IActionResult> GetSystemWalletSummary(CancellationToken ct)
         {
             var result = await _walletService.GetSystemWalletSummaryAsync(ct);
@@ -176,8 +179,7 @@ namespace HomeCycle.API.Controllers
         [Authorize(Roles = nameof(UserRole.Admin))]
         [SwaggerOperation(
             Summary = "Lấy tổng quan số dư tài chính",
-            Description = "Trả về tổng Available/Hold của user wallets và system wallets."
-        )]
+            Description = "User wallet trả riêng Available và Hold. System wallet chỉ trả Balance hiện tại từ AvailableBalance và không expose HoldBalance. TotalRecordedBalance = User Available + User Hold + System Balance.")]
         public async Task<IActionResult> GetFinanceFunds(CancellationToken ct)
         {
             var result = await _walletService.GetFinanceFundsAsync(ct);

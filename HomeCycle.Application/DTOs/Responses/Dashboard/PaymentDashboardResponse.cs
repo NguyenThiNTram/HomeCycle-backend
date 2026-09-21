@@ -7,11 +7,8 @@ public sealed class PaymentDashboardResponse
     public int TotalPayments { get; init; }
     public int PendingCount { get; init; }
     public int PaidInPeriodCount { get; init; }
-    public decimal? AveragePendingAgeHours { get; init; }
-    public decimal? OldestPendingAgeHours { get; init; }
     public IReadOnlyList<DistributionItem> CurrentStatusDistribution { get; init; } = [];
     public IReadOnlyList<PaymentMethodPerformanceItem> PaymentMethodPerformance { get; init; } = [];
-    public IReadOnlyList<AgingBucket> PendingAgingDistribution { get; init; } = [];
     public IReadOnlyList<TimeSeriesPoint> PaidSeries { get; init; } = [];
 }
 

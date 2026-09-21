@@ -68,7 +68,14 @@ public sealed class SubscriptionDashboardResponse
     public IReadOnlyList<SubscriptionPackageMetric> Packages { get; init; } = [];
     public IReadOnlyList<ValueSeriesPoint> RevenueSeries { get; init; } = [];
 }
-public sealed record SubscriptionPackageMetric(Guid PackageId, string Name, bool IsActive, int ActiveBusinessCount, int PaidSubscriptions, decimal Revenue);
+public sealed record SubscriptionPackageMetric(
+    Guid PackageId,
+    string Name,
+    bool IsActive,
+    int ActiveBusinessCount,
+    int BuyerCountInPeriod,
+    int PaidSubscriptions,
+    decimal Revenue);
 public sealed class SubscriptionDashboardData
 {
     public int ActiveBusinessCount { get; set; }

@@ -88,12 +88,20 @@ public sealed class DashboardRepository(HomeCycleDbContext db) : IDashboardRepos
         return new()
         {
             ActiveBusinessCount = await active.Select(x => x.UserId).Distinct().CountAsync(ct),
-            Packages = await db.Subscription_Packages.AsNoTracking().Where(x => x.TargetRole == (int)UserRole.Business)
-                .OrderBy(x => x.Price).ThenBy(x => x.PackageId)
-                .Select(p => new SubscriptionPackageMetric(p.PackageId, p.Name, p.IsActive,
+            Packages = await db.Subscription_Packages
+                .AsNoTracking()
+                .Where(x => x.TargetRole == (int)UserRole.Business)
+                .OrderBy(x => x.Price)
+                .ThenBy(x => x.PackageId)
+                .Select(p => new SubscriptionPackageMetric(
+                    p.PackageId,
+                    p.Name,
+                    p.IsActive,
                     active.Where(s => s.PackageId == p.PackageId).Select(s => s.UserId).Distinct().Count(),
+                    revenue.Where(t => t.Payment!.Subscription!.PackageId == p.PackageId).Select(t => t.Payment!.Subscription!.UserId).Distinct().Count(),
                     revenue.Where(t => t.Payment!.Subscription!.PackageId == p.PackageId).Select(t => t.Payment!.SubscriptionId).Distinct().Count(),
-                    revenue.Where(t => t.Payment!.Subscription!.PackageId == p.PackageId).Sum(t => Math.Abs(t.Amount ?? 0)))).ToListAsync(ct),
+                    revenue.Where(t => t.Payment!.Subscription!.PackageId == p.PackageId).Sum(t => Math.Abs(t.Amount ?? 0))))
+                .ToListAsync(ct),
             RevenueDaily = await revenue.GroupBy(x => x.CreatedAt.AddHours(7).Date)
                 .Select(g => new DashboardAmountDay(g.Key, g.Count(), g.Sum(x => Math.Abs(x.Amount ?? 0)))).ToListAsync(ct)
         };
@@ -268,7 +276,7 @@ public sealed class DashboardRepository(HomeCycleDbContext db) : IDashboardRepos
     }
 
     public async Task<PaymentDashboardData> GetPaymentsAsync(
-        PaymentDashboardRequest request, DashboardPeriod period, DateTime nowUtc, CancellationToken ct)
+    PaymentDashboardRequest request, DashboardPeriod period, CancellationToken ct)
     {
         var query = db.Payments.AsNoTracking();
         if (request.PaymentStatus.HasValue)
@@ -296,13 +304,12 @@ public sealed class DashboardRepository(HomeCycleDbContext db) : IDashboardRepos
                     g.Count(),
                     g.Count(x => x.PaidAt != null),
                     g.Count(x => x.PaymentStatus == (int)PaymentStatus.Failed)))
-                .ToListAsync(ct),
-            PendingAging = await GetAgingAsync(pending.Select(x => x.CreatedAt), nowUtc, ct)
+                .ToListAsync(ct)
         };
     }
 
     public async Task<OrderDashboardData> GetOrdersAsync(
-        OrderDashboardRequest request, DashboardPeriod period, DateTime nowUtc, CancellationToken ct)
+    OrderDashboardRequest request, DashboardPeriod period, CancellationToken ct)
     {
         var query = db.Orders.AsNoTracking();
         if (request.OrderStatus.HasValue)
@@ -354,8 +361,7 @@ public sealed class DashboardRepository(HomeCycleDbContext db) : IDashboardRepos
             CancelledDaily = await cancelled.GroupBy(x => x.CancelledAt!.Value.AddHours(7).Date)
                 .Select(g => new DashboardDailyCount(g.Key, g.Count())).ToListAsync(ct),
             ReturnedDaily = await returned.GroupBy(x => x.ReturnedAt!.Value.AddHours(7).Date)
-                .Select(g => new DashboardDailyCount(g.Key, g.Count())).ToListAsync(ct),
-            ActiveAging = await GetAgingAsync(active.Select(x => x.CreatedAt), nowUtc, ct)
+                .Select(g => new DashboardDailyCount(g.Key, g.Count())).ToListAsync(ct)
         };
     }
 
@@ -457,7 +463,7 @@ public sealed class DashboardRepository(HomeCycleDbContext db) : IDashboardRepos
     }
 
     public async Task<DisputeDashboardData> GetDisputesAsync(
-        DisputeDashboardRequest request, DashboardPeriod period, DateTime nowUtc, CancellationToken ct)
+    DisputeDashboardRequest request, DashboardPeriod period, CancellationToken ct)
     {
         var query = db.Disputes.AsNoTracking();
         if (request.Status.HasValue)
@@ -503,8 +509,7 @@ public sealed class DashboardRepository(HomeCycleDbContext db) : IDashboardRepos
             OpenedDaily = await opened.GroupBy(x => x.CreatedAt.AddHours(7).Date)
                 .Select(g => new DashboardDailyCount(g.Key, g.Count())).ToListAsync(ct),
             ResolvedDaily = await resolved.GroupBy(x => x.ResolvedAt!.Value.AddHours(7).Date)
-                .Select(g => new DashboardDailyCount(g.Key, g.Count())).ToListAsync(ct),
-            UnresolvedAging = await GetAgingAsync(unresolved.Select(x => x.CreatedAt), nowUtc, ct)
+                .Select(g => new DashboardDailyCount(g.Key, g.Count())).ToListAsync(ct)
         };
     }
 
@@ -759,17 +764,15 @@ public sealed class DashboardRepository(HomeCycleDbContext db) : IDashboardRepos
         var systemWallets = wallets.Where(x =>
             x.WalletType == (int)WalletTypeEnum.System);
 
-        var totalRecordedWalletBalance = await wallets
+        var userRecordedWalletBalance = await userWallets
             .Select(x => (decimal?)(x.AvailableBalance + x.HoldBalance))
             .SumAsync(ct) ?? 0;
 
-        var systemWalletAvailableBalance = await systemWallets
+        var systemWalletBalance = await systemWallets
             .Select(x => (decimal?)x.AvailableBalance)
             .SumAsync(ct) ?? 0;
 
-        var systemWalletHoldBalance = await systemWallets
-            .Select(x => (decimal?)x.HoldBalance)
-            .SumAsync(ct) ?? 0;
+        var totalRecordedWalletBalance = userRecordedWalletBalance + systemWalletBalance;
 
         var userAvailableFunds = await userWallets
             .Select(x => (decimal?)x.AvailableBalance)
@@ -805,7 +808,7 @@ public sealed class DashboardRepository(HomeCycleDbContext db) : IDashboardRepos
 
         var shippingEscrowBalance = await systemWallets
             .Where(x => x.Purpose == (int)SystemWalletPurpose.Shipping_Escrow)
-            .Select(x => (decimal?)(x.AvailableBalance + x.HoldBalance))
+            .Select(x => (decimal?)x.AvailableBalance)
             .SumAsync(ct) ?? 0;
 
         var currentPendingPaymentAmount = await db.Payments
@@ -816,10 +819,10 @@ public sealed class DashboardRepository(HomeCycleDbContext db) : IDashboardRepos
 
         var paidStatuses = new[]
         {
-        (int)PaymentStatus.Completed,
-        (int)PaymentStatus.Refunded,
-        (int)PaymentStatus.PartiallyRefunded
-    };
+            (int)PaymentStatus.Completed,
+            (int)PaymentStatus.Refunded,
+            (int)PaymentStatus.PartiallyRefunded
+        };
 
         var externalInflow = await db.Payments
             .AsNoTracking()
@@ -874,8 +877,7 @@ public sealed class DashboardRepository(HomeCycleDbContext db) : IDashboardRepos
         return new FinanceOverviewData
         {
             TotalRecordedWalletBalance = totalRecordedWalletBalance,
-            SystemWalletAvailableBalance = systemWalletAvailableBalance,
-            SystemWalletHoldBalance = systemWalletHoldBalance,
+            SystemWalletBalance = systemWalletBalance,
             UserAvailableFunds = userAvailableFunds,
             UserFundsHeld = userFundsHeld,
             OrderEscrowHeld = orderEscrowHeld,
@@ -973,7 +975,7 @@ public sealed class DashboardRepository(HomeCycleDbContext db) : IDashboardRepos
                 g.Sum(x => Math.Abs(x.Amount ?? 0))))
             .ToListAsync(ct);
 
-        var internalMovements = await db.Wallet_Transactions
+        var internalTransactions = db.Wallet_Transactions
             .AsNoTracking()
             .Where(x =>
                 x.WalletTransactionStatus == (int)WalletTransactionStatus.Completed &&
@@ -989,13 +991,59 @@ public sealed class DashboardRepository(HomeCycleDbContext db) : IDashboardRepos
                         x.TransactionType == (int)TransactionType.Shipping_Fee_Collected &&
                         x.Payment != null &&
                         x.Payment.PaymentMethod == (int)PaymentMethod.Internal_Wallet
+                    ) ||
+                    (
+                        x.TransactionType == (int)TransactionType.Subscription_Fee &&
+                        x.Payment != null &&
+                        x.Payment.PaymentMethod == (int)PaymentMethod.Internal_Wallet
                     )
-                ))
+                ));
+
+        var internalMovements = await internalTransactions
             .GroupBy(x => x.TransactionType)
             .Select(g => new FinanceTypeAmountRow(
                 g.Key,
                 g.Sum(x => Math.Abs(x.Amount ?? 0))))
             .ToListAsync(ct);
+
+        var orderRefundAfterDisputeAmount = await internalTransactions
+            .Where(x =>
+                x.TransactionType == (int)TransactionType.Order_Refund &&
+                x.ReferenceType == (int)ReferenceType.Order &&
+                x.ReferenceId.HasValue &&
+                db.Disputes.Any(d =>
+                    d.OrderId == x.ReferenceId.Value &&
+                    d.DisputeTargetType == (int)DisputeTargetType.Order &&
+                    d.DisputeStatus == (int)DisputeStatus.Resolved &&
+                    d.ResolutionOutcome.HasValue &&
+                    d.ResolvedAt.HasValue &&
+                    d.ResolvedAt.Value <= x.CreatedAt))
+            .Select(x => (decimal?)Math.Abs(x.Amount ?? 0))
+            .SumAsync(ct) ?? 0;
+
+        var endedDisputeStatuses = new[]
+        {
+            (int)DisputeStatus.Resolved,
+            (int)DisputeStatus.Rejected,
+            (int)DisputeStatus.Closed
+        };
+
+        var payoutReleaseAfterDisputeAmount = await internalTransactions
+            .Where(x =>
+                x.TransactionType == (int)TransactionType.Payout_Release &&
+                x.ReferenceType == (int)ReferenceType.Order &&
+                x.ReferenceId.HasValue &&
+                db.Disputes.Any(d =>
+                    d.OrderId == x.ReferenceId.Value &&
+                    d.DisputeTargetType == (int)DisputeTargetType.Order &&
+                    d.DisputeStatus.HasValue &&
+                    endedDisputeStatuses.Contains(d.DisputeStatus.Value) &&
+                    (
+                        (d.ResolvedAt.HasValue && d.ResolvedAt.Value <= x.CreatedAt) ||
+                        (!d.ResolvedAt.HasValue && d.UpdatedAt <= x.CreatedAt)
+                    )))
+            .Select(x => (decimal?)Math.Abs(x.Amount ?? 0))
+            .SumAsync(ct) ?? 0;
 
         return new FinanceCashFlowData
         {
@@ -1007,7 +1055,9 @@ public sealed class DashboardRepository(HomeCycleDbContext db) : IDashboardRepos
             PayOsGhnShippingCollectedAmount = payOsGhnShippingCollectedAmount,
             InflowDaily = inflowDaily,
             OutflowDaily = outflowDaily,
-            InternalMovements = internalMovements
+            InternalMovements = internalMovements,
+            OrderRefundAfterDisputeAmount = orderRefundAfterDisputeAmount,
+            PayoutReleaseAfterDisputeAmount = payoutReleaseAfterDisputeAmount
         };
     }
 
@@ -1020,9 +1070,8 @@ public sealed class DashboardRepository(HomeCycleDbContext db) : IDashboardRepos
 
         var revenueTypes = new[]
         {
-        (int)TransactionType.Commission_Fee,
-        (int)TransactionType.Subscription_Fee
-    };
+            (int)TransactionType.Subscription_Fee
+        };
 
         return await db.Wallet_Transactions
             .AsNoTracking()
@@ -1401,6 +1450,11 @@ public sealed class DashboardRepository(HomeCycleDbContext db) : IDashboardRepos
                         && x.Payment != null
                         && x.Payment.PaymentMethod ==
                             (int)PaymentMethod.Internal_Wallet
+                    ) ||
+                    (
+                        x.TransactionType == (int)TransactionType.Subscription_Fee &&
+                        x.Payment != null &&
+                        x.Payment.PaymentMethod == (int)PaymentMethod.Internal_Wallet
                     )),
 
             FinanceFlowScope.Unclassified =>
@@ -1447,6 +1501,12 @@ public sealed class DashboardRepository(HomeCycleDbContext db) : IDashboardRepos
                             && x.Payment.PaymentMethod ==
                                 (int)PaymentMethod.Internal_Wallet
                         )
+                        ||
+                        (
+                            x.TransactionType == (int)TransactionType.Subscription_Fee &&
+                            x.Payment != null &&
+                            x.Payment.PaymentMethod == (int)PaymentMethod.Internal_Wallet
+                        )
                     )),
 
             _ => query
@@ -1479,21 +1539,18 @@ public sealed class DashboardRepository(HomeCycleDbContext db) : IDashboardRepos
         }
 
         if (
-            transactionType ==
-                (int)TransactionType.Wallet_Payment ||
-            transactionType ==
-                (int)TransactionType.Payout_Release ||
-            transactionType ==
-                (int)TransactionType.Order_Refund ||
-            transactionType ==
-                (int)TransactionType.Withdrawal_Lock ||
-            transactionType ==
-                (int)TransactionType.Withdrawal_Revert ||
+            transactionType == (int)TransactionType.Wallet_Payment ||
+            transactionType == (int)TransactionType.Payout_Release ||
+            transactionType == (int)TransactionType.Order_Refund ||
+            transactionType == (int)TransactionType.Withdrawal_Lock ||
+            transactionType == (int)TransactionType.Withdrawal_Revert ||
             (
-                transactionType ==
-                    (int)TransactionType.Shipping_Fee_Collected &&
-                paymentMethod ==
-                    (int)PaymentMethod.Internal_Wallet
+                transactionType == (int)TransactionType.Shipping_Fee_Collected &&
+                paymentMethod == (int)PaymentMethod.Internal_Wallet
+            ) ||
+            (
+                transactionType == (int)TransactionType.Subscription_Fee &&
+                paymentMethod == (int)PaymentMethod.Internal_Wallet
             ))
         {
             return FinanceFlowScope.Internal;

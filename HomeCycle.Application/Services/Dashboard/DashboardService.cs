@@ -232,7 +232,7 @@ public sealed class DashboardService(IDashboardRepository repository, IDisputeCa
     {
         var period = ResolvePeriod(request);
         var nowUtc = clock.GetUtcNow().UtcDateTime;
-        var data = await repository.GetPaymentsAsync(request, period, nowUtc, ct);
+        var data = await repository.GetPaymentsAsync(request, period, ct);
         return new()
         {
             GeneratedAtUtc = nowUtc,
@@ -240,8 +240,6 @@ public sealed class DashboardService(IDashboardRepository repository, IDisputeCa
             TotalPayments = data.TotalPayments,
             PendingCount = data.PendingCount,
             PaidInPeriodCount = data.PaidInPeriodCount,
-            AveragePendingAgeHours = Hours(data.PendingAging.AverageAgeHours),
-            OldestPendingAgeHours = Hours(data.PendingAging.OldestAgeHours),
             CurrentStatusDistribution = Distribution<PaymentStatus>(data.CurrentStatuses),
             PaymentMethodPerformance = data.MethodPerformance.Select(row =>
             {
@@ -252,7 +250,6 @@ public sealed class DashboardService(IDashboardRepository repository, IDisputeCa
                 return new PaymentMethodPerformanceItem(method, row.TotalCount, row.PaidCount, row.FailedCount,
                     finished == 0 ? null : Percent(row.PaidCount, finished));
             }).OrderByDescending(x => x.TotalCount).ThenBy(x => x.Method).ToArray(),
-            PendingAgingDistribution = Aging(data.PendingAging),
             PaidSeries = Series(data.PaidDaily, period)
         };
     }
@@ -261,7 +258,7 @@ public sealed class DashboardService(IDashboardRepository repository, IDisputeCa
     {
         var period = ResolvePeriod(request);
         var nowUtc = clock.GetUtcNow().UtcDateTime;
-        var data = await repository.GetOrdersAsync(request, period, nowUtc, ct);
+        var data = await repository.GetOrdersAsync(request, period, ct);
         return new()
         {
             CreatedInPeriodCount = data.CreatedInPeriodCount,
@@ -287,10 +284,7 @@ public sealed class DashboardService(IDashboardRepository repository, IDisputeCa
             CompletedInPeriodCount = data.CompletedInPeriodCount,
             CancelledInPeriodCount = data.CancelledInPeriodCount,
             ReturnedInPeriodCount = data.ReturnedInPeriodCount,
-            AverageActiveOrderAgeHours = Hours(data.ActiveAging.AverageAgeHours),
-            OldestActiveOrderAgeHours = Hours(data.ActiveAging.OldestAgeHours),
             CurrentStatusDistribution = Distribution<OrderStatus>(data.CurrentStatuses),
-            ActiveOrderAgingDistribution = Aging(data.ActiveAging),
             OutcomeSeries = Buckets(period).Select(bucket => new OrderOutcomeSeriesPoint(
                 bucket.From,
                 bucket.To,
@@ -414,7 +408,7 @@ public sealed class DashboardService(IDashboardRepository repository, IDisputeCa
     {
         var period = ResolvePeriod(request);
         var nowUtc = clock.GetUtcNow().UtcDateTime;
-        var data = await repository.GetDisputesAsync(request, period, nowUtc, ct);
+        var data = await repository.GetDisputesAsync(request, period, ct);
         var categoryDefinitions = await disputeCategoryRepository.GetAllAsync(null, ct);
 
         IReadOnlyList<DistributionItem> BuildCategoryDistribution(IEnumerable<DashboardCodeCount> counts)
@@ -458,11 +452,9 @@ public sealed class DashboardService(IDashboardRepository repository, IDisputeCa
             CurrentDisputedHeldAmount = data.CurrentDisputedHeldAmount,
             ResolutionDistribution = Distribution<DisputeResolutionOutcome>(data.Resolutions),
             AverageResolutionTimeHours = Hours(data.AverageResolutionTimeHours),
-            OldestUnresolvedAgeHours = Hours(data.UnresolvedAging.OldestAgeHours),
             CurrentStatusDistribution = Distribution<DisputeStatus>(data.CurrentStatuses),
             CategoryDistribution = categories,
             UnresolvedByCategory = unresolvedCategories,
-            UnresolvedAgingDistribution = Aging(data.UnresolvedAging),
             OpenedVsResolvedSeries = Buckets(period).Select(bucket => new DisputeFlowSeriesPoint(
                 bucket.From,
                 bucket.To,
@@ -617,10 +609,6 @@ public sealed class DashboardService(IDashboardRepository repository, IDisputeCa
             period,
             ct);
 
-        var systemWalletBalance =
-            data.SystemWalletAvailableBalance +
-            data.SystemWalletHoldBalance;
-
         return new FinanceOverviewResponse
         {
             GeneratedAtUtc = clock.GetUtcNow().UtcDateTime,
@@ -628,9 +616,7 @@ public sealed class DashboardService(IDashboardRepository repository, IDisputeCa
 
             Position = new FinancePositionMetrics(
                 data.TotalRecordedWalletBalance,
-                systemWalletBalance,
-                data.SystemWalletAvailableBalance,
-                data.SystemWalletHoldBalance,
+                data.SystemWalletBalance,
                 data.UserAvailableFunds,
                 data.UserFundsHeld,
                 data.OrderEscrowHeld,
@@ -718,31 +704,78 @@ public sealed class DashboardService(IDashboardRepository repository, IDisputeCa
                     data.ExternalInflow))
             };
 
-        var internalTotal =
-            data.InternalMovements.Sum(x => x.Amount);
+        var internalTotal = data.InternalMovements.Sum(x => x.Amount);
 
-        var internalMovements =
-            data.InternalMovements
-                .Where(x =>
-                    x.TransactionType.HasValue &&
-                    Enum.IsDefined(
-                        typeof(TransactionType),
-                        x.TransactionType.Value))
-                .Select(x =>
-                {
-                    var type =
-                        (TransactionType)x.TransactionType!.Value;
+        var internalMovements = data.InternalMovements
+            .Where(x =>
+                x.TransactionType.HasValue &&
+                Enum.IsDefined(typeof(TransactionType), x.TransactionType.Value) &&
+                x.TransactionType != (int)TransactionType.Order_Refund &&
+                x.TransactionType != (int)TransactionType.Payout_Release)
+            .Select(x =>
+            {
+                var type = (TransactionType)x.TransactionType!.Value;
 
-                    return new FinanceAmountBreakdownItem(
-                        type.ToString(),
-                        FinanceTransactionLabel(type),
-                        x.Amount,
-                        AmountPercent(
-                            x.Amount,
-                            internalTotal));
-                })
-                .OrderByDescending(x => x.Amount)
-                .ToArray();
+                return new FinanceAmountBreakdownItem(
+                    type.ToString(),
+                    FinanceTransactionLabel(type),
+                    x.Amount,
+                    AmountPercent(x.Amount, internalTotal));
+            })
+            .ToList();
+
+        var orderRefundTotal = data.InternalMovements
+            .Where(x => x.TransactionType == (int)TransactionType.Order_Refund)
+            .Sum(x => x.Amount);
+
+        var refundAfterDispute = Math.Min(
+            orderRefundTotal,
+            data.OrderRefundAfterDisputeAmount);
+
+        var refundFromOrderFlow = Math.Max(
+            orderRefundTotal - refundAfterDispute,
+            0);
+
+        internalMovements.Add(new FinanceAmountBreakdownItem(
+            "OrderRefundOrderFlow",
+            "Order Refund - Order Flow",
+            refundFromOrderFlow,
+            AmountPercent(refundFromOrderFlow, internalTotal)));
+
+        internalMovements.Add(new FinanceAmountBreakdownItem(
+            "OrderRefundAfterDispute",
+            "Order Refund - After Dispute",
+            refundAfterDispute,
+            AmountPercent(refundAfterDispute, internalTotal)));
+
+        var payoutReleaseTotal = data.InternalMovements
+            .Where(x => x.TransactionType == (int)TransactionType.Payout_Release)
+            .Sum(x => x.Amount);
+
+        var releaseAfterDispute = Math.Min(
+            payoutReleaseTotal,
+            data.PayoutReleaseAfterDisputeAmount);
+
+        var normalRelease = Math.Max(
+            payoutReleaseTotal - releaseAfterDispute,
+            0);
+
+        internalMovements.Add(new FinanceAmountBreakdownItem(
+            "PayoutReleaseNormal",
+            "Payout Release - Normal Order",
+            normalRelease,
+            AmountPercent(normalRelease, internalTotal)));
+
+        internalMovements.Add(new FinanceAmountBreakdownItem(
+            "PayoutReleaseAfterDispute",
+            "Payout Release - After Dispute",
+            releaseAfterDispute,
+            AmountPercent(releaseAfterDispute, internalTotal)));
+
+        var orderedInternalMovements = internalMovements
+            .OrderByDescending(x => x.Amount)
+            .ThenBy(x => x.Key)
+            .ToArray();
 
         return new FinanceCashFlowResponse
         {
@@ -760,7 +793,7 @@ public sealed class DashboardService(IDashboardRepository repository, IDisputeCa
 
             InflowSources = inflowSources,
 
-            InternalMovements = internalMovements
+            InternalMovements = orderedInternalMovements
         };
     }
 
@@ -770,37 +803,38 @@ public sealed class DashboardService(IDashboardRepository repository, IDisputeCa
         CancellationToken ct)
     {
         var period = ResolvePeriod(request);
+        var nowUtc = clock.GetUtcNow().UtcDateTime;
+
         var rows = await repository.GetFinanceRevenueAsync(period, ct);
+        var subscriptionData = await repository.GetSubscriptionsAsync(period, nowUtc, ct);
 
-        var revenueTypes = new[]
+        var totalRevenue = rows
+            .Where(x => x.TransactionType == (int)TransactionType.Subscription_Fee)
+            .Sum(x => x.Amount);
+
+        var sources = new[]
         {
-        TransactionType.Commission_Fee,
-        TransactionType.Subscription_Fee
+        new FinanceAmountBreakdownItem(
+            TransactionType.Subscription_Fee.ToString(),
+            FinanceTransactionLabel(TransactionType.Subscription_Fee),
+            totalRevenue,
+            totalRevenue > 0 ? 100m : 0m)
     };
-
-        var totalRevenue = rows.Sum(x => x.Amount);
-
-        var sources = revenueTypes
-            .Select(type =>
-            {
-                var amount = rows
-                    .Where(x => x.TransactionType == (int)type)
-                    .Sum(x => x.Amount);
-
-                return new FinanceAmountBreakdownItem(
-                    type.ToString(),
-                    FinanceTransactionLabel(type),
-                    amount,
-                    AmountPercent(amount, totalRevenue));
-            })
-            .ToArray();
 
         return new FinanceRevenueResponse
         {
-            GeneratedAtUtc = clock.GetUtcNow().UtcDateTime,
+            GeneratedAtUtc = nowUtc,
             Period = period,
             TotalRevenue = totalRevenue,
-            Sources = sources
+            Sources = sources,
+            Packages = subscriptionData.Packages
+                .Select(x => new FinanceSubscriptionPackageMetric(
+                    x.PackageId,
+                    x.Name,
+                    x.BuyerCountInPeriod,
+                    x.ActiveBusinessCount,
+                    x.Revenue))
+                .ToArray()
         };
     }
 

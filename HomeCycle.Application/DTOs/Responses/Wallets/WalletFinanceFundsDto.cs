@@ -10,16 +10,12 @@ namespace HomeCycle.Application.DTOs.Responses.Wallets
     {
         public decimal TotalUserAvailable { get; set; }
         public decimal TotalUserHold { get; set; }
-
-        public decimal TotalSystemAvailable { get; set; }
-        public decimal TotalSystemHold { get; set; }
-
         public decimal TotalPersonalAvailable { get; set; }
         public decimal TotalPersonalHold { get; set; }
         public decimal TotalBusinessAvailable { get; set; }
         public decimal TotalBusinessHold { get; set; }
+        public decimal TotalSystemBalance { get; set; }
         public decimal TotalRecordedBalance { get; set; }
-
-        public List<WalletInfoDto> SystemWallets { get; set; } = new();
+        public List<SystemWalletBalanceDto> SystemWallets { get; set; } = new();
     }
 }

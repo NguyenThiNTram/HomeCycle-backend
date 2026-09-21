@@ -23,10 +23,7 @@ public sealed class OrderDashboardResponse
     public int CompletedInPeriodCount { get; init; }
     public int CancelledInPeriodCount { get; init; }
     public int ReturnedInPeriodCount { get; init; }
-    public decimal? AverageActiveOrderAgeHours { get; init; }
-    public decimal? OldestActiveOrderAgeHours { get; init; }
     public IReadOnlyList<DistributionItem> CurrentStatusDistribution { get; init; } = [];
-    public IReadOnlyList<AgingBucket> ActiveOrderAgingDistribution { get; init; } = [];
     public IReadOnlyList<OrderOutcomeSeriesPoint> OutcomeSeries { get; init; } = [];
 }
 

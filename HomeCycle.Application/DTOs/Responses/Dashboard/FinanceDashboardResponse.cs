@@ -22,8 +22,6 @@ namespace HomeCycle.Application.DTOs.Responses.Dashboard
     public sealed record FinancePositionMetrics(
         decimal TotalRecordedWalletBalance,
         decimal SystemWalletBalance,
-        decimal SystemWalletAvailableBalance,
-        decimal SystemWalletHoldBalance,
         decimal UserAvailableFunds,
         decimal UserFundsHeld,
         decimal OrderEscrowHeld,
@@ -63,8 +61,15 @@ namespace HomeCycle.Application.DTOs.Responses.Dashboard
         public decimal TotalRevenue { get; init; }
 
         public IReadOnlyList<FinanceAmountBreakdownItem> Sources { get; init; } = [];
+        public IReadOnlyList<FinanceSubscriptionPackageMetric> Packages { get; init; } = [];
     }
 
+    public sealed record FinanceSubscriptionPackageMetric(
+        Guid PackageId,
+        string PackageName,
+        int BuyerCountInPeriod,
+        int ActiveSubscriptionCount,
+        decimal Revenue);
     public sealed record FinanceCashFlowTotals(
         decimal ExternalInflow,
         decimal ExternalOutflow,
@@ -178,9 +183,7 @@ namespace HomeCycle.Application.DTOs.Responses.Dashboard
     {
         public decimal TotalRecordedWalletBalance { get; set; }
 
-        public decimal SystemWalletAvailableBalance { get; set; }
-
-        public decimal SystemWalletHoldBalance { get; set; }
+        public decimal SystemWalletBalance { get; set; }
 
         public decimal UserAvailableFunds { get; set; }
 
@@ -232,6 +235,8 @@ namespace HomeCycle.Application.DTOs.Responses.Dashboard
         public List<FinanceDailyAmount> OutflowDaily { get; set; } = [];
 
         public List<FinanceTypeAmountRow> InternalMovements { get; set; } = [];
+        public decimal OrderRefundAfterDisputeAmount { get; set; }
+        public decimal PayoutReleaseAfterDisputeAmount { get; set; }
     }
 
     public sealed record FinanceCodeAmountRow(

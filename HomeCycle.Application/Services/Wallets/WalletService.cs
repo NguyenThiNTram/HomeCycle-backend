@@ -64,24 +64,17 @@ namespace HomeCycle.Application.Services.Wallets
         {
             var systemWallets = await _walletRepo.GetAllSystemWalletsAsync(ct);
 
-            var walletDtos = systemWallets.Select(w => new WalletInfoDto
+            var walletDtos = systemWallets.Select(w => new SystemWalletBalanceDto
             {
                 WalletId = w.WalletId,
-                WalletType = (WalletTypeEnum)w.WalletType,
-                AvailableBalance = w.AvailableBalance,
-                HoldBalance = w.HoldBalance,
-                Purpose = w.Purpose.HasValue ? (SystemWalletPurpose)w.Purpose.Value : null
+                Purpose = w.Purpose.HasValue ? (SystemWalletPurpose)w.Purpose.Value : null,
+                Balance = w.AvailableBalance
             }).ToList();
-
-            var totalAvailable = walletDtos.Sum(w => w.AvailableBalance);
-            var totalHold = walletDtos.Sum(w => w.HoldBalance);
 
             var summary = new SystemWalletSummaryDto
             {
                 Wallets = walletDtos,
-                TotalAvailableBalance = totalAvailable,
-                TotalHoldBalance = totalHold,
-                TotalHeldBalance = totalAvailable + totalHold
+                TotalBalance = walletDtos.Sum(w => w.Balance)
             };
 
             return Result<SystemWalletSummaryDto>.Success(summary);
@@ -93,15 +86,11 @@ namespace HomeCycle.Application.Services.Wallets
             var userWallets = await _walletRepo.GetAllUserWalletsAsync(ct);
             var systemWallets = await _walletRepo.GetAllSystemWalletsAsync(ct);
 
-            var systemWalletDtos = systemWallets.Select(w => new WalletInfoDto
+            var systemWalletDtos = systemWallets.Select(w => new SystemWalletBalanceDto
             {
                 WalletId = w.WalletId,
-                WalletType = (WalletTypeEnum)w.WalletType,
-                AvailableBalance = w.AvailableBalance,
-                HoldBalance = w.HoldBalance,
-                Purpose = w.Purpose.HasValue
-                    ? (SystemWalletPurpose)w.Purpose.Value
-                    : null
+                Purpose = w.Purpose.HasValue ? (SystemWalletPurpose)w.Purpose.Value : null,
+                Balance = w.AvailableBalance
             }).ToList();
 
             var personalWallets = userWallets.Where(x => x.WalletType == (int)WalletTypeEnum.Personal);
@@ -114,8 +103,7 @@ namespace HomeCycle.Application.Services.Wallets
 
             var totalUserAvailable = totalPersonalAvailable + totalBusinessAvailable;
             var totalUserHold = totalPersonalHold + totalBusinessHold;
-            var totalSystemAvailable = systemWallets.Sum(x => x.AvailableBalance);
-            var totalSystemHold = systemWallets.Sum(x => x.HoldBalance);
+            var totalSystemBalance = systemWalletDtos.Sum(x => x.Balance);
 
             return Result<WalletFinanceFundsDto>.Success(new WalletFinanceFundsDto
             {
@@ -125,13 +113,8 @@ namespace HomeCycle.Application.Services.Wallets
                 TotalPersonalHold = totalPersonalHold,
                 TotalBusinessAvailable = totalBusinessAvailable,
                 TotalBusinessHold = totalBusinessHold,
-                TotalSystemAvailable = totalSystemAvailable,
-                TotalSystemHold = totalSystemHold,
-                TotalRecordedBalance =
-                    totalUserAvailable +
-                    totalUserHold +
-                    totalSystemAvailable +
-                    totalSystemHold,
+                TotalSystemBalance = totalSystemBalance,
+                TotalRecordedBalance = totalUserAvailable + totalUserHold + totalSystemBalance,
                 SystemWallets = systemWalletDtos
             });
         }
