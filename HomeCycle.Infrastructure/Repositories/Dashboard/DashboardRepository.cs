@@ -1017,7 +1017,16 @@ public sealed class DashboardRepository(HomeCycleDbContext db) : IDashboardRepos
                     d.DisputeStatus == (int)DisputeStatus.Resolved &&
                     d.ResolutionOutcome.HasValue &&
                     d.ResolvedAt.HasValue &&
-                    d.ResolvedAt.Value <= x.CreatedAt))
+                    (
+                        d.ResolvedAt.Value <= x.CreatedAt ||
+                        (
+                            d.Order != null &&
+                            (
+                                (d.Order.ReturnedAt.HasValue && d.Order.ReturnedAt.Value == d.ResolvedAt.Value) ||
+                                (d.Order.CancelledAt.HasValue && d.Order.CancelledAt.Value == d.ResolvedAt.Value)
+                            )
+                        )
+                    )))
             .Select(x => (decimal?)Math.Abs(x.Amount ?? 0))
             .SumAsync(ct) ?? 0;
 
