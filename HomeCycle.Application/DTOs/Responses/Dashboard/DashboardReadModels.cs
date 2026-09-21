@@ -69,7 +69,6 @@ public sealed class OrderDashboardData
     public List<DashboardDailyCount> CompletedDaily { get; set; } = [];
     public List<DashboardDailyCount> CancelledDaily { get; set; } = [];
     public List<DashboardDailyCount> ReturnedDaily { get; set; } = [];
-    public DashboardAgingData ActiveAging { get; set; } = new();
 }
 
 public sealed record PaymentMethodPerformanceData(int? Method, int TotalCount, int PaidCount, int FailedCount);
@@ -82,7 +81,6 @@ public sealed class PaymentDashboardData
     public List<DashboardCodeCount> CurrentStatuses { get; set; } = [];
     public List<DashboardDailyCount> PaidDaily { get; set; } = [];
     public List<PaymentMethodPerformanceData> MethodPerformance { get; set; } = [];
-    public DashboardAgingData PendingAging { get; set; } = new();
 }
 
 public sealed class DisputeDashboardData
@@ -101,7 +99,6 @@ public sealed class DisputeDashboardData
     public List<DashboardCodeCount> UnresolvedCategories { get; set; } = [];
     public List<DashboardDailyCount> OpenedDaily { get; set; } = [];
     public List<DashboardDailyCount> ResolvedDaily { get; set; } = [];
-    public DashboardAgingData UnresolvedAging { get; set; } = new();
 }
 
 public sealed record CheckInRoleData(int Role, int EligibleCount, int CheckedInCount);

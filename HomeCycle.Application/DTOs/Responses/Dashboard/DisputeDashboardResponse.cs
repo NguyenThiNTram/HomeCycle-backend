@@ -16,11 +16,9 @@ public sealed class DisputeDashboardResponse
     public int UnresolvedDisputeCount { get; init; }
     public int ResolvedInPeriodCount { get; init; }
     public decimal? AverageResolutionTimeHours { get; init; }
-    public decimal? OldestUnresolvedAgeHours { get; init; }
     public IReadOnlyList<DistributionItem> CurrentStatusDistribution { get; init; } = [];
     public IReadOnlyList<DistributionItem> CategoryDistribution { get; init; } = [];
     public IReadOnlyList<DistributionItem> UnresolvedByCategory { get; init; } = [];
-    public IReadOnlyList<AgingBucket> UnresolvedAgingDistribution { get; init; } = [];
     public IReadOnlyList<DisputeFlowSeriesPoint> OpenedVsResolvedSeries { get; init; } = [];
     public int UnknownCategoryCount { get; init; }
 }
