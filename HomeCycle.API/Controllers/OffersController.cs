@@ -187,9 +187,22 @@ namespace HomeCycle.API.Controllers
 
             return result.Error!.Code switch
             {
-                "OFFER_NOT_FOUND" or "OFFER_POST_NOT_FOUND" => NotFound(result),
+                "OFFER_NOT_FOUND" or "OFFER_POST_NOT_FOUND" or "OFFER_BUY_POST_NOT_FOUND" => NotFound(result),
                 "OFFER_FORBIDDEN" or "OFFER_ROLE_NOT_ALLOWED" or "OFFER_USER_NOT_ACTIVE" => StatusCode(StatusCodes.Status403Forbidden, result),
-                "OFFER_DUPLICATE_PENDING" or "OFFER_NOT_PENDING" or "OFFER_TERMS_CHANGED" or "OFFER_QUANTITY_EXCEEDS_REMAINING" => Conflict(result),
+                "OFFER_DUPLICATE_PENDING" or
+                "OFFER_UNFINISHED_NEGOTIATION" or
+                "OFFER_NOT_PENDING" or
+                "OFFER_TERMS_CHANGED" or
+                "OFFER_QUANTITY_EXCEEDS_REMAINING" or
+                "OFFER_SELL_QUANTITY_EXCEEDS_REMAINING" or
+                "OFFER_BUY_QUANTITY_EXCEEDS_REMAINING" or
+                "OFFER_SELL_POST_NOT_ACTIVE" or
+                "OFFER_SELL_POST_EXPIRED" or
+                "OFFER_SELL_POST_OUT_OF_STOCK" or
+                "OFFER_BUY_POST_NOT_ACTIVE" or
+                "OFFER_BUY_POST_EXPIRED" or
+                "OFFER_BUY_POST_FULFILLED" or
+                "OFFER_BUYER_NOT_ACTIVE" => Conflict(result),
                 _ => BadRequest(result)
             };
         }

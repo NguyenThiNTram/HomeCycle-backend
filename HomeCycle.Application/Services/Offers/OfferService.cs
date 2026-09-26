@@ -157,7 +157,8 @@ namespace HomeCycle.Application.Services.Offers
         public async Task<Result<OfferResponse>> CreateSellerRequestAsync(Guid userId, Guid buyPostId, CreateSellerRequest request, CancellationToken cancellationToken = default)
         {
             var validation = await new HomeCycle.Application.Validations.Offers.CreateSellerRequestValidator().ValidateAsync(request, cancellationToken);
-            if (!validation.IsValid || buyPostId == Guid.Empty) return Result<OfferResponse>.Fail(ValidationErrors.InvalidRequest("Thông tin chào hàng không hợp lệ."));
+            if (!validation.IsValid) return Result<OfferResponse>.Fail(ToValidationError(validation));
+            if (buyPostId == Guid.Empty) return Result<OfferResponse>.Fail(ValidationErrors.InvalidRequest("Mã bài mua không hợp lệ."));
             return await CreateCoreAsync(userId, new CreateOfferRequest { PostId = request.SellPostId, BuyPostId = buyPostId,
                 OfferPrice = request.OfferPrice, OfferQuantity = request.OfferQuantity }, true, cancellationToken);
         }
@@ -1287,7 +1288,7 @@ namespace HomeCycle.Application.Services.Offers
                 var sell = await _postRepository.GetByIdAsync(request.PostId, ct);
                 if (sell == null) return Result<OfferResponse>.Fail(OfferErrors.PostNotFound);
                 // New transactions always reference the real listed product. Old Buy-target offers remain readable.
-                if (sell.PostType != PostType.Sell) return Result<OfferResponse>.Fail(PostErrors.InvalidPostType);
+                if (sell.PostType != PostType.Sell) return Result<OfferResponse>.Fail(OfferErrors.InvalidSellPostType);
                 var sender = await _userRepository.GetByIdAsync(userId, ct);
                 if (sender?.Status != UserStatus.Active) return Result<OfferResponse>.Fail(OfferErrors.UserNotActive);
                 if (sender.Role is not (UserRole.Personal or UserRole.Business)) return Result<OfferResponse>.Fail(OfferErrors.RoleNotAllowed);
@@ -1295,9 +1296,11 @@ namespace HomeCycle.Application.Services.Offers
                 if (request.BuyPostId.HasValue)
                 {
                     buy = await _postRepository.GetByIdAsync(request.BuyPostId.Value, ct);
-                    if (buy?.PostType != PostType.Buy) return Result<OfferResponse>.Fail(PostErrors.InvalidPostType);
+                    if (buy == null) return Result<OfferResponse>.Fail(OfferErrors.BuyPostNotFound);
+                    if (buy.PostType != PostType.Buy) return Result<OfferResponse>.Fail(OfferErrors.InvalidBuyPostType);
                     var business = await _userRepository.GetByIdAsync(buy.OwnerId, ct);
-                    if (business?.Role != UserRole.Business || business.Status != UserStatus.Active) return Result<OfferResponse>.Fail(OfferErrors.RoleNotAllowed);
+                    if (business == null || business.Status != UserStatus.Active) return Result<OfferResponse>.Fail(OfferErrors.BuyerNotActive);
+                    if (business.Role != UserRole.Business) return Result<OfferResponse>.Fail(OfferErrors.RoleNotAllowed);
                     if (!sellerRequest && (sender.Role != UserRole.Business || buy.OwnerId != userId)) return Result<OfferResponse>.Fail(OfferErrors.Forbidden);
                 }
                 if (sellerRequest && (buy == null || sender.Role != UserRole.Personal || sell.OwnerId != userId))
@@ -1330,9 +1333,10 @@ namespace HomeCycle.Application.Services.Offers
                 if (await _negotiationRepository.ExistsActiveByPostAndParticipantsAsync(
                     sell.PostId, participants.SellerId, participants.BuyerId, ct, entity.BuyPostId))
                     return Result<OfferResponse>.Fail(OfferErrors.UnfinishedNegotiation);
-                var error = await ValidateNewOfferAsync(entity, sell, request.OfferPrice, request.OfferQuantity, ct);
+                var error = await ValidateNewOfferAsync(entity, sell, buy, request.OfferPrice, request.OfferQuantity, ct);
                 if (error != null) return Result<OfferResponse>.Fail(error);
-                if (await _offerRepository.ExistsPendingByPostAndSenderAsync(sell.PostId, userId, receiverId, entity.BuyPostId, ct))
+                if (await _offerRepository.ExistsActivePendingByPostAndParticipantsAsync(
+                    sell.PostId, participants.SellerId, participants.BuyerId, now, ct))
                     return Result<OfferResponse>.Fail(OfferErrors.DuplicatePending);
                 await _offerRepository.AddAsync(entity, ct);
                 var notification = await AddOfferNotificationPendingAsync(entity, userId, "Bạn có đề nghị mới",
@@ -1384,12 +1388,12 @@ namespace HomeCycle.Application.Services.Offers
             return await _offerRepository.GetByIdForUpdateAsync(offerId, ct);
         }
 
-        private async Task<Error?> ValidateNewOfferAsync(offer offer, post sell, decimal price, int quantity, CancellationToken ct)
+        private async Task<Error?> ValidateNewOfferAsync(offer offer, post sell, post? buy, decimal price, int quantity, CancellationToken ct)
         {
-            if (sell.PostType != PostType.Sell) return PostErrors.InvalidPostType;
+            if (sell.PostType != PostType.Sell) return OfferErrors.InvalidSellPostType;
             var capacity = await _postRepository.ValidateCapacityAsync(offer, quantity, null, true, ct);
             if (capacity != null) return capacity;
-            return _offerTermsPolicy.Validate(sell, price, quantity, offer.BuyPostId.HasValue);
+            return _offerTermsPolicy.Validate(sell, price, quantity, offer.BuyPostId.HasValue, buy);
         }
     }
 }

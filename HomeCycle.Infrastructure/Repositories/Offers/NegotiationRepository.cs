@@ -130,10 +130,15 @@ namespace HomeCycle.Infrastructure.Repositories.Offers
                         x.PostId == postId &&
                         x.SellerId == sellerId &&
                         x.BuyerId == buyerId &&
-                        (x.NegotiationStatus == null || x.NegotiationStatus != (int)NegotiationStatus.Cancelled) && x.NegotiationStatus != (int)NegotiationStatus.Expired &&
-                        !(x.Agreement_Form != null &&
-                          x.Agreement_Form.AgreementStatus == (int)AgreementStatus.Confirmed &&
-                          x.Agreement_Form.Order != null),
+                        (x.NegotiationStatus == null ||
+                         x.NegotiationStatus == (int)NegotiationStatus.Open ||
+                         x.NegotiationStatus == (int)NegotiationStatus.Agreed ||
+                         x.NegotiationStatus == (int)NegotiationStatus.AgreementPending) &&
+                        (x.Agreement_Form == null ||
+                         x.Agreement_Form.AgreementStatus == (int)AgreementStatus.Pending ||
+                         x.Agreement_Form.AgreementStatus == (int)AgreementStatus.Awaiting_Payment ||
+                         x.Agreement_Form.AgreementStatus == (int)AgreementStatus.Confirmed &&
+                         x.Agreement_Form.Order == null),
                     cancellationToken);
         }
 

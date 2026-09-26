@@ -57,15 +57,23 @@ public static class TradingPostRules
         {
             var p = await repo.GetByIdAsync(id, ct);
             if (p is null) return OfferErrors.PostNotFound;
-            if (requireActive && !IsAvailable(p)) return OfferErrors.PostNotActive;
+            if (requireActive && p.Status != PostStatus.Active)
+                return p.PostType == PostType.Buy ? OfferErrors.BuyPostNotActive : OfferErrors.SellPostNotActive;
+            if (requireActive && p.ExpiryDate.HasValue && p.ExpiryDate <= DateTime.UtcNow)
+                return p.PostType == PostType.Buy ? OfferErrors.BuyPostExpired : OfferErrors.SellPostExpired;
+            if (requireActive && p.RemainingQuantity <= 0)
+                return p.PostType == PostType.Buy ? OfferErrors.BuyPostFulfilled : OfferErrors.SellPostOutOfStock;
             if (p.Status is PostStatus.Deleted or PostStatus.Suspended) return OfferErrors.PostNotActive;
             var available = p.RemainingQuantity - await repo.GetReservedQuantityAsync(id, excludedNegotiationId, ct);
-            if (quantity > available) return OfferErrors.QuantityExceedsRemaining(quantity, Math.Max(0, available));
+            if (quantity > available)
+                return p.PostType == PostType.Buy
+                    ? OfferErrors.BuyQuantityExceedsRemaining(quantity, Math.Max(0, available))
+                    : OfferErrors.SellQuantityExceedsRemaining(quantity, Math.Max(0, available));
             if (p.PostType == PostType.Buy)
             {
                 var targetAvailable = p.Quantity - await repo.GetAgreedBuyQuantityAsync(id, excludedNegotiationId, ct);
                 if (quantity > targetAvailable)
-                    return OfferErrors.QuantityExceedsRemaining(quantity, Math.Max(0, targetAvailable));
+                    return OfferErrors.BuyQuantityExceedsRemaining(quantity, Math.Max(0, targetAvailable));
             }
         }
         return null;

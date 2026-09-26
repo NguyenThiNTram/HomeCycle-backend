@@ -19,7 +19,7 @@ namespace HomeCycle.Application.Interfaces.Repositories.Offers
         Task<PagedResult<offer>> GetReceivedAsync(Guid receiverId, OfferSearchRequest request, CancellationToken cancellationToken = default);
         Task<offer?> GetByIdForUpdateAsync(Guid offerId, CancellationToken cancellationToken);
 
-        Task<bool> ExistsPendingByPostAndSenderAsync(Guid postId, Guid senderId, Guid receiverId, Guid? buyPostId, CancellationToken cancellationToken = default);
+        Task<bool> ExistsActivePendingByPostAndParticipantsAsync(Guid postId, Guid sellerId, Guid buyerId, DateTime now, CancellationToken cancellationToken = default);
 
         Task ClosePendingByPostAsync(Guid postId, HomeCycle.Domain.Enums.OfferStatus status, CancellationToken cancellationToken = default);
         Task AddAsync(offer entity, CancellationToken cancellationToken = default);

@@ -146,12 +146,16 @@ namespace HomeCycle.Infrastructure.Repositories.Offers
             };
         }
 
-        public async Task<bool> ExistsPendingByPostAndSenderAsync(Guid postId, Guid senderId, Guid receiverId, Guid? buyPostId, CancellationToken cancellationToken = default)
+        public async Task<bool> ExistsActivePendingByPostAndParticipantsAsync(Guid postId, Guid sellerId, Guid buyerId, DateTime now, CancellationToken cancellationToken = default)
         {
+            var effectiveFrom = TradingPostRules.TimeoutEffectiveFromUtc;
+            var createdAfter = TradingPostRules.ResponseDueCreatedBefore(now);
             return await _db.Offers.AnyAsync(
                 x => x.PostId == postId
-                  && x.SenderId == senderId && x.ReceiverId == receiverId && x.BuyPostId == buyPostId
-                  && x.OfferStatus == (int)HomeCycle.Domain.Enums.OfferStatus.Pending,
+                  && ((x.SenderId == sellerId && x.ReceiverId == buyerId) ||
+                      (x.SenderId == buyerId && x.ReceiverId == sellerId))
+                  && x.OfferStatus == (int)HomeCycle.Domain.Enums.OfferStatus.Pending
+                  && (x.CreatedAt < effectiveFrom || x.CreatedAt > createdAfter),
                 cancellationToken);
         }
 

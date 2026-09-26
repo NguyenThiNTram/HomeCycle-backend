@@ -177,36 +177,75 @@ namespace HomeCycle.Application.Commons.Errors
     public static class OfferErrors
     {
         public static readonly Error Expired = new Error("Offer.Expired", "Đề nghị đã hết hạn sau 3 phút chờ phản hồi. Bạn có thể gửi đề nghị mới nếu bài đăng còn khả dụng.");
-        public static readonly Error NotFound = new("OFFER_NOT_FOUND", "The offer is not found.");
+        public static readonly Error NotFound = new("OFFER_NOT_FOUND", "Không tìm thấy đề nghị.");
 
-        public static readonly Error Forbidden = new("OFFER_FORBIDDEN", "You do not have permission to access this offer.");
+        public static readonly Error Forbidden = new("OFFER_FORBIDDEN", "Bạn không có quyền thực hiện thao tác với đề nghị này.");
 
-        public static readonly Error NotPending = new("OFFER_NOT_PENDING", "The offer is no longer in pending state.");
+        public static readonly Error NotPending = new("OFFER_NOT_PENDING", "Đề nghị không còn ở trạng thái chờ phản hồi.");
 
-        public static readonly Error PostNotFound = new("OFFER_POST_NOT_FOUND", "The post does not exist.");
+        public static readonly Error PostNotFound = new("OFFER_POST_NOT_FOUND", "Không tìm thấy bài bán được chọn.");
 
-        public static readonly Error PostNotActive = new("OFFER_POST_NOT_ACTIVE", "The post is not active.");
+        public static readonly Error BuyPostNotFound = new("OFFER_BUY_POST_NOT_FOUND", "Không tìm thấy bài mua cần gửi chào bán.");
 
-        public static readonly Error InvalidQuantity = new("OFFER_INVALID_QUANTITY", "Offer quantity must be greater than zero.");
+        public static readonly Error InvalidSellPostType = new("OFFER_INVALID_SELL_POST_TYPE", "Bài đăng được chọn không phải là bài bán.");
 
-        public static readonly Error CannotOfferOwnPost = new("OFFER_CANNOT_OFFER_OWN_POST", "You cannot send an offer for your own post.");
+        public static readonly Error InvalidBuyPostType = new("OFFER_INVALID_BUY_POST_TYPE", "Bài đăng nhận chào bán không phải là bài mua.");
 
-        public static readonly Error DuplicatePending = new("OFFER_DUPLICATE_PENDING", "You already have a pending offer for this post.");
+        public static readonly Error PostNotActive = new("OFFER_POST_NOT_ACTIVE", "Bài đăng hiện không hoạt động.");
 
-        public static readonly Error UnfinishedNegotiation = new("OFFER_UNFINISHED_NEGOTIATION", "Chỉ có thể gửi đề nghị mới cho bài đăng này sau khi hủy thương lượng trước hoặc thanh toán thành công và tạo đơn hàng thành công.");
+        public static readonly Error SellPostNotActive = new("OFFER_SELL_POST_NOT_ACTIVE", "Bài bán đã đóng hoặc không còn hoạt động nên không thể gửi chào.");
 
-        public static readonly Error RoleNotAllowed = new("OFFER_ROLE_NOT_ALLOWED", "Your account role is not allowed to make this offer.");
+        public static readonly Error SellPostExpired = new("OFFER_SELL_POST_EXPIRED", "Bài bán đã hết hạn nên không thể gửi chào.");
+
+        public static readonly Error SellPostOutOfStock = new("OFFER_SELL_POST_OUT_OF_STOCK", "Bài bán không còn sản phẩm khả dụng để gửi chào.");
+
+        public static readonly Error BuyPostNotActive = new("OFFER_BUY_POST_NOT_ACTIVE", "Bài mua hiện đã đóng. Chủ bài cần mở lại hoặc tăng số lượng trước khi nhận chào bán mới.");
+
+        public static readonly Error BuyPostExpired = new("OFFER_BUY_POST_EXPIRED", "Bài mua đã hết thời hạn nhận chào bán.");
+
+        public static readonly Error BuyPostFulfilled = new("OFFER_BUY_POST_FULFILLED", "Bài mua đã đạt đủ số lượng cần thu mua.");
+
+        public static readonly Error BuyerNotActive = new("OFFER_BUYER_NOT_ACTIVE", "Tài khoản chủ bài mua hiện không hoạt động nên chưa thể nhận chào bán.");
+
+        public static readonly Error InvalidQuantity = new("OFFER_INVALID_QUANTITY", "Số lượng đề nghị phải lớn hơn 0.");
+
+        public static readonly Error CannotOfferOwnPost = new("OFFER_CANNOT_OFFER_OWN_POST", "Bạn không thể gửi đề nghị cho bài đăng của chính mình.");
+
+        public static readonly Error DuplicatePending = new("OFFER_DUPLICATE_PENDING", "Bài bán này đang có đề nghị chờ phản hồi giữa bạn và người mua. Vui lòng xử lý hoặc chờ đề nghị hết hạn sau 3 phút trước khi gửi lại.");
+
+        public static readonly Error UnfinishedNegotiation = new("OFFER_UNFINISHED_NEGOTIATION", "Bài bán này đang có phiên thương lượng hoặc thỏa thuận chưa hoàn tất với người mua. Vui lòng hoàn tất, hủy hoặc chờ phiên hiện tại hết hạn trước khi gửi lại.");
+
+        public static readonly Error RoleNotAllowed = new("OFFER_ROLE_NOT_ALLOWED", "Loại tài khoản của bạn không được phép thực hiện thao tác chào bán này.");
 
         public static readonly Error BusinessCannotOfferBuyPost = new("OFFER_B2B_NOT_ALLOWED", "Business accounts cannot offer on a business buy post.");
-        public static readonly Error UserNotActive = new("OFFER_USER_NOT_ACTIVE", "Your account is not active. Please verify your email or contact support.");
+        public static readonly Error UserNotActive = new("OFFER_USER_NOT_ACTIVE", "Tài khoản hiện không hoạt động nên không thể gửi hoặc nhận đề nghị.");
 
         public static Error PriceOutOfRange(decimal minPrice, decimal maxPrice)
             => new("OFFER_PRICE_OUT_OF_RANGE",
-                   $"Offer price must be between {minPrice:N0} and {maxPrice:N0}.");
+                   $"Giá đề nghị phải nằm trong khoảng từ {minPrice:N0}đ đến {maxPrice:N0}đ.");
+
+        public static Error SellerRequestPriceOutOfRange(decimal offerPrice, decimal? minPrice, decimal? maxPrice)
+        {
+            var allowedRange = minPrice.HasValue && maxPrice.HasValue
+                ? $"từ {minPrice.Value:N0}đ đến {maxPrice.Value:N0}đ"
+                : minPrice.HasValue
+                    ? $"từ {minPrice.Value:N0}đ trở lên"
+                    : $"không vượt quá {maxPrice!.Value:N0}đ";
+            return new Error("OFFER_PRICE_OUT_OF_RANGE",
+                $"Giá chào bán {offerPrice:N0}đ nằm ngoài khoảng {allowedRange} đang hiển thị trên bài mua. Vui lòng điều chỉnh giá rồi gửi lại.");
+        }
 
         public static Error QuantityExceedsRemaining(int requested, int remaining)
             => new("OFFER_QUANTITY_EXCEEDS_REMAINING",
-                   $"Offer quantity ({requested}) exceeds the remaining quantity ({remaining}).");
+                   $"Số lượng đề nghị ({requested}) vượt quá số lượng còn khả dụng ({remaining}).");
+
+        public static Error SellQuantityExceedsRemaining(int requested, int remaining)
+            => new("OFFER_SELL_QUANTITY_EXCEEDS_REMAINING",
+                $"Số lượng chào bán ({requested}) vượt quá số lượng sản phẩm còn khả dụng ({remaining}) của bài bán.");
+
+        public static Error BuyQuantityExceedsRemaining(int requested, int remaining)
+            => new("OFFER_BUY_QUANTITY_EXCEEDS_REMAINING",
+                $"Số lượng chào bán ({requested}) vượt quá số lượng bài mua còn cần thu mua ({remaining}).");
 
         public static Error OfferTermsChanged(decimal currentPrice, int currentQuantity)
             => new("OFFER_TERMS_CHANGED",
