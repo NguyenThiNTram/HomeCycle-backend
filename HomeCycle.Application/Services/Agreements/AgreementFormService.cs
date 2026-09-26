@@ -126,7 +126,7 @@ namespace HomeCycle.Application.Services.Agreements
 
         public async Task<int> ExpireDueAsync(int batchSize, CancellationToken cancellationToken = default, Guid? postId = null)
         {
-            var ids = await _agreementRepo.GetDueIdsAsync(DateTime.UtcNow, postId, cancellationToken);
+            var ids = await _agreementRepo.GetDueIdsAsync(DateTime.UtcNow, batchSize, postId, cancellationToken);
             var processed = 0;
             foreach (var batch in ids.Chunk(Math.Max(1, batchSize)))
             foreach (var id in batch)
@@ -170,10 +170,13 @@ namespace HomeCycle.Application.Services.Agreements
             await _agreementRepo.UpdateAsync(entity, ct);
             await _negotiationRepo.UpdateAsync(negotiation, ct);
             await _offerRepo.UpdateAsync(offer, ct);
+            var expirationMessage = offer.BuyPostId.HasValue
+                ? "Đã hết 15 phút xác nhận và thanh toán. Phần giữ chỗ đã được giải phóng. Bạn có thể gửi yêu cầu mới nếu bài đăng còn khả dụng. Nếu bài mua đã đóng, chủ bài cần mở lại hoặc gia hạn số lượng trước."
+                : "Đã hết 15 phút xác nhận và thanh toán. Phần giữ chỗ đã được giải phóng. Bạn có thể gửi yêu cầu mới nếu bài đăng còn khả dụng.";
             foreach (var recipient in new[] { entity.BuyerId, entity.SellerId }.Distinct())
             {
                 var notification = await AddAgreementNotificationPendingAsync(recipient, "Thỏa thuận đã hết hạn",
-                    "Đã hết 15 phút xác nhận và thanh toán. Phần giữ chỗ đã được giải phóng. Bạn có thể gửi yêu cầu mới nếu bài đăng còn khả dụng; bài mua đã đóng cần được chủ bài mở lại.",
+                    expirationMessage,
                     entity.AgreementId, ct);
                 _unitOfWork.RegisterAfterCommit(() => _notificationService.PublishCreatedSafelyAsync(notification));
             }

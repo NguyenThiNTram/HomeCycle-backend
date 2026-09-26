@@ -20,7 +20,7 @@ namespace HomeCycle.Infrastructure.Repositories.Agreements
     {
         private readonly HomeCycleDbContext _db;
 
-        public async Task<IReadOnlyList<Guid>> GetDueIdsAsync(DateTime now, Guid? postId, CancellationToken cancellationToken = default)
+        public async Task<IReadOnlyList<Guid>> GetDueIdsAsync(DateTime now, int batchSize, Guid? postId, CancellationToken cancellationToken = default)
         {
             var effectiveFrom = TradingPostRules.TimeoutEffectiveFromUtc;
             var createdBefore = TradingPostRules.PaymentDueCreatedBefore(now);
@@ -28,7 +28,10 @@ namespace HomeCycle.Infrastructure.Repositories.Agreements
                 .Where(x => (x.AgreementStatus == (int)AgreementStatus.Pending || x.AgreementStatus == (int)AgreementStatus.Awaiting_Payment) &&
                     x.CreatedAt >= effectiveFrom && x.CreatedAt <= createdBefore &&
                     (!postId.HasValue || x.PostId == postId || x.Negotiation.Offer.BuyPostId == postId))
-                .OrderBy(x => x.CreatedAt).Select(x => x.AgreementId).ToListAsync(cancellationToken);
+                .OrderBy(x => x.CreatedAt)
+                .Select(x => x.AgreementId)
+                .Take(Math.Max(1, batchSize))
+                .ToListAsync(cancellationToken);
         }
 
         public AgreementFormRepository(HomeCycleDbContext db)

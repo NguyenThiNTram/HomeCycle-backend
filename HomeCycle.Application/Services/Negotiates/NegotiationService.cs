@@ -78,7 +78,7 @@ namespace HomeCycle.Application.Services.Negotiates
 
         public async Task<int> ExpireDueAsync(int batchSize, CancellationToken cancellationToken = default, Guid? postId = null)
         {
-            var ids = await _negotiationRepository.GetDueIdsAsync(DateTime.UtcNow, postId, cancellationToken);
+            var ids = await _negotiationRepository.GetDueIdsAsync(DateTime.UtcNow, batchSize, postId, cancellationToken);
             var processed = 0;
             foreach (var batch in ids.Chunk(Math.Max(1, batchSize)))
             foreach (var id in batch)

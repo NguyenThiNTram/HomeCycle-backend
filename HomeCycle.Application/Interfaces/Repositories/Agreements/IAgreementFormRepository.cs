@@ -12,7 +12,7 @@ namespace HomeCycle.Application.Interfaces.Repositories.Agreements
 {
     public interface IAgreementFormRepository
     {
-        Task<IReadOnlyList<Guid>> GetDueIdsAsync(DateTime now, Guid? postId, CancellationToken cancellationToken = default);
+        Task<IReadOnlyList<Guid>> GetDueIdsAsync(DateTime now, int batchSize, Guid? postId, CancellationToken cancellationToken = default);
         Task<agreement_form?> GetByNegotiationIdAsync(Guid negotiationId, CancellationToken cancellationToken = default);
         Task<agreement_form?> GetByIdAsync(Guid agreementId, CancellationToken cancellationToken = default);
         Task AddAsync(agreement_form agreement, CancellationToken cancellationToken = default);

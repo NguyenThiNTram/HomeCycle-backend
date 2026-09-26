@@ -100,7 +100,7 @@ namespace HomeCycle.Application.Services.Offers
 
         public async Task<int> ExpireDueAsync(int batchSize, CancellationToken cancellationToken = default, Guid? postId = null)
         {
-            var ids = await _offerRepository.GetDueIdsAsync(DateTime.UtcNow, postId, cancellationToken);
+            var ids = await _offerRepository.GetDueIdsAsync(DateTime.UtcNow, batchSize, postId, cancellationToken);
             var processed = 0;
             foreach (var batch in ids.Chunk(Math.Max(1, batchSize)))
             foreach (var id in batch)

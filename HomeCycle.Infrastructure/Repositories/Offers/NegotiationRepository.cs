@@ -25,7 +25,7 @@ namespace HomeCycle.Infrastructure.Repositories.Offers
             _db = db;
         }
 
-        public async Task<IReadOnlyList<Guid>> GetDueIdsAsync(DateTime now, Guid? postId, CancellationToken cancellationToken = default)
+        public async Task<IReadOnlyList<Guid>> GetDueIdsAsync(DateTime now, int batchSize, Guid? postId, CancellationToken cancellationToken = default)
         {
             var effectiveFrom = TradingPostRules.TimeoutEffectiveFromUtc;
             var activityBefore = TradingPostRules.NegotiationDueActivityBefore(now);
@@ -40,6 +40,7 @@ namespace HomeCycle.Infrastructure.Repositories.Offers
                     (!postId.HasValue || x.PostId == postId || x.Offer.BuyPostId == postId))
                 .OrderBy(x => x.LastMessageAt ?? x.CreatedAt)
                 .Select(x => x.NegotiationId)
+                .Take(Math.Max(1, batchSize))
                 .ToListAsync(cancellationToken);
         }
 

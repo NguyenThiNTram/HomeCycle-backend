@@ -21,7 +21,7 @@ namespace HomeCycle.Infrastructure.Repositories.Offers
     {
         private readonly HomeCycleDbContext _db;
 
-        public async Task<IReadOnlyList<Guid>> GetDueIdsAsync(DateTime now, Guid? postId, CancellationToken cancellationToken = default)
+        public async Task<IReadOnlyList<Guid>> GetDueIdsAsync(DateTime now, int batchSize, Guid? postId, CancellationToken cancellationToken = default)
         {
             var effectiveFrom = TradingPostRules.TimeoutEffectiveFromUtc;
             var createdBefore = TradingPostRules.ResponseDueCreatedBefore(now);
@@ -29,7 +29,10 @@ namespace HomeCycle.Infrastructure.Repositories.Offers
                 .Where(x => x.OfferStatus == (int)HomeCycle.Domain.Enums.OfferStatus.Pending &&
                     x.CreatedAt >= effectiveFrom && x.CreatedAt <= createdBefore &&
                     (!postId.HasValue || x.PostId == postId || x.BuyPostId == postId))
-                .OrderBy(x => x.CreatedAt).Select(x => x.OfferId).ToListAsync(cancellationToken);
+                .OrderBy(x => x.CreatedAt)
+                .Select(x => x.OfferId)
+                .Take(Math.Max(1, batchSize))
+                .ToListAsync(cancellationToken);
         }
 
         private readonly HomeCycle.Application.Interfaces.Generics.IUnitOfWork _unit;
