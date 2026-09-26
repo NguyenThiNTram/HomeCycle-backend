@@ -28,6 +28,7 @@ namespace HomeCycle.Application.Services.Negotiates
         private readonly INegotiationRepository _negotiationRepository;
         private readonly IConversationRepository _conversationRepository;
         private readonly IOfferRepository _offerRepository;
+        private readonly INegotiationService _negotiationService;
         private readonly IValidator<SendMessageRequest> _sendValidator;
         private readonly IChatRealtimePublisher _realtimePublisher;
         private readonly IUnitOfWork _unitOfWork;
@@ -39,6 +40,7 @@ namespace HomeCycle.Application.Services.Negotiates
             INegotiationRepository negotiationRepository,
             IConversationRepository conversationRepository,
             IOfferRepository offerRepository,
+            INegotiationService negotiationService,
             IValidator<SendMessageRequest> sendValidator,
             IChatRealtimePublisher realtimePublisher,
             IUnitOfWork unitOfWork,
@@ -49,6 +51,7 @@ namespace HomeCycle.Application.Services.Negotiates
             _negotiationRepository = negotiationRepository;
             _conversationRepository = conversationRepository;
             _offerRepository = offerRepository;
+            _negotiationService = negotiationService;
             _sendValidator = sendValidator;
             _realtimePublisher = realtimePublisher;
             _unitOfWork = unitOfWork;
@@ -151,17 +154,23 @@ namespace HomeCycle.Application.Services.Negotiates
                     return Result<MessageResponse>.Success( _mapper.Map<MessageResponse>(existingMessage));
                 }
 
+                if (negotiationStatus == NegotiationStatus.Expired)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<MessageResponse>.Fail(NegotiationErrors.Expired);
+                }
+
+                if (TradingPostRules.IsExpired(TradingPostRules.NegotiationDeadline(negotiation)))
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    await _negotiationService.ExpireIfDueAsync(negotiationId, cancellationToken);
+                    return Result<MessageResponse>.Fail(NegotiationErrors.Expired);
+                }
+
                 if (!CanSendTextMessage(negotiationStatus))
                 {
                     await _unitOfWork.RollbackTransactionAsync(cancellationToken);
                     return Result<MessageResponse>.Fail(MessageErrors.NegotiationReadOnly);
-                }
-
-                var pendingProposal = await _messageRepository.GetPendingProposalByNegotiationAsync(negotiationId, cancellationToken);
-                if (TradingPostRules.IsExpired(TradingPostRules.ResponseDeadline(pendingProposal)))
-                {
-                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
-                    return Result<MessageResponse>.Fail(NegotiationErrors.Expired);
                 }
 
                 var now = DateTime.UtcNow;
@@ -488,6 +497,7 @@ namespace HomeCycle.Application.Services.Negotiates
                     kv => kv.Value.UnreadByNegotiation.ToDictionary(
                         innerKv => innerKv.Key,
                         innerKv => (int?)innerKv.Value));
+                var currentNegotiation = await _negotiationRepository.GetByIdAsync(negotiationId, timeout.Token);
 
                 await _realtimePublisher.PublishConversationUpdatedAsync(
                     new[] { sellerId, buyerId },
@@ -503,8 +513,7 @@ namespace HomeCycle.Application.Services.Negotiates
                         CurrentOfferQuantity = quantity,
                         CurrentOfferVersion = version,
                         NegotiationStatus = status,
-                        ResponseDeadlineAt = status == NegotiationStatus.Open
-                            ? TradingPostRules.ResponseDeadline(await _messageRepository.GetPendingProposalByNegotiationAsync(negotiationId, timeout.Token)) : null,
+                        ResponseDeadlineAt = TradingPostRules.NegotiationDeadline(currentNegotiation),
 
                         ConversationUnreadByUser = conversationUnread,
                         NegotiationUnreadByUser = negotiationUnread

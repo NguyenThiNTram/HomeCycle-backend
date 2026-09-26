@@ -176,7 +176,7 @@ namespace HomeCycle.Application.Commons.Errors
 
     public static class OfferErrors
     {
-        public static readonly Error Expired = new Error("Offer.Expired", "Yêu cầu đã hết hạn. Bạn có thể gửi yêu cầu mới khi giao dịch cũ đã hết hiệu lực.");
+        public static readonly Error Expired = new Error("Offer.Expired", "Đề nghị đã hết hạn sau 3 phút chờ phản hồi. Bạn có thể gửi đề nghị mới nếu bài đăng còn khả dụng.");
         public static readonly Error NotFound = new("OFFER_NOT_FOUND", "The offer is not found.");
 
         public static readonly Error Forbidden = new("OFFER_FORBIDDEN", "You do not have permission to access this offer.");
@@ -216,7 +216,7 @@ namespace HomeCycle.Application.Commons.Errors
 
     public static class NegotiationErrors
     {
-        public static readonly Error Expired = new Error("Negotiation.Expired", "Yêu cầu đã hết hạn. Bạn có thể gửi yêu cầu mới khi giao dịch cũ đã hết hiệu lực.");
+        public static readonly Error Expired = new Error("Negotiation.Expired", "Phiên thương lượng đã hết hạn sau 5 phút không có hoạt động. Bạn có thể gửi yêu cầu mới nếu bài đăng còn khả dụng.");
         public static readonly Error NotFound = new("NEGOTIATION_NOT_FOUND", "The negotiation is not found.");
 
         public static readonly Error NotOpen = new("NEGOTIATION_NOT_OPEN", "The negotiation is not in open state.");
@@ -411,9 +411,9 @@ namespace HomeCycle.Application.Commons.Errors
 
     public static class AgreementErrors
     {
-        public static readonly Error Expired = new Error("Agreement.Expired", "Thỏa thuận đã hết hạn 24 giờ. Bạn có thể gửi yêu cầu mới nếu bài đăng còn khả dụng.");
+        public static readonly Error Expired = new Error("Agreement.Expired", "Thỏa thuận đã hết hạn 15 phút. Bạn có thể gửi yêu cầu mới nếu bài đăng còn khả dụng.");
         public static readonly Error PaymentResolutionPending = new Error("Agreement.PaymentResolutionPending", "Đã hết hạn xác nhận và thanh toán. Hệ thống đang đối soát giao dịch; phần giữ chỗ chưa được giải phóng. Vui lòng không thanh toán thêm.");
-        public static readonly Error DeadlinePassed = new Error("Agreement.DeadlinePassed", "Đã hết 24 giờ xác nhận và thanh toán. Không thể thanh toán thêm; vui lòng chờ hệ thống đối soát và xử lý hết hạn.");
+        public static readonly Error DeadlinePassed = new Error("Agreement.DeadlinePassed", "Đã hết 15 phút xác nhận và thanh toán. Không thể thanh toán thêm; vui lòng chờ hệ thống đối soát và xử lý hết hạn.");
         public static readonly Error NotFound =
             new("Agreement.NotFound", "Không tìm thấy thỏa thuận.");
 

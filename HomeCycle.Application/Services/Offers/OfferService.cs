@@ -135,7 +135,7 @@ namespace HomeCycle.Application.Services.Offers
             foreach (var actorId in new[] { entity.SenderId, entity.ReceiverId }.Distinct())
             {
                 var notification = await AddOfferNotificationPendingAsync(entity, actorId,
-                    "Đề nghị đã hết hạn", "Đã hết 15 phút phản hồi. Bạn có thể gửi đề nghị mới nếu bài đăng còn khả dụng.", ct);
+                    "Đề nghị đã hết hạn", "Đã hết 3 phút phản hồi. Bạn có thể gửi đề nghị mới nếu bài đăng còn khả dụng.", ct);
                 _unitOfWork.RegisterAfterCommit(() => _notificationService.PublishCreatedSafelyAsync(notification));
             }
             await _auditService.EnqueueAsync(new AuditEvent
@@ -831,7 +831,7 @@ namespace HomeCycle.Application.Services.Offers
                 await PublishOfferUpdatedSafelyAsync(offer);
 
                 var response = _mapper.Map<NegotiationResponse>(negotiation);
-                response.ResponseDeadlineAt = TradingPostRules.ResponseDeadline(counterMessage);
+                response.ResponseDeadlineAt = TradingPostRules.NegotiationDeadline(negotiation);
                 return Result<NegotiationResponse>.Success(response);
             }
             catch (DbUpdateException exception) when (IsUniqueViolation(exception))
@@ -1058,6 +1058,7 @@ namespace HomeCycle.Application.Services.Offers
                     kv => kv.Value.UnreadByNegotiation.ToDictionary(
                         innerKv => innerKv.Key,
                         innerKv => (int?)innerKv.Value));
+                var currentNegotiation = await _negotiationRepository.GetByIdAsync(negotiationId, timeout.Token);
 
                 await _realtimePublisher.PublishConversationUpdatedAsync(
                     new[] { sellerId, buyerId },
@@ -1073,8 +1074,7 @@ namespace HomeCycle.Application.Services.Offers
                         CurrentOfferQuantity = quantity,
                         CurrentOfferVersion = version,
                         NegotiationStatus = status,
-                        ResponseDeadlineAt = status == NegotiationStatus.Open
-                            ? TradingPostRules.ResponseDeadline(await _messageRepository.GetPendingProposalByNegotiationAsync(negotiationId, timeout.Token)) : null,
+                        ResponseDeadlineAt = TradingPostRules.NegotiationDeadline(currentNegotiation),
                         //UnreadCountByUser = unread
 
                         ConversationUnreadByUser = conversationUnread,

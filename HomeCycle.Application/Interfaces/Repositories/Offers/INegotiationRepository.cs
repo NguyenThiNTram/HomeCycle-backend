@@ -12,6 +12,7 @@ namespace HomeCycle.Application.Interfaces.Repositories.Offers
 {
     public interface INegotiationRepository
     {
+        Task<IReadOnlyList<Guid>> GetDueIdsAsync(DateTime now, Guid? postId, CancellationToken cancellationToken = default);
         Task<bool> HasAgreementAsync(Guid negotiationId, CancellationToken cancellationToken = default);
         Task<negotiation?> GetByOfferIdAsync(Guid offerId, CancellationToken cancellationToken = default);
 

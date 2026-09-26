@@ -193,7 +193,7 @@ namespace HomeCycle.Application.Services.Negotiates
             {
                 unreadByNegotiation.TryGetValue(negotiation.NegotiationId, out var unreadCount);
                 var item = ToNegotiationListItemResponse(negotiation, userId, unreadCount);
-                item.ResponseDeadlineAt = TradingPostRules.ResponseDeadline(await _messageRepository.GetPendingProposalByNegotiationAsync(negotiation.NegotiationId, cancellationToken));
+                item.ResponseDeadlineAt = TradingPostRules.NegotiationDeadline(negotiation);
                 item.PaymentDeadlineAt = TradingPostRules.PaymentDeadline(await _agreementRepository.GetByNegotiationIdAsync(negotiation.NegotiationId, cancellationToken));
                 items.Add(item);
             }
@@ -381,6 +381,7 @@ namespace HomeCycle.Application.Services.Negotiates
                     item => item.Value.UnreadByNegotiation.ToDictionary(
                         unread => unread.Key,
                         unread => (int?)unread.Value));
+                var currentNegotiation = await _negotiationRepository.GetByIdAsync(negotiationId, timeout.Token);
 
                 await _realtimePublisher.PublishConversationUpdatedAsync(
                     new[] { userOneId, userTwoId },
@@ -399,6 +400,7 @@ namespace HomeCycle.Application.Services.Negotiates
                         CurrentOfferQuantity = quantity,
                         CurrentOfferVersion = version,
                         NegotiationStatus = status,
+                        ResponseDeadlineAt = TradingPostRules.NegotiationDeadline(currentNegotiation),
 
                         ConversationUnreadByUser = conversationUnread,
                         NegotiationUnreadByUser = negotiationUnread

@@ -18,6 +18,7 @@ using HomeCycle.Application.Interfaces.Repositories.Offers;
 using HomeCycle.Application.Interfaces.Repositories.Posts;
 using HomeCycle.Application.Interfaces.Repositories.Products;
 using HomeCycle.Application.Interfaces.Services.Agreements;
+using HomeCycle.Application.Interfaces.Services.Negotiates;
 using HomeCycle.Application.Interfaces.Services.Notifications;
 using HomeCycle.Application.Interfaces.Services.Posts;
 using HomeCycle.Domain.Entities;
@@ -52,6 +53,7 @@ namespace HomeCycle.Application.Services.Agreements
         private readonly INotificationService _notificationService;
         private readonly IAuditService _auditService;
         private readonly HomeCycle.Application.Interfaces.Services.Payments.IPaymentService _paymentService;
+        private readonly INegotiationService _negotiationService;
         private readonly IValidator<CreateAgreementFormRequest> _createValidator;
         private readonly IValidator<UpdateAgreementFormRequest> _updateValidator;
         private readonly IValidator<CalculateGhnFeeRequest> _shippingFeeValidator;
@@ -90,7 +92,8 @@ namespace HomeCycle.Application.Services.Agreements
             HomeCycle.Application.Interfaces.Repositories.Orders.IOrderRepository orderRepo,
             Microsoft.Extensions.Configuration.IConfiguration configuration,
             HomeCycle.Application.Interfaces.Repositories.Profiles.IBusinessProfileRepository businessProfileRepo,
-            HomeCycle.Application.Interfaces.Services.Payments.IPaymentService paymentService)
+            HomeCycle.Application.Interfaces.Services.Payments.IPaymentService paymentService,
+            INegotiationService negotiationService)
         {
             _unitOfWork = unitOfWork;
             _agreementRepo = agreementRepo;
@@ -108,6 +111,7 @@ namespace HomeCycle.Application.Services.Agreements
             _notificationService = notificationService;
             _auditService = auditService;
             _paymentService = paymentService;
+            _negotiationService = negotiationService;
             _createValidator = createValidator;
             _updateValidator = updateValidator;
             _shippingFeeValidator = shippingFeeValidator;
@@ -169,7 +173,7 @@ namespace HomeCycle.Application.Services.Agreements
             foreach (var recipient in new[] { entity.BuyerId, entity.SellerId }.Distinct())
             {
                 var notification = await AddAgreementNotificationPendingAsync(recipient, "Thỏa thuận đã hết hạn",
-                    "Đã hết 24 giờ xác nhận và thanh toán. Phần giữ chỗ đã được giải phóng. Bạn có thể gửi yêu cầu mới nếu bài đăng còn khả dụng; bài mua đã đóng cần được chủ bài mở lại.",
+                    "Đã hết 15 phút xác nhận và thanh toán. Phần giữ chỗ đã được giải phóng. Bạn có thể gửi yêu cầu mới nếu bài đăng còn khả dụng; bài mua đã đóng cần được chủ bài mở lại.",
                     entity.AgreementId, ct);
                 _unitOfWork.RegisterAfterCommit(() => _notificationService.PublishCreatedSafelyAsync(notification));
             }
@@ -318,6 +322,14 @@ namespace HomeCycle.Application.Services.Agreements
 
                 if (negotiation.SellerId != currentUserId)
                     return Result<Guid>.Fail(new Error("Auth.Forbidden", "Chỉ người bán mới có quyền tạo thỏa thuận."));
+
+                if (negotiation.NegotiationStatus == NegotiationStatus.Expired ||
+                    TradingPostRules.IsExpired(TradingPostRules.NegotiationDeadline(negotiation)))
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    await _negotiationService.ExpireIfDueAsync(request.NegotiationId, cancellationToken);
+                    return Result<Guid>.Fail(NegotiationErrors.Expired);
+                }
 
                 var existingAgreement = await _agreementRepo.GetByNegotiationIdAsync(request.NegotiationId, cancellationToken);
                 if (existingAgreement != null)

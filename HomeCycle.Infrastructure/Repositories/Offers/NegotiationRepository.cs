@@ -1,4 +1,5 @@
 using HomeCycle.Application.Commons.Paginations;
+using HomeCycle.Application.Commons.Helpers;
 using HomeCycle.Application.DTOs.Requests.Negotiates;
 using HomeCycle.Application.DTOs.Responses.Negotiations;
 using HomeCycle.Application.Interfaces.Repositories.Offers;
@@ -22,6 +23,24 @@ namespace HomeCycle.Infrastructure.Repositories.Offers
         public NegotiationRepository(HomeCycleDbContext db)
         {
             _db = db;
+        }
+
+        public async Task<IReadOnlyList<Guid>> GetDueIdsAsync(DateTime now, Guid? postId, CancellationToken cancellationToken = default)
+        {
+            var effectiveFrom = TradingPostRules.TimeoutEffectiveFromUtc;
+            var activityBefore = TradingPostRules.NegotiationDueActivityBefore(now);
+
+            return await _db.Negotiations
+                .AsNoTracking()
+                .Where(x =>
+                    (x.NegotiationStatus == (int)NegotiationStatus.Open || x.NegotiationStatus == (int)NegotiationStatus.Agreed) &&
+                    x.Agreement_Form == null &&
+                    (x.LastMessageAt ?? x.CreatedAt) >= effectiveFrom &&
+                    (x.LastMessageAt ?? x.CreatedAt) <= activityBefore &&
+                    (!postId.HasValue || x.PostId == postId || x.Offer.BuyPostId == postId))
+                .OrderBy(x => x.LastMessageAt ?? x.CreatedAt)
+                .Select(x => x.NegotiationId)
+                .ToListAsync(cancellationToken);
         }
 
         public Task<bool> HasAgreementAsync(Guid negotiationId, CancellationToken cancellationToken = default) =>

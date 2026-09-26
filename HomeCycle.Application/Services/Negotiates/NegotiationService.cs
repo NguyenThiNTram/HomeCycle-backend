@@ -78,46 +78,67 @@ namespace HomeCycle.Application.Services.Negotiates
 
         public async Task<int> ExpireDueAsync(int batchSize, CancellationToken cancellationToken = default, Guid? postId = null)
         {
-            var ids = await _messageRepository.GetDueIdsAsync(DateTime.UtcNow, postId, cancellationToken);
+            var ids = await _negotiationRepository.GetDueIdsAsync(DateTime.UtcNow, postId, cancellationToken);
             var processed = 0;
             foreach (var batch in ids.Chunk(Math.Max(1, batchSize)))
             foreach (var id in batch)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                await _unitOfWork.BeginTransactionAsync(cancellationToken);
                 try
                 {
-                    var snapshot = await _negotiationRepository.GetByIdAsync(id, cancellationToken);
-                    if (snapshot != null)
-                    {
-                        await _postRepository.LockAsync(snapshot.PostId, snapshot.Offer?.BuyPostId, cancellationToken);
-                        var entity = await _negotiationRepository.GetByIdForUpdateAsync(id, cancellationToken);
-                        if (entity != null && await ExpireLockedNegotiationAsync(entity, cancellationToken)) processed++;
-                    }
-                    await _unitOfWork.CommitTransactionAsync(cancellationToken);
+                    if (await ExpireIfDueAsync(id, cancellationToken)) processed++;
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
                     _logger.LogError(ex, "Không thể xử lý hết hạn thương lượng {NegotiationId}", id);
                 }
-                finally
-                {
-                    await _unitOfWork.RollbackTransactionAsync(CancellationToken.None);
-                    _unitOfWork.ClearTrackedEntities();
-                }
             }
             return processed;
         }
 
+        public async Task<bool> ExpireIfDueAsync(Guid negotiationId, CancellationToken cancellationToken = default)
+        {
+            await _unitOfWork.BeginTransactionAsync(cancellationToken);
+            try
+            {
+                var snapshot = await _negotiationRepository.GetByIdAsync(negotiationId, cancellationToken);
+                if (snapshot == null)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return false;
+                }
+
+                await _postRepository.LockAsync(snapshot.PostId, snapshot.Offer?.BuyPostId, cancellationToken);
+                var entity = await _negotiationRepository.GetByIdForUpdateAsync(negotiationId, cancellationToken);
+                var expired = entity != null && await ExpireLockedNegotiationAsync(entity, cancellationToken);
+                await _unitOfWork.CommitTransactionAsync(cancellationToken);
+                return expired;
+            }
+            catch
+            {
+                await _unitOfWork.RollbackTransactionAsync(CancellationToken.None);
+                throw;
+            }
+            finally
+            {
+                _unitOfWork.ClearTrackedEntities();
+            }
+        }
+
         private async Task<bool> ExpireLockedNegotiationAsync(negotiation entity, CancellationToken ct)
         {
-            if (entity.NegotiationStatus != NegotiationStatus.Open) return false;
+            if (entity.NegotiationStatus is not (NegotiationStatus.Open or NegotiationStatus.Agreed) ||
+                await _negotiationRepository.HasAgreementAsync(entity.NegotiationId, ct) ||
+                !TradingPostRules.IsExpired(TradingPostRules.NegotiationDeadline(entity))) return false;
+
             var proposal = await _messageRepository.GetPendingProposalForUpdateAsync(entity.NegotiationId, ct);
-            if (proposal == null || !TradingPostRules.IsExpired(TradingPostRules.ResponseDeadline(proposal))) return false;
             var now = DateTime.UtcNow;
-            if (!await _messageRepository.TryUpdateProposalStatusAsync(proposal.MessageId, MessageOfferStatus.Pending, MessageOfferStatus.Expired, now, ct)) return false;
-            proposal.OfferStatus = MessageOfferStatus.Expired;
-            proposal.UpdatedAt = now;
+            if (proposal != null)
+            {
+                if (!await _messageRepository.TryUpdateProposalStatusAsync(proposal.MessageId, MessageOfferStatus.Pending, MessageOfferStatus.Expired, now, ct)) return false;
+                proposal.OfferStatus = MessageOfferStatus.Expired;
+                proposal.UpdatedAt = now;
+            }
             entity.NegotiationStatus = NegotiationStatus.Expired;
             await _negotiationRepository.UpdateAsync(entity, ct);
             var offer = await _offerRepository.GetByIdForUpdateAsync(entity.OfferId, ct);
@@ -132,7 +153,7 @@ namespace HomeCycle.Application.Services.Negotiates
             {
                 var notification = await _notificationService.AddPendingAsync(
                     new HomeCycle.Application.DTOs.Responses.Notifications.CreateNotificationCommand(recipient,
-                        "Thương lượng đã hết hạn", "Đề nghị trả giá đã quá 15 phút phản hồi. Phiên thương lượng đã đóng; bạn có thể gửi yêu cầu mới.",
+                        "Thương lượng đã hết hạn", "Phiên thương lượng không có hoạt động trong 5 phút nên đã đóng. Bạn có thể gửi yêu cầu mới.",
                         NotificationTargetType.Offer, entity.OfferId), ct);
                 _unitOfWork.RegisterAfterCommit(() => _notificationService.PublishCreatedSafelyAsync(notification));
             }
@@ -142,13 +163,25 @@ namespace HomeCycle.Application.Services.Negotiates
                 Outcome = AuditOutcome.Success, ActorType = AuditActorType.System,
                 TargetType = AuditTargetTypes.Negotiation, TargetId = entity.NegotiationId
             }, ct);
-            var response = _mapper.Map<MessageResponse>(proposal);
+            var response = proposal == null
+                ? new MessageResponse
+                {
+                    MessageId = Guid.Empty,
+                    NegotiationId = entity.NegotiationId,
+                    ConversationId = entity.ConversationId,
+                    SenderId = Guid.Empty,
+                    MessageType = MessageType.System,
+                    MessageContent = "Phiên thương lượng đã hết hạn do không có hoạt động trong 5 phút.",
+                    CreatedAt = now,
+                    UpdatedAt = now
+                }
+                : _mapper.Map<MessageResponse>(proposal);
             _unitOfWork.RegisterAfterCommit(async () =>
             {
-                await PublishMessageUpdatedSafelyAsync(entity.NegotiationId, response);
+                if (proposal != null) await PublishMessageUpdatedSafelyAsync(entity.NegotiationId, response);
                 if (entity.ConversationId.HasValue)
                 {
-                    await PublishConversationMessageUpdatedSafelyAsync(entity.ConversationId.Value, response);
+                    if (proposal != null) await PublishConversationMessageUpdatedSafelyAsync(entity.ConversationId.Value, response);
                     await PublishConversationUpdatedSafelyAsync(entity.ConversationId.Value, entity.NegotiationId,
                         entity.SellerId, entity.BuyerId, response, NegotiationStatus.Expired,
                         offer?.OfferPrice, offer?.OfferQuantity ?? 0, offer?.Version);
@@ -175,7 +208,7 @@ namespace HomeCycle.Application.Services.Negotiates
                 cancellationToken);
 
             var response = ToDetailResponse(negotiation, messages.Items);
-            response.ResponseDeadlineAt = TradingPostRules.ResponseDeadline(await _messageRepository.GetPendingProposalByNegotiationAsync(negotiation.NegotiationId, cancellationToken));
+            response.ResponseDeadlineAt = TradingPostRules.NegotiationDeadline(negotiation);
             response.PaymentDeadlineAt = TradingPostRules.PaymentDeadline(await _agreementRepository.GetByNegotiationIdAsync(negotiation.NegotiationId, cancellationToken));
             return Result<NegotiationDetailResponse>.Success(response);
         }
@@ -195,7 +228,7 @@ namespace HomeCycle.Application.Services.Negotiates
                 cancellationToken);
 
             var response = ToDetailResponse(negotiation, messages.Items);
-            response.ResponseDeadlineAt = TradingPostRules.ResponseDeadline(await _messageRepository.GetPendingProposalByNegotiationAsync(negotiation.NegotiationId, cancellationToken));
+            response.ResponseDeadlineAt = TradingPostRules.NegotiationDeadline(negotiation);
             response.PaymentDeadlineAt = TradingPostRules.PaymentDeadline(await _agreementRepository.GetByNegotiationIdAsync(negotiation.NegotiationId, cancellationToken));
             return Result<NegotiationDetailResponse>.Success(response);
         }
@@ -208,7 +241,7 @@ namespace HomeCycle.Application.Services.Negotiates
             foreach (var n in paged.Items)
             {
                 var item = ToListItemResponse(n, userId);
-                item.ResponseDeadlineAt = TradingPostRules.ResponseDeadline(await _messageRepository.GetPendingProposalByNegotiationAsync(n.NegotiationId, cancellationToken));
+                item.ResponseDeadlineAt = TradingPostRules.NegotiationDeadline(n);
                 item.PaymentDeadlineAt = TradingPostRules.PaymentDeadline(await _agreementRepository.GetByNegotiationIdAsync(n.NegotiationId, cancellationToken));
                 item.UnreadCount =
                     await _messageRepository.CountUnreadByNegotiationForUserAsync(
@@ -1367,6 +1400,7 @@ namespace HomeCycle.Application.Services.Negotiates
                     kv => kv.Value.UnreadByNegotiation.ToDictionary(
                         innerKv => innerKv.Key,
                         innerKv => (int?)innerKv.Value));
+                var currentNegotiation = await _negotiationRepository.GetByIdAsync(negotiationId, timeout.Token);
 
                 await _realtimePublisher.PublishConversationUpdatedAsync(
                     new[] { sellerId, buyerId },
@@ -1382,8 +1416,7 @@ namespace HomeCycle.Application.Services.Negotiates
                         CurrentOfferQuantity = quantity,
                         CurrentOfferVersion = version,
                         NegotiationStatus = status,
-                        ResponseDeadlineAt = status == NegotiationStatus.Open
-                            ? TradingPostRules.ResponseDeadline(await _messageRepository.GetPendingProposalByNegotiationAsync(negotiationId, timeout.Token)) : null,
+                        ResponseDeadlineAt = TradingPostRules.NegotiationDeadline(currentNegotiation),
                         PaymentDeadlineAt = TradingPostRules.PaymentDeadline(await _agreementRepository.GetByNegotiationIdAsync(negotiationId, timeout.Token)),
 
                         ConversationUnreadByUser = conversationUnread,
@@ -1587,7 +1620,7 @@ namespace HomeCycle.Application.Services.Negotiates
                         OfferPrice = proposal.OfferPrice,
                         OfferQuantity = proposal.OfferQuantity,
                         OfferStatus = proposal.OfferStatus ?? MessageOfferStatus.Pending,
-                        ResponseDeadlineAt = TradingPostRules.ResponseDeadline(proposal),
+                        ResponseDeadlineAt = TradingPostRules.NegotiationDeadline(negotiation),
                         CreatedAt = proposal.CreatedAt
                     },
 

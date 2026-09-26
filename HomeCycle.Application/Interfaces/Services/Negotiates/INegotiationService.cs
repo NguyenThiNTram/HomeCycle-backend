@@ -13,6 +13,7 @@ namespace HomeCycle.Application.Interfaces.Services.Negotiates
     public interface INegotiationService
     {
         Task<int> ExpireDueAsync(int batchSize, CancellationToken cancellationToken = default, Guid? postId = null);
+        Task<bool> ExpireIfDueAsync(Guid negotiationId, CancellationToken cancellationToken = default);
         Task<Result<NegotiationDetailResponse>> GetByIdAsync(Guid userId, Guid negotiationId, CancellationToken cancellationToken = default);
 
         Task<Result<NegotiationDetailResponse>> GetByOfferIdAsync(Guid userId, Guid offerId, CancellationToken cancellationToken = default);
