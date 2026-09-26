@@ -1,4 +1,5 @@
 using AutoMapper;
+using HomeCycle.Application.Commons.Helpers;
 using HomeCycle.Application.Commons.Paginations;
 using HomeCycle.Application.DTOs.Configs;
 using HomeCycle.Application.DTOs.Requests.Auths;
@@ -445,8 +446,11 @@ namespace HomeCycle.Application.Mappings
                 .ForMember(dest => dest.OfferStatus, opt => opt.Ignore())
                 .ForMember(dest => dest.CreatedAt, opt => opt.Ignore());
 
-            CreateMap<offer, OfferResponse>();
+            // Deadline không lưu DB, tính từ CreatedAt theo TradingPostRules.
+            CreateMap<offer, OfferResponse>()
+                .ForMember(dest => dest.ResponseDeadlineAt, opt => opt.MapFrom(src => TradingPostRules.ResponseDeadline(src)));
             CreateMap<offer, OfferListItem>()
+                .ForMember(dest => dest.ResponseDeadlineAt, opt => opt.MapFrom(src => TradingPostRules.ResponseDeadline(src)))
                 .ForMember(dest => dest.OfferId, opt => opt.MapFrom(src => src.OfferId)) // hoặc src.OfferId
                 .ForMember(dest => dest.OfferStatus, opt => opt.MapFrom(src => src.OfferStatus.ToString()))
                 .ForMember(dest => dest.SenderName, opt => opt.MapFrom(src => src.Sender != null ? src.Sender.Username : string.Empty))
@@ -500,7 +504,8 @@ namespace HomeCycle.Application.Mappings
                 .ForMember(dest => dest.CurrentOfferPrice, opt => opt.MapFrom(src => src.Offer.OfferPrice))
                 .ForMember(dest => dest.CurrentOfferQuantity, opt => opt.MapFrom(src => src.Offer.OfferQuantity));
 
-            CreateMap<message, MessageResponse>();
+            CreateMap<message, MessageResponse>()
+                .ForMember(dest => dest.ResponseDeadlineAt, opt => opt.MapFrom(src => TradingPostRules.ResponseDeadline(src)));
 
 
             // ==================== PLATFORM POLICY ====================

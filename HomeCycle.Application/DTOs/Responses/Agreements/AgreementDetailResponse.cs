@@ -1,4 +1,4 @@
-﻿using HomeCycle.Application.DTOs.Requests.Agreements;
+using HomeCycle.Application.DTOs.Requests.Agreements;
 using HomeCycle.Domain.Enums;
 using System;
 using System.Collections.Generic;
@@ -11,6 +11,8 @@ namespace HomeCycle.Application.DTOs.Responses.Agreements
     public class AgreementDetailResponse
     {
         public Guid AgreementId { get; set; }
+        public DateTime? PaymentDeadlineAt { get; set; }
+        public bool PaymentResolutionPending { get; set; }
         public Guid NegotiationId { get; set; }
         public Guid PostId { get; set; }
         public Guid SellerId { get; set; }

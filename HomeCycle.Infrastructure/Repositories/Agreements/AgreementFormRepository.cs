@@ -1,4 +1,5 @@
-﻿using HomeCycle.Application.Commons.Paginations;
+using HomeCycle.Application.Commons.Helpers;
+using HomeCycle.Application.Commons.Paginations;
 using HomeCycle.Application.DTOs.Requests.Agreements;
 using HomeCycle.Application.DTOs.Responses.Agreements;
 using HomeCycle.Application.Interfaces.Repositories.Agreements;
@@ -18,6 +19,17 @@ namespace HomeCycle.Infrastructure.Repositories.Agreements
     public class AgreementFormRepository : IAgreementFormRepository
     {
         private readonly HomeCycleDbContext _db;
+
+        public async Task<IReadOnlyList<Guid>> GetDueIdsAsync(DateTime now, Guid? postId, CancellationToken cancellationToken = default)
+        {
+            var effectiveFrom = TradingPostRules.TimeoutEffectiveFromUtc;
+            var createdBefore = TradingPostRules.PaymentDueCreatedBefore(now);
+            return await _db.Agreement_Forms.AsNoTracking()
+                .Where(x => (x.AgreementStatus == (int)AgreementStatus.Pending || x.AgreementStatus == (int)AgreementStatus.Awaiting_Payment) &&
+                    x.CreatedAt >= effectiveFrom && x.CreatedAt <= createdBefore &&
+                    (!postId.HasValue || x.PostId == postId || x.Negotiation.Offer.BuyPostId == postId))
+                .OrderBy(x => x.CreatedAt).Select(x => x.AgreementId).ToListAsync(cancellationToken);
+        }
 
         public AgreementFormRepository(HomeCycleDbContext db)
         {
@@ -93,6 +105,13 @@ namespace HomeCycle.Infrastructure.Repositories.Agreements
                     CreatedAt = x.CreatedAt
                 })
                 .ToListAsync(cancellationToken);
+
+            // Deadline tính từ CreatedAt sau khi truy vấn, tránh phụ thuộc EF dịch phép cộng thời gian.
+            foreach (var item in items)
+            {
+                item.PaymentDeadlineAt = TradingPostRules.PaymentDeadline(item.CreatedAt);
+                item.PaymentResolutionPending = TradingPostRules.IsExpired(item.PaymentDeadlineAt);
+            }
 
             return new PagedResult<PendingAgreementListItemDto>
             {

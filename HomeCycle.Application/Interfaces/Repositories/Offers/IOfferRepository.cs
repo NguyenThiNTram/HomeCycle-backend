@@ -11,6 +11,7 @@ namespace HomeCycle.Application.Interfaces.Repositories.Offers
 {
     public interface IOfferRepository
     {
+        Task<IReadOnlyList<Guid>> GetDueIdsAsync(DateTime now, Guid? postId, CancellationToken cancellationToken = default);
         Task<offer?> GetByIdAsync(Guid offerId, CancellationToken cancellationToken = default);
 
         Task<PagedResult<offer>> GetSentAsync(Guid senderId, OfferSearchRequest request, CancellationToken cancellationToken = default);

@@ -1,5 +1,6 @@
 ﻿using AutoMapper;
 using HomeCycle.Application.Commons.Errors;
+using HomeCycle.Application.Commons.Helpers;
 using HomeCycle.Application.Commons.Paginations;
 using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Responses.Conversations;
@@ -24,6 +25,7 @@ namespace HomeCycle.Application.Services.Negotiates
         private readonly IMessageRepository _messageRepository;
         private readonly INegotiationRepository _negotiationRepository;
         private readonly IOfferRepository _offerRepository;
+        private readonly HomeCycle.Application.Interfaces.Repositories.Agreements.IAgreementFormRepository _agreementRepository;
         private readonly IChatRealtimePublisher _realtimePublisher;
         private readonly IMapper _mapper;
         private readonly ILogger<ConversationService> _logger;
@@ -35,7 +37,8 @@ namespace HomeCycle.Application.Services.Negotiates
             IOfferRepository offerRepository,
             IChatRealtimePublisher realtimePublisher,
             IMapper mapper,
-            ILogger<ConversationService> logger)
+            ILogger<ConversationService> logger,
+            HomeCycle.Application.Interfaces.Repositories.Agreements.IAgreementFormRepository agreementRepository)
         {
             _conversationRepository = conversationRepository;
             _messageRepository = messageRepository;
@@ -44,6 +47,7 @@ namespace HomeCycle.Application.Services.Negotiates
             _realtimePublisher = realtimePublisher;
             _mapper = mapper;
             _logger = logger;
+            _agreementRepository = agreementRepository;
         }
 
         public async Task<Result<ConversationListItemResponse>> GetByIdAsync(Guid userId, Guid conversationId, CancellationToken cancellationToken = default)
@@ -184,14 +188,15 @@ namespace HomeCycle.Application.Services.Negotiates
                 }
             }
 
-            var items = pagedNegotiations.Items
-                .Select(negotiation =>
-                {
-                    unreadByNegotiation.TryGetValue(negotiation.NegotiationId, out var unreadCount);
-
-                    return ToNegotiationListItemResponse(negotiation, userId, unreadCount);
-                })
-                .ToList();
+            var items = new List<NegotiationListItemResponse>();
+            foreach (var negotiation in pagedNegotiations.Items)
+            {
+                unreadByNegotiation.TryGetValue(negotiation.NegotiationId, out var unreadCount);
+                var item = ToNegotiationListItemResponse(negotiation, userId, unreadCount);
+                item.ResponseDeadlineAt = TradingPostRules.ResponseDeadline(await _messageRepository.GetPendingProposalByNegotiationAsync(negotiation.NegotiationId, cancellationToken));
+                item.PaymentDeadlineAt = TradingPostRules.PaymentDeadline(await _agreementRepository.GetByNegotiationIdAsync(negotiation.NegotiationId, cancellationToken));
+                items.Add(item);
+            }
 
             return Result<PagedResult<NegotiationListItemResponse>>.Success(
                 new PagedResult<NegotiationListItemResponse>

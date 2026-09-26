@@ -12,6 +12,7 @@ namespace HomeCycle.Application.Interfaces.Repositories.Offers
 {
     public interface IMessageRepository
     {
+        Task<IReadOnlyList<Guid>> GetDueIdsAsync(DateTime now, Guid? postId, CancellationToken cancellationToken = default);
         Task<message?> GetByIdAsync(Guid messageId, CancellationToken cancellationToken = default);
 
         Task<message?> GetByIdForUpdateAsync(Guid messageId, CancellationToken cancellationToken = default);

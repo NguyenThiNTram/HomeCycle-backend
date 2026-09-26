@@ -1,3 +1,4 @@
+using HomeCycle.Application.Commons.Helpers;
 using HomeCycle.Application.Commons.Paginations;
 using HomeCycle.Application.DTOs.Responses.Messages;
 using HomeCycle.Application.Interfaces.Repositories.Offers;
@@ -19,6 +20,20 @@ namespace HomeCycle.Infrastructure.Repositories.Offers
     public class MessageRepository : IMessageRepository
     {
         private readonly HomeCycleDbContext _db;
+
+        public async Task<IReadOnlyList<Guid>> GetDueIdsAsync(DateTime now, Guid? postId, CancellationToken cancellationToken = default)
+        {
+            var effectiveFrom = TradingPostRules.TimeoutEffectiveFromUtc;
+            var createdBefore = TradingPostRules.ResponseDueCreatedBefore(now);
+            // Chỉ proposal (Offer/CounterOffer) có timeout; tin Agreement/System/Text không tính.
+            return await _db.Messages.AsNoTracking()
+                .Where(x => x.OfferStatus == (int)MessageOfferStatus.Pending &&
+                    (x.MessageType == (int)MessageType.Offer || x.MessageType == (int)MessageType.CounterOffer) &&
+                    x.CreatedAt >= effectiveFrom && x.CreatedAt <= createdBefore &&
+                    x.Negotiation != null && x.Negotiation.NegotiationStatus == (int)NegotiationStatus.Open &&
+                    (!postId.HasValue || x.Negotiation.PostId == postId || x.Negotiation.Offer.BuyPostId == postId))
+                .Select(x => x.NegotiationId!.Value).Distinct().ToListAsync(cancellationToken);
+        }
 
         public MessageRepository(HomeCycleDbContext db)
         {

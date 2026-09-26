@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -9,6 +9,8 @@ namespace HomeCycle.Application.DTOs.Responses.Agreements
     public class PendingAgreementListItemDto
     {
         public Guid AgreementId { get; set; }
+        public DateTime? PaymentDeadlineAt { get; set; }
+        public bool PaymentResolutionPending { get; set; }
         public string? ProductName { get; set; }
         public string? ThumbnailUrl { get; set; }
         public int Quantity { get; set; }

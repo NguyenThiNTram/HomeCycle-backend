@@ -1,4 +1,5 @@
-﻿using HomeCycle.Application.Commons.Helpers;
+using HomeCycle.Application.Commons.Helpers;
+using HomeCycle.Application.Commons.Errors;
 using AutoMapper;
 using FluentValidation;
 using HomeCycle.Application.Commons.Paginations;
@@ -50,6 +51,7 @@ namespace HomeCycle.Application.Services.Agreements
         private readonly IProductRepository _productRepo;
         private readonly INotificationService _notificationService;
         private readonly IAuditService _auditService;
+        private readonly HomeCycle.Application.Interfaces.Services.Payments.IPaymentService _paymentService;
         private readonly IValidator<CreateAgreementFormRequest> _createValidator;
         private readonly IValidator<UpdateAgreementFormRequest> _updateValidator;
         private readonly IValidator<CalculateGhnFeeRequest> _shippingFeeValidator;
@@ -87,7 +89,8 @@ namespace HomeCycle.Application.Services.Agreements
             HomeCycle.Application.Interfaces.Repositories.Users.IPersonalProfileRepository profileRepo,
             HomeCycle.Application.Interfaces.Repositories.Orders.IOrderRepository orderRepo,
             Microsoft.Extensions.Configuration.IConfiguration configuration,
-            HomeCycle.Application.Interfaces.Repositories.Profiles.IBusinessProfileRepository businessProfileRepo)
+            HomeCycle.Application.Interfaces.Repositories.Profiles.IBusinessProfileRepository businessProfileRepo,
+            HomeCycle.Application.Interfaces.Services.Payments.IPaymentService paymentService)
         {
             _unitOfWork = unitOfWork;
             _agreementRepo = agreementRepo;
@@ -104,6 +107,7 @@ namespace HomeCycle.Application.Services.Agreements
             _productRepo = productRepo;
             _notificationService = notificationService;
             _auditService = auditService;
+            _paymentService = paymentService;
             _createValidator = createValidator;
             _updateValidator = updateValidator;
             _shippingFeeValidator = shippingFeeValidator;
@@ -114,6 +118,84 @@ namespace HomeCycle.Application.Services.Agreements
             _orderRepo = orderRepo;
             _configuration = configuration;
             _businessProfileRepo = businessProfileRepo;
+        }
+
+        public async Task<int> ExpireDueAsync(int batchSize, CancellationToken cancellationToken = default, Guid? postId = null)
+        {
+            var ids = await _agreementRepo.GetDueIdsAsync(DateTime.UtcNow, postId, cancellationToken);
+            var processed = 0;
+            foreach (var batch in ids.Chunk(Math.Max(1, batchSize)))
+            foreach (var id in batch)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                try
+                {
+                    await _paymentService.ReconcileAgreementForExpiryAsync(id, cancellationToken);
+                    await _unitOfWork.BeginTransactionAsync(cancellationToken);
+                    var trade = await _postRepo.GetTradeByAgreementAsync(id, cancellationToken);
+                    if (trade != null) await _postRepo.LockAsync(trade.PostId, trade.BuyPostId, cancellationToken);
+                    var entity = await _agreementRepo.GetByIdForUpdateAsync(id, cancellationToken);
+                    if (entity != null && await ExpireLockedAgreementAsync(entity, cancellationToken)) processed++;
+                    await _unitOfWork.CommitTransactionAsync(cancellationToken);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    _logger.LogError(ex, "Không thể xử lý hết hạn thỏa thuận {AgreementId}; giữ nguyên phần giữ chỗ", id);
+                }
+                finally
+                {
+                    await _unitOfWork.RollbackTransactionAsync(CancellationToken.None);
+                    _unitOfWork.ClearTrackedEntities();
+                }
+            }
+            return processed;
+        }
+
+        private async Task<bool> ExpireLockedAgreementAsync(agreement_form entity, CancellationToken ct)
+        {
+            if (entity.AgreementStatus is not ((int)AgreementStatus.Pending or (int)AgreementStatus.Awaiting_Payment) ||
+                !TradingPostRules.IsExpired(TradingPostRules.PaymentDeadline(entity)) || !await _paymentService.CanExpireAgreementAsync(entity.AgreementId, ct)) return false;
+            var negotiation = await _negotiationRepo.GetByIdForUpdateAsync(entity.NegotiationId, ct);
+            if (negotiation == null) return false;
+            var offer = await _offerRepo.GetByIdForUpdateAsync(negotiation.OfferId, ct);
+            if (offer == null) return false;
+            entity.AgreementStatus = (int)AgreementStatus.Expired;
+            negotiation.NegotiationStatus = NegotiationStatus.Expired;
+            offer.OfferStatus = OfferStatus.Expired;
+            offer.Version = (offer.Version ?? 1) + 1;
+            await _agreementRepo.UpdateAsync(entity, ct);
+            await _negotiationRepo.UpdateAsync(negotiation, ct);
+            await _offerRepo.UpdateAsync(offer, ct);
+            foreach (var recipient in new[] { entity.BuyerId, entity.SellerId }.Distinct())
+            {
+                var notification = await AddAgreementNotificationPendingAsync(recipient, "Thỏa thuận đã hết hạn",
+                    "Đã hết 24 giờ xác nhận và thanh toán. Phần giữ chỗ đã được giải phóng. Bạn có thể gửi yêu cầu mới nếu bài đăng còn khả dụng; bài mua đã đóng cần được chủ bài mở lại.",
+                    entity.AgreementId, ct);
+                _unitOfWork.RegisterAfterCommit(() => _notificationService.PublishCreatedSafelyAsync(notification));
+            }
+            await _auditService.EnqueueAsync(new AuditEvent
+            {
+                Category = AuditCategory.BusinessOperation, Action = AuditActions.AgreementExpire,
+                Outcome = AuditOutcome.Success, ActorType = AuditActorType.System,
+                TargetType = AuditTargetTypes.Agreement, TargetId = entity.AgreementId
+            }, ct);
+            _unitOfWork.RegisterAfterCommit(async () =>
+            {
+                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                await _chatRealtimePublisher.PublishOfferUpdatedAsync(new[] { entity.BuyerId, entity.SellerId },
+                    _mapper.Map<HomeCycle.Application.DTOs.Responses.Offers.OfferResponse>(offer), timeout.Token);
+                if (negotiation.ConversationId.HasValue)
+                    await _chatRealtimePublisher.PublishConversationUpdatedAsync(new[] { entity.BuyerId, entity.SellerId },
+                        new ConversationUpdatedResponse
+                        {
+                            ConversationId = negotiation.ConversationId.Value, NegotiationId = negotiation.NegotiationId,
+                            NegotiationStatus = NegotiationStatus.Expired, CurrentOfferPrice = offer.OfferPrice,
+                            CurrentOfferQuantity = offer.OfferQuantity, CurrentOfferVersion = offer.Version,
+                            PaymentDeadlineAt = TradingPostRules.PaymentDeadline(entity)
+                        }, timeout.Token);
+            });
+            await _unitOfWork.SaveChangesAsync(ct);
+            return true;
         }
 
         public async Task<Result<AgreementPreviewResponse>> GetPreviewAsync(Guid negotiationId, Guid currentUserId, CancellationToken cancellationToken = default)
@@ -281,7 +363,7 @@ namespace HomeCycle.Application.Services.Agreements
                     PSnapshot = JsonSerializer.Serialize(snapshotResult.Data),
                     AgreementDetailsJsonb = JsonSerializer.Serialize(request.AgreementDetails),
 
-                    CreatedAt = DateTime.UtcNow,
+                    CreatedAt = now,
                     BuyerConfirmedAt = null,
                     SellerConfirmedAt = DateTime.UtcNow
                 };
@@ -395,6 +477,9 @@ namespace HomeCycle.Application.Services.Agreements
             var response = new AgreementDetailResponse
             {
                 AgreementId = agreement.AgreementId,
+                    PaymentDeadlineAt = TradingPostRules.PaymentDeadline(agreement),
+                    PaymentResolutionPending = TradingPostRules.IsExpired(TradingPostRules.PaymentDeadline(agreement)) &&
+                        agreement.AgreementStatus is (int)AgreementStatus.Pending or (int)AgreementStatus.Awaiting_Payment,
                 NegotiationId = agreement.NegotiationId,
                 PostId = agreement.PostId,
                 SellerId = agreement.SellerId,
@@ -471,6 +556,13 @@ namespace HomeCycle.Application.Services.Agreements
                     return Result<AgreementActionResponse>.Fail(new Error("Auth.Forbidden", "Bạn không có quyền cập nhật thỏa thuận này."));
                 }
 
+                if (agreement.AgreementStatus == (int)AgreementStatus.Expired ||
+                    (agreement.AgreementStatus is (int)AgreementStatus.Pending or (int)AgreementStatus.Awaiting_Payment && TradingPostRules.IsExpired(TradingPostRules.PaymentDeadline(agreement))))
+                {
+                    var expired = agreement.AgreementStatus == (int)AgreementStatus.Expired || await ExpireLockedAgreementAsync(agreement, cancellationToken);
+                    await _unitOfWork.CommitTransactionAsync(cancellationToken);
+                    return Result<AgreementActionResponse>.Fail(expired ? AgreementErrors.Expired : AgreementErrors.PaymentResolutionPending);
+                }
                 if (agreement.AgreementStatus != (int)AgreementStatus.Pending)
                 {
                     await _unitOfWork.RollbackTransactionAsync(cancellationToken);
@@ -628,6 +720,9 @@ namespace HomeCycle.Application.Services.Agreements
                 {
                     Message = "Cập nhật thỏa thuận thành công. Bên còn lại cần xác nhận lại nội dung mới.",
                     AgreementId = agreement.AgreementId,
+                    PaymentDeadlineAt = TradingPostRules.PaymentDeadline(agreement),
+                    PaymentResolutionPending = TradingPostRules.IsExpired(TradingPostRules.PaymentDeadline(agreement)) &&
+                        agreement.AgreementStatus is (int)AgreementStatus.Pending or (int)AgreementStatus.Awaiting_Payment,
                     AgreementStatus = (AgreementStatus)agreement.AgreementStatus,
                     SellerConfirmed = agreement.SellerConfirmedAt != null,
                     BuyerConfirmed = agreement.BuyerConfirmedAt != null,
@@ -676,6 +771,13 @@ namespace HomeCycle.Application.Services.Agreements
                     return Result<AgreementActionResponse>.Fail(new Error("Auth.Forbidden", "Bạn không có quyền chấp nhận thỏa thuận này."));
                 }
 
+                if (agreement.AgreementStatus == (int)AgreementStatus.Expired ||
+                    (agreement.AgreementStatus is (int)AgreementStatus.Pending or (int)AgreementStatus.Awaiting_Payment && TradingPostRules.IsExpired(TradingPostRules.PaymentDeadline(agreement))))
+                {
+                    var expired = agreement.AgreementStatus == (int)AgreementStatus.Expired || await ExpireLockedAgreementAsync(agreement, cancellationToken);
+                    await _unitOfWork.CommitTransactionAsync(cancellationToken);
+                    return Result<AgreementActionResponse>.Fail(expired ? AgreementErrors.Expired : AgreementErrors.PaymentResolutionPending);
+                }
                 if (agreement.AgreementStatus != (int)AgreementStatus.Pending)
                 {
                     await _unitOfWork.RollbackTransactionAsync(cancellationToken);
@@ -813,6 +915,9 @@ namespace HomeCycle.Application.Services.Agreements
                         ? "Cả hai bên đã đồng ý. Vui lòng tiến hành thanh toán."
                         : "Bạn đã xác nhận thỏa thuận. Đang chờ bên còn lại xác nhận.",
                     AgreementId = agreement.AgreementId,
+                    PaymentDeadlineAt = TradingPostRules.PaymentDeadline(agreement),
+                    PaymentResolutionPending = TradingPostRules.IsExpired(TradingPostRules.PaymentDeadline(agreement)) &&
+                        agreement.AgreementStatus is (int)AgreementStatus.Pending or (int)AgreementStatus.Awaiting_Payment,
                     AgreementStatus = (AgreementStatus)agreement.AgreementStatus,
                     SellerConfirmed = agreement.SellerConfirmedAt != null,
                     BuyerConfirmed = agreement.BuyerConfirmedAt != null,
@@ -840,6 +945,13 @@ namespace HomeCycle.Application.Services.Agreements
                 if (agreement.SellerId != currentUserId && agreement.BuyerId != currentUserId)
                     return Result<AgreementActionResponse>.Fail(new Error("Auth.Forbidden", "Bạn không có quyền chỉnh sửa thỏa thuận này."));
                 // Serialize reopening against payment so a fulfilled agreement cannot reserve stock again.
+                if (agreement.AgreementStatus == (int)AgreementStatus.Expired ||
+                    (agreement.AgreementStatus is (int)AgreementStatus.Pending or (int)AgreementStatus.Awaiting_Payment && TradingPostRules.IsExpired(TradingPostRules.PaymentDeadline(agreement))))
+                {
+                    var expired = agreement.AgreementStatus == (int)AgreementStatus.Expired || await ExpireLockedAgreementAsync(agreement, cancellationToken);
+                    await _unitOfWork.CommitTransactionAsync(cancellationToken);
+                    return Result<AgreementActionResponse>.Fail(expired ? AgreementErrors.Expired : AgreementErrors.PaymentResolutionPending);
+                }
                 if (agreement.AgreementStatus != (int)AgreementStatus.Awaiting_Payment)
                     return Result<AgreementActionResponse>.Fail(new Error("Agreement.InvalidStatus", "Chỉ mở lại thỏa thuận đang chờ thanh toán."));
                 agreement.AgreementStatus = (int)AgreementStatus.Pending;
@@ -852,6 +964,9 @@ namespace HomeCycle.Application.Services.Agreements
                 {
                     Message = "Đã mở lại thỏa thuận. Cả hai bên cần xác nhận lại sau khi cập nhật.",
                     AgreementId = agreement.AgreementId,
+                    PaymentDeadlineAt = TradingPostRules.PaymentDeadline(agreement),
+                    PaymentResolutionPending = TradingPostRules.IsExpired(TradingPostRules.PaymentDeadline(agreement)) &&
+                        agreement.AgreementStatus is (int)AgreementStatus.Pending or (int)AgreementStatus.Awaiting_Payment,
                     AgreementStatus = (AgreementStatus)agreement.AgreementStatus,
                     SellerConfirmed = false,
                     BuyerConfirmed = false
@@ -1016,6 +1131,7 @@ namespace HomeCycle.Application.Services.Agreements
                     {
                         ConversationId = conversationId,
                         NegotiationId = negotiation.NegotiationId,
+                        PaymentDeadlineAt = TradingPostRules.PaymentDeadline(await _agreementRepo.GetByNegotiationIdAsync(negotiation.NegotiationId, timeout.Token)),
                         LastSenderId = lastMessage.SenderId,
                         LastMessagePreview = lastMessage.MessageContent ?? "[Thỏa thuận]",
                         LastMessageType = lastMessage.MessageType,

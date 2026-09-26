@@ -15,6 +15,7 @@ namespace HomeCycle.Domain.Enums
         Accepted = 1, //Đối tác đã click "Chấp nhận" đề nghị này
         Rejected = 2, //Đối tác không đồng ý với mức giá/số lượng này và bấm "Từ chối"
         Superseded = 3, //Đề nghị này không còn giá trị do một trong hai bên cập nhật offer mới (Counter)
-        Cancelled = 4 
+        Cancelled = 4,
+        Expired = 5
     }
 }

@@ -8,6 +8,9 @@ namespace HomeCycle.Application.Commons.Audits
 {
     public static class AuditActions
     {
+        public const string OfferExpire = "OFFER.EXPIRE";
+        public const string NegotiationExpire = "NEGOTIATION.EXPIRE";
+        public const string AgreementExpire = "AGREEMENT.EXPIRE";
         public const string AuthLogin = "AUTH.LOGIN";
         public const string AuthRegister = "AUTH.REGISTER";
         public const string AuthModeratorVerifyEmail = "AUTH.MODERATOR_VERIFY_EMAIL";

@@ -72,6 +72,25 @@ namespace HomeCycle.API.Workers
 
                 try
                 {
+                    foreach (var phase in new[] { "Offer", "Negotiation", "Agreement" })
+                    {
+                        try
+                        {
+                            using var expiryScope = _scopeFactory.CreateScope();
+                            var services = expiryScope.ServiceProvider;
+                            var processed = phase switch
+                            {
+                                "Offer" => await services.GetRequiredService<HomeCycle.Application.Interfaces.Services.Offers.IOfferService>().ExpireDueAsync(_batchSize, stoppingToken),
+                                "Negotiation" => await services.GetRequiredService<HomeCycle.Application.Interfaces.Services.Negotiates.INegotiationService>().ExpireDueAsync(_batchSize, stoppingToken),
+                                _ => await services.GetRequiredService<HomeCycle.Application.Interfaces.Services.Agreements.IAgreementFormService>().ExpireDueAsync(_batchSize, stoppingToken)
+                            };
+                            if (processed > 0) _logger.LogInformation("Đã xử lý hết hạn {Count} {Phase}", processed, phase);
+                        }
+                        catch (Exception ex) when (ex is not OperationCanceledException)
+                        {
+                            _logger.LogError(ex, "Không thể xử lý hết hạn {Phase} trong lượt này", phase);
+                        }
+                    }
                     await Task.Delay(
                         _pollInterval,
                         stoppingToken);

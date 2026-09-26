@@ -1,4 +1,4 @@
-﻿using HomeCycle.Domain.Enums;
+using HomeCycle.Domain.Enums;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -11,6 +11,8 @@ namespace HomeCycle.Application.DTOs.Responses.Agreements
     {
         public string Message { get; set; } = string.Empty;
         public Guid AgreementId { get; set; }
+        public DateTime? PaymentDeadlineAt { get; set; }
+        public bool PaymentResolutionPending { get; set; }
         public AgreementStatus AgreementStatus { get; set; }
         public bool SellerConfirmed { get; set; }
         public bool BuyerConfirmed { get; set; }

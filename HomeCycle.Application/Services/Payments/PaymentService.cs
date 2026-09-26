@@ -1,4 +1,4 @@
-﻿using HomeCycle.Application.Commons.Helpers;
+using HomeCycle.Application.Commons.Helpers;
 using AutoMapper;
 using FluentValidation;
 using HomeCycle.Application.Commons.Errors;
@@ -170,6 +170,53 @@ namespace HomeCycle.Application.Services.Payments
             _cartRealtimeService = cartRealtimeService;
         }
 
+        public async Task ReconcileAgreementForExpiryAsync(Guid agreementId, CancellationToken ct = default)
+        {
+            foreach (var payment in await _paymentRepo.GetByAgreementAsync(agreementId, ct))
+            {
+                if (payment.PaymentStatus != (int)PaymentStatus.Pending || payment.PaymentMethod != (int)PaymentMethod.PayOS) continue;
+                try
+                {
+                    await ReconcilePayOsPaymentAsync(payment.PaymentId, AuditSource.BackgroundJob, ct);
+                }
+                finally
+                {
+                    _unitOfWork.ClearTrackedEntities();
+                }
+            }
+        }
+
+        public async Task<bool> CanExpireAgreementAsync(Guid agreementId, CancellationToken ct = default)
+        {
+            try
+            {
+                foreach (var payment in await _paymentRepo.GetByAgreementAsync(agreementId, ct))
+                {
+                    if (payment.PaidAt.HasValue || payment.OrderId.HasValue ||
+                        payment.PaymentStatus is null or (int)PaymentStatus.Completed or (int)PaymentStatus.PartiallyRefunded or (int)PaymentStatus.Refunded)
+                        return false;
+                    if (payment.PaymentMethod != (int)PaymentMethod.PayOS)
+                    {
+                        if (payment.PaymentStatus is not ((int)PaymentStatus.Failed or (int)PaymentStatus.Cancelled or (int)PaymentStatus.Expired)) return false;
+                        continue;
+                    }
+                    var transaction = await _paymentTxRepo.GetLatestByPaymentIdAsync(payment.PaymentId, ct);
+                    if (string.IsNullOrWhiteSpace(transaction?.PayOSOrderCode)) return false;
+                    var result = await _gatewayService.GetPaymentStatusAsync(transaction.PayOSOrderCode, ct);
+                    if (!result.IsSuccess || result.Data == null || result.Data.AmountPaid != 0 ||
+                        result.Data.OrderCode?.ToString() != transaction.PayOSOrderCode || result.Data.Amount != payment.Amount)
+                        return false;
+                    if (result.Data.Status?.Trim().ToUpperInvariant() is not ("CANCELLED" or "EXPIRED" or "FAILED")) return false;
+                }
+                return true;
+            }
+            catch (Exception ex) when (!ct.IsCancellationRequested)
+            {
+                _logger.LogWarning(ex, "Chưa đối soát được thanh toán của thỏa thuận {AgreementId}; tiếp tục giữ chỗ", agreementId);
+                return false;
+            }
+        }
+
         public async Task<Result<PaymentQuoteResponseDto>> GetPaymentQuoteAsync(
             Guid agreementId,
             Guid userId,
@@ -184,6 +231,8 @@ namespace HomeCycle.Application.Services.Payments
                 return Result<PaymentQuoteResponseDto>.Fail(
                     new Error("Auth.Forbidden", "Chỉ người mua mới có quyền xem báo giá thanh toán."));
 
+            if (agreement.AgreementStatus == (int)AgreementStatus.Expired || TradingPostRules.IsExpired(TradingPostRules.PaymentDeadline(agreement)))
+                return Result<PaymentQuoteResponseDto>.Fail(agreement.AgreementStatus == (int)AgreementStatus.Expired ? AgreementErrors.Expired : AgreementErrors.DeadlinePassed);
             AgreementDetailsDto? details;
             try
             {
@@ -237,6 +286,8 @@ namespace HomeCycle.Application.Services.Payments
                 return Result<string>.Fail(PaymentErrors.BankAccountNotVerified);
 
             // Chỉ cho tạo checkout link khi Agreement đang thật sự chờ thanh toán.
+            if (agreement.AgreementStatus == (int)AgreementStatus.Expired || TradingPostRules.IsExpired(TradingPostRules.PaymentDeadline(agreement)))
+                return Result<string>.Fail(agreement.AgreementStatus == (int)AgreementStatus.Expired ? AgreementErrors.Expired : AgreementErrors.DeadlinePassed);
             if (agreement.AgreementStatus != (int)AgreementStatus.Awaiting_Payment)
                 return Result<string>.Fail(new Error("Agreement.InvalidStatus", "Thỏa thuận không ở trạng thái chờ thanh toán."));
 
@@ -340,6 +391,11 @@ namespace HomeCycle.Application.Services.Payments
                             "Chỉ người mua mới có quyền thanh toán thỏa thuận này."));
                 }
 
+                if (lockedAgreement.AgreementStatus == (int)AgreementStatus.Expired || TradingPostRules.IsExpired(TradingPostRules.PaymentDeadline(lockedAgreement)))
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    return Result<string>.Fail(lockedAgreement.AgreementStatus == (int)AgreementStatus.Expired ? AgreementErrors.Expired : AgreementErrors.DeadlinePassed);
+                }
                 if (lockedAgreement.AgreementStatus !=
                     (int)AgreementStatus.Awaiting_Payment)
                 {
@@ -404,6 +460,14 @@ namespace HomeCycle.Application.Services.Payments
                 }
 
                 var expiresAt = now.AddMinutes(paymentPolicy.PaymentExpiryMinutes);
+                var paymentDeadline = TradingPostRules.PaymentDeadline(lockedAgreement);
+                if (paymentDeadline.HasValue && paymentDeadline.Value < expiresAt)
+                    expiresAt = paymentDeadline.Value;
+                if (expiresAt <= DateTime.UtcNow)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    return Result<string>.Fail(lockedAgreement.AgreementStatus == (int)AgreementStatus.Expired ? AgreementErrors.Expired : AgreementErrors.DeadlinePassed);
+                }
                 var payOsExpiredAt = new DateTimeOffset(expiresAt).ToUnixTimeSeconds();
 
                 var gatewayRequest = new GatewayPaymentRequest
@@ -741,6 +805,8 @@ namespace HomeCycle.Application.Services.Payments
                     PaymentErrors.BankAccountNotVerified);
             // Guard chống trùng thanh toán: dựa trên AgreementStatus thay vì PaymentType
             // (PaymentType luôn có giá trị ngay khi tạo Agreement nên không dùng để check đã-thanh-toán được).
+            if (agreement.AgreementStatus == (int)AgreementStatus.Expired || TradingPostRules.IsExpired(TradingPostRules.PaymentDeadline(agreement)))
+                return Result<PaymentStatusResponseDto>.Fail(agreement.AgreementStatus == (int)AgreementStatus.Expired ? AgreementErrors.Expired : AgreementErrors.DeadlinePassed);
             if (agreement.AgreementStatus != (int)AgreementStatus.Awaiting_Payment)
                 return Result<PaymentStatusResponseDto>.Fail(new Error("Agreement.InvalidStatus", "Thỏa thuận không ở trạng thái chờ thanh toán."));
 
@@ -826,6 +892,11 @@ namespace HomeCycle.Application.Services.Payments
                     return Result<PaymentStatusResponseDto>.Fail(new Error("Auth.Forbidden", "Chỉ người mua mới có quyền thanh toán."));
                 }
 
+                if (lockedAgreement.AgreementStatus == (int)AgreementStatus.Expired || TradingPostRules.IsExpired(TradingPostRules.PaymentDeadline(lockedAgreement)))
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    return Result<PaymentStatusResponseDto>.Fail(lockedAgreement.AgreementStatus == (int)AgreementStatus.Expired ? AgreementErrors.Expired : AgreementErrors.DeadlinePassed);
+                }
                 if (lockedAgreement.AgreementStatus != (int)AgreementStatus.Awaiting_Payment)
                 {
                     await _unitOfWork.RollbackTransactionAsync(ct);
@@ -2997,6 +3068,11 @@ namespace HomeCycle.Application.Services.Payments
                     return;
                 }
 
+                if (agreement.AgreementStatus == (int)AgreementStatus.Expired)
+                {
+                    _logger.LogCritical("PayOS báo thành công sau khi thỏa thuận {AgreementId} đã hết hiệu lực, OrderCode {OrderCode}. Cần đối soát thủ công; không khôi phục thỏa thuận hoặc trừ hàng.", agreement.AgreementId, payOsOrderCode);
+                    throw new InvalidOperationException("Thỏa thuận đã hết hiệu lực. Khoản thanh toán cần được đối soát thủ công.");
+                }
                 if (agreement.AgreementStatus != (int)AgreementStatus.Awaiting_Payment)
                     throw new InvalidOperationException("Thỏa thuận không còn ở trạng thái chờ thanh toán.");
 

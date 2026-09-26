@@ -110,7 +110,7 @@ namespace HomeCycle.Infrastructure.Repositories.Offers
                         x.PostId == postId &&
                         x.SellerId == sellerId &&
                         x.BuyerId == buyerId &&
-                        (x.NegotiationStatus == null || x.NegotiationStatus != (int)NegotiationStatus.Cancelled) &&
+                        (x.NegotiationStatus == null || x.NegotiationStatus != (int)NegotiationStatus.Cancelled) && x.NegotiationStatus != (int)NegotiationStatus.Expired &&
                         !(x.Agreement_Form != null &&
                           x.Agreement_Form.AgreementStatus == (int)AgreementStatus.Confirmed &&
                           x.Agreement_Form.Order != null),

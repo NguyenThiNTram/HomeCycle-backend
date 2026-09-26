@@ -1,4 +1,7 @@
+using HomeCycle.Domain.Enums;
+using HomeCycle.Application.DTOs.Responses.Offers;
 using HomeCycle.Application.DTOs.Requests.Offers;
+using HomeCycle.Application.Commons.Helpers;
 using HomeCycle.Application.Commons.Paginations;
 using HomeCycle.Application.Interfaces.Repositories.Offers;
 using HomeCycle.Domain.Entities;
@@ -14,9 +17,20 @@ using System.Threading.Tasks;
 
 namespace HomeCycle.Infrastructure.Repositories.Offers
 {
-    public partial class OfferRepository : IOfferRepository
+    public class OfferRepository : IOfferRepository
     {
         private readonly HomeCycleDbContext _db;
+
+        public async Task<IReadOnlyList<Guid>> GetDueIdsAsync(DateTime now, Guid? postId, CancellationToken cancellationToken = default)
+        {
+            var effectiveFrom = TradingPostRules.TimeoutEffectiveFromUtc;
+            var createdBefore = TradingPostRules.ResponseDueCreatedBefore(now);
+            return await _db.Offers.AsNoTracking()
+                .Where(x => x.OfferStatus == (int)HomeCycle.Domain.Enums.OfferStatus.Pending &&
+                    x.CreatedAt >= effectiveFrom && x.CreatedAt <= createdBefore &&
+                    (!postId.HasValue || x.PostId == postId || x.BuyPostId == postId))
+                .OrderBy(x => x.CreatedAt).Select(x => x.OfferId).ToListAsync(cancellationToken);
+        }
 
         private readonly HomeCycle.Application.Interfaces.Generics.IUnitOfWork _unit;
         private readonly HomeCycle.Application.Interfaces.Repositories.Offers.IChatRealtimePublisher _publisher;
@@ -139,5 +153,21 @@ namespace HomeCycle.Infrastructure.Repositories.Offers
         }
 
 
+
+    public async Task ClosePendingByPostAsync(Guid postId, OfferStatus status, CancellationToken cancellationToken = default)
+    {
+        // Caller locks the Post before touching offers, so acceptance cannot race closure.
+        var pending = await _db.Offers.Where(o => (o.PostId == postId || o.BuyPostId == postId) && o.OfferStatus == (int)OfferStatus.Pending)
+            .Include(o => o.Sender).Include(o => o.Receiver).Include(o => o.Post).ToListAsync(cancellationToken);
+        foreach (var row in pending)
+        {
+            row.OfferStatus = (int)status; row.Version = (row.Version ?? 1) + 1;
+            var response = _mapper.Map<OfferResponse>(row.ToDomain());
+            _unit.RegisterAfterCommit(async () => {
+                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                await _publisher.PublishOfferUpdatedAsync(new[] { row.SenderId, row.ReceiverId }, response, timeout.Token);
+            });
+        }
+    }
     }
 }

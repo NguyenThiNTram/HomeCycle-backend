@@ -157,6 +157,13 @@ namespace HomeCycle.Application.Services.Negotiates
                     return Result<MessageResponse>.Fail(MessageErrors.NegotiationReadOnly);
                 }
 
+                var pendingProposal = await _messageRepository.GetPendingProposalByNegotiationAsync(negotiationId, cancellationToken);
+                if (TradingPostRules.IsExpired(TradingPostRules.ResponseDeadline(pendingProposal)))
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<MessageResponse>.Fail(NegotiationErrors.Expired);
+                }
+
                 var now = DateTime.UtcNow;
 
                 var newMessage = new message
@@ -496,6 +503,8 @@ namespace HomeCycle.Application.Services.Negotiates
                         CurrentOfferQuantity = quantity,
                         CurrentOfferVersion = version,
                         NegotiationStatus = status,
+                        ResponseDeadlineAt = status == NegotiationStatus.Open
+                            ? TradingPostRules.ResponseDeadline(await _messageRepository.GetPendingProposalByNegotiationAsync(negotiationId, timeout.Token)) : null,
 
                         ConversationUnreadByUser = conversationUnread,
                         NegotiationUnreadByUser = negotiationUnread

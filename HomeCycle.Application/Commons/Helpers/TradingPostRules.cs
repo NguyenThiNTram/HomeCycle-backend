@@ -8,6 +8,29 @@ namespace HomeCycle.Application.Commons.Helpers;
 
 public static class TradingPostRules
 {
+    public static readonly TimeSpan ResponseTimeout = TimeSpan.FromMinutes(15);
+    public static readonly TimeSpan PaymentTimeout = TimeSpan.FromHours(24);
+    // Bản ghi tạo trước mốc này là dữ liệu cũ, không áp dụng timeout. Chỉnh lại theo thời điểm deploy.
+    public static readonly DateTime TimeoutEffectiveFromUtc = new(2026, 9, 26, 0, 0, 0, DateTimeKind.Utc);
+
+    // Deadline tính từ CreatedAt (không lưu DB); CreatedAt chỉ gán khi tạo nên sửa/xác nhận không gia hạn.
+    public static DateTime? ResponseDeadline(DateTime createdAt) =>
+        createdAt >= TimeoutEffectiveFromUtc ? createdAt + ResponseTimeout : null;
+    public static DateTime? PaymentDeadline(DateTime createdAt) =>
+        createdAt >= TimeoutEffectiveFromUtc ? createdAt + PaymentTimeout : null;
+
+    public static DateTime? ResponseDeadline(offer? o) => o == null ? null : ResponseDeadline(o.CreatedAt);
+    public static DateTime? ResponseDeadline(message? m) =>
+        m?.MessageType is MessageType.Offer or MessageType.CounterOffer ? ResponseDeadline(m.CreatedAt) : null;
+    public static DateTime? PaymentDeadline(agreement_form? a) => a == null ? null : PaymentDeadline(a.CreatedAt);
+
+    // now >= deadline là hết hạn; so sánh bằng UTC.
+    public static bool IsExpired(DateTime? deadline) => deadline.HasValue && DateTime.UtcNow >= deadline.Value;
+
+    // Dùng cho truy vấn DB: đến hạn khi TimeoutEffectiveFromUtc <= CreatedAt <= giá trị trả về.
+    public static DateTime ResponseDueCreatedBefore(DateTime now) => now - ResponseTimeout;
+    public static DateTime PaymentDueCreatedBefore(DateTime now) => now - PaymentTimeout;
+
     public static bool IsAvailable(post p) => p.Status == PostStatus.Active &&
         (!p.ExpiryDate.HasValue || p.ExpiryDate > DateTime.UtcNow) && p.RemainingQuantity > 0;
 

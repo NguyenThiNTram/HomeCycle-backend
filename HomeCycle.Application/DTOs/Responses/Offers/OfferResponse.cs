@@ -27,6 +27,7 @@ namespace HomeCycle.Application.DTOs.Responses.Offers
         public int? Version { get; set; }
 
         public DateTime CreatedAt { get; set; }
+        public DateTime? ResponseDeadlineAt { get; set; }
     }
 
     public class OfferListItem
@@ -52,6 +53,7 @@ namespace HomeCycle.Application.DTOs.Responses.Offers
 
         public int? Version { get; set; }
         public DateTime CreatedAt { get; set; }
+        public DateTime? ResponseDeadlineAt { get; set; }
     }
 
     public sealed class OfferDetailResponse
@@ -82,6 +84,7 @@ namespace HomeCycle.Application.DTOs.Responses.Offers
         public bool CanReject { get; set; }
 
         public DateTime CreatedAt { get; set; }
+        public DateTime? ResponseDeadlineAt { get; set; }
     }
 
     public class OfferParticipantResponse

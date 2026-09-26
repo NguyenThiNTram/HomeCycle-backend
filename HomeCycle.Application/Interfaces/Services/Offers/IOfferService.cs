@@ -13,6 +13,7 @@ namespace HomeCycle.Application.Interfaces.Services.Offers
 {
     public interface IOfferService
     {
+        Task<int> ExpireDueAsync(int batchSize, CancellationToken cancellationToken = default, Guid? postId = null);
         Task<Result<OfferResponse>> CreateSellerRequestAsync(Guid userId, Guid buyPostId, CreateSellerRequest request, CancellationToken cancellationToken = default);
         Task<Result<OfferResponse>> CreateAsync(Guid userId, CreateOfferRequest request, CancellationToken cancellationToken = default);
 
