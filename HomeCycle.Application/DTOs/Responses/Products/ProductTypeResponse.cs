@@ -21,4 +21,12 @@ namespace HomeCycle.Application.DTOs.Responses.Products
         public IReadOnlyList<ProductAttributeResponse> Attributes { get; set; }
             = new List<ProductAttributeResponse>();
     }
+
+    public class ProductConditionOptionResponse
+    {
+        public int Value { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public string DisplayName { get; set; } = string.Empty;
+        public string Description { get; set; } = string.Empty;
+    }
 }
