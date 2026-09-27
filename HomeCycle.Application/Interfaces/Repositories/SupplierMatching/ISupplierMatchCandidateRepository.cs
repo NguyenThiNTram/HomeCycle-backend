@@ -9,6 +9,13 @@ public interface ISupplierMatchCandidateRepository
         int candidateLimit,
         CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyList<SupplierCandidate>> GetOwnedCandidatesAsync(
+        SupplierDemandContext demand,
+        Guid ownerId,
+        string? keyword,
+        int candidateLimit,
+        CancellationToken cancellationToken = default);
+
     Task<IReadOnlyList<SupplierCandidate>> GetCandidatesByIdsAsync(
         SupplierDemandContext demand,
         IReadOnlyCollection<Guid> sellPostIds,

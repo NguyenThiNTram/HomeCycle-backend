@@ -17,7 +17,15 @@ public sealed class SupplierMatchCandidateRepository(
         SupplierDemandContext demand,
         int candidateLimit,
         CancellationToken cancellationToken = default) =>
-        LoadCandidatesAsync(demand, candidateLimit, null, cancellationToken);
+        LoadCandidatesAsync(demand, candidateLimit, null, null, null, cancellationToken);
+
+    public Task<IReadOnlyList<SupplierCandidate>> GetOwnedCandidatesAsync(
+        SupplierDemandContext demand,
+        Guid ownerId,
+        string? keyword,
+        int candidateLimit,
+        CancellationToken cancellationToken = default) =>
+        LoadCandidatesAsync(demand, candidateLimit, null, ownerId, keyword, cancellationToken);
 
     public Task<IReadOnlyList<SupplierCandidate>> GetCandidatesByIdsAsync(
         SupplierDemandContext demand,
@@ -27,7 +35,7 @@ public sealed class SupplierMatchCandidateRepository(
         var ids = sellPostIds.Distinct().ToArray();
         return ids.Length == 0
             ? Task.FromResult<IReadOnlyList<SupplierCandidate>>([])
-            : LoadCandidatesAsync(demand, ids.Length, ids, cancellationToken);
+            : LoadCandidatesAsync(demand, ids.Length, ids, null, null, cancellationToken);
     }
 
     public async Task<IReadOnlyList<SupplierCandidateLiveState>> GetLiveStatesAsync(
@@ -68,6 +76,8 @@ public sealed class SupplierMatchCandidateRepository(
         SupplierDemandContext demand,
         int candidateLimit,
         Guid[]? allowedPostIds,
+        Guid? ownerId,
+        string? keyword,
         CancellationToken cancellationToken)
     {
         candidateLimit = Math.Clamp(candidateLimit, 1, 500);
@@ -87,6 +97,17 @@ public sealed class SupplierMatchCandidateRepository(
 
         if (allowedPostIds is not null)
             query = query.Where(post => allowedPostIds.Contains(post.PostId));
+
+        if (ownerId.HasValue)
+            query = query.Where(post => post.OwnerId == ownerId.Value);
+
+        if (!string.IsNullOrWhiteSpace(keyword))
+        {
+            var pattern = $"%{keyword.Trim()}%";
+            query = query.Where(post =>
+                EF.Functions.ILike(post.Product!.ProductName ?? string.Empty, pattern) ||
+                EF.Functions.ILike(post.Product.ModelNumber ?? string.Empty, pattern));
+        }
 
         if (demand.ProductTypeId.HasValue)
             query = query.Where(post => post.Product!.ProductTypeId == demand.ProductTypeId);

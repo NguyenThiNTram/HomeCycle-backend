@@ -1115,18 +1115,67 @@ namespace HomeCycle.Application.Services.Posts
             }
         }
 
-        public async Task<Result<PagedResult<BuyPostMatchResponse>>> GetMatchesAsync(Guid ownerId, Guid buyPostId, PaginationRequest request, CancellationToken cancellationToken = default)
+        public async Task<Result<PagedResult<BuyPostMatchResponse>>> GetMatchesAsync(
+            Guid ownerId,
+            Guid buyPostId,
+            PaginationRequest request,
+            string? keyword = null,
+            CancellationToken cancellationToken = default)
         {
             var buy = await _postRepository.GetDetailByIdAsync(buyPostId, cancellationToken);
             if (buy == null || buy.Product == null || buy.User?.Status != UserStatus.Active || buy.PostType != PostType.Buy || !TradingPostRules.IsAvailable(buy))
                 return Result<PagedResult<BuyPostMatchResponse>>.Fail(PostErrors.NotFound);
-            if (buy.OwnerId != ownerId)
-                return Result<PagedResult<BuyPostMatchResponse>>.Fail(PostErrors.Forbidden);
-            var matched = await _supplierMatchService.MatchBackendOnlyAsync(
-                SupplierDemandContextBuilder.FromBuyPost(buy),
-                (request.PageNumber - 1) * request.PageSize,
-                request.PageSize,
-                cancellationToken);
+
+            request.PageSize = Math.Min(request.PageSize, 10);
+            var demand = SupplierDemandContextBuilder.FromBuyPost(buy);
+            HomeCycle.Application.DTOs.Responses.SupplierMatching.SupplierMatchResponse matched;
+            if (buy.OwnerId == ownerId)
+            {
+                matched = await _supplierMatchService.MatchBackendOnlyAsync(
+                    demand,
+                    (request.PageNumber - 1) * request.PageSize,
+                    request.PageSize,
+                    cancellationToken);
+            }
+            else
+            {
+                var seller = await _userRepository.GetByIdAsync(ownerId, cancellationToken);
+                if (seller?.Status != UserStatus.Active || seller.Role != UserRole.Personal)
+                    return Result<PagedResult<BuyPostMatchResponse>>.Fail(PostErrors.Forbidden);
+                if (keyword?.Length > 100)
+                    return Result<PagedResult<BuyPostMatchResponse>>.Fail(
+                        ValidationErrors.InvalidRequest("Từ khóa tìm kiếm không được vượt quá 100 ký tự."));
+
+                matched = await _supplierMatchService.MatchOwnedBackendOnlyAsync(
+                    demand,
+                    ownerId,
+                    keyword,
+                    (request.PageNumber - 1) * request.PageSize,
+                    request.PageSize,
+                    cancellationToken);
+
+                var postIds = matched.Matches.Select(x => x.SellPost.PostId).ToArray();
+                var blocks = await _offerRepository.GetSellerRequestBlocksAsync(
+                    postIds, ownerId, buy.OwnerId, DateTime.UtcNow, cancellationToken);
+                var pendingOfferPostIds = blocks.PendingOfferPostIds.ToHashSet();
+                var activeTradePostIds = blocks.ActiveTradePostIds.ToHashSet();
+                foreach (var item in matched.Matches)
+                {
+                    if (activeTradePostIds.Contains(item.SellPost.PostId))
+                    {
+                        item.CanSendOffer = false;
+                        item.BlockCode = OfferErrors.UnfinishedNegotiation.Code;
+                        item.BlockMessage = OfferErrors.UnfinishedNegotiation.Message;
+                    }
+                    else if (pendingOfferPostIds.Contains(item.SellPost.PostId))
+                    {
+                        item.CanSendOffer = false;
+                        item.BlockCode = OfferErrors.DuplicatePending.Code;
+                        item.BlockMessage = OfferErrors.DuplicatePending.Message;
+                    }
+                }
+            }
+
             return Result<PagedResult<BuyPostMatchResponse>>.Success(new PagedResult<BuyPostMatchResponse> {
                 Items = matched.Matches,
                 PageNumber = request.PageNumber,

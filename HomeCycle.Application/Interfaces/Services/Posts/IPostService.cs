@@ -17,7 +17,7 @@ namespace HomeCycle.Application.Interfaces.Services.Posts
         Task<Result<PagedResult<PostResponse>>> DiscoverBusinessAsync(Guid userId, PaginationRequest request, CancellationToken cancellationToken = default);
         Task<Result<SellPostDetailResponse>> GetSellDetailAsync(Guid postId, CancellationToken cancellationToken = default);
         Task<Result<BuyPostDetailResponse>> GetBuyDetailAsync(Guid postId, CancellationToken cancellationToken = default);
-        Task<Result<PagedResult<BuyPostMatchResponse>>> GetMatchesAsync(Guid ownerId, Guid buyPostId, PaginationRequest request, CancellationToken cancellationToken = default);
+        Task<Result<PagedResult<BuyPostMatchResponse>>> GetMatchesAsync(Guid ownerId, Guid buyPostId, PaginationRequest request, string? keyword = null, CancellationToken cancellationToken = default);
         Task<Result<HomeCycle.Application.DTOs.Responses.SupplierMatching.SupplierMatchResponse>> GetSupplierMatchesAsync(
             Guid ownerId,
             Guid buyPostId,

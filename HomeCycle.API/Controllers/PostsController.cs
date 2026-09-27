@@ -333,9 +333,9 @@ namespace HomeCycle.API.Controllers
         [HttpGet("buy/{buyPostId:guid}/matches")]
         [Authorize(Roles = "Personal,Business")]
         [SwaggerOperation(Summary = "Tìm bài bán phù hợp nhu cầu thu mua")]
-        public async Task<IActionResult> Matches(Guid buyPostId, [FromQuery] PaginationRequest request, CancellationToken ct)
+        public async Task<IActionResult> Matches(Guid buyPostId, [FromQuery] PaginationRequest request, [FromQuery] string? keyword, CancellationToken ct)
         {
-            var result = await _postService.GetMatchesAsync(CurrentUserId, buyPostId, request, ct);
+            var result = await _postService.GetMatchesAsync(CurrentUserId, buyPostId, request, keyword, ct);
             return result.IsSuccess ? Ok(result.Data) : MapErrorToResponse(result.Error!);
         }
 

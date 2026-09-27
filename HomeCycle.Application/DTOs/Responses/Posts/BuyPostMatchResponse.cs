@@ -28,4 +28,7 @@ public sealed class BuyPostMatchResponse
     public List<string> ReasonCodes { get; set; } = [];
     public string ShortExplanation { get; set; } = string.Empty;
     public bool CanFulfillQuantity { get; set; }
+    public bool CanSendOffer { get; set; } = true;
+    public string? BlockCode { get; set; }
+    public string? BlockMessage { get; set; }
 }

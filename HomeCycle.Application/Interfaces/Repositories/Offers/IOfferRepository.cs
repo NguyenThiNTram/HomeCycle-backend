@@ -21,6 +21,13 @@ namespace HomeCycle.Application.Interfaces.Repositories.Offers
 
         Task<bool> ExistsActivePendingByPostAndParticipantsAsync(Guid postId, Guid sellerId, Guid buyerId, DateTime now, CancellationToken cancellationToken = default);
 
+        Task<(IReadOnlyCollection<Guid> PendingOfferPostIds, IReadOnlyCollection<Guid> ActiveTradePostIds)> GetSellerRequestBlocksAsync(
+            IReadOnlyCollection<Guid> sellPostIds,
+            Guid sellerId,
+            Guid buyerId,
+            DateTime now,
+            CancellationToken cancellationToken = default);
+
         Task ClosePendingByPostAsync(Guid postId, HomeCycle.Domain.Enums.OfferStatus status, CancellationToken cancellationToken = default);
         Task AddAsync(offer entity, CancellationToken cancellationToken = default);
 

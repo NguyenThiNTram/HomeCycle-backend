@@ -235,7 +235,7 @@ namespace HomeCycle.Application.Services.Offers
                          OfferErrors.QuantityExceedsRemaining(newQuantity, post.RemainingQuantity));
                 }
 
-                var priceError = await ValidateNewOfferAsync(offer, post, newPrice, newQuantity, cancellationToken);
+                var priceError = await ValidateNewOfferAsync(offer, post, await LoadBuyPostAsync(offer, cancellationToken), newPrice, newQuantity, cancellationToken);
                 if (priceError is not null)
                 {
                     await _unitOfWork.RollbackTransactionAsync(cancellationToken);
@@ -527,7 +527,7 @@ namespace HomeCycle.Application.Services.Offers
                 }
 
                 // Dùng policy chung cho Create/Update/Accept/Counter.
-                var termsError = await ValidateNewOfferAsync(offer, post, offer.OfferPrice!.Value, offer.OfferQuantity, cancellationToken);
+                var termsError = await ValidateNewOfferAsync(offer, post, await LoadBuyPostAsync(offer, cancellationToken), offer.OfferPrice!.Value, offer.OfferQuantity, cancellationToken);
 
                 if (termsError is not null)
                 {
@@ -709,7 +709,7 @@ namespace HomeCycle.Application.Services.Offers
                             post.RemainingQuantity));
                 }
 
-                var priceError = await ValidateNewOfferAsync(offer, post, request.OfferPrice, request.OfferQuantity, cancellationToken);
+                var priceError = await ValidateNewOfferAsync(offer, post, await LoadBuyPostAsync(offer, cancellationToken), request.OfferPrice, request.OfferQuantity, cancellationToken);
                 if (priceError is not null)
                 {
                     await _unitOfWork.RollbackTransactionAsync(cancellationToken);
@@ -1386,6 +1386,13 @@ namespace HomeCycle.Application.Services.Offers
             if (snapshot == null) return null;
             await _postRepository.LockAsync(snapshot.PostId, snapshot.BuyPostId, ct);
             return await _offerRepository.GetByIdForUpdateAsync(offerId, ct);
+        }
+
+        private async Task<post?> LoadBuyPostAsync(offer offer, CancellationToken ct)
+        {
+            return offer.BuyPostId.HasValue
+                ? await _postRepository.GetByIdAsync(offer.BuyPostId.Value, ct)
+                : null;
         }
 
         private async Task<Error?> ValidateNewOfferAsync(offer offer, post sell, post? buy, decimal price, int quantity, CancellationToken ct)

@@ -159,6 +159,54 @@ namespace HomeCycle.Infrastructure.Repositories.Offers
                 cancellationToken);
         }
 
+        public async Task<(IReadOnlyCollection<Guid> PendingOfferPostIds, IReadOnlyCollection<Guid> ActiveTradePostIds)> GetSellerRequestBlocksAsync(
+            IReadOnlyCollection<Guid> sellPostIds,
+            Guid sellerId,
+            Guid buyerId,
+            DateTime now,
+            CancellationToken cancellationToken = default)
+        {
+            var postIds = sellPostIds.Distinct().ToArray();
+            if (postIds.Length == 0) return (Array.Empty<Guid>(), Array.Empty<Guid>());
+
+            var effectiveFrom = TradingPostRules.TimeoutEffectiveFromUtc;
+            var offerCreatedAfter = TradingPostRules.ResponseDueCreatedBefore(now);
+            var negotiationActivityAfter = TradingPostRules.NegotiationDueActivityBefore(now);
+            var agreementCreatedAfter = TradingPostRules.PaymentDueCreatedBefore(now);
+
+            var pendingOfferPostIds = await _db.Offers.AsNoTracking()
+                .Where(x => postIds.Contains(x.PostId) &&
+                    ((x.SenderId == sellerId && x.ReceiverId == buyerId) ||
+                     (x.SenderId == buyerId && x.ReceiverId == sellerId)) &&
+                    x.OfferStatus == (int)OfferStatus.Pending &&
+                    (x.CreatedAt < effectiveFrom || x.CreatedAt > offerCreatedAfter))
+                .Select(x => x.PostId)
+                .Distinct()
+                .ToListAsync(cancellationToken);
+
+            var activeTradePostIds = await _db.Negotiations.AsNoTracking()
+                .Where(x => postIds.Contains(x.PostId) &&
+                    x.SellerId == sellerId && x.BuyerId == buyerId &&
+                    (x.NegotiationStatus == null ||
+                     x.NegotiationStatus == (int)NegotiationStatus.Open ||
+                     x.NegotiationStatus == (int)NegotiationStatus.Agreed ||
+                     x.NegotiationStatus == (int)NegotiationStatus.AgreementPending) &&
+                    (x.Agreement_Form == null
+                        ? (x.LastMessageAt ?? x.CreatedAt) < effectiveFrom ||
+                          (x.LastMessageAt ?? x.CreatedAt) > negotiationActivityAfter
+                        : x.Agreement_Form.AgreementStatus == (int)AgreementStatus.Confirmed &&
+                          x.Agreement_Form.Order == null ||
+                          (x.Agreement_Form.AgreementStatus == (int)AgreementStatus.Pending ||
+                           x.Agreement_Form.AgreementStatus == (int)AgreementStatus.Awaiting_Payment) &&
+                          (x.Agreement_Form.CreatedAt < effectiveFrom ||
+                           x.Agreement_Form.CreatedAt > agreementCreatedAfter)))
+                .Select(x => x.PostId)
+                .Distinct()
+                .ToListAsync(cancellationToken);
+
+            return (pendingOfferPostIds, activeTradePostIds);
+        }
+
 
 
     public async Task ClosePendingByPostAsync(Guid postId, OfferStatus status, CancellationToken cancellationToken = default)
