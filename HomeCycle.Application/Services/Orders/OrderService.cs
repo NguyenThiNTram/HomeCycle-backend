@@ -594,6 +594,22 @@ namespace HomeCycle.Application.Services.Orders
                         deliveryMethod == DeliveryMethod.BuyerPickUp ||
                         deliveryMethod == DeliveryMethod.SellerDelivers)
                     {
+                        if (shipment == null)
+                        {
+                            await _unitOfWork.RollbackTransactionAsync(ct);
+
+                            return Result<OrderConfirmationResponseDto>.Fail(
+                                OrderErrors.ShipmentNotFound);
+                        }
+
+                        if (!shipment.SellerReadyAt.HasValue)
+                        {
+                            await _unitOfWork.RollbackTransactionAsync(ct);
+
+                            return Result<OrderConfirmationResponseDto>.Fail(
+                                OrderErrors.SellerReadyRequired);
+                        }
+
                         var collectionAppointment =
                             await _appointmentRepo.GetByAgreementIdAndTypeAsync(
                                 agreement.AgreementId,
@@ -1862,7 +1878,8 @@ namespace HomeCycle.Application.Services.Orders
                         inspectionCollectNow ||
                         (
                             isDirect &&
-                            collectionConfirmationOpen
+                            collectionConfirmationOpen &&
+                            shipment?.SellerReadyAt.HasValue == true
                         ) ||
                         ghnDelivered
                     ))

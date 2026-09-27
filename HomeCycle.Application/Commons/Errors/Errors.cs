@@ -348,7 +348,7 @@ namespace HomeCycle.Application.Commons.Errors
             new("Order.ShipmentNotDelivered", "Đơn vận chuyển chưa được xác nhận giao thành công.");
 
         public static readonly Error SellerReadyRequired =
-            new("Order.SellerReadyRequired", "Người bán phải xác nhận đã chuẩn bị hàng trước khi xác nhận bàn giao.");
+            new("Order.SellerReadyRequired", "Người bán phải xác nhận đã chuẩn bị hàng trước khi thực hiện xác nhận giao nhận.");
 
         public static readonly Error CancellationNotAllowed =
             new("Order.CancellationNotAllowed", "Đơn hàng đã vượt mốc cho phép hủy trực tiếp. Nếu phát sinh vấn đề, vui lòng sử dụng tranh chấp.");
