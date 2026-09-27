@@ -501,6 +501,9 @@ namespace HomeCycle.Application.Commons.Errors
 
         public static Error CollectionConfirmationNotOpen(DateTime scheduledAt) =>
             new("Appointment.CollectionConfirmationNotOpen", $"Chưa đến ngày được phép xác nhận giao nhận. Lịch thu gom: {scheduledAt:O}.");
+
+        public static readonly Error ScheduleOutsideBusinessHours =
+            new("Appointment.ScheduleOutsideBusinessHours", "Thời gian lịch hẹn phải nằm trong khoảng 08:00 đến 20:00 theo giờ Việt Nam.");
     }
 
     public static class InspectionErrors
