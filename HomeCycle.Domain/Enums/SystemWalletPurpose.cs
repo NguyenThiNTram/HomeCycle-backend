@@ -11,6 +11,8 @@ namespace HomeCycle.Domain.Enums
 
         Shipping_Escrow = 1,
 
-        Platform_Revenue = 2
+        Platform_Revenue = 2,
+
+        Order_Escrow = 3
     }
 }
