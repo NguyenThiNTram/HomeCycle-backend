@@ -1,4 +1,4 @@
-﻿using AutoMapper;
+using AutoMapper;
 using FluentValidation;
 using Google.Apis.Auth;
 using HomeCycle.Application.Commons.Errors;
@@ -796,7 +796,7 @@ namespace HomeCycle.Application.Services.Auths
                     var bankAccount = _mapper.Map<bank_account>(request);
                     bankAccount.UserBankId = Guid.NewGuid();
                     bankAccount.UserId = newUser.UserId;
-                    bankAccount.VerifyStatus = VerifyStatus.Verified;
+                    bankAccount.VerifyStatus = VerifyStatus.Unverified;
                     bankAccount.CreatedAt = now;
 
                     await _bankAccountRepository.AddAsync(bankAccount, cancellationToken);

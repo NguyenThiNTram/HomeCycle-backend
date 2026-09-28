@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 
 namespace HomeCycle.Application.DTOs.Responses.Posts
@@ -49,7 +50,10 @@ namespace HomeCycle.Application.DTOs.Responses.Posts
 
         public DeliveryMethod? DeliveryMethod { get; set; }
 
-        public string? PriorityLevel { get; set; }
+        public bool IsPriority { get; set; }
+        public string PriorityStatus => IsPriority ? "PRIORITIZED" : "NORMAL";
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? Message { get; set; }
 
         public PostStatus? Status { get; set; }
 
@@ -123,14 +127,15 @@ namespace HomeCycle.Application.DTOs.Responses.Posts
             BasePrice = source.BasePrice;
             RemainingQuantity = source.RemainingQuantity;
             DeliveryMethod = source.DeliveryMethod;
-            PriorityLevel = source.PriorityLevel;
+            IsPriority = source.IsPriority;
         }
 
         public ProductResponse Product { get; }
         public decimal? BasePrice { get; }
         public int? RemainingQuantity { get; }
         public DeliveryMethod? DeliveryMethod { get; }
-        public string? PriorityLevel { get; }
+        public bool IsPriority { get; }
+        public string PriorityStatus => IsPriority ? "PRIORITIZED" : "NORMAL";
     }
 
     public sealed class BuyPostDetailResponse : TypedPostDetailResponse
@@ -140,14 +145,15 @@ namespace HomeCycle.Application.DTOs.Responses.Posts
             Requirement = new BuyProductRequirementResponse(source.Product);
             PriceFrom = source.PriceFrom;
             PriceTo = source.PriceTo;
-            PriorityLevel = source.PriorityLevel;
+            IsPriority = source.IsPriority;
             Progress = new BuyPostProgressResponse(source.Quantity ?? 0, agreedQuantity);
         }
 
         public BuyProductRequirementResponse Requirement { get; }
         public decimal? PriceFrom { get; }
         public decimal? PriceTo { get; }
-        public string? PriorityLevel { get; }
+        public bool IsPriority { get; }
+        public string PriorityStatus => IsPriority ? "PRIORITIZED" : "NORMAL";
         public BuyPostProgressResponse Progress { get; }
     }
 

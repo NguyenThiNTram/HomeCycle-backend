@@ -8,6 +8,37 @@ namespace HomeCycle.Application.Commons.Helpers;
 
 public static class TradingPostRules
 {
+    public static readonly TimeSpan OfferResponseTimeout = TimeSpan.FromMinutes(3);
+    public static readonly TimeSpan NegotiationInactivityTimeout = TimeSpan.FromMinutes(5);
+    public static readonly TimeSpan PaymentTimeout = TimeSpan.FromMinutes(15);
+    // Bản ghi tạo trước mốc này là dữ liệu cũ, không áp dụng timeout. Chỉnh lại theo thời điểm deploy.
+    public static readonly DateTime TimeoutEffectiveFromUtc = new(2026, 9, 26, 0, 0, 0, DateTimeKind.Utc);
+
+    // Deadline tính từ CreatedAt (không lưu DB); CreatedAt chỉ gán khi tạo nên sửa/xác nhận không gia hạn.
+    public static DateTime? OfferResponseDeadline(DateTime createdAt) =>
+        createdAt >= TimeoutEffectiveFromUtc ? createdAt + OfferResponseTimeout : null;
+    public static DateTime? NegotiationDeadline(DateTime activityAt) =>
+        activityAt >= TimeoutEffectiveFromUtc ? activityAt + NegotiationInactivityTimeout : null;
+    public static DateTime? PaymentDeadline(DateTime createdAt) =>
+        createdAt >= TimeoutEffectiveFromUtc ? createdAt + PaymentTimeout : null;
+
+    public static DateTime? ResponseDeadline(offer? o) => o == null ? null : OfferResponseDeadline(o.CreatedAt);
+    public static DateTime? ResponseDeadline(message? m) =>
+        m?.MessageType is MessageType.Offer or MessageType.CounterOffer ? NegotiationDeadline(m.CreatedAt) : null;
+    public static DateTime? NegotiationDeadline(negotiation? n) =>
+        n?.NegotiationStatus is NegotiationStatus.Open or NegotiationStatus.Agreed
+            ? NegotiationDeadline(n.LastMessageAt ?? n.CreatedAt)
+            : null;
+    public static DateTime? PaymentDeadline(agreement_form? a) => a == null ? null : PaymentDeadline(a.CreatedAt);
+
+    // now >= deadline là hết hạn; so sánh bằng UTC.
+    public static bool IsExpired(DateTime? deadline) => deadline.HasValue && DateTime.UtcNow >= deadline.Value;
+
+    // Dùng cho truy vấn DB: đến hạn khi TimeoutEffectiveFromUtc <= CreatedAt <= giá trị trả về.
+    public static DateTime ResponseDueCreatedBefore(DateTime now) => now - OfferResponseTimeout;
+    public static DateTime NegotiationDueActivityBefore(DateTime now) => now - NegotiationInactivityTimeout;
+    public static DateTime PaymentDueCreatedBefore(DateTime now) => now - PaymentTimeout;
+
     public static bool IsAvailable(post p) => p.Status == PostStatus.Active &&
         (!p.ExpiryDate.HasValue || p.ExpiryDate > DateTime.UtcNow) && p.RemainingQuantity > 0;
 
@@ -26,15 +57,23 @@ public static class TradingPostRules
         {
             var p = await repo.GetByIdAsync(id, ct);
             if (p is null) return OfferErrors.PostNotFound;
-            if (requireActive && !IsAvailable(p)) return OfferErrors.PostNotActive;
+            if (requireActive && p.Status != PostStatus.Active)
+                return p.PostType == PostType.Buy ? OfferErrors.BuyPostNotActive : OfferErrors.SellPostNotActive;
+            if (requireActive && p.ExpiryDate.HasValue && p.ExpiryDate <= DateTime.UtcNow)
+                return p.PostType == PostType.Buy ? OfferErrors.BuyPostExpired : OfferErrors.SellPostExpired;
+            if (requireActive && p.RemainingQuantity <= 0)
+                return p.PostType == PostType.Buy ? OfferErrors.BuyPostFulfilled : OfferErrors.SellPostOutOfStock;
             if (p.Status is PostStatus.Deleted or PostStatus.Suspended) return OfferErrors.PostNotActive;
             var available = p.RemainingQuantity - await repo.GetReservedQuantityAsync(id, excludedNegotiationId, ct);
-            if (quantity > available) return OfferErrors.QuantityExceedsRemaining(quantity, Math.Max(0, available));
+            if (quantity > available)
+                return p.PostType == PostType.Buy
+                    ? OfferErrors.BuyQuantityExceedsRemaining(quantity, Math.Max(0, available))
+                    : OfferErrors.SellQuantityExceedsRemaining(quantity, Math.Max(0, available));
             if (p.PostType == PostType.Buy)
             {
                 var targetAvailable = p.Quantity - await repo.GetAgreedBuyQuantityAsync(id, excludedNegotiationId, ct);
                 if (quantity > targetAvailable)
-                    return OfferErrors.QuantityExceedsRemaining(quantity, Math.Max(0, targetAvailable));
+                    return OfferErrors.BuyQuantityExceedsRemaining(quantity, Math.Max(0, targetAvailable));
             }
         }
         return null;

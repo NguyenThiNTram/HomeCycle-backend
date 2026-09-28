@@ -13,11 +13,13 @@ namespace HomeCycle.Application.Interfaces.Services.Posts
 {
     public interface IPostService
     {
+        Task<Result<IReadOnlyList<PostResponse>>> GetFeaturedSellAsync(CancellationToken cancellationToken = default);
+        Task<Result<IReadOnlyList<PostResponse>>> GetFeaturedBuyAsync(CancellationToken cancellationToken = default);
         Task<Result<bool>> WarnOwnerAsync(Guid moderatorId, Guid postId, string message, CancellationToken cancellationToken = default);
         Task<Result<PagedResult<PostResponse>>> DiscoverBusinessAsync(Guid userId, PaginationRequest request, CancellationToken cancellationToken = default);
         Task<Result<SellPostDetailResponse>> GetSellDetailAsync(Guid postId, CancellationToken cancellationToken = default);
         Task<Result<BuyPostDetailResponse>> GetBuyDetailAsync(Guid postId, CancellationToken cancellationToken = default);
-        Task<Result<PagedResult<BuyPostMatchResponse>>> GetMatchesAsync(Guid ownerId, Guid buyPostId, PaginationRequest request, CancellationToken cancellationToken = default);
+        Task<Result<PagedResult<BuyPostMatchResponse>>> GetMatchesAsync(Guid ownerId, Guid buyPostId, PaginationRequest request, string? keyword = null, CancellationToken cancellationToken = default);
         Task<Result<HomeCycle.Application.DTOs.Responses.SupplierMatching.SupplierMatchResponse>> GetSupplierMatchesAsync(
             Guid ownerId,
             Guid buyPostId,

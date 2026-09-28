@@ -1,4 +1,6 @@
-﻿using AutoMapper;
+﻿using HomeCycle.Application.Interfaces.Services.Notifications;
+using HomeCycle.Application.DTOs.Responses.Notifications;
+using AutoMapper;
 using HomeCycle.Application.Commons.Audits;
 using HomeCycle.Application.Commons.Errors;
 using HomeCycle.Application.Commons.Results;
@@ -7,6 +9,8 @@ using HomeCycle.Application.DTOs.Requests.SubscriptionPackages;
 using HomeCycle.Application.Interfaces.Generics;
 using HomeCycle.Application.Interfaces.Repositories.SubscriptionPackages;
 using HomeCycle.Application.Interfaces.Repositories.Users;
+using HomeCycle.Application.Interfaces.Repositories.Posts;
+using HomeCycle.Application.Interfaces.Repositories.Profiles;
 using HomeCycle.Application.Interfaces.Repositories.Payments;
 using HomeCycle.Application.Interfaces.Services.Wallets;
 using HomeCycle.Application.Interfaces.Services.AI;
@@ -28,6 +32,8 @@ namespace HomeCycle.Application.Services.SubscriptionPackages
 {
     public class UserSubscriptionService : IUserSubscriptionService
     {
+        private const string ExpirationWarningTitle = "Gói đăng ký sắp hết hạn";
+        private const string ExpirationWarningMessage = "Gói đăng ký của bạn sẽ hết hạn trong vòng 24 giờ. Sau khi gói hết hiệu lực, bài đăng của bạn vẫn được giữ nguyên nhưng sẽ không còn được ưu tiên trong khu vực nổi bật, và các quyền lợi khác của gói sẽ kết thúc.";
         private readonly IUserSubscriptionRepository _repository;
         private readonly ISubscriptionPackageRepository _packageRepository;
         private readonly IUserRepository _userRepository;
@@ -41,6 +47,9 @@ namespace HomeCycle.Application.Services.SubscriptionPackages
         private readonly ISupplierMatchEntitlementService _supplierMatchEntitlements;
         private readonly IEntitlementResolver _entitlements;
         private readonly FreePlanOptions _freePlan;
+        private readonly INotificationService _notifications;
+        private readonly IPostRepository _postRepository;
+        private readonly IBusinessProfileRepository _businessProfileRepository;
 
         public UserSubscriptionService(
             IUserSubscriptionRepository repository,
@@ -55,8 +64,13 @@ namespace HomeCycle.Application.Services.SubscriptionPackages
             ISupplierMatchQuota supplierQuota,
             ISupplierMatchEntitlementService supplierMatchEntitlements,
             IEntitlementResolver entitlements,
-            FreePlanOptions freePlan)
+            FreePlanOptions freePlan,
+            INotificationService notifications,
+            IPostRepository postRepository,
+            IBusinessProfileRepository businessProfileRepository)
         {
+            _postRepository = postRepository;
+            _businessProfileRepository = businessProfileRepository;
             _repository = repository;
             _packageRepository = packageRepository;
             _userRepository = userRepository;
@@ -70,6 +84,7 @@ namespace HomeCycle.Application.Services.SubscriptionPackages
             _supplierMatchEntitlements = supplierMatchEntitlements;
             _entitlements = entitlements;
             _freePlan = freePlan;
+            _notifications = notifications;
         }
 
         public async Task<Result<SubscriptionPurchaseContext>> ValidatePurchaseEligibilityAsync(
@@ -183,6 +198,14 @@ namespace HomeCycle.Application.Services.SubscriptionPackages
             subscription.ExpiresAt = paidAtUtc.AddDays(subscription.DurationDaysSnapshot.Value);
 
             await _repository.UpdateAsync(subscription, cancellationToken);
+            var notification = await _notifications.AddPendingAsync(new CreateNotificationCommand(
+                subscription.UserId,
+                "Gói đăng ký đã được kích hoạt",
+                "Gói đăng ký của bạn đã được kích hoạt. Trong thời gian gói còn hiệu lực, bài đăng của bạn được ưu tiên xuất hiện trong khu vực nổi bật theo uy tín và thời gian đăng khi bạn đã có hồ sơ cá nhân, hoặc hồ sơ doanh nghiệp đã được phê duyệt.",
+                NotificationTargetType.Subscription,
+                subscription.SubscriptionId), cancellationToken);
+            _unitOfWork.RegisterAfterCommit(() => _notifications.PublishCreatedSafelyAsync(notification));
+
 
             await _auditService.EnqueueAsync(
                 new AuditEvent
@@ -337,6 +360,11 @@ namespace HomeCycle.Application.Services.SubscriptionPackages
                 ? null
                 : await _packageRepository.GetByIdAsync(activeSubscription.PackageId, cancellationToken);
             var isVip = activeSubscription != null;
+            var postingPriorityEnabled = (await _postRepository.GetPriorityOwnerIdsAsync(new[] { userId }, cancellationToken))
+                .Contains(userId);
+            var postingPriorityBlockedReason = postingPriorityEnabled
+                ? null
+                : await GetPostingPriorityBlockedReasonAsync(user, isVip, cancellationToken);
 
             if (user.Role == UserRole.Personal)
             {
@@ -344,6 +372,8 @@ namespace HomeCycle.Application.Services.SubscriptionPackages
                 var remaining = await _priceQuota.RemainingAsync(userId, limit, cancellationToken);
                 return Result<PlanBenefitsResponseDto>.Success(new PlanBenefitsResponseDto
                 {
+                    PostingPriorityEnabled = postingPriorityEnabled,
+                    PostingPriorityBlockedReason = postingPriorityBlockedReason,
                     Tier = isVip ? "VIP" : "FREE",
                     PlanName = activeSubscription?.PackageNameSnapshot ?? package?.Name ?? _freePlan.Personal.Name,
                     Description = package?.Description ?? _freePlan.Personal.Description,
@@ -367,6 +397,8 @@ namespace HomeCycle.Application.Services.SubscriptionPackages
                 userId, entitlement.DailyAiRefreshLimit, cancellationToken);
             return Result<PlanBenefitsResponseDto>.Success(new PlanBenefitsResponseDto
             {
+                PostingPriorityEnabled = postingPriorityEnabled,
+                PostingPriorityBlockedReason = postingPriorityBlockedReason,
                 Tier = entitlement.Tier.ToString().ToUpperInvariant(),
                 PlanName = activeSubscription?.PackageNameSnapshot ?? package?.Name ?? _freePlan.Business.Name,
                 Description = package?.Description ?? _freePlan.Business.Description,
@@ -392,6 +424,77 @@ namespace HomeCycle.Application.Services.SubscriptionPackages
                                                       _freePlan.Business.NewSupplierNotificationsEnabled
                 }
             });
+        }
+
+        // Chỉ dùng để giải thích lý do; quyết định đủ điều kiện luôn lấy từ GetPriorityOwnerIdsAsync.
+        private async Task<string> GetPostingPriorityBlockedReasonAsync(
+            user user,
+            bool hasActiveSubscription,
+            CancellationToken cancellationToken)
+        {
+            if (!hasActiveSubscription)
+                return "SUBSCRIPTION_INACTIVE";
+            if (user.Status != UserStatus.Active)
+                return "ACCOUNT_INACTIVE";
+            if (user.Role == UserRole.Personal)
+                return "PROFILE_REQUIRED";
+
+            var profile = await _businessProfileRepository.GetByUserIdAsync(user.UserId, cancellationToken);
+            return profile?.Status switch
+            {
+                null => "PROFILE_REQUIRED",
+                (int)BusinessProfileStatus.Pending => "BUSINESS_PROFILE_PENDING",
+                (int)BusinessProfileStatus.Rejected => "BUSINESS_PROFILE_REJECTED",
+                _ => "SUBSCRIPTION_INACTIVE"
+            };
+        }
+
+        public async Task<int> WarnExpiringSubscriptionsAsync(
+            int batchSize,
+            DateTime nowUtc,
+            CancellationToken cancellationToken = default)
+        {
+            var normalizedNow = nowUtc.Kind == DateTimeKind.Utc
+                ? nowUtc
+                : nowUtc.ToUniversalTime();
+
+            await _unitOfWork.BeginTransactionAsync(cancellationToken);
+            try
+            {
+                var subscriptions = await _repository.GetExpiringWithoutWarningAsync(
+                    normalizedNow,
+                    normalizedNow.AddHours(24),
+                    ExpirationWarningTitle,
+                    batchSize,
+                    cancellationToken);
+
+                foreach (var subscription in subscriptions)
+                {
+                    var notification = await _notifications.AddPendingAsync(
+                        new CreateNotificationCommand(
+                            subscription.UserId,
+                            ExpirationWarningTitle,
+                            ExpirationWarningMessage,
+                            NotificationTargetType.Subscription,
+                            subscription.SubscriptionId),
+                        cancellationToken);
+
+                    _unitOfWork.RegisterAfterCommit(
+                        () => _notifications.PublishCreatedSafelyAsync(notification));
+                }
+
+                if (subscriptions.Count > 0)
+                    await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+                await _unitOfWork.CommitTransactionAsync(cancellationToken);
+                return subscriptions.Count;
+            }
+            catch
+            {
+                await _unitOfWork.RollbackTransactionAsync(CancellationToken.None);
+                _unitOfWork.ClearTrackedEntities();
+                throw;
+            }
         }
 
         public Result<PlanDefinitionResponseDto> GetFreePlan(UserRole role)

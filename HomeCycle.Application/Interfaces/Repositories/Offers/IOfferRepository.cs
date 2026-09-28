@@ -11,6 +11,7 @@ namespace HomeCycle.Application.Interfaces.Repositories.Offers
 {
     public interface IOfferRepository
     {
+        Task<IReadOnlyList<Guid>> GetDueIdsAsync(DateTime now, int batchSize, Guid? postId, CancellationToken cancellationToken = default);
         Task<offer?> GetByIdAsync(Guid offerId, CancellationToken cancellationToken = default);
 
         Task<PagedResult<offer>> GetSentAsync(Guid senderId, OfferSearchRequest request, CancellationToken cancellationToken = default);
@@ -18,7 +19,14 @@ namespace HomeCycle.Application.Interfaces.Repositories.Offers
         Task<PagedResult<offer>> GetReceivedAsync(Guid receiverId, OfferSearchRequest request, CancellationToken cancellationToken = default);
         Task<offer?> GetByIdForUpdateAsync(Guid offerId, CancellationToken cancellationToken);
 
-        Task<bool> ExistsPendingByPostAndSenderAsync(Guid postId, Guid senderId, Guid receiverId, Guid? buyPostId, CancellationToken cancellationToken = default);
+        Task<bool> ExistsActivePendingByPostAndParticipantsAsync(Guid postId, Guid sellerId, Guid buyerId, DateTime now, CancellationToken cancellationToken = default);
+
+        Task<(IReadOnlyCollection<Guid> PendingOfferPostIds, IReadOnlyCollection<Guid> ActiveTradePostIds)> GetSellerRequestBlocksAsync(
+            IReadOnlyCollection<Guid> sellPostIds,
+            Guid sellerId,
+            Guid buyerId,
+            DateTime now,
+            CancellationToken cancellationToken = default);
 
         Task ClosePendingByPostAsync(Guid postId, HomeCycle.Domain.Enums.OfferStatus status, CancellationToken cancellationToken = default);
         Task AddAsync(offer entity, CancellationToken cancellationToken = default);

@@ -18,15 +18,18 @@ namespace HomeCycle.API.Controllers
     public class ProductTypeController : ControllerBase
     {
         private readonly IProductTypeService _productTypeService;
+        private readonly IProductService _productService;
         private readonly IProductAttributeService _productAttributeService;
         private readonly IProductAttributeOptionService _productAttributeOptionService;
 
         public ProductTypeController(
             IProductTypeService productTypeService,
+            IProductService productService,
             IProductAttributeService productAttributeService,
             IProductAttributeOptionService productAttributeOptionService)
         {
             _productTypeService = productTypeService;
+            _productService = productService;
             _productAttributeService = productAttributeService;
             _productAttributeOptionService = productAttributeOptionService;
         }
@@ -45,6 +48,113 @@ namespace HomeCycle.API.Controllers
                 .ToArray();
 
             return Ok(Result<SpaceUsageResponse[]>.Success(spaces));
+        }
+
+        [HttpGet("functionality-statuses")]
+        [AllowAnonymous]
+        [SwaggerOperation(Summary = "Lấy danh sách tình trạng hoạt động của sản phẩm")]
+        public IActionResult GetFunctionalityStatuses()
+        {
+            var statuses = new[]
+            {
+                new ProductConditionOptionResponse
+                {
+                    Value = (int)FunctionalityStatus.FullyFunctional,
+                    Name = FunctionalityStatus.FullyFunctional.ToString(),
+                    DisplayName = "Hoạt động đầy đủ",
+                    Description = "Sản phẩm hoạt động bình thường, không có lỗi kỹ thuật ảnh hưởng đến việc sử dụng."
+                },
+                new ProductConditionOptionResponse
+                {
+                    Value = (int)FunctionalityStatus.PartiallyFunctional,
+                    Name = FunctionalityStatus.PartiallyFunctional.ToString(),
+                    DisplayName = "Hoạt động một phần",
+                    Description = "Sản phẩm vẫn sử dụng được nhưng một số chức năng bị lỗi hoặc hoạt động không ổn định."
+                },
+                new ProductConditionOptionResponse
+                {
+                    Value = (int)FunctionalityStatus.NonFunctional,
+                    Name = FunctionalityStatus.NonFunctional.ToString(),
+                    DisplayName = "Không hoạt động",
+                    Description = "Sản phẩm không thể sử dụng bình thường và cần sửa chữa trước khi tiếp tục sử dụng."
+                }
+            };
+
+            return Ok(Result<ProductConditionOptionResponse[]>.Success(statuses));
+        }
+
+        [HttpGet("damage-levels")]
+        [AllowAnonymous]
+        [SwaggerOperation(Summary = "Lấy danh sách mức độ hư hại của sản phẩm")]
+        public IActionResult GetDamageLevels()
+        {
+            var levels = new[]
+            {
+                new ProductConditionOptionResponse
+                {
+                    Value = (int)DamageLevel.None,
+                    Name = DamageLevel.None.ToString(),
+                    DisplayName = "Không hư hại",
+                    Description = "Không phát hiện hư hại đáng kể trên sản phẩm."
+                },
+                new ProductConditionOptionResponse
+                {
+                    Value = (int)DamageLevel.Cosmetic_Damage,
+                    Name = DamageLevel.Cosmetic_Damage.ToString(),
+                    DisplayName = "Hư hại thẩm mỹ",
+                    Description = "Sản phẩm có vết trầy xước hoặc móp nhẹ bên ngoài nhưng không ảnh hưởng đến hoạt động."
+                },
+                new ProductConditionOptionResponse
+                {
+                    Value = (int)DamageLevel.Minor_Damage,
+                    Name = DamageLevel.Minor_Damage.ToString(),
+                    DisplayName = "Hư hại nhẹ",
+                    Description = "Sản phẩm có hư hỏng nhỏ, vẫn sử dụng được và thường dễ sửa chữa hoặc thay thế."
+                },
+                new ProductConditionOptionResponse
+                {
+                    Value = (int)DamageLevel.Moderate_Damage,
+                    Name = DamageLevel.Moderate_Damage.ToString(),
+                    DisplayName = "Hư hại trung bình",
+                    Description = "Một bộ phận quan trọng bị hỏng và ảnh hưởng rõ rệt đến hoạt động của sản phẩm."
+                },
+                new ProductConditionOptionResponse
+                {
+                    Value = (int)DamageLevel.Severe_Damage,
+                    Name = DamageLevel.Severe_Damage.ToString(),
+                    DisplayName = "Hư hại nặng",
+                    Description = "Nhiều bộ phận bị hư hỏng hoặc kết cấu biến dạng, chi phí sửa chữa có thể cao."
+                },
+                new ProductConditionOptionResponse
+                {
+                    Value = (int)DamageLevel.Total_Loss,
+                    Name = DamageLevel.Total_Loss.ToString(),
+                    DisplayName = "Hư hỏng hoàn toàn",
+                    Description = "Sản phẩm không thể sử dụng hoặc không còn khả năng phục hồi hợp lý."
+                }
+            };
+
+            return Ok(Result<ProductConditionOptionResponse[]>.Success(levels));
+        }
+
+        [HttpGet("{productTypeId:guid}/models")]
+        [SwaggerOperation(
+            Summary = "Gợi ý mã model theo loại sản phẩm và thương hiệu",
+            Description = "Trả tối đa 10 mã model từ các bài đăng bán, loại trùng và sắp xếp theo bảng chữ cái."
+        )]
+        public async Task<IActionResult> GetModelSuggestions(
+            [FromRoute] Guid productTypeId,
+            [FromQuery] Guid brandId,
+            [FromQuery] string keyword,
+            CancellationToken cancellationToken)
+        {
+            var result = await _productService.GetModelSuggestionsAsync(
+                productTypeId,
+                brandId,
+                keyword,
+                cancellationToken);
+
+            return ProcessResult(result);
         }
 
         // ==================== ProductType — CRUD cơ bản (giữ nguyên) ====================

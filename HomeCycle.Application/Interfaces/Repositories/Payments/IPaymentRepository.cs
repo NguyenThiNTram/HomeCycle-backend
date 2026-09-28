@@ -12,6 +12,7 @@ namespace HomeCycle.Application.Interfaces.Repositories.Payments
 {
     public interface IPaymentRepository
     {
+        Task<IReadOnlyList<payment>> GetByAgreementAsync(Guid agreementId, CancellationToken ct = default);
         Task<payment?> GetByIdAsync(Guid paymentId, CancellationToken ct = default);
         Task<payment?> GetLatestPendingByAgreementAsync(Guid agreementId, CancellationToken ct = default); 
         Task AddAsync(payment payment, CancellationToken ct = default);

@@ -54,6 +54,8 @@ namespace HomeCycle.Application.Services.Carts
             CancellationToken cancellationToken = default)
         {
             var items = await _cartItemRepository.GetByUserAsync(userId, cancellationToken);
+            await _postRepository.ApplyPriorityAsync(
+                items.Where(x => x.Post != null).Select(x => x.Post!).ToList(), cancellationToken);
 
             var postIds = items.Select(x => x.PostId).Distinct().ToArray();
 
@@ -122,6 +124,8 @@ namespace HomeCycle.Application.Services.Carts
             var created = await _cartItemRepository.GetByIdAsync(cartItem.CartItemId, cancellationToken);
             if (created is null)
                 return Result<CartItemResponse>.Fail(CartErrors.ItemNotFound);
+            if (created.Post != null)
+                await _postRepository.ApplyPriorityAsync(new[] { created.Post }, cancellationToken);
 
             var mediaResult = await _mediaService.GetByTargetsAsync(
                 new[] { postId }, PostMediaTargetType, cancellationToken);

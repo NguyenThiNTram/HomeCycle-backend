@@ -12,6 +12,10 @@ namespace HomeCycle.Application.Interfaces.Repositories.Posts
 {
     public interface IPostRepository
     {
+        Task<HashSet<Guid>> GetPriorityOwnerIdsAsync(IEnumerable<Guid> ownerIds, CancellationToken cancellationToken = default);
+        Task ApplyPriorityAsync(IReadOnlyCollection<post> posts, CancellationToken cancellationToken = default);
+        Task<IReadOnlyList<post>> GetFeaturedSellAsync(CancellationToken cancellationToken = default);
+        Task<IReadOnlyList<post>> GetFeaturedBuyAsync(CancellationToken cancellationToken = default);
         Task<bool> HasOpenReportAsync(Guid postId, CancellationToken cancellationToken = default);
         Task<PagedResult<post>> DiscoverBusinessAsync(Guid userId, HomeCycle.Application.DTOs.Responses.Profiles.BusinessSurveyDetailResponse survey, PaginationRequest request, CancellationToken cancellationToken = default);
         Task<int> GetAgreedBuyQuantityAsync(Guid postId, Guid? excludedNegotiationId = null, CancellationToken cancellationToken = default);

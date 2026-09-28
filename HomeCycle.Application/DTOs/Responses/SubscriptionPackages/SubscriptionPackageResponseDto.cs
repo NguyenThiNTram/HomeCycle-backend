@@ -9,6 +9,8 @@ namespace HomeCycle.Application.DTOs.Responses.SubscriptionPackages
 {
     public class SubscriptionPackageResponseDto
     {
+        public bool PostingPriorityEnabled => TargetRole is UserRole.Personal or UserRole.Business;
+        public string PostingPriorityDescription => "Trong thời gian gói còn hiệu lực, bài đăng đủ điều kiện xuất hiện trong khu vực nổi bật theo uy tín và thời gian đăng; tối đa 2 bài mỗi chủ trong mỗi danh sách 10 bài.";
         public Guid PackageId { get; set; }
         public string Code { get; set; } = string.Empty;
         public string Name { get; set; } = string.Empty;

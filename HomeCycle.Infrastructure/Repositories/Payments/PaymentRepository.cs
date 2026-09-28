@@ -20,6 +20,10 @@ namespace HomeCycle.Infrastructure.Repositories.Payments
         private readonly HomeCycleDbContext _db;
         public PaymentRepository(HomeCycleDbContext db) => _db = db;
 
+        public async Task<IReadOnlyList<payment>> GetByAgreementAsync(Guid agreementId, CancellationToken ct = default) =>
+            (await _db.Payments.AsNoTracking().Where(x => x.AgreementId == agreementId).ToListAsync(ct))
+                .Select(x => x.ToDomain()).ToList();
+
         public async Task<payment?> GetByIdAsync(Guid paymentId, CancellationToken ct = default)
         {
             var entity = await _db.Payments.AsNoTracking().FirstOrDefaultAsync(x => x.PaymentId == paymentId, ct);

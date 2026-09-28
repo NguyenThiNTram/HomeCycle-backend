@@ -18,6 +18,7 @@ namespace HomeCycle.Domain.Enums
         Withdrawal = 8,
         BusinessProfile = 9,
         PersonalProfile = 10,
-        Review = 11
+        Review = 11,
+        Subscription = 12
     }
 }
