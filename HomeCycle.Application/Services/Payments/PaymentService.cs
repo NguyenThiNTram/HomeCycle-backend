@@ -2473,7 +2473,7 @@ namespace HomeCycle.Application.Services.Payments
                             payment.PaymentId,
                             transaction.PayOSOrderCode,
                             PaymentStatus.Expired,
-                            PaymentTransactionStatus.Failed,
+                            PaymentTransactionStatus.Expired,
                             "Thanh toán đã hết hạn",
                             "Giao dịch thanh toán đã hết hạn và chưa được ghi nhận thành công. Vui lòng tạo lại thanh toán.",
                             auditSource,
@@ -2513,7 +2513,7 @@ namespace HomeCycle.Application.Services.Payments
                     {
                         var status = await ApplySubscriptionPayOsTerminalStatusAsync(
                             payment.PaymentId, transaction.PayOSOrderCode, PaymentStatus.Expired,
-                            PaymentTransactionStatus.Failed, auditSource, ct);
+                            PaymentTransactionStatus.Expired, auditSource, ct);
                         return Result<PaymentStatus>.Success(status);
                     }
                     if (payment.ExpiredAt.HasValue &&

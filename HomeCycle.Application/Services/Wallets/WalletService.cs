@@ -150,5 +150,32 @@ namespace HomeCycle.Application.Services.Wallets
 
             return Result<WalletTransactionDetailDto>.Success(transaction);
         }
+
+        public async Task<Result<PagedResult<UserWalletTransactionListItemDto>>> GetMyTransactionsAsync(
+            Guid userId,
+            WalletTypeEnum walletType,
+            UserWalletTransactionSearchRequest request,
+            CancellationToken ct = default)
+        {
+            var wallet = await _walletRepo.GetByUserIdAndTypeAsync(
+                userId,
+                walletType,
+                ct);
+
+            if (wallet == null)
+            {
+                return Result<PagedResult<UserWalletTransactionListItemDto>>.Fail(
+                    new Error(
+                        "Wallet.NotFound",
+                        "Không tìm thấy ví của người dùng."));
+            }
+
+            var result = await _walletTxRepo.GetPagedByWalletIdAsync(
+                wallet.WalletId,
+                request,
+                ct);
+
+            return Result<PagedResult<UserWalletTransactionListItemDto>>.Success(result);
+        }
     }
 }

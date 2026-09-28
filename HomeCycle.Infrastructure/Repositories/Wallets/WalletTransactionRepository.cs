@@ -112,17 +112,33 @@ namespace HomeCycle.Infrastructure.Repositories.Wallets
                     WalletTransactionId = x.WalletTransactionId,
                     FromWalletId = x.FromWalletId,
                     ToWalletId = x.ToWalletId,
-                    From = x.FromWallet == null ? null : new WalletFinancePartyDto
-                    {
-                        WalletId = x.FromWallet.WalletId,
-                        UserId = x.FromWallet.UserId,
-                        Username = x.FromWallet.UserId.HasValue ? x.FromWallet.User.Username : null,
-                        Role = x.FromWallet.UserId.HasValue ? (UserRole?)x.FromWallet.User.Role : null,
-                        WalletType = (WalletTypeEnum)x.FromWallet.WalletType,
-                        SystemPurpose = x.FromWallet.Purpose.HasValue
-                            ? (SystemWalletPurpose?)x.FromWallet.Purpose.Value
-                            : null
-                    },
+                    From = x.FromWallet != null
+                        ? new WalletFinancePartyDto
+                        {
+                            WalletId = x.FromWallet.WalletId,
+                            UserId = x.FromWallet.UserId,
+                            Username = x.FromWallet.UserId.HasValue
+                                ? x.FromWallet.User.Username
+                                : null,
+                            Role = x.FromWallet.UserId.HasValue
+                                ? (UserRole?)x.FromWallet.User.Role
+                                : null,
+                            WalletType = (WalletTypeEnum)x.FromWallet.WalletType,
+                            SystemPurpose = x.FromWallet.Purpose.HasValue
+                                ? (SystemWalletPurpose?)x.FromWallet.Purpose.Value
+                                : null
+                        }
+                        : x.Payment != null
+                            ? new WalletFinancePartyDto
+                            {
+                                WalletId = null,
+                                UserId = x.Payment.PayerId,
+                                Username = x.Payment.Payer.Username,
+                                Role = (UserRole?)x.Payment.Payer.Role,
+                                WalletType = null,
+                                SystemPurpose = null
+                            }
+                            : null,
                     To = x.ToWallet == null ? null : new WalletFinancePartyDto
                     {
                         WalletId = x.ToWallet.WalletId,
@@ -177,9 +193,8 @@ namespace HomeCycle.Infrastructure.Repositories.Wallets
                     FromWalletId = x.FromWalletId,
                     ToWalletId = x.ToWalletId,
 
-                    From = x.FromWallet == null
-                        ? null
-                        : new WalletFinancePartyDto
+                    From = x.FromWallet != null
+                        ? new WalletFinancePartyDto
                         {
                             WalletId = x.FromWallet.WalletId,
                             UserId = x.FromWallet.UserId,
@@ -193,7 +208,18 @@ namespace HomeCycle.Infrastructure.Repositories.Wallets
                             SystemPurpose = x.FromWallet.Purpose.HasValue
                                 ? (SystemWalletPurpose?)x.FromWallet.Purpose.Value
                                 : null
-                        },
+                        }
+                        : x.Payment != null
+                            ? new WalletFinancePartyDto
+                            {
+                                WalletId = null,
+                                UserId = x.Payment.PayerId,
+                                Username = x.Payment.Payer.Username,
+                                Role = (UserRole?)x.Payment.Payer.Role,
+                                WalletType = null,
+                                SystemPurpose = null
+                            }
+                            : null,
 
                     To = x.ToWallet == null
                         ? null
@@ -269,5 +295,139 @@ namespace HomeCycle.Infrastructure.Repositories.Wallets
                 .SingleOrDefaultAsync(ct);
         }
 
+
+        public async Task<PagedResult<UserWalletTransactionListItemDto>> GetPagedByWalletIdAsync(
+            Guid walletId,
+            UserWalletTransactionSearchRequest request,
+            CancellationToken ct = default)
+        {
+            var query = _db.Wallet_Transactions
+                .AsNoTracking()
+                .Where(x => x.Wallet_Ledgers.Any(l => l.WalletId == walletId));
+
+            if (request.TransactionType.HasValue)
+            {
+                query = query.Where(x =>
+                    x.TransactionType == (int)request.TransactionType.Value);
+            }
+
+            if (request.ReferenceType.HasValue)
+            {
+                query = query.Where(x =>
+                    x.ReferenceType == (int)request.ReferenceType.Value);
+            }
+
+            if (request.Status.HasValue)
+            {
+                query = query.Where(x =>
+                    x.WalletTransactionStatus == (int)request.Status.Value);
+            }
+
+            if (request.Direction.HasValue || request.BalanceType.HasValue)
+            {
+                var direction = request.Direction.HasValue
+                    ? (int?)request.Direction.Value
+                    : null;
+
+                var balanceType = request.BalanceType.HasValue
+                    ? (int?)request.BalanceType.Value
+                    : null;
+
+                query = query.Where(x =>
+                    x.Wallet_Ledgers.Any(l =>
+                        l.WalletId == walletId &&
+                        (!direction.HasValue || l.Direction == direction.Value) &&
+                        (!balanceType.HasValue || l.BalanceType == balanceType.Value)));
+            }
+
+            if (request.FromDate.HasValue)
+            {
+                query = query.Where(x =>
+                    x.CreatedAt >= request.FromDate.Value.ToUniversalTime());
+            }
+
+            if (request.ToDate.HasValue)
+            {
+                query = query.Where(x =>
+                    x.CreatedAt <= request.ToDate.Value.ToUniversalTime());
+            }
+
+            var totalCount = await query.CountAsync(ct);
+
+            var items = await query
+                .OrderByDescending(x => x.CreatedAt)
+                .ThenByDescending(x => x.WalletTransactionId)
+                .Skip((request.PageNumber - 1) * request.PageSize)
+                .Take(request.PageSize)
+                .Select(x => new UserWalletTransactionListItemDto
+                {
+                    WalletTransactionId = x.WalletTransactionId,
+
+                    PaymentId = x.PaymentId,
+                    PaymentMethod = x.Payment != null && x.Payment.PaymentMethod.HasValue
+                        ? (PaymentMethod?)x.Payment.PaymentMethod.Value
+                        : null,
+
+                    TransactionType = x.TransactionType.HasValue
+                        ? (TransactionType)x.TransactionType.Value
+                        : null,
+
+                    ReferenceType = x.ReferenceType.HasValue
+                        ? (ReferenceType)x.ReferenceType.Value
+                        : null,
+
+                    ReferenceId = x.ReferenceId,
+
+                    ReferenceCode =
+                        x.ReferenceType == (int)ReferenceType.Order &&
+                        x.ReferenceId.HasValue
+                            ? _db.Orders
+                                .Where(o => o.OrderId == x.ReferenceId.Value)
+                                .Select(o => o.OrderCode)
+                                .FirstOrDefault()
+                            : null,
+
+                    Amount = x.Amount ?? 0,
+
+                    Status = x.WalletTransactionStatus.HasValue
+                        ? (WalletTransactionStatus)x.WalletTransactionStatus.Value
+                        : null,
+
+                    CreatedAt = x.CreatedAt,
+
+                    Description = x.Wallet_Ledgers
+                        .Where(l => l.WalletId == walletId)
+                        .OrderBy(l => l.CreatedAt)
+                        .ThenBy(l => l.LedgerId)
+                        .Select(l => l.Description)
+                        .FirstOrDefault() ?? string.Empty,
+
+                    BalanceImpacts = x.Wallet_Ledgers
+                        .Where(l => l.WalletId == walletId)
+                        .OrderBy(l => l.CreatedAt)
+                        .ThenBy(l => l.LedgerId)
+                        .Select(l => new UserWalletBalanceImpactDto
+                        {
+                            LedgerId = l.LedgerId,
+                            CreatedAt = l.CreatedAt,
+                            Direction = (LedgerDirection)l.Direction,
+                            BalanceType = (BalanceType)l.BalanceType,
+                            Amount = l.Amount,
+                            BalanceBefore = l.BalanceBefore,
+                            BalanceAfter = l.BalanceAfter,
+                            Description = l.Description ?? string.Empty
+                        })
+                        .ToList()
+                })
+                .ToListAsync(ct);
+
+            return new PagedResult<UserWalletTransactionListItemDto>
+            {
+                Items = items,
+                PageNumber = request.PageNumber,
+                PageSize = request.PageSize,
+                TotalCount = totalCount
+            };
+        }
     }
 }

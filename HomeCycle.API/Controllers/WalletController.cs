@@ -251,6 +251,31 @@ namespace HomeCycle.API.Controllers
             return Ok(result.Data);
         }
 
+        [HttpGet("me/transactions")]
+        [SwaggerOperation(
+            Summary = "Lấy lịch sử giao dịch ví của người dùng",
+            Description = "Mỗi item đại diện cho một WalletTransaction tác động đến ví hiện tại. BalanceImpacts chứa toàn bộ ledger entry thuộc chính ví của người dùng, gồm Direction, BalanceType, Amount, BalanceBefore và BalanceAfter.")]
+        [ProducesResponseType(typeof(PagedResult<UserWalletTransactionListItemDto>), StatusCodes.Status200OK)]
+
+        public async Task<IActionResult> GetMyTransactions(
+            [FromQuery] UserWalletTransactionSearchRequest request,
+            CancellationToken ct)
+        {
+            var userId = GetCurrentUserId();
+            var walletType = ResolveWalletType();
+
+            var result = await _walletService.GetMyTransactionsAsync(
+                userId,
+                walletType,
+                request,
+                ct);
+
+            if (!result.IsSuccess)
+                return NotFound(result.Error);
+
+            return Ok(result.Data);
+        }
+
 
         private WalletTypeEnum ResolveWalletType()
         {
