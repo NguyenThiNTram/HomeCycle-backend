@@ -60,6 +60,20 @@ namespace HomeCycle.Infrastructure.Repositories.Offers
             return entity?.ToDomain();
         }
 
+        public async Task<IReadOnlyList<offer>> GetPendingByRelatedPostsAsync(IReadOnlyCollection<Guid> postIds, CancellationToken cancellationToken = default)
+        {
+            var ids = postIds.Distinct().ToArray();
+            if (ids.Length == 0) return Array.Empty<offer>();
+
+            var entities = await _db.Offers.AsNoTracking()
+                .Where(x => x.OfferStatus == (int)OfferStatus.Pending &&
+                    (ids.Contains(x.PostId) || x.BuyPostId.HasValue && ids.Contains(x.BuyPostId.Value)))
+                .OrderBy(x => x.CreatedAt)
+                .ToListAsync(cancellationToken);
+
+            return entities.Select(x => x.ToDomain()).ToList();
+        }
+
         public async Task AddAsync(offer entity, CancellationToken cancellationToken = default)
         {
             var infraEntity = entity.ToInfrastructure();
