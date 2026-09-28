@@ -21,6 +21,7 @@ namespace HomeCycle.Application.Interfaces.Services.SubscriptionPackages
         Task<Result<bool>> CancelPendingSubscriptionAsync(Guid subscriptionId, CancellationToken cancellationToken = default);
         Task<Result<UserSubscriptionResponseDto?>> GetCurrentAsync(Guid userId, DateTime nowUtc, CancellationToken cancellationToken = default);
         Task<Result<PlanBenefitsResponseDto>> GetBenefitsAsync(Guid userId, DateTime nowUtc, CancellationToken cancellationToken = default);
+        Task<int> WarnExpiringSubscriptionsAsync(int batchSize, DateTime nowUtc, CancellationToken cancellationToken = default);
         Result<PlanDefinitionResponseDto> GetFreePlan(UserRole role);
     }
 }

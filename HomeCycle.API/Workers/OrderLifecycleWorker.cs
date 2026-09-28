@@ -91,6 +91,22 @@ namespace HomeCycle.API.Workers
                             _logger.LogError(ex, "Không thể xử lý hết hạn {Phase} trong lượt này", phase);
                         }
                     }
+
+                    try
+                    {
+                        using var subscriptionScope = _scopeFactory.CreateScope();
+                        var warned = await subscriptionScope.ServiceProvider
+                            .GetRequiredService<HomeCycle.Application.Interfaces.Services.SubscriptionPackages.IUserSubscriptionService>()
+                            .WarnExpiringSubscriptionsAsync(_batchSize, DateTime.UtcNow, stoppingToken);
+
+                        if (warned > 0)
+                            _logger.LogInformation("Đã gửi {Count} cảnh báo gói đăng ký sắp hết hạn", warned);
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    {
+                        _logger.LogError(ex, "Không thể xử lý cảnh báo gói đăng ký sắp hết hạn trong lượt này");
+                    }
+
                     await Task.Delay(
                         _pollInterval,
                         stoppingToken);

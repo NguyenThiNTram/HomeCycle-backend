@@ -376,12 +376,18 @@ namespace HomeCycle.Application.Mappings
 
             // ==================== POST (Sell / Buy) ====================
 
-            CreateMap<CreatePostRequest, post>(MemberList.None);
+            CreateMap<CreatePostRequest, post>(MemberList.None)
+                .ForMember(d => d.PriorityLevel, o => o.Ignore())
+                .ForMember(d => d.IsPriority, o => o.Ignore());
             CreateMap<UpdatePostRequest, post>(MemberList.None)
+                .ForMember(d => d.PriorityLevel, o => o.Ignore())
+                .ForMember(d => d.IsPriority, o => o.Ignore())
                 .ForAllMembers(o => o.Condition((src, dest, value) => value != null));
             CreateMap<CreateSellPostRequest, post>(MemberList.None).IncludeBase<CreatePostRequest, post>();
             CreateMap<UpdateSellPostRequest, post>(MemberList.None).IncludeBase<UpdatePostRequest, post>();
             CreateMap<CreateBuyPostRequest, post>(MemberList.None)
+                .ForMember(d => d.PriorityLevel, o => o.Ignore())
+                .ForMember(d => d.IsPriority, o => o.Ignore())
                 .ForMember(x => x.MinExpectedPrice, o => o.MapFrom(s => s.PriceFrom))
                 .ForMember(x => x.BasePrice, o => o.MapFrom(s => s.PriceTo));
             CreateMap<CreateBuyPostRequest, ProductRequirementRequest>(MemberList.None)

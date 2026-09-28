@@ -36,7 +36,6 @@ namespace HomeCycle.Application.Validations.Posts
             RuleFor(x => x.City)
                 .MaximumLength(100).WithMessage("Thành phố/Tỉnh không được vượt quá 100 ký tự.");
 
-            RuleFor(x => x.PriorityLevel);
         }
 
     }

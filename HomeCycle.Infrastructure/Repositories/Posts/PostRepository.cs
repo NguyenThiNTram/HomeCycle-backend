@@ -28,6 +28,95 @@ namespace HomeCycle.Infrastructure.Repositories.Posts
             _db = db;
         }
 
+        public async Task<HashSet<Guid>> GetPriorityOwnerIdsAsync(IEnumerable<Guid> ownerIds, CancellationToken cancellationToken = default)
+        {
+            var ids = ownerIds.Distinct().ToArray();
+            if (ids.Length == 0) return new HashSet<Guid>();
+            var now = DateTime.UtcNow;
+            return (await _db.User_Subscriptions.AsNoTracking()
+                .Where(s => ids.Contains(s.UserId) && s.Status == (int)UserSubscriptionStatus.Active &&
+                    s.ActivatedAt <= now && s.ExpiresAt > now &&
+                    s.User.Status == (int)UserStatus.Active &&
+                    ((s.User.Role == (int)UserRole.Personal && s.User.Personal_ProfileUser != null) ||
+                     (s.User.Role == (int)UserRole.Business && s.User.Business_Profile != null &&
+                      s.User.Business_Profile.Status == (int)BusinessProfileStatus.Approved)))
+                .Select(s => s.UserId).Distinct().ToListAsync(cancellationToken)).ToHashSet();
+        }
+
+        private async Task<List<post>> MapWithPriorityAsync(IEnumerable<Post> entities, CancellationToken cancellationToken)
+        {
+            var posts = entities.Select(x => x.ToDomain()).ToList();
+            await ApplyPriorityAsync(posts, cancellationToken);
+            return posts;
+        }
+
+        public async Task ApplyPriorityAsync(IReadOnlyCollection<post> posts, CancellationToken cancellationToken = default)
+        {
+            if (posts.Count == 0) return;
+            var priorityOwners = await GetPriorityOwnerIdsAsync(posts.Select(x => x.OwnerId), cancellationToken);
+            var now = DateTime.UtcNow;
+            foreach (var item in posts)
+            {
+                item.IsPriority = priorityOwners.Contains(item.OwnerId) &&
+                    item.Status == PostStatus.Active &&
+                    (!item.ExpiryDate.HasValue || item.ExpiryDate.Value > now) &&
+                    item.RemainingQuantity > 0 &&
+                    item.Product != null;
+            }
+        }
+
+        public Task<IReadOnlyList<post>> GetFeaturedSellAsync(CancellationToken cancellationToken = default)
+            => GetFeaturedAsync(PostType.Sell, UserRole.Personal, cancellationToken);
+
+        public Task<IReadOnlyList<post>> GetFeaturedBuyAsync(CancellationToken cancellationToken = default)
+            => GetFeaturedAsync(PostType.Buy, UserRole.Business, cancellationToken);
+
+        private async Task<IReadOnlyList<post>> GetFeaturedAsync(PostType postType, UserRole role, CancellationToken cancellationToken)
+        {
+            var now = DateTime.UtcNow;
+            var entities = await _db.Posts.FromSqlInterpolated($@"
+                SELECT p.* FROM ""Post"" p
+                JOIN (
+                    SELECT ranked.""PostId"", ranked.score FROM (
+                        SELECT p0.""PostId"", p0.""CreatedAt"",
+                            CASE WHEN u.""Role"" = {(int)UserRole.Personal}
+                                THEN personal.""ReputationScore"" ELSE business.""ReputationScore"" END AS score,
+                            ROW_NUMBER() OVER (PARTITION BY p0.""OwnerId""
+                                ORDER BY p0.""CreatedAt"" DESC, p0.""PostId"") AS owner_rank
+                        FROM ""Post"" p0
+                        JOIN ""Users"" u ON u.""UserId"" = p0.""OwnerId""
+                        LEFT JOIN ""Personal_Profile"" personal ON personal.""UserId"" = u.""UserId""
+                        LEFT JOIN ""Business_Profile"" business ON business.""UserId"" = u.""UserId""
+                        WHERE p0.""PostType"" = {(int)postType} AND p0.""Status"" = {(int)PostStatus.Active}
+                            AND (p0.""ExpiryDate"" IS NULL OR p0.""ExpiryDate"" > {now})
+                            AND p0.""RemainingQuantity"" > 0
+                            AND EXISTS (SELECT 1 FROM ""Product"" product WHERE product.""PostId"" = p0.""PostId"")
+                            AND u.""Status"" = {(int)UserStatus.Active} AND u.""Role"" = {(int)role}
+                            AND ((u.""Role"" = {(int)UserRole.Personal} AND personal.""UserId"" IS NOT NULL)
+                                OR (u.""Role"" = {(int)UserRole.Business} AND business.""UserId"" IS NOT NULL
+                                    AND business.""Status"" = {(int)BusinessProfileStatus.Approved}))
+                            AND EXISTS (SELECT 1 FROM ""User_Subscription"" s
+                                WHERE s.""UserId"" = u.""UserId"" AND s.""Status"" = {(int)UserSubscriptionStatus.Active}
+                                    AND s.""ActivatedAt"" <= {now} AND s.""ExpiresAt"" > {now})
+                    ) ranked WHERE ranked.owner_rank <= 2
+                    ORDER BY ranked.score DESC, ranked.""CreatedAt"" DESC, ranked.""PostId""
+                    LIMIT 10
+                ) selected ON selected.""PostId"" = p.""PostId""
+                ")
+                .AsNoTracking()
+                .Include(x => x.User)
+                .Include(x => x.Product).ThenInclude(x => x!.Category)
+                .Include(x => x.Product).ThenInclude(x => x!.ProductType)
+                .Include(x => x.Product).ThenInclude(x => x!.Brand)
+                .OrderByDescending(x => role == UserRole.Personal
+                    ? x.User!.Personal_ProfileUser!.ReputationScore : x.User!.Business_Profile!.ReputationScore)
+                .ThenByDescending(x => x.CreatedAt).ThenBy(x => x.PostId)
+                .ToListAsync(cancellationToken);
+            var posts = entities.Select(x => x.ToDomain()).ToList();
+            foreach (var item in posts) item.IsPriority = true;
+            return posts;
+        }
+
         public async Task AddAsync(post entity, CancellationToken cancellationToken = default)
         {
             var infraPost = entity.ToInfrastructure();
@@ -65,7 +154,7 @@ namespace HomeCycle.Infrastructure.Repositories.Posts
                     .ThenInclude(x => x.Brand)
                 .FirstOrDefaultAsync(x => x.PostId == postId, cancellationToken);
 
-            return entity?.ToDomain();
+            return entity == null ? null : (await MapWithPriorityAsync(new[] { entity }, cancellationToken))[0];
         }
 
         public async Task<post?> GetByIdForUpdateAsync(Guid postId, CancellationToken cancellationToken = default)
@@ -104,7 +193,7 @@ namespace HomeCycle.Infrastructure.Repositories.Posts
                 .FirstOrDefaultAsync(
                     x => x.PostId == postId, cancellationToken);
 
-            return entity?.ToDomain();
+            return entity == null ? null : (await MapWithPriorityAsync(new[] { entity }, cancellationToken))[0];
         }
 
         // Trả về TẤT CẢ bài đăng bất kể trạng thái (Active/Suspended/Closed/Deleted).
@@ -120,7 +209,7 @@ namespace HomeCycle.Infrastructure.Repositories.Posts
                 .Include(x => x.Product)
                     .ThenInclude(x => x.Brand)
                 .Include(x => x.Product)
-                .OrderByDescending(x => x.CreatedAt);
+                .OrderByDescending(x => x.CreatedAt).ThenBy(x => x.PostId);
 
             var totalCount = await query.CountAsync(cancellationToken);
 
@@ -131,7 +220,7 @@ namespace HomeCycle.Infrastructure.Repositories.Posts
 
             return new PagedResult<post>
             {
-                Items = items.Select(x => x.ToDomain()).ToList(),
+                Items = await MapWithPriorityAsync(items, cancellationToken),
                 PageNumber = request.PageNumber,
                 PageSize = request.PageSize,
                 TotalCount = totalCount
@@ -152,7 +241,7 @@ namespace HomeCycle.Infrastructure.Repositories.Posts
                     .ThenInclude(x => x.Brand)
                 .Include(x => x.Product)
                 .Where(x => x.Status == (int)PostStatus.Active && (x.ExpiryDate == null || x.ExpiryDate > DateTime.UtcNow))
-                .OrderByDescending(x => x.CreatedAt);
+                .OrderByDescending(x => x.CreatedAt).ThenBy(x => x.PostId);
 
             var totalCount = await query.CountAsync(cancellationToken);
 
@@ -163,7 +252,7 @@ namespace HomeCycle.Infrastructure.Repositories.Posts
 
             return new PagedResult<post>
             {
-                Items = items.Select(x => x.ToDomain()).ToList(),
+                Items = await MapWithPriorityAsync(items, cancellationToken),
                 PageNumber = request.PageNumber,
                 PageSize = request.PageSize,
                 TotalCount = totalCount
@@ -181,7 +270,7 @@ namespace HomeCycle.Infrastructure.Repositories.Posts
                 .Include(x => x.Product)
                     .ThenInclude(x => x.Brand)
                 .Where(x => x.OwnerId == ownerId && x.Status != (int)PostStatus.Deleted)
-                .OrderByDescending(x => x.CreatedAt);
+                .OrderByDescending(x => x.CreatedAt).ThenBy(x => x.PostId);
 
             var totalCount = await query.CountAsync(cancellationToken);
 
@@ -192,7 +281,7 @@ namespace HomeCycle.Infrastructure.Repositories.Posts
 
             return new PagedResult<post>
             {
-                Items = items.Select(x => x.ToDomain()).ToList(),
+                Items = await MapWithPriorityAsync(items, cancellationToken),
                 PageNumber = request.PageNumber,
                 PageSize = request.PageSize,
                 TotalCount = totalCount
@@ -218,7 +307,7 @@ namespace HomeCycle.Infrastructure.Repositories.Posts
                 .FirstOrDefaultAsync(
                     x => x.PostId == postId && x.OwnerId == ownerId && x.Status != (int)PostStatus.Deleted, cancellationToken);
 
-            return entity?.ToDomain();
+            return entity == null ? null : (await MapWithPriorityAsync(new[] { entity }, cancellationToken))[0];
         }
 
         public async Task<PagedResult<post>> DiscoverBusinessAsync(
@@ -260,7 +349,7 @@ namespace HomeCycle.Infrastructure.Repositories.Posts
 
             return new PagedResult<post>
             {
-                Items = entities.Select(x => x.ToDomain()).ToList(),
+                Items = await MapWithPriorityAsync(entities, cancellationToken),
                 PageNumber = request.PageNumber,
                 PageSize = request.PageSize,
                 TotalCount = totalCount
@@ -413,14 +502,6 @@ namespace HomeCycle.Infrastructure.Repositories.Posts
                 query = query.Where(x => x.DeliveryMethod == deliveryMethod);
             }
 
-            // ==================== PRIORITY LEVEL ====================
-
-            if (request.PriorityLevel.HasValue)
-            {
-                var priorityLevel = (int)request.PriorityLevel.Value;
-                query = query.Where(x => x.PriorityLevel == priorityLevel);
-            }
-
             // ==================== ATTRIBUTE + OPTION ====================
 
             if (request.AttributeFilters is { Count: > 0 })
@@ -464,26 +545,14 @@ namespace HomeCycle.Infrastructure.Repositories.Posts
 
             var sortBy = request.SortBy ?? PostSortBy.Newest;
 
-            // PriorityLevel luôn được ưu tiên trước.
-            var orderedQuery = query.OrderByDescending(x => x.PriorityLevel);
-
-            orderedQuery = sortBy switch
+            var orderedQuery = sortBy switch
             {
-                PostSortBy.PriceAsc => orderedQuery
-                    .ThenBy(x => x.BasePrice == null)
-                    .ThenBy(x => x.BasePrice)
-                    .ThenByDescending(x => x.CreatedAt),
-
-                PostSortBy.PriceDesc => orderedQuery
-                    .ThenBy(x => x.BasePrice == null)
-                    .ThenByDescending(x => x.BasePrice)
-                    .ThenByDescending(x => x.CreatedAt),
-
-                PostSortBy.Oldest => orderedQuery
-                    .ThenBy(x => x.CreatedAt),
-
-                _ => orderedQuery
-                    .ThenByDescending(x => x.CreatedAt)
+                PostSortBy.PriceAsc => query.OrderBy(x => x.BasePrice == null)
+                    .ThenBy(x => x.BasePrice).ThenByDescending(x => x.CreatedAt),
+                PostSortBy.PriceDesc => query.OrderBy(x => x.BasePrice == null)
+                    .ThenByDescending(x => x.BasePrice).ThenByDescending(x => x.CreatedAt),
+                PostSortBy.Oldest => query.OrderBy(x => x.CreatedAt),
+                _ => query.OrderByDescending(x => x.CreatedAt)
             };
 
             orderedQuery = orderedQuery.ThenBy(x => x.PostId);
@@ -499,9 +568,7 @@ namespace HomeCycle.Infrastructure.Repositories.Posts
 
             return new PagedResult<post>
             {
-                Items = entities
-                    .Select(x => x.ToDomain())
-                    .ToList(),
+                Items = await MapWithPriorityAsync(entities, cancellationToken),
 
                 PageNumber = request.PageNumber,
                 PageSize = request.PageSize,

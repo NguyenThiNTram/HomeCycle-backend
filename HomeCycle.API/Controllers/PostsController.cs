@@ -42,6 +42,22 @@ namespace HomeCycle.API.Controllers
             }
         }
 
+        [AllowAnonymous]
+        [HttpGet("featured/sell")]
+        public async Task<IActionResult> GetFeaturedSell(CancellationToken cancellationToken)
+        {
+            var result = await _postService.GetFeaturedSellAsync(cancellationToken);
+            return result.IsSuccess ? Ok(result.Data) : MapErrorToResponse(result.Error!);
+        }
+
+        [AllowAnonymous]
+        [HttpGet("featured/buy")]
+        public async Task<IActionResult> GetFeaturedBuy(CancellationToken cancellationToken)
+        {
+            var result = await _postService.GetFeaturedBuyAsync(cancellationToken);
+            return result.IsSuccess ? Ok(result.Data) : MapErrorToResponse(result.Error!);
+        }
+
         [HttpPost("create/sell")]
         [SwaggerOperation(
             Summary = "Tạo bài đăng bán",

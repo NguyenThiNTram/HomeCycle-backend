@@ -35,8 +35,6 @@ public sealed class UpdateBuyPostRequest
     public string? Ward { get => _Ward; set { _Ward = value; ChangedProperties.Add(nameof(Ward)); } }
     private string? _City;
     public string? City { get => _City; set { _City = value; ChangedProperties.Add(nameof(City)); } }
-    private PriorityLevel? _PriorityLevel;
-    public PriorityLevel? PriorityLevel { get => _PriorityLevel; set { _PriorityLevel = value; ChangedProperties.Add(nameof(PriorityLevel)); } }
     private decimal? _PriceFrom;
     public decimal? PriceFrom { get => _PriceFrom; set { _PriceFrom = value; ChangedProperties.Add(nameof(PriceFrom)); } }
     private decimal? _PriceTo;

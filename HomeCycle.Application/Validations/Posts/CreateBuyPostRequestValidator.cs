@@ -20,7 +20,6 @@ public sealed class CreateBuyPostRequestValidator : AbstractValidator<CreateBuyP
         RuleFor(x => x.StreetAddress).MaximumLength(500);
         RuleFor(x => x.Ward).MaximumLength(100);
         RuleFor(x => x.City).MaximumLength(100);
-        RuleFor(x => x.PriorityLevel).IsInEnum().When(x => x.PriorityLevel.HasValue);
         RuleFor(x => x.PriceFrom).InclusiveBetween(PostValidationLimits.MinPrice, PostValidationLimits.MaxPrice)
             .WithMessage("Giá tối thiểu phải từ 10.000 đến 500.000.000 đồng.")
             .PrecisionScale(18, 2, true).When(x => x.PriceFrom.HasValue);
