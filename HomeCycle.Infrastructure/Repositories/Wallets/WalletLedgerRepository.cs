@@ -83,18 +83,20 @@ namespace HomeCycle.Infrastructure.Repositories.Wallets
         public async Task<decimal> GetNetOrderHeldAmountAsync(
             Guid walletId,
             Guid orderId,
+            BalanceType balanceType,
             CancellationToken ct = default)
         {
             var amount = await _db.Wallet_Ledgers
                 .AsNoTracking()
                 .Where(x =>
                     x.WalletId == walletId &&
-                    x.BalanceType == (int)BalanceType.Hold &&
+                    x.BalanceType == (int)balanceType &&
                     x.ReferenceType == (int)ReferenceType.Order &&
                     x.ReferenceId == orderId)
-                .Select(x => (decimal?)(x.Direction == (int)LedgerDirection.In
-                    ? x.Amount
-                    : -x.Amount))
+                .Select(x => (decimal?)(
+                    x.Direction == (int)LedgerDirection.In
+                        ? x.Amount
+                        : -x.Amount))
                 .SumAsync(ct);
 
             return amount ?? 0;

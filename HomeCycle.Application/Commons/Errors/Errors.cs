@@ -626,7 +626,7 @@ namespace HomeCycle.Application.Commons.Errors
             new("Payment.RefundWalletNotFound", "Không tìm thấy ví cần thiết để thực hiện hoàn tiền.");
 
         public static readonly Error InsufficientHeldBalance =
-            new("Payment.InsufficientHeldBalance", "Số dư đang tạm giữ không đủ để thực hiện hoàn tiền.");
+            new("Payment.InsufficientHeldBalance", "Số dư Order Escrow không đủ để thực hiện hoàn tiền.");
 
         public static readonly Error InvalidRefundAmount =
             new("Payment.InvalidRefundAmount", "Số tiền hoàn không hợp lệ.");
@@ -656,13 +656,13 @@ namespace HomeCycle.Application.Commons.Errors
             new("Payment.ReleasePaymentNotFound", "Không tìm thấy giao dịch thanh toán hợp lệ để giải ngân.");
 
         public static readonly Error ReleaseWalletNotFound =
-            new("Payment.ReleaseWalletNotFound", "Không tìm thấy ví người bán để giải ngân.");
+            new("Payment.ReleaseWalletNotFound", "Không tìm thấy ví cần thiết để giải ngân.");
 
         public static readonly Error ReleaseOrderHeldAmountNotFound =
             new("Payment.ReleaseOrderHeldAmountNotFound", "Đơn hàng không còn khoản tiền tạm giữ có thể giải ngân.");
 
         public static readonly Error InsufficientHeldBalanceForRelease =
-            new("Payment.InsufficientHeldBalanceForRelease", "Số dư tạm giữ của người bán không đủ để giải ngân cho đơn hàng.");
+            new("Payment.InsufficientHeldBalanceForRelease", "Số dư Order Escrow không đủ để giải ngân cho đơn hàng.");
 
         public static readonly Error ReleaseFailed =
             new("Payment.ReleaseFailed", "Không thể giải ngân khoản tiền tạm giữ của đơn hàng.");

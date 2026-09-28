@@ -857,7 +857,7 @@ namespace HomeCycle.Application.Services.Payments
             decimal amountToPay = calc.AmountToPay;
             decimal shippingFee = calc.ShippingFee;
             // ✅ THÊM
-            decimal holdAmount = agreement.AgreementType == (int)AgreementType.Inspection
+            decimal orderEscrowAmount = agreement.AgreementType == (int)AgreementType.Inspection
                 ? amountToPay
                 : details?.DeliveryMethod == DeliveryMethod.GhnDelivery
                     ? basePrice
@@ -928,61 +928,50 @@ namespace HomeCycle.Application.Services.Payments
                 basePrice = calc.BasePrice;
                 amountToPay = calc.AmountToPay;
                 shippingFee = calc.ShippingFee;
-                holdAmount = agreement.AgreementType == (int)AgreementType.Inspection
+                orderEscrowAmount = agreement.AgreementType == (int)AgreementType.Inspection
                     ? amountToPay
                     : details?.DeliveryMethod == DeliveryMethod.GhnDelivery
                         ? basePrice
                         : amountToPay;
-                needsSystemLedger =
-                    agreement.AgreementType != (int)AgreementType.Inspection &&
-                    details?.DeliveryMethod == DeliveryMethod.GhnDelivery &&
-                    shippingFee > 0;
+
+                needsSystemLedger = agreement.AgreementType != (int)AgreementType.Inspection &&
+                    details?.DeliveryMethod == DeliveryMethod.GhnDelivery && shippingFee > 0;
+
                 agreement.PaymentType = calc.PaymentType;
 
-                wallet buyerWallet = null!;
-                wallet sellerWallet = null!;
-                wallet_transaction? systemWalletTx = null;
-                wallet_ledger? buyerLedgerForSystem = null;
-                wallet_ledger? systemLedger = null;
+                wallet_transaction? shippingWalletTx = null;
+                wallet_ledger? buyerShippingLedger = null;
+                wallet_ledger? shippingLedger = null;
 
-                // Kỹ thuật Deterministic Locking: Khóa theo thứ tự GUID để chống Deadlock
-                if (string.Compare(payerId.ToString(), agreement.SellerId.ToString(), StringComparison.Ordinal) < 0)
+                var orderEscrowWallet = await _walletRepo.GetSystemWalletForUpdateAsync(SystemWalletPurpose.Order_Escrow, ct);
+                if (orderEscrowWallet == null)
                 {
-                    buyerWallet = await _walletRepo.GetUserWalletForUpdateAsync(payerId, ct);
-                    sellerWallet = await _walletRepo.GetUserWalletForUpdateAsync(agreement.SellerId, ct);
-                }
-                else
-                {
-                    sellerWallet = await _walletRepo.GetUserWalletForUpdateAsync(agreement.SellerId, ct);
-                    buyerWallet = await _walletRepo.GetUserWalletForUpdateAsync(payerId, ct);
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    return Result<PaymentStatusResponseDto>.Fail(new Error("Wallet.SystemWalletNotFound", "Không tìm thấy ví Order Escrow."));
                 }
 
-                // Validate Ví bên trong Transaction
+                wallet? shippingEscrowWallet = null;
+                if (needsSystemLedger)
+                {
+                    shippingEscrowWallet = await _walletRepo.GetSystemWalletForUpdateAsync(SystemWalletPurpose.Shipping_Escrow, ct);
+                    if (shippingEscrowWallet == null)
+                    {
+                        await _unitOfWork.RollbackTransactionAsync(ct);
+                        return Result<PaymentStatusResponseDto>.Fail(new Error("Wallet.SystemWalletNotFound", "Không tìm thấy ví hệ thống để nhận phí vận chuyển."));
+                    }
+                }
+
+                var buyerWallet = await _walletRepo.GetUserWalletForUpdateAsync(payerId, ct);
                 if (buyerWallet == null)
                 {
                     await _unitOfWork.RollbackTransactionAsync(ct);
                     return Result<PaymentStatusResponseDto>.Fail(new Error("Wallet.BuyerNotFound", "Không tìm thấy ví của người mua."));
                 }
-                if (sellerWallet == null)
-                {
-                    await _unitOfWork.RollbackTransactionAsync(ct);
-                    return Result<PaymentStatusResponseDto>.Fail(new Error("Wallet.SellerNotFound", "Không tìm thấy ví của người bán."));
-                }
+
                 if (buyerWallet.AvailableBalance < amountToPay)
                 {
                     await _unitOfWork.RollbackTransactionAsync(ct);
                     return Result<PaymentStatusResponseDto>.Fail(new Error("Wallet.InsufficientBalance", "Số dư ví không đủ để thực hiện giao dịch."));
-                }
-                wallet? systemWallet = null;
-                if (needsSystemLedger)
-                {
-                    // Khóa ví System cuối cùng
-                    systemWallet = await _walletRepo.GetSystemWalletForUpdateAsync(SystemWalletPurpose.Shipping_Escrow, ct);
-                    if (systemWallet == null)
-                    {
-                        await _unitOfWork.RollbackTransactionAsync(ct);
-                        return Result<PaymentStatusResponseDto>.Fail(new Error("Wallet.SystemWalletNotFound", "Không tìm thấy ví hệ thống để nhận phí vận chuyển."));
-                    }
                 }
 
                 var paymentId = Guid.NewGuid();
@@ -990,66 +979,65 @@ namespace HomeCycle.Application.Services.Payments
                 //var now = DateTime.UtcNow;
 
 
-                // HẠCH TOÁN 1: TIỀN VỀ NGƯỜI BÁN (Goods / Goods + Shipping)
-                var sellerWalletTx = new wallet_transaction
+                // HẠCH TOÁN 1: TIỀN ĐƠN HÀNG -> ORDER ESCROW
+                var escrowWalletTx = new wallet_transaction
                 {
                     WalletTransactionId = Guid.NewGuid(),
                     FromWalletId = buyerWallet.WalletId,
-                    ToWalletId = sellerWallet.WalletId,
+                    ToWalletId = orderEscrowWallet.WalletId,
                     PaymentId = paymentId,
                     ReferenceId = orderId,
                     ReferenceType = (int)ReferenceType.Order,
-                    TransactionType = (int)TransactionType.Wallet_Payment, // Thanh toán từ ví
-                    Amount = holdAmount,
+                    TransactionType = (int)TransactionType.Wallet_Payment,
+                    Amount = orderEscrowAmount,
                     WalletTransactionStatus = (int)WalletTransactionStatus.Completed,
                     CreatedAt = now
                 };
 
-                // Ledger 1.1: Trừ tiền Buyer (Out)
-                var buyerLedgerForSeller = new wallet_ledger
+                var buyerEscrowLedger = new wallet_ledger
                 {
                     LedgerId = Guid.NewGuid(),
-                    WalletTransactionId = sellerWalletTx.WalletTransactionId,
+                    WalletTransactionId = escrowWalletTx.WalletTransactionId,
                     WalletId = buyerWallet.WalletId,
                     Direction = (int)LedgerDirection.Out,
                     BalanceType = (int)BalanceType.Available,
-                    Amount = holdAmount,
+                    Amount = orderEscrowAmount,
                     BalanceBefore = buyerWallet.AvailableBalance,
-                    BalanceAfter = buyerWallet.AvailableBalance - holdAmount,
+                    BalanceAfter = buyerWallet.AvailableBalance - orderEscrowAmount,
                     ReferenceType = (int)ReferenceType.Order,
                     ReferenceId = orderId,
-                    Description = $"Thanh toan tien hang cho don {orderId}",
+                    Description = $"Thanh toán tiền hàng cho đơn {orderId}",
                     CreatedAt = now
                 };
-                buyerWallet.AvailableBalance -= holdAmount;
 
-                // Ledger 1.2: Cộng tiền Seller (In) -> Vào Hold
-                var sellerLedger = new wallet_ledger
+                var orderEscrowLedger = new wallet_ledger
                 {
                     LedgerId = Guid.NewGuid(),
-                    WalletTransactionId = sellerWalletTx.WalletTransactionId,
-                    WalletId = sellerWallet.WalletId,
+                    WalletTransactionId = escrowWalletTx.WalletTransactionId,
+                    WalletId = orderEscrowWallet.WalletId,
                     Direction = (int)LedgerDirection.In,
-                    BalanceType = (int)BalanceType.Hold,
-                    Amount = holdAmount,
-                    BalanceBefore = sellerWallet.HoldBalance,
-                    BalanceAfter = sellerWallet.HoldBalance + holdAmount,
+                    BalanceType = (int)BalanceType.Available,
+                    Amount = orderEscrowAmount,
+                    BalanceBefore = orderEscrowWallet.AvailableBalance,
+                    BalanceAfter = orderEscrowWallet.AvailableBalance + orderEscrowAmount,
                     ReferenceType = (int)ReferenceType.Order,
                     ReferenceId = orderId,
-                    Description = $"Tam giu tien cho don hang {orderId}",
-                    CreatedAt = DateTime.UtcNow
+                    Description = $"Tạm giữ tiền cho đơn hàng {orderId}",
+                    CreatedAt = now
                 };
-                sellerWallet.HoldBalance += holdAmount;
 
+                buyerWallet.AvailableBalance -= orderEscrowAmount;
+                orderEscrowWallet.AvailableBalance += orderEscrowAmount;
+                orderEscrowWallet.UpdatedAt = now;
 
-                // HẠCH TOÁN 2: TIỀN VỀ HỆ THỐNG (Phí ship GHN nếu có)
-                if (needsSystemLedger && systemWallet != null)
+                // HẠCH TOÁN 2: PHÍ SHIP GHN -> SHIPPING ESCROW
+                if (needsSystemLedger && shippingEscrowWallet != null)
                 {
-                    systemWalletTx = new wallet_transaction
+                    shippingWalletTx = new wallet_transaction
                     {
                         WalletTransactionId = Guid.NewGuid(),
                         FromWalletId = buyerWallet.WalletId,
-                        ToWalletId = systemWallet.WalletId,
+                        ToWalletId = shippingEscrowWallet.WalletId,
                         PaymentId = paymentId,
                         ReferenceId = orderId,
                         ReferenceType = (int)ReferenceType.Order,
@@ -1059,11 +1047,10 @@ namespace HomeCycle.Application.Services.Payments
                         CreatedAt = now
                     };
 
-                    // Ledger 2.1: Trừ tiền Buyer phần phí ship (Out)
-                    buyerLedgerForSystem = new wallet_ledger
+                    buyerShippingLedger = new wallet_ledger
                     {
                         LedgerId = Guid.NewGuid(),
-                        WalletTransactionId = systemWalletTx.WalletTransactionId,
+                        WalletTransactionId = shippingWalletTx.WalletTransactionId,
                         WalletId = buyerWallet.WalletId,
                         Direction = (int)LedgerDirection.Out,
                         BalanceType = (int)BalanceType.Available,
@@ -1072,29 +1059,29 @@ namespace HomeCycle.Application.Services.Payments
                         BalanceAfter = buyerWallet.AvailableBalance - shippingFee,
                         ReferenceType = (int)ReferenceType.Order,
                         ReferenceId = orderId,
-                        Description = $"Thanh toan phi ship GHN cho don {orderId}",
+                        Description = $"Thanh toán phí ship GHN cho đơn {orderId}",
                         CreatedAt = now
                     };
-                    buyerWallet.AvailableBalance -= shippingFee;
 
-                    // Ledger 2.2: Cộng tiền System (In)
-                    systemLedger = new wallet_ledger
+                    shippingLedger = new wallet_ledger
                     {
                         LedgerId = Guid.NewGuid(),
-                        WalletTransactionId = systemWalletTx.WalletTransactionId,
-                        WalletId = systemWallet.WalletId,
+                        WalletTransactionId = shippingWalletTx.WalletTransactionId,
+                        WalletId = shippingEscrowWallet.WalletId,
                         Direction = (int)LedgerDirection.In,
-                        BalanceType = (int)BalanceType.Available, // tiền pass-through, không phải hold
+                        BalanceType = (int)BalanceType.Available,
                         Amount = shippingFee,
-                        BalanceBefore = systemWallet.AvailableBalance,
-                        BalanceAfter = systemWallet.AvailableBalance + shippingFee,
+                        BalanceBefore = shippingEscrowWallet.AvailableBalance,
+                        BalanceAfter = shippingEscrowWallet.AvailableBalance + shippingFee,
                         ReferenceType = (int)ReferenceType.Order,
                         ReferenceId = orderId,
-                        Description = $"Phi van chuyen GHN thu ho cho don hang {orderId}",
+                        Description = $"Phí vận chuyển GHN thu hộ cho đơn hàng {orderId}",
                         CreatedAt = now
                     };
-                    systemWallet.AvailableBalance += shippingFee;
-                    systemWallet.UpdatedAt = now;
+
+                    buyerWallet.AvailableBalance -= shippingFee;
+                    shippingEscrowWallet.AvailableBalance += shippingFee;
+                    shippingEscrowWallet.UpdatedAt = now;
                 }
 
                 // Khởi tạo thực thể Payment (Wallet-specific: Completed ngay lập tức, không qua gateway ngoài)
@@ -1135,7 +1122,8 @@ namespace HomeCycle.Application.Services.Payments
                     {
                         ["agreementId"] = agreement.AgreementId,
                         ["orderId"] = fulfillment.Order.OrderId,
-                        ["holdAmount"] = holdAmount,
+                        ["orderEscrowAmount"] = orderEscrowAmount,
+                        ["orderEscrowWalletId"] = orderEscrowWallet.WalletId,
                         ["shippingFee"] = shippingFee
                     }
                 };
@@ -1161,23 +1149,30 @@ namespace HomeCycle.Application.Services.Payments
 
                 // Lưu Data
                 buyerWallet.UpdatedAt = now;
-                sellerWallet.UpdatedAt = now;
-                if (systemWalletTx != null) await _walletTxRepo.AddAsync(systemWalletTx, ct);
-                if (buyerLedgerForSystem != null) await _ledgerRepo.AddAsync(buyerLedgerForSystem, ct);
-                if (systemLedger != null) await _ledgerRepo.AddAsync(systemLedger, ct);
-                if (needsSystemLedger && systemWallet != null) await _walletRepo.UpdateAsync(systemWallet, ct);
+
                 await _walletRepo.UpdateAsync(buyerWallet, ct);
-                await _walletRepo.UpdateAsync(sellerWallet, ct);
+                await _walletRepo.UpdateAsync(orderEscrowWallet, ct);
                 await _paymentRepo.AddAsync(payment, ct);
-                await _walletTxRepo.AddAsync(sellerWalletTx, ct);
-                await _ledgerRepo.AddAsync(buyerLedgerForSeller, ct);
-                await _ledgerRepo.AddAsync(sellerLedger, ct);
+
+                await _walletTxRepo.AddAsync(escrowWalletTx, ct);
+                await _ledgerRepo.AddAsync(buyerEscrowLedger, ct);
+                await _ledgerRepo.AddAsync(orderEscrowLedger, ct);
+
+                if (shippingWalletTx != null)
+                    await _walletTxRepo.AddAsync(shippingWalletTx, ct);
+
+                if (buyerShippingLedger != null)
+                    await _ledgerRepo.AddAsync(buyerShippingLedger, ct);
+
+                if (shippingLedger != null)
+                    await _ledgerRepo.AddAsync(shippingLedger, ct);
+
+                if (needsSystemLedger && shippingEscrowWallet != null)
+                    await _walletRepo.UpdateAsync(shippingEscrowWallet, ct);
+
                 await _negotiationRepo.UpdateAsync(negotiation, ct);
                 await _messageRepo.AddAsync(paymentMessage, ct);
-                await _conversationRepo.UpdateLastActivityAsync(
-                    conversation.ConversationId,
-                    now,
-                    ct);
+                await _conversationRepo.UpdateLastActivityAsync(conversation.ConversationId, now, ct);
 
                 var sellerNotification = await AddPaymentNotificationPendingAsync(
                     agreement.SellerId,
@@ -1217,7 +1212,24 @@ namespace HomeCycle.Application.Services.Payments
             }
             catch (Exception ex)
             {
-                await _unitOfWork.RollbackTransactionAsync(ct);
+                await _unitOfWork.RollbackTransactionAsync(CancellationToken.None);
+                _unitOfWork.ClearTrackedEntities();
+
+                await PersistFinancialFailureAuditSafelyAsync(
+                    AuditActions.PaymentComplete,
+                    AuditTargetTypes.Agreement,
+                    agreementId,
+                    AuditActorType.User,
+                    AuditSource.HttpApi,
+                    payerId,
+                    "WalletPayment.TransactionFailed",
+                    new Dictionary<string, object?>
+                    {
+                        ["agreementId"] = agreementId,
+                        ["method"] = PaymentMethod.Internal_Wallet.ToString(),
+                        ["errorType"] = ex.GetType().Name
+                    });
+
                 _logger.LogError(ex, "Lỗi hạch toán thanh toán ví nội bộ cho Agreement {AgreementId}", agreementId);
                 return Result<PaymentStatusResponseDto>.Fail(new Error("WalletPayment.TransactionFailed", "Giao dịch thất bại do lỗi hệ thống."));
             }
@@ -1858,7 +1870,6 @@ namespace HomeCycle.Application.Services.Payments
             try
             {
                 var order = await _orderRepo.GetByIdForUpdateAsync(orderId, ct);
-
                 if (order == null)
                 {
                     await _unitOfWork.RollbackTransactionAsync(ct);
@@ -1878,20 +1889,13 @@ namespace HomeCycle.Application.Services.Payments
                 }
 
                 var now = DateTime.UtcNow;
-
-                // Create dispute vẫn được phép tại đúng thời điểm deadline.
-                // Vì vậy chỉ release khi thời điểm hiện tại đã thực sự lớn hơn deadline.
                 if (now <= order.DisputeWindowEndsAt.Value)
                 {
                     await _unitOfWork.RollbackTransactionAsync(ct);
                     return Result<decimal>.Fail(PaymentErrors.ReleaseWindowNotEnded(order.DisputeWindowEndsAt.Value));
                 }
 
-                var hasActiveDispute = await _disputeRepo.ExistsActiveAsync(
-                    DisputeTargetType.Order,
-                    order.OrderId,
-                    ct);
-
+                var hasActiveDispute = await _disputeRepo.ExistsActiveAsync(DisputeTargetType.Order, order.OrderId, ct);
                 if (hasActiveDispute)
                 {
                     await _unitOfWork.RollbackTransactionAsync(ct);
@@ -1899,7 +1903,6 @@ namespace HomeCycle.Application.Services.Payments
                 }
 
                 var agreement = await _agreementRepo.GetByIdAsync(order.AgreementId, ct);
-
                 if (agreement == null)
                 {
                     await _unitOfWork.RollbackTransactionAsync(ct);
@@ -1907,25 +1910,23 @@ namespace HomeCycle.Application.Services.Payments
                 }
 
                 var payment = await _paymentRepo.GetLatestPaidByOrderIdAsync(order.OrderId, ct);
-
                 if (payment == null || payment.PaymentStatus == (int)PaymentStatus.Refunded)
                 {
                     await _unitOfWork.RollbackTransactionAsync(ct);
                     return Result<decimal>.Fail(PaymentErrors.ReleasePaymentNotFound);
                 }
 
+                var orderEscrowWallet = await _walletRepo.GetSystemWalletForUpdateAsync(SystemWalletPurpose.Order_Escrow, ct);
                 var sellerWallet = await _walletRepo.GetUserWalletForUpdateAsync(agreement.SellerId, ct);
 
-                if (sellerWallet == null)
+                if (orderEscrowWallet == null || sellerWallet == null)
                 {
                     await _unitOfWork.RollbackTransactionAsync(ct);
                     return Result<decimal>.Fail(PaymentErrors.ReleaseWalletNotFound);
                 }
 
                 var orderHeldAmount = await _ledgerRepo.GetNetOrderHeldAmountAsync(
-                    sellerWallet.WalletId,
-                    order.OrderId,
-                    ct);
+                    orderEscrowWallet.WalletId, order.OrderId, BalanceType.Available, ct);
 
                 if (orderHeldAmount <= AmountEpsilon)
                 {
@@ -1934,25 +1935,23 @@ namespace HomeCycle.Application.Services.Payments
                 }
 
                 var currentOrderPaid = order.AmountPaid ?? 0;
-
                 if (currentOrderPaid <= AmountEpsilon || orderHeldAmount > currentOrderPaid + AmountEpsilon)
                 {
                     await _unitOfWork.RollbackTransactionAsync(ct);
                     return Result<decimal>.Fail(PaymentErrors.InvalidReleaseAmount);
                 }
 
-                if (sellerWallet.HoldBalance + AmountEpsilon < orderHeldAmount)
+                if (orderEscrowWallet.AvailableBalance + AmountEpsilon < orderHeldAmount)
                 {
                     await _unitOfWork.RollbackTransactionAsync(ct);
                     return Result<decimal>.Fail(PaymentErrors.InsufficientHeldBalanceForRelease);
                 }
 
                 var walletTransactionId = Guid.NewGuid();
-
                 var walletTransaction = new wallet_transaction
                 {
                     WalletTransactionId = walletTransactionId,
-                    FromWalletId = sellerWallet.WalletId,
+                    FromWalletId = orderEscrowWallet.WalletId,
                     ToWalletId = sellerWallet.WalletId,
                     PaymentId = payment.PaymentId,
                     ReferenceId = order.OrderId,
@@ -1963,23 +1962,23 @@ namespace HomeCycle.Application.Services.Payments
                     CreatedAt = now
                 };
 
-                var holdLedger = new wallet_ledger
+                var escrowLedger = new wallet_ledger
                 {
                     LedgerId = Guid.NewGuid(),
                     WalletTransactionId = walletTransactionId,
-                    WalletId = sellerWallet.WalletId,
+                    WalletId = orderEscrowWallet.WalletId,
                     Direction = (int)LedgerDirection.Out,
-                    BalanceType = (int)BalanceType.Hold,
+                    BalanceType = (int)BalanceType.Available,
                     Amount = orderHeldAmount,
-                    BalanceBefore = sellerWallet.HoldBalance,
-                    BalanceAfter = sellerWallet.HoldBalance - orderHeldAmount,
+                    BalanceBefore = orderEscrowWallet.AvailableBalance,
+                    BalanceAfter = orderEscrowWallet.AvailableBalance - orderHeldAmount,
                     ReferenceType = (int)ReferenceType.Order,
                     ReferenceId = order.OrderId,
                     Description = $"Giải ngân tiền tạm giữ - Đơn {order.OrderCode} - {order.ProductName}",
                     CreatedAt = now
                 };
 
-                var availableLedger = new wallet_ledger
+                var sellerLedger = new wallet_ledger
                 {
                     LedgerId = Guid.NewGuid(),
                     WalletTransactionId = walletTransactionId,
@@ -1995,14 +1994,16 @@ namespace HomeCycle.Application.Services.Payments
                     CreatedAt = now
                 };
 
-                sellerWallet.HoldBalance -= orderHeldAmount;
+                orderEscrowWallet.AvailableBalance -= orderHeldAmount;
+                orderEscrowWallet.UpdatedAt = now;
                 sellerWallet.AvailableBalance += orderHeldAmount;
                 sellerWallet.UpdatedAt = now;
 
+                await _walletRepo.UpdateAsync(orderEscrowWallet, ct);
                 await _walletRepo.UpdateAsync(sellerWallet, ct);
                 await _walletTxRepo.AddAsync(walletTransaction, ct);
-                await _ledgerRepo.AddAsync(holdLedger, ct);
-                await _ledgerRepo.AddAsync(availableLedger, ct);
+                await _ledgerRepo.AddAsync(escrowLedger, ct);
+                await _ledgerRepo.AddAsync(sellerLedger, ct);
 
                 var paymentReleaseAuditEvent = new AuditEvent
                 {
@@ -2017,7 +2018,9 @@ namespace HomeCycle.Application.Services.Payments
                     {
                         ["orderId"] = order.OrderId,
                         ["amount"] = orderHeldAmount,
-                        ["walletTransactionId"] = walletTransactionId
+                        ["walletTransactionId"] = walletTransactionId,
+                        ["fromWalletId"] = orderEscrowWallet.WalletId,
+                        ["toWalletId"] = sellerWallet.WalletId
                     }
                 };
 
@@ -2038,7 +2041,23 @@ namespace HomeCycle.Application.Services.Payments
             }
             catch (Exception ex)
             {
-                await _unitOfWork.RollbackTransactionAsync(ct);
+                await _unitOfWork.RollbackTransactionAsync(CancellationToken.None);
+                _unitOfWork.ClearTrackedEntities();
+
+                await PersistFinancialFailureAuditSafelyAsync(
+                    AuditActions.PaymentRelease,
+                    AuditTargetTypes.Order,
+                    orderId,
+                    AuditActorType.System,
+                    AuditSource.BackgroundJob,
+                    null,
+                    "Payment.ReleaseFailed",
+                    new Dictionary<string, object?>
+                    {
+                        ["orderId"] = orderId,
+                        ["errorType"] = ex.GetType().Name
+                    });
+
                 _logger.LogError(ex, "Lỗi giải ngân tiền tạm giữ cho Order {OrderId}", orderId);
                 return Result<decimal>.Fail(PaymentErrors.ReleaseFailed);
             }
@@ -2861,6 +2880,46 @@ namespace HomeCycle.Application.Services.Payments
             }
         }
 
+        private async Task PersistFinancialFailureAuditSafelyAsync(
+            string action,
+            string targetType,
+            Guid targetId,
+            AuditActorType actorType,
+            AuditSource source,
+            Guid? userId,
+            string reasonCode,
+            Dictionary<string, object?> metadata)
+        {
+            try
+            {
+                await _auditService.EnqueueAsync(new AuditEvent
+                {
+                    Category = AuditCategory.BusinessOperation,
+                    Action = action,
+                    Outcome = AuditOutcome.Failed,
+                    ActorType = actorType,
+                    Source = source,
+                    UserId = userId,
+                    TargetType = targetType,
+                    TargetId = targetId,
+                    ReasonCode = reasonCode,
+                    Metadata = metadata
+                }, CancellationToken.None);
+
+                await _unitOfWork.SaveChangesAsync(CancellationToken.None);
+            }
+            catch (Exception auditException)
+            {
+                _unitOfWork.ClearTrackedEntities();
+                _logger.LogWarning(
+                    auditException,
+                    "Không thể lưu audit failure cho {Action}, Target {TargetType}/{TargetId}.",
+                    action,
+                    targetType,
+                    targetId);
+            }
+        }
+
         private async Task<Result<decimal>> RefundOrderHeldAmountCoreAsync(
             order order,
             agreement_form agreement,
@@ -2868,12 +2927,10 @@ namespace HomeCycle.Application.Services.Payments
             CancellationToken ct)
         {
             var currentOrderPaid = order.AmountPaid ?? 0;
-
             if (currentOrderPaid <= AmountEpsilon)
                 return Result<decimal>.Fail(PaymentErrors.InvalidRefundAmount);
 
             var payment = await _paymentRepo.GetLatestPaidByOrderIdAsync(order.OrderId, ct);
-
             if (payment == null)
                 return Result<decimal>.Fail(PaymentErrors.RefundPaymentNotFound);
 
@@ -2884,30 +2941,14 @@ namespace HomeCycle.Application.Services.Payments
                 ? (PaymentStatus)payment.PaymentStatus.Value
                 : PaymentStatus.Completed;
 
-            wallet? buyerWallet;
-            wallet? sellerWallet;
+            var orderEscrowWallet = await _walletRepo.GetSystemWalletForUpdateAsync(SystemWalletPurpose.Order_Escrow, ct);
+            var buyerWallet = await _walletRepo.GetUserWalletForUpdateAsync(agreement.BuyerId, ct);
 
-            if (string.Compare(
-                    agreement.BuyerId.ToString(),
-                    agreement.SellerId.ToString(),
-                    StringComparison.Ordinal) < 0)
-            {
-                buyerWallet = await _walletRepo.GetUserWalletForUpdateAsync(agreement.BuyerId, ct);
-                sellerWallet = await _walletRepo.GetUserWalletForUpdateAsync(agreement.SellerId, ct);
-            }
-            else
-            {
-                sellerWallet = await _walletRepo.GetUserWalletForUpdateAsync(agreement.SellerId, ct);
-                buyerWallet = await _walletRepo.GetUserWalletForUpdateAsync(agreement.BuyerId, ct);
-            }
-
-            if (buyerWallet == null || sellerWallet == null)
+            if (orderEscrowWallet == null || buyerWallet == null)
                 return Result<decimal>.Fail(PaymentErrors.RefundWalletNotFound);
 
             var orderHeldAmount = await _ledgerRepo.GetNetOrderHeldAmountAsync(
-                sellerWallet.WalletId,
-                order.OrderId,
-                ct);
+                orderEscrowWallet.WalletId, order.OrderId, BalanceType.Available, ct);
 
             if (orderHeldAmount <= AmountEpsilon)
                 return Result<decimal>.Fail(PaymentErrors.OrderHeldAmountNotFound);
@@ -2921,7 +2962,7 @@ namespace HomeCycle.Application.Services.Payments
                 return Result<decimal>.Fail(PaymentErrors.InvalidRefundAmount);
             }
 
-            if (sellerWallet.HoldBalance + AmountEpsilon < amount)
+            if (orderEscrowWallet.AvailableBalance + AmountEpsilon < amount)
                 return Result<decimal>.Fail(PaymentErrors.InsufficientHeldBalance);
 
             var now = DateTime.UtcNow;
@@ -2930,7 +2971,7 @@ namespace HomeCycle.Application.Services.Payments
             var walletTransaction = new wallet_transaction
             {
                 WalletTransactionId = walletTransactionId,
-                FromWalletId = sellerWallet.WalletId,
+                FromWalletId = orderEscrowWallet.WalletId,
                 ToWalletId = buyerWallet.WalletId,
                 PaymentId = payment.PaymentId,
                 ReferenceId = order.OrderId,
@@ -2941,16 +2982,16 @@ namespace HomeCycle.Application.Services.Payments
                 CreatedAt = now
             };
 
-            var sellerLedger = new wallet_ledger
+            var escrowLedger = new wallet_ledger
             {
                 LedgerId = Guid.NewGuid(),
                 WalletTransactionId = walletTransactionId,
-                WalletId = sellerWallet.WalletId,
+                WalletId = orderEscrowWallet.WalletId,
                 Direction = (int)LedgerDirection.Out,
-                BalanceType = (int)BalanceType.Hold,
+                BalanceType = (int)BalanceType.Available,
                 Amount = amount,
-                BalanceBefore = sellerWallet.HoldBalance,
-                BalanceAfter = sellerWallet.HoldBalance - amount,
+                BalanceBefore = orderEscrowWallet.AvailableBalance,
+                BalanceAfter = orderEscrowWallet.AvailableBalance - amount,
                 ReferenceType = (int)ReferenceType.Order,
                 ReferenceId = order.OrderId,
                 Description = $"Hoàn tiền tạm giữ - Đơn {order.OrderCode} - {order.ProductName}",
@@ -2973,30 +3014,25 @@ namespace HomeCycle.Application.Services.Payments
                 CreatedAt = now
             };
 
-            sellerWallet.HoldBalance -= amount;
-            sellerWallet.UpdatedAt = now;
-
+            orderEscrowWallet.AvailableBalance -= amount;
+            orderEscrowWallet.UpdatedAt = now;
             buyerWallet.AvailableBalance += amount;
             buyerWallet.UpdatedAt = now;
 
             var isFullRefund = amount >= currentOrderPaid - AmountEpsilon;
-
             payment.PaymentStatus = isFullRefund
                 ? (int)PaymentStatus.Refunded
                 : (int)PaymentStatus.PartiallyRefunded;
 
-            await _walletRepo.UpdateAsync(sellerWallet, ct);
+            await _walletRepo.UpdateAsync(orderEscrowWallet, ct);
             await _walletRepo.UpdateAsync(buyerWallet, ct);
             await _walletTxRepo.AddAsync(walletTransaction, ct);
-            await _ledgerRepo.AddAsync(sellerLedger, ct);
+            await _ledgerRepo.AddAsync(escrowLedger, ct);
             await _ledgerRepo.AddAsync(buyerLedger, ct);
             await _paymentRepo.UpdateAsync(payment, ct);
 
             var refundAuditDiff = new AuditDiffBuilder()
-                .Add(
-                    "status",
-                    previousPaymentStatus.ToString(),
-                    ((PaymentStatus)payment.PaymentStatus.Value).ToString());
+                .Add("status", previousPaymentStatus.ToString(), ((PaymentStatus)payment.PaymentStatus.Value).ToString());
 
             var paymentRefundAuditEvent = new AuditEvent
             {
@@ -3011,12 +3047,14 @@ namespace HomeCycle.Application.Services.Payments
                 {
                     ["orderId"] = order.OrderId,
                     ["amount"] = amount,
-                    ["fullRefund"] = isFullRefund
+                    ["fullRefund"] = isFullRefund,
+                    ["fromWalletId"] = orderEscrowWallet.WalletId,
+                    ["toWalletId"] = buyerWallet.WalletId,
+                    ["walletTransactionId"] = walletTransactionId
                 }
             };
 
             await _auditService.EnqueueAsync(paymentRefundAuditEvent, ct);
-
             return Result<decimal>.Success(amount);
         }
 
@@ -3099,34 +3137,38 @@ namespace HomeCycle.Application.Services.Payments
                 decimal unitPrice = agreement.FinalPrice ?? agreement.InitialPrice ?? 0;
                 decimal basePrice = unitPrice * Math.Max(agreement.Quantity, 1);
                 decimal paidAmount = payment.Amount ?? 0;
-                decimal holdAmount = agreement.AgreementType == (int)AgreementType.Inspection
+
+                if (paidAmount <= 0)
+                    throw new InvalidOperationException("Số tiền Payment không hợp lệ.");
+
+                if (!confirmedAmount.HasValue || Math.Abs(confirmedAmount.Value - paidAmount) > AmountEpsilon)
+                    throw new InvalidOperationException("Số tiền PayOS xác nhận không khớp Payment.");
+
+                decimal orderEscrowAmount = agreement.AgreementType == (int)AgreementType.Inspection
                     ? paidAmount
                     : details?.DeliveryMethod == DeliveryMethod.GhnDelivery
                         ? basePrice
                         : paidAmount;
-                decimal shippingFee =
-                    agreement.AgreementType != (int)AgreementType.Inspection &&
+
+                decimal shippingFee = agreement.AgreementType != (int)AgreementType.Inspection &&
                     details?.DeliveryMethod == DeliveryMethod.GhnDelivery
-                        ? details.EstimatedShippingFee
-                            ?? Math.Max(paidAmount - basePrice, 0)
+                        ? details.EstimatedShippingFee ?? Math.Max(paidAmount - basePrice, 0)
                         : 0;
-                bool needsSystemLedger =
-                    agreement.AgreementType != (int)AgreementType.Inspection &&
-                    details?.DeliveryMethod == DeliveryMethod.GhnDelivery &&
-                    shippingFee > 0;
 
-                wallet_transaction? systemWalletTx = null;
-                wallet_ledger? systemLedger = null;
+                bool needsSystemLedger = agreement.AgreementType != (int)AgreementType.Inspection &&
+                    details?.DeliveryMethod == DeliveryMethod.GhnDelivery && shippingFee > 0;
 
-                var sellerWallet = await _walletRepo.GetUserWalletForUpdateAsync(agreement.SellerId, ct);
-                if (sellerWallet == null)
-                    throw new InvalidOperationException("Không tìm thấy ví người bán.");
+                wallet_transaction? shippingWalletTx = null;
+                wallet_ledger? shippingLedger = null;
 
-                wallet? systemWallet = null;
+                var orderEscrowWallet = await _walletRepo.GetSystemWalletForUpdateAsync(SystemWalletPurpose.Order_Escrow, ct)
+                    ?? throw new InvalidOperationException("Không tìm thấy ví Order Escrow.");
+
+                wallet? shippingEscrowWallet = null;
                 if (needsSystemLedger)
                 {
-                    systemWallet = await _walletRepo.GetSystemWalletForUpdateAsync(SystemWalletPurpose.Shipping_Escrow, ct);
-                    if (systemWallet == null)
+                    shippingEscrowWallet = await _walletRepo.GetSystemWalletForUpdateAsync(SystemWalletPurpose.Shipping_Escrow, ct);
+                    if (shippingEscrowWallet == null)
                         throw new InvalidOperationException("Không tìm thấy ví hệ thống để nhận phí vận chuyển.");
                 }
 
@@ -3161,6 +3203,9 @@ namespace HomeCycle.Application.Services.Payments
                         ["agreementId"] = agreement.AgreementId,
                         ["orderId"] = fulfillment.Order.OrderId,
                         ["amount"] = paidAmount,
+                        ["orderEscrowAmount"] = orderEscrowAmount,
+                        ["orderEscrowWalletId"] = orderEscrowWallet.WalletId,
+                        ["shippingFee"] = shippingFee,
                         ["method"] = PaymentMethod.PayOS.ToString(),
                         ["payOsOrderCode"] = payOsOrderCode
                     }
@@ -3178,46 +3223,46 @@ namespace HomeCycle.Application.Services.Payments
 
                 negotiation.LastMessageAt = now;
 
-                var newWalletTx = new wallet_transaction
+                var escrowWalletTx = new wallet_transaction
                 {
                     WalletTransactionId = Guid.NewGuid(),
                     FromWalletId = null,
-                    ToWalletId = sellerWallet.WalletId,
+                    ToWalletId = orderEscrowWallet.WalletId,
                     PaymentId = payment.PaymentId,
                     ReferenceId = fulfillment.Order.OrderId,
                     ReferenceType = (int)ReferenceType.Order,
                     TransactionType = (int)TransactionType.Escrow_Deposit,
-                    Amount = holdAmount,
+                    Amount = orderEscrowAmount,
                     WalletTransactionStatus = (int)WalletTransactionStatus.Completed,
                     CreatedAt = now
                 };
 
-                var newLedger = new wallet_ledger
+                var orderEscrowLedger = new wallet_ledger
                 {
                     LedgerId = Guid.NewGuid(),
-                    WalletTransactionId = newWalletTx.WalletTransactionId,
-                    WalletId = sellerWallet.WalletId,
+                    WalletTransactionId = escrowWalletTx.WalletTransactionId,
+                    WalletId = orderEscrowWallet.WalletId,
                     Direction = (int)LedgerDirection.In,
-                    BalanceType = (int)BalanceType.Hold,
-                    Amount = holdAmount,
-                    BalanceBefore = sellerWallet.HoldBalance,
-                    BalanceAfter = sellerWallet.HoldBalance + holdAmount,
+                    BalanceType = (int)BalanceType.Available,
+                    Amount = orderEscrowAmount,
+                    BalanceBefore = orderEscrowWallet.AvailableBalance,
+                    BalanceAfter = orderEscrowWallet.AvailableBalance + orderEscrowAmount,
                     ReferenceType = (int)ReferenceType.Order,
                     ReferenceId = fulfillment.Order.OrderId,
                     Description = $"Tạm giữ tiền - Đơn {fulfillment.Order.OrderCode} - {fulfillment.Order.ProductName}",
                     CreatedAt = now
                 };
 
-                sellerWallet.HoldBalance += holdAmount;
-                sellerWallet.UpdatedAt = now;
+                orderEscrowWallet.AvailableBalance += orderEscrowAmount;
+                orderEscrowWallet.UpdatedAt = now;
 
-                if (needsSystemLedger && systemWallet != null)
+                if (needsSystemLedger && shippingEscrowWallet != null)
                 {
-                    systemWalletTx = new wallet_transaction
+                    shippingWalletTx = new wallet_transaction
                     {
                         WalletTransactionId = Guid.NewGuid(),
                         FromWalletId = null,
-                        ToWalletId = systemWallet.WalletId,
+                        ToWalletId = shippingEscrowWallet.WalletId,
                         PaymentId = payment.PaymentId,
                         ReferenceId = fulfillment.Order.OrderId,
                         ReferenceType = (int)ReferenceType.Order,
@@ -3227,40 +3272,41 @@ namespace HomeCycle.Application.Services.Payments
                         CreatedAt = now
                     };
 
-                    systemLedger = new wallet_ledger
+                    shippingLedger = new wallet_ledger
                     {
                         LedgerId = Guid.NewGuid(),
-                        WalletTransactionId = systemWalletTx.WalletTransactionId,
-                        WalletId = systemWallet.WalletId,
+                        WalletTransactionId = shippingWalletTx.WalletTransactionId,
+                        WalletId = shippingEscrowWallet.WalletId,
                         Direction = (int)LedgerDirection.In,
                         BalanceType = (int)BalanceType.Available,
                         Amount = shippingFee,
-                        BalanceBefore = systemWallet.AvailableBalance,
-                        BalanceAfter = systemWallet.AvailableBalance + shippingFee,
+                        BalanceBefore = shippingEscrowWallet.AvailableBalance,
+                        BalanceAfter = shippingEscrowWallet.AvailableBalance + shippingFee,
                         ReferenceType = (int)ReferenceType.Order,
                         ReferenceId = fulfillment.Order.OrderId,
                         Description = $"Phí vận chuyển GHN qua PayOS - Đơn {fulfillment.Order.OrderCode}",
                         CreatedAt = now
                     };
 
-                    systemWallet.AvailableBalance += shippingFee;
-                    systemWallet.UpdatedAt = now;
+                    shippingEscrowWallet.AvailableBalance += shippingFee;
+                    shippingEscrowWallet.UpdatedAt = now;
                 }
 
                 await _paymentTxRepo.UpdateAsync(paymentTx, ct);
                 await _paymentRepo.UpdateAsync(payment, ct);
-                await _walletTxRepo.AddAsync(newWalletTx, ct);
-                await _ledgerRepo.AddAsync(newLedger, ct);
-                await _walletRepo.UpdateAsync(sellerWallet, ct);
 
-                if (systemWalletTx != null)
-                    await _walletTxRepo.AddAsync(systemWalletTx, ct);
+                await _walletTxRepo.AddAsync(escrowWalletTx, ct);
+                await _ledgerRepo.AddAsync(orderEscrowLedger, ct);
+                await _walletRepo.UpdateAsync(orderEscrowWallet, ct);
 
-                if (systemLedger != null)
-                    await _ledgerRepo.AddAsync(systemLedger, ct);
+                if (shippingWalletTx != null)
+                    await _walletTxRepo.AddAsync(shippingWalletTx, ct);
 
-                if (needsSystemLedger && systemWallet != null)
-                    await _walletRepo.UpdateAsync(systemWallet, ct);
+                if (shippingLedger != null)
+                    await _ledgerRepo.AddAsync(shippingLedger, ct);
+
+                if (needsSystemLedger && shippingEscrowWallet != null)
+                    await _walletRepo.UpdateAsync(shippingEscrowWallet, ct);
 
                 await _negotiationRepo.UpdateAsync(negotiation, ct);
                 await _messageRepo.AddAsync(paymentMessage, ct);
@@ -3306,11 +3352,25 @@ namespace HomeCycle.Application.Services.Payments
             }
             catch (Exception ex)
             {
-                await _unitOfWork.RollbackTransactionAsync(ct);
-                _logger.LogError(
-                    ex,
-                    "Lỗi hạch toán giao dịch webhook cho PayOS OrderCode {OrderCode}",
-                    payOsOrderCode);
+                await _unitOfWork.RollbackTransactionAsync(CancellationToken.None);
+                _unitOfWork.ClearTrackedEntities();
+
+                await PersistFinancialFailureAuditSafelyAsync(
+                    AuditActions.PaymentComplete,
+                    AuditTargetTypes.Payment,
+                    paymentTxSnapshot.PaymentId,
+                    AuditActorType.ExternalSystem,
+                    auditSource,
+                    null,
+                    "Payment.InternalPostingFailed",
+                    new Dictionary<string, object?>
+                    {
+                        ["payOsOrderCode"] = payOsOrderCode,
+                        ["method"] = PaymentMethod.PayOS.ToString(),
+                        ["errorType"] = ex.GetType().Name
+                    });
+
+                _logger.LogError(ex, "Lỗi hạch toán giao dịch PayOS OrderCode {OrderCode}", payOsOrderCode);
                 throw;
             }
         }
