@@ -28,5 +28,9 @@ namespace HomeCycle.Application.Interfaces.Repositories.Wallets
             Guid walletId,
             UserWalletTransactionSearchRequest request,
             CancellationToken ct = default);
+        Task<UserWalletTransactionDetailDto?> GetDetailByWalletIdAsync(
+            Guid walletTransactionId,
+            Guid walletId,
+            CancellationToken ct = default);
     }
 }

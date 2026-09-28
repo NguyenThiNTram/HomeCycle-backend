@@ -306,51 +306,30 @@ namespace HomeCycle.Infrastructure.Repositories.Wallets
                 .Where(x => x.Wallet_Ledgers.Any(l => l.WalletId == walletId));
 
             if (request.TransactionType.HasValue)
-            {
-                query = query.Where(x =>
-                    x.TransactionType == (int)request.TransactionType.Value);
-            }
+                query = query.Where(x => x.TransactionType == (int)request.TransactionType.Value);
 
             if (request.ReferenceType.HasValue)
-            {
-                query = query.Where(x =>
-                    x.ReferenceType == (int)request.ReferenceType.Value);
-            }
+                query = query.Where(x => x.ReferenceType == (int)request.ReferenceType.Value);
 
             if (request.Status.HasValue)
-            {
-                query = query.Where(x =>
-                    x.WalletTransactionStatus == (int)request.Status.Value);
-            }
+                query = query.Where(x => x.WalletTransactionStatus == (int)request.Status.Value);
 
             if (request.Direction.HasValue || request.BalanceType.HasValue)
             {
-                var direction = request.Direction.HasValue
-                    ? (int?)request.Direction.Value
-                    : null;
+                var direction = request.Direction.HasValue ? (int?)request.Direction.Value : null;
+                var balanceType = request.BalanceType.HasValue ? (int?)request.BalanceType.Value : null;
 
-                var balanceType = request.BalanceType.HasValue
-                    ? (int?)request.BalanceType.Value
-                    : null;
-
-                query = query.Where(x =>
-                    x.Wallet_Ledgers.Any(l =>
-                        l.WalletId == walletId &&
-                        (!direction.HasValue || l.Direction == direction.Value) &&
-                        (!balanceType.HasValue || l.BalanceType == balanceType.Value)));
+                query = query.Where(x => x.Wallet_Ledgers.Any(l =>
+                    l.WalletId == walletId &&
+                    (!direction.HasValue || l.Direction == direction.Value) &&
+                    (!balanceType.HasValue || l.BalanceType == balanceType.Value)));
             }
 
             if (request.FromDate.HasValue)
-            {
-                query = query.Where(x =>
-                    x.CreatedAt >= request.FromDate.Value.ToUniversalTime());
-            }
+                query = query.Where(x => x.CreatedAt >= request.FromDate.Value.ToUniversalTime());
 
             if (request.ToDate.HasValue)
-            {
-                query = query.Where(x =>
-                    x.CreatedAt <= request.ToDate.Value.ToUniversalTime());
-            }
+                query = query.Where(x => x.CreatedAt <= request.ToDate.Value.ToUniversalTime());
 
             var totalCount = await query.CountAsync(ct);
 
@@ -362,46 +341,88 @@ namespace HomeCycle.Infrastructure.Repositories.Wallets
                 .Select(x => new UserWalletTransactionListItemDto
                 {
                     WalletTransactionId = x.WalletTransactionId,
-
                     PaymentId = x.PaymentId,
                     PaymentMethod = x.Payment != null && x.Payment.PaymentMethod.HasValue
                         ? (PaymentMethod?)x.Payment.PaymentMethod.Value
                         : null,
-
                     TransactionType = x.TransactionType.HasValue
                         ? (TransactionType)x.TransactionType.Value
                         : null,
-
                     ReferenceType = x.ReferenceType.HasValue
                         ? (ReferenceType)x.ReferenceType.Value
                         : null,
-
                     ReferenceId = x.ReferenceId,
-
-                    ReferenceCode =
-                        x.ReferenceType == (int)ReferenceType.Order &&
-                        x.ReferenceId.HasValue
-                            ? _db.Orders
-                                .Where(o => o.OrderId == x.ReferenceId.Value)
-                                .Select(o => o.OrderCode)
-                                .FirstOrDefault()
-                            : null,
-
+                    ReferenceCode = x.ReferenceType == (int)ReferenceType.Order && x.ReferenceId.HasValue
+                        ? _db.Orders
+                            .Where(o => o.OrderId == x.ReferenceId.Value)
+                            .Select(o => o.OrderCode)
+                            .FirstOrDefault()
+                        : null,
                     Amount = x.Amount ?? 0,
-
                     Status = x.WalletTransactionStatus.HasValue
                         ? (WalletTransactionStatus)x.WalletTransactionStatus.Value
                         : null,
-
                     CreatedAt = x.CreatedAt,
+                    Description = x.Wallet_Ledgers
+                        .Where(l => l.WalletId == walletId)
+                        .OrderBy(l => l.CreatedAt)
+                        .ThenBy(l => l.LedgerId)
+                        .Select(l => l.Description)
+                        .FirstOrDefault() ?? string.Empty
+                })
+                .ToListAsync(ct);
 
+            return new PagedResult<UserWalletTransactionListItemDto>
+            {
+                Items = items,
+                PageNumber = request.PageNumber,
+                PageSize = request.PageSize,
+                TotalCount = totalCount
+            };
+        }
+
+
+        public async Task<UserWalletTransactionDetailDto?> GetDetailByWalletIdAsync(
+            Guid walletTransactionId,
+            Guid walletId,
+            CancellationToken ct = default)
+        {
+            return await _db.Wallet_Transactions
+                .AsNoTracking()
+                .Where(x =>
+                    x.WalletTransactionId == walletTransactionId &&
+                    x.Wallet_Ledgers.Any(l => l.WalletId == walletId))
+                .Select(x => new UserWalletTransactionDetailDto
+                {
+                    WalletTransactionId = x.WalletTransactionId,
+                    PaymentId = x.PaymentId,
+                    PaymentMethod = x.Payment != null && x.Payment.PaymentMethod.HasValue
+                        ? (PaymentMethod?)x.Payment.PaymentMethod.Value
+                        : null,
+                    TransactionType = x.TransactionType.HasValue
+                        ? (TransactionType)x.TransactionType.Value
+                        : null,
+                    ReferenceType = x.ReferenceType.HasValue
+                        ? (ReferenceType)x.ReferenceType.Value
+                        : null,
+                    ReferenceId = x.ReferenceId,
+                    ReferenceCode = x.ReferenceType == (int)ReferenceType.Order && x.ReferenceId.HasValue
+                        ? _db.Orders
+                            .Where(o => o.OrderId == x.ReferenceId.Value)
+                            .Select(o => o.OrderCode)
+                            .FirstOrDefault()
+                        : null,
+                    Amount = x.Amount ?? 0,
+                    Status = x.WalletTransactionStatus.HasValue
+                        ? (WalletTransactionStatus)x.WalletTransactionStatus.Value
+                        : null,
+                    CreatedAt = x.CreatedAt,
                     Description = x.Wallet_Ledgers
                         .Where(l => l.WalletId == walletId)
                         .OrderBy(l => l.CreatedAt)
                         .ThenBy(l => l.LedgerId)
                         .Select(l => l.Description)
                         .FirstOrDefault() ?? string.Empty,
-
                     BalanceImpacts = x.Wallet_Ledgers
                         .Where(l => l.WalletId == walletId)
                         .OrderBy(l => l.CreatedAt)
@@ -419,15 +440,7 @@ namespace HomeCycle.Infrastructure.Repositories.Wallets
                         })
                         .ToList()
                 })
-                .ToListAsync(ct);
-
-            return new PagedResult<UserWalletTransactionListItemDto>
-            {
-                Items = items,
-                PageNumber = request.PageNumber,
-                PageSize = request.PageSize,
-                TotalCount = totalCount
-            };
+                .SingleOrDefaultAsync(ct);
         }
     }
 }

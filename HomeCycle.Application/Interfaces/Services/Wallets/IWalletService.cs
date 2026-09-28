@@ -30,6 +30,11 @@ namespace HomeCycle.Application.Interfaces.Services.Wallets
             WalletTypeEnum walletType,
             UserWalletTransactionSearchRequest request,
             CancellationToken ct = default);
+        Task<Result<UserWalletTransactionDetailDto>> GetMyTransactionDetailAsync(
+            Guid userId,
+            WalletTypeEnum walletType,
+            Guid walletTransactionId,
+            CancellationToken ct = default);
     }
 
 }
