@@ -29,6 +29,7 @@ namespace HomeCycle.Application.Services.Negotiates
 {
     public class NegotiationService : INegotiationService
     {
+        private readonly HomeCycle.Application.Interfaces.Repositories.Orders.IOrderRepository _orderRepository;
         private readonly INegotiationRepository _negotiationRepository;
         private readonly IOfferRepository _offerRepository;
         private readonly IMessageRepository _messageRepository;
@@ -45,6 +46,7 @@ namespace HomeCycle.Application.Services.Negotiates
         private readonly HomeCycle.Application.Interfaces.Services.Notifications.INotificationService _notificationService;
 
         public NegotiationService(
+            HomeCycle.Application.Interfaces.Repositories.Orders.IOrderRepository orderRepository,
             INegotiationRepository negotiationRepository,
             IOfferRepository offerRepository,
             IMessageRepository messageRepository,
@@ -60,6 +62,7 @@ namespace HomeCycle.Application.Services.Negotiates
             HomeCycle.Application.Interfaces.Services.Notifications.INotificationService notificationService,
             HomeCycle.Application.Interfaces.Repositories.Agreements.IAgreementFormRepository agreementRepository)
         {
+            _orderRepository = orderRepository;
             _negotiationRepository = negotiationRepository;
             _offerRepository = offerRepository;
             _messageRepository = messageRepository;
@@ -972,6 +975,23 @@ namespace HomeCycle.Application.Services.Negotiates
                 {
                     await _unitOfWork.RollbackTransactionAsync(cancellationToken);
                     return Result<NegotiationActionResponse>.Fail(NegotiationErrors.Forbidden);
+                }
+
+                var agreement = await _agreementRepository.GetByNegotiationIdAsync(negotiationId, cancellationToken);
+                if (agreement != null)
+                {
+                    var hasOrder = await _orderRepository.GetByAgreementIdAsync(agreement.AgreementId, cancellationToken) != null;
+                    var error = hasOrder ? NegotiationErrors.OrderBlocksCancellation : agreement.AgreementStatus switch
+                    {
+                        (int)AgreementStatus.Expired => AgreementErrors.Expired,
+                        (int)AgreementStatus.Confirmed => NegotiationErrors.OrderBlocksCancellation,
+                        (int)AgreementStatus.Pending or (int)AgreementStatus.Awaiting_Payment =>
+                            TradingPostRules.IsExpired(TradingPostRules.PaymentDeadline(agreement))
+                                ? NegotiationErrors.CancellationResolutionPending : NegotiationErrors.AgreementBlocksCancellation,
+                        _ => NegotiationErrors.AgreementClosed
+                    };
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    return Result<NegotiationActionResponse>.Fail(error);
                 }
 
                 if (negotiation.NegotiationStatus == NegotiationStatus.Expired || await ExpireLockedNegotiationAsync(negotiation, cancellationToken))

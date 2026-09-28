@@ -1,4 +1,5 @@
-﻿using FluentValidation;
+using HomeCycle.Application.Validations.Banks;
+using FluentValidation;
 using HomeCycle.Application.Commons.Errors;
 using HomeCycle.Application.DTOs.Requests.Auths;
 using System;
@@ -59,6 +60,16 @@ namespace HomeCycle.Application.Validations.Auths
                 .MaximumLength(500)
                 .WithMessage("Địa chỉ trên CCCD không được vượt quá 500 ký tự.");
 
+            When(x => !string.IsNullOrWhiteSpace(x.BankCode) || !string.IsNullOrWhiteSpace(x.BankName) ||
+                !string.IsNullOrWhiteSpace(x.AccountNumber) || !string.IsNullOrWhiteSpace(x.AccountName), () =>
+            {
+                RuleFor(x => new HomeCycle.Application.DTOs.Requests.Banks.UpdateBankAccountRequest
+                {
+                    BankCode = x.BankCode!, BankName = x.BankName!, AccountNumber = x.AccountNumber!, AccountName = x.AccountName!
+                }).SetValidator(new UpdateBankAccountRequestValidator());
+                RuleFor(x => x.AccountName).Must((request, name) => UpdateBankAccountRequestValidator.NamesMatch(name, request.RepresentativeName))
+                    .WithMessage(UpdateBankAccountRequestValidator.NameMismatchMessage);
+            });
             RuleFor(x => x.BankCode).MaximumLength(20);
             RuleFor(x => x.BankName).MaximumLength(255);
             RuleFor(x => x.AccountNumber).MaximumLength(50);

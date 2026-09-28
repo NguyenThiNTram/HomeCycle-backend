@@ -1,4 +1,5 @@
-﻿using AutoMapper;
+using HomeCycle.Application.Validations.Banks;
+using AutoMapper;
 using FluentValidation;
 using HomeCycle.Application.Commons.Audits;
 using HomeCycle.Application.Commons.Errors;
@@ -185,7 +186,12 @@ namespace HomeCycle.Application.Services.Personals
             var user = await _userRepository.GetByIdAsync(userId, cancellationToken);
             if (user is null) return Result.Fail(ProfileErrors.UserNotFound);
 
+            var profile = await _personalProfileRepository.GetByUserIdAsync(userId, cancellationToken);
+            if (profile is null) return Result.Fail(ProfileErrors.ProfileNotFound);
+            if (!UpdateBankAccountRequestValidator.NamesMatch(request.AccountName, profile.RepresentativeName))
+                return Result.Fail(ValidationErrors.InvalidRequest(UpdateBankAccountRequestValidator.NameMismatchMessage));
             var bank = await _bankAccountRepository.GetByUserIdAsync(userId, cancellationToken);
+            var verification = profile.VerificationStatus == VerifyStatus.Verified ? VerifyStatus.Verified : VerifyStatus.Unverified;
             var isNewBankAccount = bank is null;
 
             if (bank is null)
@@ -195,7 +201,7 @@ namespace HomeCycle.Application.Services.Personals
                     UserBankId = Guid.NewGuid(),
                     UserId = userId,
                     CreatedAt = DateTime.UtcNow,
-                    VerifyStatus = VerifyStatus.Verified
+                    VerifyStatus = verification
                 };
 
                 _mapper.Map(request, bank);
@@ -205,6 +211,7 @@ namespace HomeCycle.Application.Services.Personals
             {
                 // Đã có
                 _mapper.Map(request, bank);
+                bank.VerifyStatus = verification;
                 await _bankAccountRepository.UpdateAsync(bank, cancellationToken);
             }
 
@@ -295,6 +302,12 @@ namespace HomeCycle.Application.Services.Personals
 
             // Đổi CCCD => cần kiểm duyệt lại, reset trạng thái xác minh
             profile.VerificationStatus = VerifyStatus.Pending;
+            var bank = await _bankAccountRepository.GetByUserIdAsync(userId, cancellationToken);
+            if (bank != null)
+            {
+                bank.VerifyStatus = VerifyStatus.Unverified;
+                await _bankAccountRepository.UpdateAsync(bank, cancellationToken);
+            }
             profile.VerifiedBy = null;
             profile.VerifiedAt = null;
 

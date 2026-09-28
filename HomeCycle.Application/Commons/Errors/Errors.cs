@@ -255,6 +255,10 @@ namespace HomeCycle.Application.Commons.Errors
 
     public static class NegotiationErrors
     {
+        public static readonly Error AgreementBlocksCancellation = new("Negotiation.AgreementBlocksCancellation", "Thỏa thuận đang chờ xác nhận hoặc thanh toán và sẽ tự hết hạn khi hết thời gian. Bạn không thể hủy phiên thương lượng tại bước này.");
+        public static readonly Error CancellationResolutionPending = new("Negotiation.PaymentResolutionPending", "Thỏa thuận đã quá hạn. Hệ thống đang xử lý hết hạn hoặc đối soát thanh toán. Bạn không thể hủy phiên thương lượng hoặc thanh toán thêm vào lúc này.");
+        public static readonly Error OrderBlocksCancellation = new("Negotiation.OrderBlocksCancellation", "Giao dịch đã chuyển sang bước đơn hàng. Bạn không thể hủy phiên thương lượng; vui lòng xem đơn hàng và sử dụng chức năng tranh chấp khi cần.");
+        public static readonly Error AgreementClosed = new("Negotiation.AgreementClosed", "Thỏa thuận đã kết thúc. Bạn không thể hủy phiên thương lượng này.");
         public static readonly Error Expired = new Error("Negotiation.Expired", "Phiên thương lượng đã hết hạn sau 5 phút không có hoạt động. Bạn có thể gửi yêu cầu mới nếu bài đăng còn khả dụng.");
         public static readonly Error NotFound = new("NEGOTIATION_NOT_FOUND", "The negotiation is not found.");
 

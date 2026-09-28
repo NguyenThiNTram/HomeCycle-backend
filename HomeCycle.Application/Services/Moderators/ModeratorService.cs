@@ -1,4 +1,5 @@
-﻿using HomeCycle.Application.Commons.Audits;
+using HomeCycle.Application.Validations.Banks;
+using HomeCycle.Application.Commons.Audits;
 using HomeCycle.Application.Commons.Errors;
 using HomeCycle.Application.Commons.Helpers;
 using HomeCycle.Application.Commons.Results;
@@ -120,6 +121,13 @@ namespace HomeCycle.Application.Services.Moderators
                 profile.UpdatedAt = now;
 
                 _businessProfileRepository.Update(profile);
+                var bank = await _bankAccountRepository.GetByUserIdAsync(profile.UserId, cancellationToken);
+                if (bank != null)
+                {
+                    bank.VerifyStatus = request.IsApproved && UpdateBankAccountRequestValidator.NamesMatch(bank.AccountName, profile.IdentityName)
+                        ? VerifyStatus.Verified : VerifyStatus.Unverified;
+                    await _bankAccountRepository.UpdateAsync(bank, cancellationToken);
+                }
 
                 reviewNotification = await _notificationService.AddPendingAsync(
                     new CreateNotificationCommand(
@@ -427,6 +435,13 @@ namespace HomeCycle.Application.Services.Moderators
                         : null;
 
                 await _personalProfileRepository.UpdateAsync(profile);
+                var bank = await _bankAccountRepository.GetByUserIdAsync(profile.UserId, cancellationToken);
+                if (bank != null)
+                {
+                    bank.VerifyStatus = request.Decision == VerifyStatus.Verified && UpdateBankAccountRequestValidator.NamesMatch(bank.AccountName, profile.RepresentativeName)
+                        ? VerifyStatus.Verified : VerifyStatus.Unverified;
+                    await _bankAccountRepository.UpdateAsync(bank, cancellationToken);
+                }
 
                 reviewNotification = await _notificationService.AddPendingAsync(
                     new CreateNotificationCommand(

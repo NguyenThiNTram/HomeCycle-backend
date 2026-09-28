@@ -72,7 +72,9 @@ namespace HomeCycle.Application.Mappings
             CreateMap<personal_profile, PersonalProfileResponse>()
                 .ForMember(d => d.UserId, o => o.Ignore());
 
-            CreateMap<bank_account, BankAccountDto>();
+            CreateMap<bank_account, BankAccountDto>()
+                .ForMember(d => d.AccountNumber, o => o.MapFrom(s => string.IsNullOrEmpty(s.AccountNumber)
+                    ? string.Empty : s.AccountNumber.Length <= 4 ? "****" : "****" + s.AccountNumber.Substring(s.AccountNumber.Length - 4)));
 
             CreateMap<UpdatePersonalProfileRequest, user>()
                 .ForMember(d => d.PhoneNumber, o => o.Condition(s => !string.IsNullOrWhiteSpace(s.PhoneNumber)))
@@ -183,7 +185,7 @@ namespace HomeCycle.Application.Mappings
 
             // bank_account -> map đè lên response tổng hợp
             CreateMap<bank_account, BusinessRegistrationDetailDto>();
-            CreateMap<bank_account, BankAccountDto>();   
+
 
             // ==================== BUSINESS DOCUMENT ====================
 

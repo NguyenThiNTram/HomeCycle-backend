@@ -1,4 +1,5 @@
-﻿using FluentValidation;
+using HomeCycle.Application.Validations.Banks;
+using FluentValidation;
 using HomeCycle.Application.DTOs.Requests.Profiles;
 using System;
 using System.Collections.Generic;
@@ -58,7 +59,13 @@ namespace HomeCycle.Application.Validations.Profiles
             RuleFor(x => x.BankCode).NotEmpty().WithMessage("Bank code is required.");
             RuleFor(x => x.BankName).NotEmpty().WithMessage("Bank name is required.");
             RuleFor(x => x.AccountNumber).NotEmpty().WithMessage("Bank account number is required.");
-            RuleFor(x => x.AccountName).NotEmpty().WithMessage("Bank account holder name is required.");
+            RuleFor(x => x.AccountName).NotEmpty().WithMessage("Tên chủ tài khoản không được để trống.")
+                .Must((request, name) => UpdateBankAccountRequestValidator.NamesMatch(name, request.IdentityName))
+                .WithMessage(UpdateBankAccountRequestValidator.NameMismatchMessage);
+            RuleFor(x => new HomeCycle.Application.DTOs.Requests.Banks.UpdateBankAccountRequest
+            {
+                BankCode = x.BankCode, BankName = x.BankName, AccountNumber = x.AccountNumber, AccountName = x.AccountName
+            }).SetValidator(new UpdateBankAccountRequestValidator());
 
             // 6. Chốt chặn tài liệu chứng thực upload bắt buộc (CCCD trước/sau + Giấy phép)
             When(x => x.Documents != null, () =>
