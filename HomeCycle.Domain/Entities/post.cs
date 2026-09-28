@@ -24,6 +24,10 @@ public class post
 
     public int? DeliveryMethod { get; set; }
     public PriorityLevel? PriorityLevel { get; set; }
+    [NotMapped]
+    public bool IsPriority { get; set; }
+    [NotMapped]
+    public string PriorityStatus => IsPriority ? "PRIORITIZED" : "NORMAL";
 
     public PostStatus? Status { get; set; }
 

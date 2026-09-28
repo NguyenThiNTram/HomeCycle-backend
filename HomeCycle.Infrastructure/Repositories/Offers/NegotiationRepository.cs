@@ -1,4 +1,5 @@
 using HomeCycle.Application.Commons.Paginations;
+using HomeCycle.Application.Commons.Helpers;
 using HomeCycle.Application.DTOs.Requests.Negotiates;
 using HomeCycle.Application.DTOs.Responses.Negotiations;
 using HomeCycle.Application.Interfaces.Repositories.Offers;
@@ -22,6 +23,25 @@ namespace HomeCycle.Infrastructure.Repositories.Offers
         public NegotiationRepository(HomeCycleDbContext db)
         {
             _db = db;
+        }
+
+        public async Task<IReadOnlyList<Guid>> GetDueIdsAsync(DateTime now, int batchSize, Guid? postId, CancellationToken cancellationToken = default)
+        {
+            var effectiveFrom = TradingPostRules.TimeoutEffectiveFromUtc;
+            var activityBefore = TradingPostRules.NegotiationDueActivityBefore(now);
+
+            return await _db.Negotiations
+                .AsNoTracking()
+                .Where(x =>
+                    (x.NegotiationStatus == (int)NegotiationStatus.Open || x.NegotiationStatus == (int)NegotiationStatus.Agreed) &&
+                    x.Agreement_Form == null &&
+                    (x.LastMessageAt ?? x.CreatedAt) >= effectiveFrom &&
+                    (x.LastMessageAt ?? x.CreatedAt) <= activityBefore &&
+                    (!postId.HasValue || x.PostId == postId || x.Offer.BuyPostId == postId))
+                .OrderBy(x => x.LastMessageAt ?? x.CreatedAt)
+                .Select(x => x.NegotiationId)
+                .Take(Math.Max(1, batchSize))
+                .ToListAsync(cancellationToken);
         }
 
         public Task<bool> HasAgreementAsync(Guid negotiationId, CancellationToken cancellationToken = default) =>
@@ -110,10 +130,15 @@ namespace HomeCycle.Infrastructure.Repositories.Offers
                         x.PostId == postId &&
                         x.SellerId == sellerId &&
                         x.BuyerId == buyerId &&
-                        (x.NegotiationStatus == null || x.NegotiationStatus != (int)NegotiationStatus.Cancelled) &&
-                        !(x.Agreement_Form != null &&
-                          x.Agreement_Form.AgreementStatus == (int)AgreementStatus.Confirmed &&
-                          x.Agreement_Form.Order != null),
+                        (x.NegotiationStatus == null ||
+                         x.NegotiationStatus == (int)NegotiationStatus.Open ||
+                         x.NegotiationStatus == (int)NegotiationStatus.Agreed ||
+                         x.NegotiationStatus == (int)NegotiationStatus.AgreementPending) &&
+                        (x.Agreement_Form == null ||
+                         x.Agreement_Form.AgreementStatus == (int)AgreementStatus.Pending ||
+                         x.Agreement_Form.AgreementStatus == (int)AgreementStatus.Awaiting_Payment ||
+                         x.Agreement_Form.AgreementStatus == (int)AgreementStatus.Confirmed &&
+                         x.Agreement_Form.Order == null),
                     cancellationToken);
         }
 

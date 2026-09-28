@@ -1,5 +1,7 @@
 ﻿using HomeCycle.Application.DTOs.Responses.Posts;
 using HomeCycle.Application.Interfaces.Repositories.Products;
+using HomeCycle.Application.SupplierMatching.Normalization;
+using HomeCycle.Domain.Enums;
 using HomeCycle.Domain.Entities;
 using HomeCycle.Infrastructure.DbContexts;
 using HomeCycle.Infrastructure.Persistences.Mappers;
@@ -101,6 +103,45 @@ namespace HomeCycle.Infrastructure.Repositories.Products
         {
             return await _db.Products.AnyAsync(
                 x => x.PostId == postId, cancellationToken);
+        }
+
+        public async Task<IReadOnlyList<string>> SearchModelNumbersAsync(
+            Guid productTypeId,
+            Guid brandId,
+            string normalizedKeyword,
+            int limit,
+            CancellationToken cancellationToken = default)
+        {
+            var candidateLimit = Math.Max(limit, 1) * 10;
+            var candidates = await _db.Products
+                .AsNoTracking()
+                .Where(x =>
+                    x.ProductTypeId == productTypeId &&
+                    x.BrandId == brandId &&
+                    x.ModelNumber != null &&
+                    x.Post.PostType == (int)PostType.Sell &&
+                    x.Post.Status != (int)PostStatus.Deleted &&
+                    PostgresPricingFunctions.RegexpReplace(
+                        x.ModelNumber.ToLower(),
+                        "[^a-z0-9]",
+                        string.Empty,
+                        "g").StartsWith(normalizedKeyword))
+                .Select(x => x.ModelNumber!)
+                .OrderBy(x => x)
+                .Take(candidateLimit)
+                .ToListAsync(cancellationToken);
+
+            return candidates
+                .Select(model => model.Trim())
+                .Where(model => model.Length > 0)
+                .GroupBy(model => ModelNumberNormalizer.Normalize(model))
+                .Where(group => group.Key is not null)
+                .Select(group => group
+                    .OrderBy(model => model, StringComparer.OrdinalIgnoreCase)
+                    .First())
+                .OrderBy(model => model, StringComparer.OrdinalIgnoreCase)
+                .Take(Math.Max(limit, 1))
+                .ToArray();
         }
 
         //Task<ProductResponse?> IProductRepository.GetDetailAsync(Guid productId, CancellationToken cancellationToken)

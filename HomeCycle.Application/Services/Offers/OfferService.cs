@@ -34,7 +34,7 @@ using HomeCycle.Application.Commons.Audits;
 
 namespace HomeCycle.Application.Services.Offers
 {
-    public partial class OfferService : IOfferService
+    public class OfferService : IOfferService
     {
         private readonly IOfferRepository _offerRepository;
         private readonly IOfferTermsPolicy _offerTermsPolicy;
@@ -53,6 +53,8 @@ namespace HomeCycle.Application.Services.Offers
         private readonly IChatRealtimePublisher _realtimePublisher;
         private readonly INotificationService _notificationService;
         private readonly IAuditService _auditService;
+        private readonly HomeCycle.Application.Interfaces.Services.Negotiates.INegotiationService _negotiationService;
+        private readonly HomeCycle.Application.Interfaces.Services.Agreements.IAgreementFormService _agreementService;
 
         public OfferService(
             IOfferRepository offerRepository,
@@ -71,7 +73,9 @@ namespace HomeCycle.Application.Services.Offers
             IUnitOfWork unitOfWork,
             IChatRealtimePublisher realtimePublisher,
             INotificationService notificationService,
-            IAuditService auditService)
+            IAuditService auditService,
+            HomeCycle.Application.Interfaces.Services.Negotiates.INegotiationService negotiationService,
+            HomeCycle.Application.Interfaces.Services.Agreements.IAgreementFormService agreementService)
         {
             _offerRepository = offerRepository;
             _offerTermsPolicy = offerTermsPolicy;
@@ -90,6 +94,59 @@ namespace HomeCycle.Application.Services.Offers
             _realtimePublisher = realtimePublisher;
             _notificationService = notificationService;
             _auditService = auditService;
+            _negotiationService = negotiationService;
+            _agreementService = agreementService;
+        }
+
+        public async Task<int> ExpireDueAsync(int batchSize, CancellationToken cancellationToken = default, Guid? postId = null)
+        {
+            var ids = await _offerRepository.GetDueIdsAsync(DateTime.UtcNow, batchSize, postId, cancellationToken);
+            var processed = 0;
+            foreach (var batch in ids.Chunk(Math.Max(1, batchSize)))
+            foreach (var id in batch)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                await _unitOfWork.BeginTransactionAsync(cancellationToken);
+                try
+                {
+                    var entity = await LockOfferAsync(id, cancellationToken);
+                    if (entity != null && await ExpireLockedOfferAsync(entity, cancellationToken)) processed++;
+                    await _unitOfWork.CommitTransactionAsync(cancellationToken);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    _logger.LogError(ex, "Không thể xử lý hết hạn đề nghị {OfferId}", id);
+                }
+                finally
+                {
+                    await _unitOfWork.RollbackTransactionAsync(CancellationToken.None);
+                    _unitOfWork.ClearTrackedEntities();
+                }
+            }
+            return processed;
+        }
+
+        private async Task<bool> ExpireLockedOfferAsync(offer entity, CancellationToken ct)
+        {
+            if (entity.OfferStatus != OfferStatus.Pending || !TradingPostRules.IsExpired(TradingPostRules.ResponseDeadline(entity))) return false;
+            entity.OfferStatus = OfferStatus.Expired;
+            entity.Version = (entity.Version ?? 1) + 1;
+            await _offerRepository.UpdateAsync(entity, ct);
+            foreach (var actorId in new[] { entity.SenderId, entity.ReceiverId }.Distinct())
+            {
+                var notification = await AddOfferNotificationPendingAsync(entity, actorId,
+                    "Đề nghị đã hết hạn", "Đã hết 3 phút phản hồi. Bạn có thể gửi đề nghị mới nếu bài đăng còn khả dụng.", ct);
+                _unitOfWork.RegisterAfterCommit(() => _notificationService.PublishCreatedSafelyAsync(notification));
+            }
+            await _auditService.EnqueueAsync(new AuditEvent
+            {
+                Category = AuditCategory.BusinessOperation, Action = AuditActions.OfferExpire,
+                Outcome = AuditOutcome.Success, ActorType = AuditActorType.System,
+                TargetType = AuditTargetTypes.Offer, TargetId = entity.OfferId
+            }, ct);
+            _unitOfWork.RegisterAfterCommit(() => PublishOfferUpdatedSafelyAsync(entity));
+            await _unitOfWork.SaveChangesAsync(ct);
+            return true;
         }
 
         // ================== GIAI ĐOẠN 1: NGOÀI NEGOTIATION ==================
@@ -100,7 +157,8 @@ namespace HomeCycle.Application.Services.Offers
         public async Task<Result<OfferResponse>> CreateSellerRequestAsync(Guid userId, Guid buyPostId, CreateSellerRequest request, CancellationToken cancellationToken = default)
         {
             var validation = await new HomeCycle.Application.Validations.Offers.CreateSellerRequestValidator().ValidateAsync(request, cancellationToken);
-            if (!validation.IsValid || buyPostId == Guid.Empty) return Result<OfferResponse>.Fail(ValidationErrors.InvalidRequest("Thông tin chào hàng không hợp lệ."));
+            if (!validation.IsValid) return Result<OfferResponse>.Fail(ToValidationError(validation));
+            if (buyPostId == Guid.Empty) return Result<OfferResponse>.Fail(ValidationErrors.InvalidRequest("Mã bài mua không hợp lệ."));
             return await CreateCoreAsync(userId, new CreateOfferRequest { PostId = request.SellPostId, BuyPostId = buyPostId,
                 OfferPrice = request.OfferPrice, OfferQuantity = request.OfferQuantity }, true, cancellationToken);
         }
@@ -132,6 +190,11 @@ namespace HomeCycle.Application.Services.Offers
                     return Result<OfferResponse>.Fail(OfferErrors.Forbidden);
                 }
 
+                if (offer.OfferStatus == OfferStatus.Expired || await ExpireLockedOfferAsync(offer, cancellationToken))
+                {
+                    await _unitOfWork.CommitTransactionAsync(cancellationToken);
+                    return Result<OfferResponse>.Fail(OfferErrors.Expired);
+                }
                 if (offer.OfferStatus != OfferStatus.Pending)
                 {
                     await _unitOfWork.RollbackTransactionAsync(cancellationToken);
@@ -172,7 +235,7 @@ namespace HomeCycle.Application.Services.Offers
                          OfferErrors.QuantityExceedsRemaining(newQuantity, post.RemainingQuantity));
                 }
 
-                var priceError = await ValidateNewOfferAsync(offer, post, newPrice, newQuantity, cancellationToken);
+                var priceError = await ValidateNewOfferAsync(offer, post, await LoadBuyPostAsync(offer, cancellationToken), newPrice, newQuantity, cancellationToken);
                 if (priceError is not null)
                 {
                     await _unitOfWork.RollbackTransactionAsync(cancellationToken);
@@ -271,6 +334,11 @@ namespace HomeCycle.Application.Services.Offers
                     return Result<OfferResponse>.Fail(OfferErrors.Forbidden);
                 }
 
+                if (offer.OfferStatus == OfferStatus.Expired || await ExpireLockedOfferAsync(offer, cancellationToken))
+                {
+                    await _unitOfWork.CommitTransactionAsync(cancellationToken);
+                    return Result<OfferResponse>.Fail(OfferErrors.Expired);
+                }
                 if (offer.OfferStatus != OfferStatus.Pending)
                 {
                     await _unitOfWork.RollbackTransactionAsync(cancellationToken);
@@ -342,6 +410,11 @@ namespace HomeCycle.Application.Services.Offers
                     return Result<OfferResponse>.Fail(OfferErrors.Forbidden);
                 }
 
+                if (offer.OfferStatus == OfferStatus.Expired || await ExpireLockedOfferAsync(offer, cancellationToken))
+                {
+                    await _unitOfWork.CommitTransactionAsync(cancellationToken);
+                    return Result<OfferResponse>.Fail(OfferErrors.Expired);
+                }
                 if (offer.OfferStatus != OfferStatus.Pending)
                 {
                     await _unitOfWork.RollbackTransactionAsync(cancellationToken);
@@ -417,6 +490,11 @@ namespace HomeCycle.Application.Services.Offers
                     return Result<AcceptOfferResponse>.Fail(OfferErrors.Forbidden);
                 }
 
+                if (offer.OfferStatus == OfferStatus.Expired || await ExpireLockedOfferAsync(offer, cancellationToken))
+                {
+                    await _unitOfWork.CommitTransactionAsync(cancellationToken);
+                    return Result<AcceptOfferResponse>.Fail(OfferErrors.Expired);
+                }
                 if (offer.OfferStatus != OfferStatus.Pending)
                 {
                     await _unitOfWork.RollbackTransactionAsync(cancellationToken);
@@ -449,7 +527,7 @@ namespace HomeCycle.Application.Services.Offers
                 }
 
                 // Dùng policy chung cho Create/Update/Accept/Counter.
-                var termsError = await ValidateNewOfferAsync(offer, post, offer.OfferPrice!.Value, offer.OfferQuantity, cancellationToken);
+                var termsError = await ValidateNewOfferAsync(offer, post, await LoadBuyPostAsync(offer, cancellationToken), offer.OfferPrice!.Value, offer.OfferQuantity, cancellationToken);
 
                 if (termsError is not null)
                 {
@@ -584,6 +662,11 @@ namespace HomeCycle.Application.Services.Offers
                     return Result<NegotiationResponse>.Fail(OfferErrors.Forbidden);
                 }
 
+                if (offer.OfferStatus == OfferStatus.Expired || await ExpireLockedOfferAsync(offer, cancellationToken))
+                {
+                    await _unitOfWork.CommitTransactionAsync(cancellationToken);
+                    return Result<NegotiationResponse>.Fail(OfferErrors.Expired);
+                }
                 if (offer.OfferStatus != OfferStatus.Pending)
                 {
                     await _unitOfWork.RollbackTransactionAsync(cancellationToken);
@@ -626,7 +709,7 @@ namespace HomeCycle.Application.Services.Offers
                             post.RemainingQuantity));
                 }
 
-                var priceError = await ValidateNewOfferAsync(offer, post, request.OfferPrice, request.OfferQuantity, cancellationToken);
+                var priceError = await ValidateNewOfferAsync(offer, post, await LoadBuyPostAsync(offer, cancellationToken), request.OfferPrice, request.OfferQuantity, cancellationToken);
                 if (priceError is not null)
                 {
                     await _unitOfWork.RollbackTransactionAsync(cancellationToken);
@@ -748,8 +831,9 @@ namespace HomeCycle.Application.Services.Offers
                 // Realtime: đẩy OfferUpdated cho cả 2 bên (Sender + Receiver) để cập nhật trạng thái Accepted
                 await PublishOfferUpdatedSafelyAsync(offer);
 
-                return Result<NegotiationResponse>.Success(
-                    _mapper.Map<NegotiationResponse>(negotiation));
+                var response = _mapper.Map<NegotiationResponse>(negotiation);
+                response.ResponseDeadlineAt = TradingPostRules.NegotiationDeadline(negotiation);
+                return Result<NegotiationResponse>.Success(response);
             }
             catch (DbUpdateException exception) when (IsUniqueViolation(exception))
             {
@@ -775,6 +859,8 @@ namespace HomeCycle.Application.Services.Offers
                 return Result<OfferDetailResponse>.Fail(OfferErrors.Forbidden);
 
             var negotiation = await _negotiationRepository.GetByOfferIdAsync(offerId, cancellationToken);
+            var deadline = TradingPostRules.ResponseDeadline(offer);
+            var canAct = offer.OfferStatus == OfferStatus.Pending && !TradingPostRules.IsExpired(deadline);
 
             var response = new OfferDetailResponse
             {
@@ -785,12 +871,13 @@ namespace HomeCycle.Application.Services.Offers
                 OfferStatus = offer.OfferStatus ?? OfferStatus.Pending,
                 NegotiationId = negotiation?.NegotiationId,
                 CreatedAt = offer.CreatedAt,
+                ResponseDeadlineAt = deadline,
                 Sender = MapParticipant(offer.Sender, offer.SenderId),
                 Receiver = MapParticipant(offer.Receiver, offer.ReceiverId),
-                CanUpdate = offer.SenderId == userId && offer.OfferStatus == OfferStatus.Pending,
-                CanCancel = offer.SenderId == userId && offer.OfferStatus == OfferStatus.Pending,
-                CanAccept = offer.ReceiverId == userId && offer.OfferStatus == OfferStatus.Pending,
-                CanReject = offer.ReceiverId == userId && offer.OfferStatus == OfferStatus.Pending
+                CanUpdate = offer.SenderId == userId && canAct,
+                CanCancel = offer.SenderId == userId && canAct,
+                CanAccept = offer.ReceiverId == userId && canAct,
+                CanReject = offer.ReceiverId == userId && canAct
             };
 
             response.BuyPostId = offer.BuyPostId; response.Version = offer.Version;
@@ -972,6 +1059,7 @@ namespace HomeCycle.Application.Services.Offers
                     kv => kv.Value.UnreadByNegotiation.ToDictionary(
                         innerKv => innerKv.Key,
                         innerKv => (int?)innerKv.Value));
+                var currentNegotiation = await _negotiationRepository.GetByIdAsync(negotiationId, timeout.Token);
 
                 await _realtimePublisher.PublishConversationUpdatedAsync(
                     new[] { sellerId, buyerId },
@@ -987,6 +1075,7 @@ namespace HomeCycle.Application.Services.Offers
                         CurrentOfferQuantity = quantity,
                         CurrentOfferVersion = version,
                         NegotiationStatus = status,
+                        ResponseDeadlineAt = TradingPostRules.NegotiationDeadline(currentNegotiation),
                         //UnreadCountByUser = unread
 
                         ConversationUnreadByUser = conversationUnread,
@@ -1183,6 +1272,135 @@ namespace HomeCycle.Application.Services.Offers
                     PageSize = paged.PageSize,
                     TotalCount = paged.TotalCount
                 });
+        }
+
+        private async Task<Result<OfferResponse>> CreateCoreAsync(Guid userId, CreateOfferRequest request, bool sellerRequest, CancellationToken ct)
+        {
+            var validation = await _createValidator.ValidateAsync(request, ct);
+            if (!validation.IsValid) return Result<OfferResponse>.Fail(ToValidationError(validation));
+            await _agreementService.ExpireDueAsync(100, ct, request.PostId);
+            await _negotiationService.ExpireDueAsync(100, ct, request.PostId);
+            await ExpireDueAsync(100, ct, request.PostId);
+            await _unitOfWork.BeginTransactionAsync(ct);
+            try
+            {
+                await _postRepository.LockAsync(request.PostId, request.BuyPostId, ct);
+                var sell = await _postRepository.GetByIdAsync(request.PostId, ct);
+                if (sell == null) return Result<OfferResponse>.Fail(OfferErrors.PostNotFound);
+                // New transactions always reference the real listed product. Old Buy-target offers remain readable.
+                if (sell.PostType != PostType.Sell) return Result<OfferResponse>.Fail(OfferErrors.InvalidSellPostType);
+                var sender = await _userRepository.GetByIdAsync(userId, ct);
+                if (sender?.Status != UserStatus.Active) return Result<OfferResponse>.Fail(OfferErrors.UserNotActive);
+                if (sender.Role is not (UserRole.Personal or UserRole.Business)) return Result<OfferResponse>.Fail(OfferErrors.RoleNotAllowed);
+                post? buy = null;
+                if (request.BuyPostId.HasValue)
+                {
+                    buy = await _postRepository.GetByIdAsync(request.BuyPostId.Value, ct);
+                    if (buy == null) return Result<OfferResponse>.Fail(OfferErrors.BuyPostNotFound);
+                    if (buy.PostType != PostType.Buy) return Result<OfferResponse>.Fail(OfferErrors.InvalidBuyPostType);
+                    var business = await _userRepository.GetByIdAsync(buy.OwnerId, ct);
+                    if (business == null || business.Status != UserStatus.Active) return Result<OfferResponse>.Fail(OfferErrors.BuyerNotActive);
+                    if (business.Role != UserRole.Business) return Result<OfferResponse>.Fail(OfferErrors.RoleNotAllowed);
+                    if (!sellerRequest && (sender.Role != UserRole.Business || buy.OwnerId != userId)) return Result<OfferResponse>.Fail(OfferErrors.Forbidden);
+                }
+                if (sellerRequest && (buy == null || sender.Role != UserRole.Personal || sell.OwnerId != userId))
+                    return Result<OfferResponse>.Fail(OfferErrors.Forbidden);
+                if (!sellerRequest && sell.OwnerId == userId) return Result<OfferResponse>.Fail(OfferErrors.CannotOfferOwnPost);
+                var receiverId = sellerRequest ? buy!.OwnerId : sell.OwnerId;
+                var receiver = await _userRepository.GetByIdAsync(receiverId, ct);
+                if (receiver?.Status != UserStatus.Active) return Result<OfferResponse>.Fail(OfferErrors.UserNotActive);
+                if (buy != null)
+                {
+                    var seller = sellerRequest ? sender : receiver;
+                    if (seller.Role != UserRole.Personal || seller.UserId != sell.OwnerId) return Result<OfferResponse>.Fail(OfferErrors.RoleNotAllowed);
+                }
+                if (receiverId == userId) return Result<OfferResponse>.Fail(OfferErrors.CannotOfferOwnPost);
+                var now = DateTime.UtcNow;
+                var entity = new offer
+                {
+                    OfferId = Guid.NewGuid(),
+                    PostId = sell.PostId,
+                    BuyPostId = buy?.PostId,
+                    SenderId = userId,
+                    ReceiverId = receiverId,
+                    OfferPrice = request.OfferPrice,
+                    OfferQuantity = request.OfferQuantity,
+                    OfferStatus = OfferStatus.Pending,
+                    Version = 1,
+                    CreatedAt = now
+                };
+                var participants = TradingPostRules.Participants(sell, entity);
+                if (await _negotiationRepository.ExistsActiveByPostAndParticipantsAsync(
+                    sell.PostId, participants.SellerId, participants.BuyerId, ct, entity.BuyPostId))
+                    return Result<OfferResponse>.Fail(OfferErrors.UnfinishedNegotiation);
+                var error = await ValidateNewOfferAsync(entity, sell, buy, request.OfferPrice, request.OfferQuantity, ct);
+                if (error != null) return Result<OfferResponse>.Fail(error);
+                if (await _offerRepository.ExistsActivePendingByPostAndParticipantsAsync(
+                    sell.PostId, participants.SellerId, participants.BuyerId, now, ct))
+                    return Result<OfferResponse>.Fail(OfferErrors.DuplicatePending);
+                await _offerRepository.AddAsync(entity, ct);
+                var notification = await AddOfferNotificationPendingAsync(entity, userId, "Bạn có đề nghị mới",
+                    sellerRequest ? "Bạn vừa nhận được một chào hàng từ người bán." : "Bạn vừa nhận được đề nghị mua sản phẩm.", ct);
+
+                await _auditService.EnqueueAsync(new AuditEvent
+                {
+                    Category = AuditCategory.BusinessOperation,
+                    Action = AuditActions.OfferCreate,
+                    Outcome = AuditOutcome.Success,
+                    ActorType = AuditActorType.User,
+                    UserId = userId,
+                    TargetType = AuditTargetTypes.Offer,
+                    TargetId = entity.OfferId,
+                    NewValues = new Dictionary<string, object?>
+                    {
+                        ["offerPrice"] = entity.OfferPrice,
+                        ["offerQuantity"] = entity.OfferQuantity,
+                        ["status"] = entity.OfferStatus?.ToString(),
+                        ["version"] = entity.Version
+                    },
+                    Metadata = new Dictionary<string, object?>
+                    {
+                        ["sellerRequest"] = sellerRequest,
+                        ["sellPostId"] = entity.PostId,
+                        ["buyPostId"] = entity.BuyPostId
+                    }
+                }, ct);
+
+                await _unitOfWork.SaveChangesAsync(ct);
+                var created = await _offerRepository.GetByIdAsync(entity.OfferId, ct);
+                _unitOfWork.RegisterAfterCommit(async () => {
+                    await PublishOfferCreatedSafelyAsync(created!);
+                    await PublishOfferUpdatedSafelyAsync(created!);
+                    await _notificationService.PublishCreatedSafelyAsync(notification);
+                });
+                await _unitOfWork.CommitTransactionAsync(ct);
+                return Result<OfferResponse>.Success(_mapper.Map<OfferResponse>(created));
+            }
+            catch (DbUpdateException ex) when (IsUniqueViolation(ex)) { return Result<OfferResponse>.Fail(OfferErrors.DuplicatePending); }
+            finally { await _unitOfWork.RollbackTransactionAsync(CancellationToken.None); }
+        }
+
+        private async Task<offer?> LockOfferAsync(Guid offerId, CancellationToken ct)
+        {
+            var snapshot = await _offerRepository.GetByIdAsync(offerId, ct);
+            if (snapshot == null) return null;
+            await _postRepository.LockAsync(snapshot.PostId, snapshot.BuyPostId, ct);
+            return await _offerRepository.GetByIdForUpdateAsync(offerId, ct);
+        }
+
+        private async Task<post?> LoadBuyPostAsync(offer offer, CancellationToken ct)
+        {
+            return offer.BuyPostId.HasValue
+                ? await _postRepository.GetByIdAsync(offer.BuyPostId.Value, ct)
+                : null;
+        }
+
+        private async Task<Error?> ValidateNewOfferAsync(offer offer, post sell, post? buy, decimal price, int quantity, CancellationToken ct)
+        {
+            if (sell.PostType != PostType.Sell) return OfferErrors.InvalidSellPostType;
+            var capacity = await _postRepository.ValidateCapacityAsync(offer, quantity, null, true, ct);
+            if (capacity != null) return capacity;
+            return _offerTermsPolicy.Validate(sell, price, quantity, offer.BuyPostId.HasValue, buy);
         }
     }
 }

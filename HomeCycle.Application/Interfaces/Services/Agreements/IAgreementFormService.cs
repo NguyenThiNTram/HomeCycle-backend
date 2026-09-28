@@ -1,4 +1,4 @@
-﻿using HomeCycle.Application.Commons.Paginations;
+using HomeCycle.Application.Commons.Paginations;
 using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Requests.Agreements;
 using HomeCycle.Application.DTOs.Requests.GHN;
@@ -15,6 +15,7 @@ namespace HomeCycle.Application.Interfaces.Services.Agreements
 {
     public interface IAgreementFormService
     {
+        Task<int> ExpireDueAsync(int batchSize, CancellationToken cancellationToken = default, Guid? postId = null);
         Task<Result<AgreementSellerInfoDto>> GetSellerInfoAsync(Guid negotiationId, Guid currentUserId, CancellationToken cancellationToken = default);
         Task<Result<GhnLeadtimeResponse>> GetGhnLeadtimeAsync(Guid negotiationId, Guid userId, GhnLeadtimeRequest request, CancellationToken cancellationToken = default);
         Task<Result<AgreementPreviewResponse>> GetPreviewAsync(Guid negotiationId, Guid currentUserId, CancellationToken cancellationToken = default);

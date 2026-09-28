@@ -18,7 +18,6 @@ namespace HomeCycle.Application.DTOs.Requests.Posts
         public string? Ward { get; set; }
         public string? City { get; set; }
         public DeliveryMethod DeliveryMethod { get; set; }
-        public PriorityLevel? PriorityLevel { get; set; }
         public List<IFormFile>? Medias { get; set; }
     }
     public class UpdatePostRequest
@@ -29,7 +28,6 @@ namespace HomeCycle.Application.DTOs.Requests.Posts
         public string? Ward { get; set; }
         public string? City { get; set; }
         public DeliveryMethod? DeliveryMethod { get; set; }
-        public PriorityLevel? PriorityLevel { get; set; }
         public List<IFormFile>? Medias { get; set; }
     }
 }

@@ -23,6 +23,14 @@ public interface ISupplierMatchService
         int take,
         CancellationToken cancellationToken = default);
 
+    Task<SupplierMatchResponse> MatchOwnedBackendOnlyAsync(
+        SupplierDemandContext demand,
+        Guid ownerId,
+        string? keyword,
+        int skip,
+        int take,
+        CancellationToken cancellationToken = default);
+
     Task<SupplierMatchResponse> MatchInitialBackendAsync(
         SupplierDemandContext demand,
         int take,

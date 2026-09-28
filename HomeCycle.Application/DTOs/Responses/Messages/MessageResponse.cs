@@ -1,4 +1,4 @@
-﻿using HomeCycle.Domain.Enums;
+using HomeCycle.Domain.Enums;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -29,6 +29,7 @@ namespace HomeCycle.Application.DTOs.Responses.Messages
         public bool IsRead { get; set; }
 
         public DateTime CreatedAt { get; set; }
+        public DateTime? ResponseDeadlineAt { get; set; }
         public DateTime? UpdatedAt { get; set; }
     }
 }

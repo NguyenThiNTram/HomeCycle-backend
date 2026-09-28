@@ -1,4 +1,4 @@
-﻿using HomeCycle.Domain.Enums;
+using HomeCycle.Domain.Enums;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -33,6 +33,7 @@ namespace HomeCycle.Application.DTOs.Responses.Negotiations
         public decimal? OfferPrice { get; set; }
         public int OfferQuantity { get; set; }
         public MessageOfferStatus OfferStatus { get; set; }
+        public DateTime? ResponseDeadlineAt { get; set; }
 
         public DateTime CreatedAt { get; set; }
     }

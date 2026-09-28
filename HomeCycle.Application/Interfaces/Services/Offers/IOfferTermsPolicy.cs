@@ -10,6 +10,6 @@ namespace HomeCycle.Application.Interfaces.Services.Offers
 {
     public interface IOfferTermsPolicy
     {
-        Error? Validate(post post, decimal offerPrice, int offerQuantity, bool procurement = false);
+        Error? Validate(post post, decimal offerPrice, int offerQuantity, bool procurement = false, post? buyPost = null);
     }
 }

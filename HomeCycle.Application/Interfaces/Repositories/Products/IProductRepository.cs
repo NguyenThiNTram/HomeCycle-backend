@@ -22,5 +22,12 @@ namespace HomeCycle.Application.Interfaces.Repositories.Products
         Task<product?> GetDetailByPostIdAsync(Guid postId, CancellationToken cancellationToken = default);
 
         Task<bool> ExistsByPostIdAsync(Guid postId, CancellationToken cancellationToken = default);
+
+        Task<IReadOnlyList<string>> SearchModelNumbersAsync(
+            Guid productTypeId,
+            Guid brandId,
+            string normalizedKeyword,
+            int limit,
+            CancellationToken cancellationToken = default);
     }
 }

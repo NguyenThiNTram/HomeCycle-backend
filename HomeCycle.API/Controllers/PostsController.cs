@@ -42,6 +42,22 @@ namespace HomeCycle.API.Controllers
             }
         }
 
+        [AllowAnonymous]
+        [HttpGet("featured/sell")]
+        public async Task<IActionResult> GetFeaturedSell(CancellationToken cancellationToken)
+        {
+            var result = await _postService.GetFeaturedSellAsync(cancellationToken);
+            return result.IsSuccess ? Ok(result.Data) : MapErrorToResponse(result.Error!);
+        }
+
+        [AllowAnonymous]
+        [HttpGet("featured/buy")]
+        public async Task<IActionResult> GetFeaturedBuy(CancellationToken cancellationToken)
+        {
+            var result = await _postService.GetFeaturedBuyAsync(cancellationToken);
+            return result.IsSuccess ? Ok(result.Data) : MapErrorToResponse(result.Error!);
+        }
+
         [HttpPost("create/sell")]
         [SwaggerOperation(
             Summary = "Tạo bài đăng bán",
@@ -333,9 +349,9 @@ namespace HomeCycle.API.Controllers
         [HttpGet("buy/{buyPostId:guid}/matches")]
         [Authorize(Roles = "Personal,Business")]
         [SwaggerOperation(Summary = "Tìm bài bán phù hợp nhu cầu thu mua")]
-        public async Task<IActionResult> Matches(Guid buyPostId, [FromQuery] PaginationRequest request, CancellationToken ct)
+        public async Task<IActionResult> Matches(Guid buyPostId, [FromQuery] PaginationRequest request, [FromQuery] string? keyword, CancellationToken ct)
         {
-            var result = await _postService.GetMatchesAsync(CurrentUserId, buyPostId, request, ct);
+            var result = await _postService.GetMatchesAsync(CurrentUserId, buyPostId, request, keyword, ct);
             return result.IsSuccess ? Ok(result.Data) : MapErrorToResponse(result.Error!);
         }
 
@@ -366,8 +382,19 @@ namespace HomeCycle.API.Controllers
                 "POST_FORBIDDEN" => StatusCode(StatusCodes.Status403Forbidden, error),
                 "POST_NOT_FOUND" => NotFound(error),
                 "OFFER_FORBIDDEN" or "OFFER_ROLE_NOT_ALLOWED" or "OFFER_USER_NOT_ACTIVE" => StatusCode(StatusCodes.Status403Forbidden, error),
-                "OFFER_NOT_FOUND" or "OFFER_POST_NOT_FOUND" => NotFound(error),
-                "OFFER_QUANTITY_EXCEEDS_REMAINING" or "OFFER_DUPLICATE_PENDING" => Conflict(error),
+                "OFFER_NOT_FOUND" or "OFFER_POST_NOT_FOUND" or "OFFER_BUY_POST_NOT_FOUND" => NotFound(error),
+                "OFFER_QUANTITY_EXCEEDS_REMAINING" or
+                "OFFER_SELL_QUANTITY_EXCEEDS_REMAINING" or
+                "OFFER_BUY_QUANTITY_EXCEEDS_REMAINING" or
+                "OFFER_DUPLICATE_PENDING" or
+                "OFFER_UNFINISHED_NEGOTIATION" or
+                "OFFER_SELL_POST_NOT_ACTIVE" or
+                "OFFER_SELL_POST_EXPIRED" or
+                "OFFER_SELL_POST_OUT_OF_STOCK" or
+                "OFFER_BUY_POST_NOT_ACTIVE" or
+                "OFFER_BUY_POST_EXPIRED" or
+                "OFFER_BUY_POST_FULFILLED" or
+                "OFFER_BUYER_NOT_ACTIVE" => Conflict(error),
                 _ => BadRequest(error)
             };
         }

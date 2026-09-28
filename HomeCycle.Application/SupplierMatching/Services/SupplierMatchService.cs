@@ -116,6 +116,32 @@ public sealed class SupplierMatchService(
             "BACKEND_ONLY", "NOT_REQUIRED", false, effectiveDemand, cancellationToken);
     }
 
+    public async Task<SupplierMatchResponse> MatchOwnedBackendOnlyAsync(
+        SupplierDemandContext demand,
+        Guid ownerId,
+        string? keyword,
+        int skip,
+        int take,
+        CancellationToken cancellationToken = default)
+    {
+        skip = Math.Max(0, skip);
+        take = Math.Clamp(take, 1, 10);
+        var source = await candidates.GetOwnedCandidatesAsync(
+            demand, ownerId, keyword, CandidateLimit, cancellationToken);
+        var ranked = source
+            .Select(candidate => new RankedCandidate(candidate, scorer.Evaluate(demand, candidate)))
+            .Where(item => !item.Evaluation.IsDisqualified && item.Evaluation.BaseScore >= 4m)
+            .OrderByDescending(item => item.Evaluation.BaseScore)
+            .ThenByDescending(item => item.Candidate.BrandId == demand.BrandId)
+            .ThenByDescending(item => item.Candidate.CreatedAt)
+            .ThenBy(item => item.Candidate.SellPostId)
+            .ToArray();
+        var entitlement = SupplierMatchEntitlement.Free(100);
+        var status = await GetQuotaStatusAsync(null, entitlement, cancellationToken);
+        return await BuildResponseAsync(ranked, entitlement, status, skip, take,
+            "BACKEND_ONLY", "NOT_REQUIRED", false, demand, cancellationToken);
+    }
+
     public async Task<SupplierMatchResponse> MatchInitialBackendAsync(
         SupplierDemandContext demand,
         int take,
