@@ -24,5 +24,7 @@ namespace HomeCycle.Application.Interfaces.Security
         Task<bool> IsEmailVerifiedAsync(string email, CancellationToken cancellationToken = default);
 
         Task UpdateUserIdAsync(string email, Guid userId, CancellationToken cancellationToken);
+
+        Task<int> DeleteExpiredOrUsedAsync(DateTime now, CancellationToken cancellationToken = default);
     }
 }
