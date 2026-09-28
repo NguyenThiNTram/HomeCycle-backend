@@ -42,7 +42,6 @@ namespace HomeCycle.Application.DTOs.Requests.Posts
 
         public DeliveryMethod? DeliveryMethod { get; set; }
 
-        public PriorityLevel? PriorityLevel { get; set; }
 
         public string? City { get; set; }
         public string? Ward { get; set; }

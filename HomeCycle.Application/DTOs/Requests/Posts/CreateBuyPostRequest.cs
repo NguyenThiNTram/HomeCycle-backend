@@ -19,7 +19,6 @@ public sealed class CreateBuyPostRequest
     public string? StreetAddress { get; set; }
     public string? Ward { get; set; }
     public string? City { get; set; }
-    public PriorityLevel? PriorityLevel { get; set; }
     public decimal? PriceFrom { get; set; }
     public decimal? PriceTo { get; set; }
     public int? Quantity { get; set; }

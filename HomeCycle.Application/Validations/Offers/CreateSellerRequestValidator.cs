@@ -4,7 +4,11 @@ using HomeCycle.Application.Commons.Helpers;
 namespace HomeCycle.Application.Validations.Offers;
 public sealed class CreateSellerRequestValidator : AbstractValidator<CreateSellerRequest>
 {
-    public CreateSellerRequestValidator() { RuleFor(x => x.SellPostId).NotEmpty(); this.AddOfferTermsRules(x => x.OfferPrice, x => x.OfferQuantity); }
+    public CreateSellerRequestValidator()
+    {
+        RuleFor(x => x.SellPostId).NotEmpty().WithMessage("Vui lòng chọn bài bán muốn gửi chào.");
+        this.AddOfferTermsRules(x => x.OfferPrice, x => x.OfferQuantity);
+    }
 }
 public sealed class OfferSearchRequestValidator : AbstractValidator<OfferSearchRequest>
 {

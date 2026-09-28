@@ -7,6 +7,7 @@ using HomeCycle.Application.DTOs.Responses.Posts;
 using HomeCycle.Application.Interfaces.Generics;
 using HomeCycle.Application.Interfaces.Repositories.Products;
 using HomeCycle.Application.Interfaces.Services.Products;
+using HomeCycle.Application.SupplierMatching.Normalization;
 using HomeCycle.Domain.Entities;
 using HomeCycle.Domain.Enums;
 using System;
@@ -302,6 +303,45 @@ namespace HomeCycle.Application.Services.Products
             var response = _mapper.Map<ProductResponse>(entity);
 
             return Result<ProductResponse>.Success(response);
+        }
+
+        public async Task<Result<IReadOnlyList<string>>> GetModelSuggestionsAsync(
+            Guid productTypeId,
+            Guid brandId,
+            string keyword,
+            CancellationToken cancellationToken = default)
+        {
+            if (productTypeId == Guid.Empty)
+                return Result<IReadOnlyList<string>>.Fail(
+                    ValidationErrors.InvalidRequest("Vui lòng chọn loại sản phẩm trước khi tìm mã model."));
+
+            if (brandId == Guid.Empty)
+                return Result<IReadOnlyList<string>>.Fail(
+                    ValidationErrors.InvalidRequest("Vui lòng chọn thương hiệu trước khi tìm mã model."));
+
+            var normalizedKeyword = ModelNumberNormalizer.Normalize(keyword);
+            if (normalizedKeyword is null || normalizedKeyword.Length < 2)
+                return Result<IReadOnlyList<string>>.Fail(
+                    ValidationErrors.InvalidRequest("Vui lòng nhập ít nhất 2 ký tự của mã model."));
+
+            var productType = await _productTypeRepository.GetByIdAsync(productTypeId, cancellationToken);
+            if (productType is null || !productType.IsActive)
+                return Result<IReadOnlyList<string>>.Fail(
+                    ValidationErrors.InvalidRequest("Loại sản phẩm không tồn tại hoặc đã ngừng hoạt động."));
+
+            var brand = await _brandRepository.GetByIdAsync(brandId, cancellationToken);
+            if (brand is null || !brand.IsActive)
+                return Result<IReadOnlyList<string>>.Fail(
+                    ValidationErrors.InvalidRequest("Thương hiệu không tồn tại hoặc đã ngừng hoạt động."));
+
+            var models = await _productRepository.SearchModelNumbersAsync(
+                productTypeId,
+                brandId,
+                normalizedKeyword,
+                10,
+                cancellationToken);
+
+            return Result<IReadOnlyList<string>>.Success(models);
         }
 
         private static Error? ValidateAttributeValues(product_type productType, IEnumerable<ProductAttributeValueRequest>? attributeValues, bool requireAll = true)

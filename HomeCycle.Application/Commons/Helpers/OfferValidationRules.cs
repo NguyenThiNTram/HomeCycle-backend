@@ -18,18 +18,16 @@ namespace HomeCycle.Application.Commons.Helpers
             validator.RuleFor(priceExpression)
                 .Cascade(CascadeMode.Stop)
                 .GreaterThan(0m)
-                .WithMessage("Price must be greater than 0")
+                .WithMessage("Giá đề nghị phải lớn hơn 0.")
                 .PrecisionScale(
                     precision: 18,
                     scale: 2,
                     ignoreTrailingZeros: true)
-                .WithMessage(
-                    "Offer price must not exceed 18 digits, " +
-                    "with a maximum of 2 decimal places");
+                .WithMessage("Giá đề nghị được có tối đa 18 chữ số và 2 chữ số thập phân.");
 
             validator.RuleFor(quantityExpression)
                 .GreaterThan(0)
-                .WithMessage("Offer quantity must be greater than 0");
+                .WithMessage("Số lượng đề nghị phải lớn hơn 0.");
         }
     }
 }

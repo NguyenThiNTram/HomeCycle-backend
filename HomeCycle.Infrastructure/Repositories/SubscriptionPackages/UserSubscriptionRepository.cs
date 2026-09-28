@@ -121,6 +121,34 @@ namespace HomeCycle.Infrastructure.Repositories.SubscriptionPackages
             return entity?.ToDomain();
         }
 
+        public async Task<IReadOnlyList<user_subscription>> GetExpiringWithoutWarningAsync(
+            DateTime nowUtc,
+            DateTime cutoffUtc,
+            string warningTitle,
+            int batchSize,
+            CancellationToken cancellationToken = default)
+        {
+            var take = Math.Clamp(batchSize, 1, 200);
+            var subscriptions = await _db.User_Subscriptions
+                .AsNoTracking()
+                .Where(x =>
+                    x.Status == (int)UserSubscriptionStatus.Active &&
+                    x.ExpiresAt.HasValue &&
+                    x.ExpiresAt.Value > nowUtc &&
+                    x.ExpiresAt.Value <= cutoffUtc &&
+                    x.User.Status == (int)UserStatus.Active &&
+                    !_db.Notifications.Any(notification =>
+                        notification.TargetType == (int)NotificationTargetType.Subscription &&
+                        notification.TargetId == x.SubscriptionId &&
+                        notification.Title == warningTitle))
+                .OrderBy(x => x.ExpiresAt)
+                .ThenBy(x => x.SubscriptionId)
+                .Take(take)
+                .ToListAsync(cancellationToken);
+
+            return subscriptions.Select(x => x.ToDomain()).ToList();
+        }
+
         public async Task AddAsync(user_subscription subscription, CancellationToken cancellationToken = default)
         {
             await _db.User_Subscriptions.AddAsync(subscription.ToInfrastructure(), cancellationToken);

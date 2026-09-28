@@ -8,6 +8,8 @@ namespace HomeCycle.Application.DTOs.Responses.Conversations
     {
         public Guid ConversationId { get; set; }
         public Guid? NegotiationId { get; set; }
+        public DateTime? ResponseDeadlineAt { get; set; }
+        public DateTime? PaymentDeadlineAt { get; set; }
         public Guid? LastSenderId { get; set; }
         public string? LastMessagePreview { get; set; }
         public MessageType? LastMessageType { get; set; }

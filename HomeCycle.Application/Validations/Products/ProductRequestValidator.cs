@@ -22,6 +22,21 @@ namespace HomeCycle.Application.Validations.Products
                 .NotEmpty()
                 .MaximumLength(255);
 
+            RuleFor(x => x.ModelNumber)
+                .MaximumLength(100)
+                .Must(value => string.IsNullOrWhiteSpace(value) || value.Any(char.IsLetterOrDigit))
+                .WithMessage("Mã model tối đa 100 ký tự và phải chứa ít nhất một chữ cái hoặc chữ số.");
+
+            RuleFor(x => x.FunctionalityStatus)
+                .IsInEnum()
+                .When(x => x.FunctionalityStatus.HasValue)
+                .WithMessage("Tình trạng hoạt động không hợp lệ.");
+
+            RuleFor(x => x.DamageLevel)
+                .IsInEnum()
+                .When(x => x.DamageLevel.HasValue)
+                .WithMessage("Mức độ hư hại không hợp lệ.");
+
             RuleFor(x => x.OriginalPrice)
                 .GreaterThanOrEqualTo(0).When(x => x.OriginalPrice.HasValue);
 

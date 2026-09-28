@@ -193,13 +193,18 @@ namespace HomeCycle.Application.Services.Posts
                     }
                 }, cancellationToken);
 
+                var priorityOwners = await _postRepository.GetPriorityOwnerIdsAsync(new[] { ownerId }, cancellationToken);
+                post.IsPriority = priorityOwners.Contains(ownerId) &&
+                    post.Status == PostStatus.Active &&
+                    post.RemainingQuantity > 0 &&
+                    (!post.ExpiryDate.HasValue || post.ExpiryDate.Value > now);
+                await SendPostCreatedNotificationAsync(ownerId, post.PostId, "Tạo bài đăng thành công", GetPostCreatedMessage(post.IsPriority), cancellationToken);
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync(cancellationToken);
 
                 var response = _mapper.Map<PostResponse>(post);
 
-                // Gửi thông báo realtime khi tạo bài đăng thành công
-                await SendPostCreatedNotificationAsync(ownerId, post.PostId, "Bài đăng bán đã được tạo thành công", "Bài đăng bán của bạn đã được đăng tải.", cancellationToken);
+                response.Message = GetPostCreatedMessage(response.IsPriority);
 
                 return Result<PostResponse>.Success(response);
             }
@@ -308,7 +313,8 @@ namespace HomeCycle.Application.Services.Posts
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync(cancellationToken);
 
-                var response = _mapper.Map<PostResponse>(existing);
+                var saved = await _postRepository.GetByIdAsync(existing.PostId, cancellationToken);
+                var response = _mapper.Map<PostResponse>(saved);
                 return Result<PostResponse>.Success(response);
             }
             finally
@@ -561,6 +567,27 @@ namespace HomeCycle.Application.Services.Posts
             return await MapPostPageAsync(paged, cancellationToken);
         }
 
+        private static string GetPostCreatedMessage(bool isPriority) => isPriority
+            ? "Bài đăng đã được tạo thành công và đủ điều kiện xuất hiện trong khu vực nổi bật."
+            : "Bài đăng đã được tạo thành công";
+
+        public async Task<Result<IReadOnlyList<PostResponse>>> GetFeaturedSellAsync(CancellationToken cancellationToken = default)
+            => await MapFeaturedAsync(await _postRepository.GetFeaturedSellAsync(cancellationToken), cancellationToken);
+
+        public async Task<Result<IReadOnlyList<PostResponse>>> GetFeaturedBuyAsync(CancellationToken cancellationToken = default)
+            => await MapFeaturedAsync(await _postRepository.GetFeaturedBuyAsync(cancellationToken), cancellationToken);
+
+        private async Task<Result<IReadOnlyList<PostResponse>>> MapFeaturedAsync(IReadOnlyList<post> posts, CancellationToken cancellationToken)
+        {
+            var result = await MapPostPageAsync(new PagedResult<post>
+            {
+                Items = posts, PageNumber = 1, PageSize = 10, TotalCount = posts.Count
+            }, cancellationToken);
+            return result.IsSuccess
+                ? Result<IReadOnlyList<PostResponse>>.Success(result.Data!.Items)
+                : Result<IReadOnlyList<PostResponse>>.Fail(result.Error!);
+        }
+
         private async Task<Result<PagedResult<PostResponse>>> MapPostPageAsync(
             PagedResult<post> paged, CancellationToken cancellationToken)
         {
@@ -738,9 +765,36 @@ namespace HomeCycle.Application.Services.Posts
             if (owner is null)
                 return PostErrors.RoleNotAllowed;
 
-            return owner.Status == UserStatus.Active && owner.Role == requiredRole
-                ? null
-                : PostErrors.RoleNotAllowed;
+            if (owner.Status != UserStatus.Active || owner.Role != requiredRole)
+                return PostErrors.RoleNotAllowed;
+
+            if (requiredRole != UserRole.Business)
+                return null;
+
+            var profileResult = await _businessProfileService.GetBusinessProfileAsync(ownerId, cancellationToken);
+            if (!profileResult.IsSuccess || profileResult.Data is null)
+                return new Error(
+                    "POST_BUSINESS_PROFILE_REQUIRED",
+                    "Bạn cần hoàn tất hồ sơ doanh nghiệp trước khi đăng bài mua.");
+
+            var profile = profileResult.Data;
+            if (profile.Status == BusinessProfileStatus.Pending)
+                return new Error(
+                    "POST_BUSINESS_PROFILE_PENDING",
+                    "Hồ sơ doanh nghiệp đang chờ phê duyệt. Bạn chưa thể đăng bài mua vào lúc này.");
+
+            if (profile.Status != BusinessProfileStatus.Approved)
+                return new Error(
+                    "POST_BUSINESS_PROFILE_NOT_APPROVED",
+                    "Hồ sơ doanh nghiệp chưa được phê duyệt. Vui lòng kiểm tra lý do từ chối và cập nhật lại hồ sơ.");
+
+            var documentTypes = profile.Documents.Select(x => x.DocumentType).ToHashSet();
+            if (!documentTypes.Contains(0) || !documentTypes.Contains(1) || !documentTypes.Contains(2))
+                return new Error(
+                    "POST_BUSINESS_DOCUMENTS_REQUIRED",
+                    "Hồ sơ doanh nghiệp chưa có đầy đủ giấy tờ bắt buộc. Vui lòng bổ sung CCCD và giấy đăng ký kinh doanh.");
+
+            return null;
         }
 
         private Error? ValidateOwnershipAndComputeRemaining(
@@ -792,7 +846,7 @@ namespace HomeCycle.Application.Services.Posts
                         postId),
                     cancellationToken);
 
-                await _notificationService.PublishCreatedSafelyAsync(notification);
+                _unitOfWork.RegisterAfterCommit(() => _notificationService.PublishCreatedSafelyAsync(notification));
             }
             catch (Exception)
             {
@@ -879,14 +933,22 @@ namespace HomeCycle.Application.Services.Posts
                     }
                 }, cancellationToken);
 
+                var priorityOwners = await _postRepository.GetPriorityOwnerIdsAsync(new[] { ownerId }, cancellationToken);
+                entity.IsPriority = priorityOwners.Contains(ownerId) &&
+                    entity.Status == PostStatus.Active &&
+                    entity.RemainingQuantity > 0 &&
+                    (!entity.ExpiryDate.HasValue || entity.ExpiryDate.Value > now);
+                await SendPostCreatedNotificationAsync(ownerId, entity.PostId, "Tạo bài đăng thành công", GetPostCreatedMessage(entity.IsPriority), cancellationToken);
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync(cancellationToken);
             }
             finally { await _unitOfWork.RollbackTransactionAsync(CancellationToken.None); }
             var saved = await _postRepository.GetByIdAsync(entity.PostId, cancellationToken);
-            await SendPostCreatedNotificationAsync(ownerId, entity.PostId, "Đã tạo tin thu mua", "Tin thu mua của bạn đã được đăng tải.", cancellationToken);
             await TryWarmSupplierMatchesAsync(ownerId, entity.PostId, cancellationToken);
-            return Result<PostResponse>.Success(_mapper.Map<PostResponse>(saved));
+            var response = _mapper.Map<PostResponse>(saved);
+            response.IsPriority = entity.IsPriority;
+            response.Message = GetPostCreatedMessage(response.IsPriority);
+            return Result<PostResponse>.Success(response);
         }
 
         public async Task<Result<PostResponse>> UpdateBuyPostAsync(Guid ownerId, Guid postId, UpdateBuyPostRequest request, CancellationToken cancellationToken = default)
@@ -912,7 +974,7 @@ namespace HomeCycle.Application.Services.Posts
                     ProductTypeId = p.ProductTypeId, BrandId = p.BrandId, ModelNumber = p.ModelNumber,
                     FunctionalityStatus = p.FunctionalityStatus,
                     UsageDuration = p.UsageDuration, DamageLevel = p.DamageLevel, StreetAddress = current.StreetAddress,
-                    Ward = current.Ward, City = current.City, PriorityLevel = current.PriorityLevel,
+                    Ward = current.Ward, City = current.City,
                     PriceFrom = current.MinExpectedPrice, PriceTo = current.BasePrice, Quantity = current.Quantity, ExpiryDate = current.ExpiryDate,
                     AttributeValues = p.Product_Attribute_Values.Select(v => new ProductAttributeValueRequest {
                         AttributeId = v.AttributeId, OptionId = v.OptionId, ValueText = v.ValueText, ValueNumber = v.ValueNumber, ValueBoolean = v.ValueBoolean
@@ -948,7 +1010,7 @@ namespace HomeCycle.Application.Services.Posts
                 current.RemainingQuantity = current.Quantity - allocated;
                 current.MinExpectedPrice = merged.PriceFrom; current.BasePrice = merged.PriceTo;
                 current.StreetAddress = merged.StreetAddress; current.Ward = merged.Ward; current.City = merged.City;
-                current.PriorityLevel = merged.PriorityLevel; current.ExpiryDate = merged.ExpiryDate?.ToUniversalTime(); current.UpdatedAt = DateTime.UtcNow;
+                current.ExpiryDate = merged.ExpiryDate?.ToUniversalTime(); current.UpdatedAt = DateTime.UtcNow;
                 if (current.RemainingQuantity == 0 || agreed >= current.Quantity) current.Status = PostStatus.Closed;
                 else if (current.Status == PostStatus.Closed && current.Quantity > previousQuantity)
                     current.Status = PostStatus.Active;
@@ -1115,18 +1177,70 @@ namespace HomeCycle.Application.Services.Posts
             }
         }
 
-        public async Task<Result<PagedResult<BuyPostMatchResponse>>> GetMatchesAsync(Guid ownerId, Guid buyPostId, PaginationRequest request, CancellationToken cancellationToken = default)
+        public async Task<Result<PagedResult<BuyPostMatchResponse>>> GetMatchesAsync(
+            Guid ownerId,
+            Guid buyPostId,
+            PaginationRequest request,
+            string? keyword = null,
+            CancellationToken cancellationToken = default)
         {
             var buy = await _postRepository.GetDetailByIdAsync(buyPostId, cancellationToken);
             if (buy == null || buy.Product == null || buy.User?.Status != UserStatus.Active || buy.PostType != PostType.Buy || !TradingPostRules.IsAvailable(buy))
                 return Result<PagedResult<BuyPostMatchResponse>>.Fail(PostErrors.NotFound);
-            if (buy.OwnerId != ownerId)
-                return Result<PagedResult<BuyPostMatchResponse>>.Fail(PostErrors.Forbidden);
-            var matched = await _supplierMatchService.MatchBackendOnlyAsync(
-                SupplierDemandContextBuilder.FromBuyPost(buy),
-                (request.PageNumber - 1) * request.PageSize,
-                request.PageSize,
-                cancellationToken);
+
+            request.PageSize = Math.Min(request.PageSize, 10);
+            var demand = SupplierDemandContextBuilder.FromBuyPost(buy);
+            HomeCycle.Application.DTOs.Responses.SupplierMatching.SupplierMatchResponse matched;
+            if (buy.OwnerId == ownerId)
+            {
+                matched = await _supplierMatchService.MatchBackendOnlyAsync(
+                    demand,
+                    (request.PageNumber - 1) * request.PageSize,
+                    request.PageSize,
+                    cancellationToken);
+            }
+            else
+            {
+                var seller = await _userRepository.GetByIdAsync(ownerId, cancellationToken);
+                if (seller?.Status != UserStatus.Active || seller.Role != UserRole.Personal)
+                    return Result<PagedResult<BuyPostMatchResponse>>.Fail(PostErrors.Forbidden);
+                if (keyword?.Length > 100)
+                    return Result<PagedResult<BuyPostMatchResponse>>.Fail(
+                        ValidationErrors.InvalidRequest("Từ khóa tìm kiếm không được vượt quá 100 ký tự."));
+
+                matched = await _supplierMatchService.MatchOwnedBackendOnlyAsync(
+                    demand,
+                    ownerId,
+                    keyword,
+                    (request.PageNumber - 1) * request.PageSize,
+                    request.PageSize,
+                    cancellationToken);
+
+                var postIds = matched.Matches.Select(x => x.SellPost.PostId).ToArray();
+                var blocks = await _offerRepository.GetSellerRequestBlocksAsync(
+                    postIds, ownerId, buy.OwnerId, DateTime.UtcNow, cancellationToken);
+                var pendingOfferPostIds = blocks.PendingOfferPostIds.ToHashSet();
+                var activeTradePostIds = blocks.ActiveTradePostIds.ToHashSet();
+                foreach (var item in matched.Matches)
+                {
+                    if (activeTradePostIds.Contains(item.SellPost.PostId))
+                    {
+                        item.CanSendOffer = false;
+                        item.BlockCode = OfferErrors.UnfinishedNegotiation.Code;
+                        item.BlockMessage = OfferErrors.UnfinishedNegotiation.Message;
+                    }
+                    else if (pendingOfferPostIds.Contains(item.SellPost.PostId))
+                    {
+                        item.CanSendOffer = false;
+                        item.BlockCode = OfferErrors.DuplicatePending.Code;
+                        item.BlockMessage = OfferErrors.DuplicatePending.Message;
+                    }
+                }
+            }
+
+            var priorityOwners = await _postRepository.GetPriorityOwnerIdsAsync(matched.Matches.Select(x => x.SellPost.OwnerId), cancellationToken);
+            foreach (var item in matched.Matches) item.SellPost.IsPriority = priorityOwners.Contains(item.SellPost.OwnerId);
+
             return Result<PagedResult<BuyPostMatchResponse>>.Success(new PagedResult<BuyPostMatchResponse> {
                 Items = matched.Matches,
                 PageNumber = request.PageNumber,
@@ -1151,6 +1265,8 @@ namespace HomeCycle.Application.Services.Posts
             var response = await _supplierMatchService.MatchAsync(
                 SupplierDemandContextBuilder.FromBuyPost(buy, advancedFilters), 0, int.MaxValue, cancellationToken);
             response.BuyPostId = buyPostId;
+            var priorityOwners = await _postRepository.GetPriorityOwnerIdsAsync(response.Matches.Select(x => x.SellPost.OwnerId), cancellationToken);
+            foreach (var item in response.Matches) item.SellPost.IsPriority = priorityOwners.Contains(item.SellPost.OwnerId);
             return Result<SupplierMatchResponse>.Success(response);
         }
 

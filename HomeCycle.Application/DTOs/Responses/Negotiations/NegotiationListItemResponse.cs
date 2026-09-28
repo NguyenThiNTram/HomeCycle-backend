@@ -10,6 +10,8 @@ namespace HomeCycle.Application.DTOs.Responses.Negotiations
     public sealed class NegotiationListItemResponse
     {
         public Guid NegotiationId { get; set; }
+        public DateTime? ResponseDeadlineAt { get; set; }
+        public DateTime? PaymentDeadlineAt { get; set; }
         public Guid? ConversationId { get; set; }
         public Guid OfferId { get; set; }
         public Guid PostId { get; set; }

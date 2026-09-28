@@ -1,4 +1,5 @@
-﻿using AutoMapper;
+using HomeCycle.Application.Validations.Banks;
+using AutoMapper;
 using FluentValidation;
 using HomeCycle.Application.Commons.Audits;
 using HomeCycle.Application.Commons.Errors;
@@ -187,7 +188,7 @@ namespace HomeCycle.Application.Services.Profiles
                     var bankAccount = _mapper.Map<bank_account>(request);
                     bankAccount.UserBankId = Guid.NewGuid();
                     bankAccount.UserId = userId;
-                    bankAccount.VerifyStatus = VerifyStatus.Verified;
+                    bankAccount.VerifyStatus = VerifyStatus.Unverified;
                     bankAccount.CreatedAt = now;
 
                     await _bankAccountRepository.AddAsync(bankAccount, cancellationToken);
@@ -264,7 +265,7 @@ namespace HomeCycle.Application.Services.Profiles
                     if (existingBank != null)
                     {
                         _mapper.Map(request, existingBank);
-                        existingBank.VerifyStatus = VerifyStatus.Verified;
+                        existingBank.VerifyStatus = VerifyStatus.Unverified;
                         _bankAccountRepository.UpdateAsync(existingBank);
                     }
                     else
@@ -272,7 +273,7 @@ namespace HomeCycle.Application.Services.Profiles
                         var bankAccount = _mapper.Map<bank_account>(request);
                         bankAccount.UserBankId = Guid.NewGuid();
                         bankAccount.UserId = userId;
-                        bankAccount.VerifyStatus = VerifyStatus.Verified;
+                        bankAccount.VerifyStatus = VerifyStatus.Unverified;
                         bankAccount.CreatedAt = now;
                         await _bankAccountRepository.AddAsync(bankAccount, cancellationToken);
                     }
@@ -686,6 +687,11 @@ namespace HomeCycle.Application.Services.Profiles
             if (!valResult.IsValid)
                 return Result.Fail(ValidationErrors.InvalidRequest(string.Join(" | ", valResult.Errors.Select(e => e.ErrorMessage))));
 
+            var profile = await _businessProfileRepository.GetByUserIdAsync(userId, cancellationToken);
+            if (profile == null) return Result.Fail(new Error("BusinessProfile.NotFound", "Không tìm thấy hồ sơ doanh nghiệp."));
+            if (!UpdateBankAccountRequestValidator.NamesMatch(request.AccountName, profile.IdentityName))
+                return Result.Fail(ValidationErrors.InvalidRequest(UpdateBankAccountRequestValidator.NameMismatchMessage));
+            var verification = profile.Status == (int)BusinessProfileStatus.Approved ? VerifyStatus.Verified : VerifyStatus.Unverified;
             var existingBank = await _bankAccountRepository.GetByUserIdAsync(userId, cancellationToken);
             var isNewBankAccount = existingBank == null;
             Guid bankAccountId;
@@ -694,7 +700,7 @@ namespace HomeCycle.Application.Services.Profiles
             {
 
                 _mapper.Map(request, existingBank);
-                existingBank.VerifyStatus = VerifyStatus.Verified;
+                existingBank.VerifyStatus = verification;
                 bankAccountId = existingBank.UserBankId;
                 _bankAccountRepository.UpdateAsync(existingBank);
             }
@@ -704,7 +710,7 @@ namespace HomeCycle.Application.Services.Profiles
                 var newBank = _mapper.Map<bank_account>(request);
                 newBank.UserBankId = Guid.NewGuid();
                 newBank.UserId = userId;
-                newBank.VerifyStatus = VerifyStatus.Verified;
+                newBank.VerifyStatus = verification;
                 newBank.CreatedAt = DateTime.UtcNow;
                 bankAccountId = newBank.UserBankId;
                 await _bankAccountRepository.AddAsync(newBank, cancellationToken);
@@ -722,7 +728,7 @@ namespace HomeCycle.Application.Services.Profiles
                 Metadata = new Dictionary<string, object?>
                 {
                     ["created"] = isNewBankAccount,
-                    ["verificationStatus"] = VerifyStatus.Verified.ToString()
+                    ["verificationStatus"] = verification.ToString()
                 }
             };
 
@@ -920,7 +926,15 @@ namespace HomeCycle.Application.Services.Profiles
                 //if (profile == null)
                 //    return Result.Fail(new Error("BusinessProfile.NotFound", "Không tìm thấy hồ sơ doanh nghiệp."));
 
-                string oldIdentityName = profile.IdentityName;
+                profile.Status = (int)BusinessProfileStatus.Pending;
+                profile.VerifiedBy = null;
+                profile.VerifiedAt = null;
+                var bank = await _bankAccountRepository.GetByUserIdAsync(userId, cancellationToken);
+                if (bank != null)
+                {
+                    bank.VerifyStatus = VerifyStatus.Unverified;
+                    await _bankAccountRepository.UpdateAsync(bank, cancellationToken);
+                }
 
                 _mapper.Map(request, profile);
                 profile.UpdatedAt = DateTime.UtcNow;
