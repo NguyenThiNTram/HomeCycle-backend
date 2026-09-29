@@ -41,8 +41,10 @@ using HomeCycle.Application.Interfaces.Repositories.SubscriptionPackages;
 using HomeCycle.Application.Interfaces.Services.SubscriptionPackages;
 using HomeCycle.Application.DTOs.Responses.SubscriptionPackages;
 using HomeCycle.Application.Interfaces.Repositories.Carts;
+using HomeCycle.Application.Interfaces.Repositories.Users;
 using HomeCycle.Application.Interfaces.Services.Appointments;
 using HomeCycle.Application.Interfaces.Services.Carts;
+using HomeCycle.Application.Interfaces.Services.Auths;
 
 namespace HomeCycle.Application.Services.Payments
 {
@@ -98,6 +100,8 @@ namespace HomeCycle.Application.Services.Payments
         private readonly ICartItemRepository _cartItemRepository;
         private readonly IAppointmentRealtimeService _appointmentRealtimeService;
         private readonly ICartRealtimeService _cartRealtimeService;
+        private readonly IEmailService _emailService;
+        private readonly IUserRepository _userRepository;
         public PaymentService(
             IUnitOfWork unitOfWork,
             IPaymentGatewayService gatewayService,
@@ -132,7 +136,9 @@ namespace HomeCycle.Application.Services.Payments
             IUserSubscriptionService userSubscriptionService,
             ICartItemRepository cartItemRepository,
             IAppointmentRealtimeService appointmentRealtimeService,
-            ICartRealtimeService cartRealtimeService)
+            ICartRealtimeService cartRealtimeService,
+            IEmailService emailService,
+            IUserRepository userRepository)
         {
             _unitOfWork = unitOfWork;
             _gatewayService = gatewayService;
@@ -168,6 +174,8 @@ namespace HomeCycle.Application.Services.Payments
             _cartItemRepository = cartItemRepository;
             _appointmentRealtimeService = appointmentRealtimeService;
             _cartRealtimeService = cartRealtimeService;
+            _emailService = emailService;
+            _userRepository = userRepository;
         }
 
         public async Task ReconcileAgreementForExpiryAsync(Guid agreementId, CancellationToken ct = default)
@@ -1190,6 +1198,16 @@ namespace HomeCycle.Application.Services.Payments
                 await _auditService.EnqueueAsync(walletPaymentAuditEvent, ct);
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
+
+                await SendPaymentReceiptEmailSafelyAsync(
+                    payment,
+                    fulfillment.Order,
+                    details,
+                    basePrice,
+                    shippingFee,
+                    PaymentMethod.Internal_Wallet,
+                    null,
+                    ct);
 
                 await PublishPaymentChatActivitySafelyAsync(
                     negotiation,
@@ -2320,6 +2338,7 @@ namespace HomeCycle.Application.Services.Payments
 
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
+
             }
             catch
             {
@@ -2630,6 +2649,7 @@ namespace HomeCycle.Application.Services.Payments
                 await _auditService.EnqueueAsync(paymentReconcileAuditEvent, ct);
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
+                await SendPaymentFailureEmailSafelyAsync(payment, transaction, targetPaymentStatus, ct);
             }
             catch
             {
@@ -2652,6 +2672,94 @@ namespace HomeCycle.Application.Services.Payments
                     ct);
 
             return bankAccount?.VerifyStatus == VerifyStatus.Verified;
+        }
+
+        private async Task SendPaymentReceiptEmailSafelyAsync(
+            payment payment,
+            order order,
+            AgreementDetailsDto? details,
+            decimal itemAmount,
+            decimal shippingFee,
+            PaymentMethod paymentMethod,
+            string? providerTransactionId,
+            CancellationToken ct)
+        {
+            try
+            {
+                var payer = await _userRepository.GetByIdAsync(payment.PayerId, ct);
+                if (payer == null || string.IsNullOrWhiteSpace(payer.Email))
+                    return;
+
+                var scheduledAt = details?.InspectionDate ?? details?.CollectionDate;
+                var location = details?.InspectionAddress ?? details?.DeliveryAddress ?? details?.PickupAddress;
+                var appointmentSummary = scheduledAt.HasValue
+                    ? $"{scheduledAt.Value:dd/MM/yyyy HH:mm}" + (string.IsNullOrWhiteSpace(location) ? "" : $" – {location}")
+                    : "Chưa có thông tin lịch hẹn";
+                await _emailService.SendPaymentReceiptEmailAsync(
+                    payer.Email,
+                    payer.Username,
+                    payment.PaymentId.ToString(),
+                    providerTransactionId ?? "",
+                    order.OrderCode,
+                    $"{order.ProductName ?? "Sản phẩm"} × {order.Quantity}",
+                    $"{itemAmount:N0} VND",
+                    $"{shippingFee:N0} VND",
+                    $"{payment.Amount ?? 0:N0} VND",
+                    paymentMethod.ToString(),
+                    appointmentSummary,
+                    ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Không gửi được email biên nhận cho Payment {PaymentId}", payment.PaymentId);
+            }
+        }
+
+        private async Task SendPaymentFailureEmailSafelyAsync(
+            payment payment,
+            payment_transaction transaction,
+            PaymentStatus paymentStatus,
+            CancellationToken ct)
+        {
+            try
+            {
+                if (!payment.AgreementId.HasValue)
+                    return;
+
+                var payer = await _userRepository.GetByIdAsync(payment.PayerId, ct);
+                var agreement = await _agreementRepo.GetByIdAsync(payment.AgreementId.Value, ct);
+                if (payer == null || agreement == null || string.IsNullOrWhiteSpace(payer.Email))
+                    return;
+
+                var details = ParseAgreementDetails(agreement, agreement.AgreementId);
+                var post = await _postRepo.GetByIdAsync(agreement.PostId, ct);
+                var productName = post?.Product?.ProductName ?? "Sản phẩm";
+                var productSummary = $"{productName} × {agreement.Quantity}";
+                var shippingFee = details?.EstimatedShippingFee ?? 0;
+                var statusText = paymentStatus switch
+                {
+                    PaymentStatus.Expired => "Đã hết hạn",
+                    PaymentStatus.Cancelled => "Đã hủy",
+                    _ => "Thất bại"
+                };
+
+                await _emailService.SendPaymentFailureEmailAsync(
+                    payer.Email,
+                    payer.Username,
+                    payment.PaymentId.ToString(),
+                    transaction.PayOSTransactionId ?? transaction.PayOSOrderCode ?? "",
+                    agreement.AgreementId.ToString(),
+                    DateTime.UtcNow.ToString("dd/MM/yyyy HH:mm 'UTC'"),
+                    $"{payment.Amount ?? 0:N0} VND",
+                    productSummary,
+                    $"{shippingFee:N0} VND",
+                    statusText,
+                    ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Không gửi được email trạng thái thất bại cho Payment {PaymentId}", payment.PaymentId);
+            }
         }
 
         private async Task<PaymentStatusResponseDto>
@@ -3285,6 +3393,16 @@ namespace HomeCycle.Application.Services.Payments
                 await _auditService.EnqueueAsync(paymentCompleteAuditEvent, ct);
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
+
+                await SendPaymentReceiptEmailSafelyAsync(
+                    payment,
+                    fulfillment.Order,
+                    details,
+                    basePrice,
+                    shippingFee,
+                    PaymentMethod.PayOS,
+                    payOsTransactionId,
+                    ct);
 
                 await PublishPaymentChatActivitySafelyAsync(
                     negotiation,
