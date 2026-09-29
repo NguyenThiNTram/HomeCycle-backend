@@ -2,6 +2,7 @@
 using HomeCycle.Application.DTOs.Requests.Wallets;
 using HomeCycle.Application.DTOs.Responses.Wallets;
 using HomeCycle.Domain.Entities;
+using HomeCycle.Domain.Enums;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -18,7 +19,11 @@ namespace HomeCycle.Application.Interfaces.Repositories.Wallets
         Task<decimal> GetNetOrderHeldAmountAsync(
             Guid walletId,
             Guid orderId,
+            BalanceType balanceType,
             CancellationToken ct = default);
         Task<IReadOnlyList<WalletActiveHoldDto>> GetActiveHoldsAsync(CancellationToken ct = default);
+        Task<PagedResult<OrderEscrowPositionDto>> GetActiveOrderEscrowsAsync(
+            OrderEscrowSearchRequest request,
+            CancellationToken ct = default);
     }
 }

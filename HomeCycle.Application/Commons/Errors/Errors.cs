@@ -393,7 +393,7 @@ namespace HomeCycle.Application.Commons.Errors
             new("Order.ShipmentNotDelivered", "Đơn vận chuyển chưa được xác nhận giao thành công.");
 
         public static readonly Error SellerReadyRequired =
-            new("Order.SellerReadyRequired", "Người bán phải xác nhận đã chuẩn bị hàng trước khi xác nhận bàn giao.");
+            new("Order.SellerReadyRequired", "Người bán phải xác nhận đã chuẩn bị hàng trước khi thực hiện xác nhận giao nhận.");
 
         public static readonly Error CancellationNotAllowed =
             new("Order.CancellationNotAllowed", "Đơn hàng đã vượt mốc cho phép hủy trực tiếp. Nếu phát sinh vấn đề, vui lòng sử dụng tranh chấp.");
@@ -468,6 +468,18 @@ namespace HomeCycle.Application.Commons.Errors
 
         public static readonly Error InvalidStatus =
             new("Agreement.InvalidStatus", "Trạng thái hiện tại của thỏa thuận không cho phép thực hiện thao tác này.");
+
+        public static readonly Error CancelNotAvailable =
+            new("Agreement.CancelNotAvailable", "Chỉ có thể hủy hợp đồng sau khi cả hai bên đã xác nhận và trước khi hết hạn.");
+
+        public static readonly Error EditNotAllowedAfterConfirmation =
+            new("Agreement.EditNotAllowedAfterConfirmation", "Hợp đồng đã được cả hai bên xác nhận và không thể chỉnh sửa. Hai bên có thể thanh toán hoặc hủy hợp đồng trước khi thanh toán.");
+
+        public static readonly Error PaymentInProgress =
+            new("Agreement.PaymentInProgress", "Thanh toán đang được xử lý hoặc chưa xác minh được. Vui lòng kiểm tra lại giao dịch rồi thử hủy sau.");
+
+        public static readonly Error AlreadyPaid =
+            new("Agreement.AlreadyPaid", "Hợp đồng đã được thanh toán hoặc đã phát sinh đơn hàng. Vui lòng xử lý tại đơn hàng.");
 
         public static readonly Error AlreadyConfirmed =
             new("Agreement.AlreadyConfirmed", "Bạn đã xác nhận thỏa thuận này rồi.");
@@ -549,6 +561,9 @@ namespace HomeCycle.Application.Commons.Errors
 
         public static Error CollectionConfirmationNotOpen(DateTime scheduledAt) =>
             new("Appointment.CollectionConfirmationNotOpen", $"Chưa đến ngày được phép xác nhận giao nhận. Lịch thu gom: {scheduledAt:O}.");
+
+        public static readonly Error ScheduleOutsideBusinessHours =
+            new("Appointment.ScheduleOutsideBusinessHours", "Thời gian lịch hẹn phải nằm trong khoảng 08:00 đến 20:00 theo giờ Việt Nam.");
     }
 
     public static class InspectionErrors
@@ -623,7 +638,7 @@ namespace HomeCycle.Application.Commons.Errors
             new("Payment.RefundWalletNotFound", "Không tìm thấy ví cần thiết để thực hiện hoàn tiền.");
 
         public static readonly Error InsufficientHeldBalance =
-            new("Payment.InsufficientHeldBalance", "Số dư đang tạm giữ không đủ để thực hiện hoàn tiền.");
+            new("Payment.InsufficientHeldBalance", "Số dư Order Escrow không đủ để thực hiện hoàn tiền.");
 
         public static readonly Error InvalidRefundAmount =
             new("Payment.InvalidRefundAmount", "Số tiền hoàn không hợp lệ.");
@@ -653,13 +668,13 @@ namespace HomeCycle.Application.Commons.Errors
             new("Payment.ReleasePaymentNotFound", "Không tìm thấy giao dịch thanh toán hợp lệ để giải ngân.");
 
         public static readonly Error ReleaseWalletNotFound =
-            new("Payment.ReleaseWalletNotFound", "Không tìm thấy ví người bán để giải ngân.");
+            new("Payment.ReleaseWalletNotFound", "Không tìm thấy ví cần thiết để giải ngân.");
 
         public static readonly Error ReleaseOrderHeldAmountNotFound =
             new("Payment.ReleaseOrderHeldAmountNotFound", "Đơn hàng không còn khoản tiền tạm giữ có thể giải ngân.");
 
         public static readonly Error InsufficientHeldBalanceForRelease =
-            new("Payment.InsufficientHeldBalanceForRelease", "Số dư tạm giữ của người bán không đủ để giải ngân cho đơn hàng.");
+            new("Payment.InsufficientHeldBalanceForRelease", "Số dư Order Escrow không đủ để giải ngân cho đơn hàng.");
 
         public static readonly Error ReleaseFailed =
             new("Payment.ReleaseFailed", "Không thể giải ngân khoản tiền tạm giữ của đơn hàng.");

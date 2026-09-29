@@ -24,5 +24,21 @@ namespace HomeCycle.Application.Interfaces.Repositories.Wallets
         Task<WalletTransactionDetailDto?> GetDetailAsync(
             Guid walletTransactionId,
             CancellationToken ct = default);
+        Task<PagedResult<UserWalletTransactionListItemDto>> GetPagedByWalletIdAsync(
+            Guid walletId,
+            UserWalletTransactionSearchRequest request,
+            CancellationToken ct = default);
+        Task<UserWalletTransactionDetailDto?> GetDetailByWalletIdAsync(
+            Guid walletTransactionId,
+            Guid walletId,
+            CancellationToken ct = default);
+        Task<IReadOnlyList<WalletTransactionListItemDto>> GetListByIdsAsync(
+            IReadOnlyCollection<Guid> walletTransactionIds,
+            CancellationToken ct = default);
+
+        Task<IReadOnlyList<UserWalletTransactionListItemDto>> GetListByWalletIdAndIdsAsync(
+            Guid walletId,
+            IReadOnlyCollection<Guid> walletTransactionIds,
+            CancellationToken ct = default);
     }
 }

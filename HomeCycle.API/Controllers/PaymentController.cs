@@ -1,7 +1,10 @@
-﻿using HomeCycle.Application.Commons.Results;
+﻿using HomeCycle.Application.Commons.Paginations;
+using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Requests.Payments;
+using HomeCycle.Application.DTOs.Responses.Payments;
 using HomeCycle.Application.DTOs.Responses.SubscriptionPackages;
 using HomeCycle.Application.Interfaces.Services.Payments;
+using HomeCycle.Domain.Enums;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -103,6 +106,15 @@ namespace HomeCycle.API.Controllers
 
                 if (!result.IsSuccess)
                 {
+                    if (result.Error?.Code == "Payment.AgreementCancelledLatePayment")
+                    {
+                        return Ok(new
+                        {
+                            success = true,
+                            message = "Webhook đã được ghi nhận. Giao dịch cần được nhân viên đối soát thủ công."
+                        });
+                    }
+
                     return BadRequest(result.Error);
                 }
 
@@ -123,7 +135,12 @@ namespace HomeCycle.API.Controllers
             var userId = GetUserIdFromToken();
             var result = await _paymentService.SyncPaymentStatusAsync(agreementId, userId, ct);
             if (!result.IsSuccess)
+            {
+                if (result.Error?.Code == "Payment.AgreementCancelledLatePayment")
+                    return Conflict(result.Error);
+
                 return BadRequest(result.Error);
+            }
 
             return Ok(result.Data);
         }
@@ -136,6 +153,23 @@ namespace HomeCycle.API.Controllers
             var result = await _paymentService.GetMyPaymentHistoryAsync(userId, request, ct);
             if (!result.IsSuccess)
                 return BadRequest(result.Error);
+
+            return Ok(result.Data);
+        }
+
+        [HttpGet]
+        [Authorize(Roles = nameof(UserRole.Moderator) + "," + nameof(UserRole.Admin))]
+        [SwaggerOperation(
+            Summary = "Lấy danh sách Payment để quản lý",
+            Description = "Trả toàn bộ Payment lifecycle, gồm Pending, Completed, Failed, Refunded, PartiallyRefunded, Expired và Cancelled; hỗ trợ lọc theo payer, loại thanh toán, phương thức, trạng thái và thời gian.")]
+        [ProducesResponseType(typeof(PagedResult<PaymentManagementListItemDto>), StatusCodes.Status200OK)]
+        public async Task<IActionResult> GetPaymentManagement(
+            [FromQuery] PaymentManagementSearchRequest request,
+            CancellationToken ct)
+        {
+            var result = await _paymentService.GetPaymentManagementAsync(
+                request,
+                ct);
 
             return Ok(result.Data);
         }

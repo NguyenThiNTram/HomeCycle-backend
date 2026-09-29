@@ -240,11 +240,10 @@ public sealed class DashboardController(IDashboardService service) : ControllerB
 
     [HttpGet("finance/health")]
     [SwaggerOperation(
-        Summary = "Theo dõi sức khỏe vận hành tài chính",
+        Summary = "Theo dõi sức khỏe vận hành và tính toàn vẹn tài chính",
         Description =
-            "Phát hiện payment Pending quá hạn, Pending thiếu expiry, withdrawal đang chờ/xử lý, " +
-            "order quá hạn release vẫn còn Hold, order Completed thiếu dispute deadline, " +
-            "tiền Hold do active dispute, wallet âm và financial transaction chưa phân loại.")]
+            "Phát hiện Payment Pending bất thường, Withdrawal đang chờ/xử lý, Order Escrow quá hạn release, tiền escrow do active dispute, wallet âm và transaction chưa phân loại. " +
+            "Integrity kiểm tra Wallet snapshot so với Ledger, Completed WalletTransaction thiếu Ledger, Payment Order đã hoàn tất thiếu posting vào Order_Escrow, legacy Order Hold và tính cân bằng của Order_Escrow.")]
     public async Task<ActionResult<FinanceHealthResponse>> GetFinanceHealth(
         [FromQuery] DashboardPeriodRequest request,
         CancellationToken ct)

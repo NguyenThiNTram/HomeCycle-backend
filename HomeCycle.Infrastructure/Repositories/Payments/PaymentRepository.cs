@@ -150,5 +150,121 @@ namespace HomeCycle.Infrastructure.Repositories.Payments
 
             return entity?.ToDomain();
         }
+
+        public async Task<PagedResult<PaymentManagementListItemDto>> GetPagedForManagementAsync(
+            PaymentManagementSearchRequest request,
+            CancellationToken ct = default)
+        {
+            var query = _db.Payments
+                .AsNoTracking()
+                .AsQueryable();
+
+            if (request.PayerId.HasValue)
+                query = query.Where(x => x.PayerId == request.PayerId.Value);
+
+            if (request.Type.HasValue)
+                query = query.Where(x => x.PaymentType == (int)request.Type.Value);
+
+            if (request.Method.HasValue)
+                query = query.Where(x => x.PaymentMethod == (int)request.Method.Value);
+
+            if (request.Status.HasValue)
+                query = query.Where(x => x.PaymentStatus == (int)request.Status.Value);
+
+            if (request.FromDate.HasValue)
+                query = query.Where(x =>
+                    x.CreatedAt >= request.FromDate.Value.ToUniversalTime());
+
+            if (request.ToDate.HasValue)
+                query = query.Where(x =>
+                    x.CreatedAt <= request.ToDate.Value.ToUniversalTime());
+
+            var totalCount = await query.CountAsync(ct);
+
+            var items = await query
+                .OrderByDescending(x => x.CreatedAt)
+                .ThenByDescending(x => x.PaymentId)
+                .Skip((request.PageNumber - 1) * request.PageSize)
+                .Take(request.PageSize)
+                .Select(x => new PaymentManagementListItemDto
+                {
+                    PaymentId = x.PaymentId,
+
+                    PayerId = x.PayerId,
+                    PayerUsername = x.Payer.Username,
+
+                    PaymentType = x.PaymentType.HasValue
+                        ? (PaymentType?)x.PaymentType.Value
+                        : null,
+
+                    PaymentMethod = x.PaymentMethod.HasValue
+                        ? (PaymentMethod?)x.PaymentMethod.Value
+                        : null,
+
+                    PaymentStatus = x.PaymentStatus.HasValue
+                        ? (PaymentStatus?)x.PaymentStatus.Value
+                        : null,
+
+                    Amount = x.Amount ?? 0,
+                    Description = x.Description ?? string.Empty,
+
+                    AgreementId = x.AgreementId,
+                    OrderId = x.OrderId,
+                    SubscriptionId = x.SubscriptionId,
+
+                    CreatedAt = x.CreatedAt,
+                    PaidAt = x.PaidAt,
+                    ExpiredAt = x.ExpiredAt
+                })
+                .ToListAsync(ct);
+
+            return new PagedResult<PaymentManagementListItemDto>
+            {
+                Items = items,
+                PageNumber = request.PageNumber,
+                PageSize = request.PageSize,
+                TotalCount = totalCount
+            };
+        }
+
+        public async Task<PaymentManagementListItemDto?> GetManagementItemByIdAsync(
+            Guid paymentId,
+            CancellationToken ct = default)
+        {
+            return await _db.Payments
+                .AsNoTracking()
+                .Where(x => x.PaymentId == paymentId)
+                .Select(x => new PaymentManagementListItemDto
+                {
+                    PaymentId = x.PaymentId,
+
+                    PayerId = x.PayerId,
+                    PayerUsername = x.Payer.Username,
+
+                    PaymentType = x.PaymentType.HasValue
+                        ? (PaymentType?)x.PaymentType.Value
+                        : null,
+
+                    PaymentMethod = x.PaymentMethod.HasValue
+                        ? (PaymentMethod?)x.PaymentMethod.Value
+                        : null,
+
+                    PaymentStatus = x.PaymentStatus.HasValue
+                        ? (PaymentStatus?)x.PaymentStatus.Value
+                        : null,
+
+                    Amount = x.Amount ?? 0,
+                    Description = x.Description ?? string.Empty,
+
+                    AgreementId = x.AgreementId,
+                    OrderId = x.OrderId,
+                    SubscriptionId = x.SubscriptionId,
+
+                    CreatedAt = x.CreatedAt,
+                    PaidAt = x.PaidAt,
+                    ExpiredAt = x.ExpiredAt
+                })
+                .SingleOrDefaultAsync(ct);
+        }
     }
 }

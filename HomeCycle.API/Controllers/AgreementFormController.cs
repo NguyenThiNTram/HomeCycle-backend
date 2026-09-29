@@ -117,6 +117,23 @@ namespace HomeCycle.API.Controllers
             return Ok(result.Data);
         }
 
+        [HttpPost("{id:guid}/cancel")]
+        public async Task<IActionResult> CancelAgreement(Guid id, CancellationToken cancellationToken)
+        {
+            var result = await _agreementService.CancelAgreementAsync(id, GetCurrentUserId(), cancellationToken);
+            if (result.IsSuccess)
+                return Ok(result.Data);
+
+            var error = result.Error!;
+            return error.Code switch
+            {
+                "Agreement.NotFound" => NotFound(error),
+                "Agreement.Forbidden" or "Auth.Forbidden" => StatusCode(StatusCodes.Status403Forbidden, error),
+                "Agreement.CancelNotAvailable" or "Agreement.PaymentInProgress" or "Agreement.AlreadyPaid" or "Agreement.DeadlinePassed" => Conflict(error),
+                _ => BadRequest(error)
+            };
+        }
+
         [HttpPost("negotiations/{negotiationId:guid}/shipping-fee-preview")]
         [SwaggerOperation(
             Summary = "Xem trước phí vận chuyển",

@@ -22,6 +22,9 @@ namespace HomeCycle.Application.Interfaces.Services.Payments
         Task<Result<PaymentStatusResponseDto>> ExecuteWalletPaymentAsync(Guid agreementId, Guid payerId, CancellationToken ct = default);
         Task<Result<PaymentStatusResponseDto>> SyncPaymentStatusAsync(Guid agreementId, Guid payerId, CancellationToken ct = default);
         Task<Result<PagedResult<PaymentHistoryResponseDto>>> GetMyPaymentHistoryAsync(Guid userId, PaymentHistorySearchRequest request, CancellationToken ct = default);
+        Task<Result<PagedResult<PaymentManagementListItemDto>>> GetPaymentManagementAsync(
+            PaymentManagementSearchRequest request,
+            CancellationToken ct = default);
         Task<Result<bool>> RefundOrderHeldAmountAsync(order order, agreement_form agreement, decimal amount, CancellationToken ct = default);
         Task<Result<decimal>> RefundAllRemainingOrderHeldAmountAsync(
             order order,

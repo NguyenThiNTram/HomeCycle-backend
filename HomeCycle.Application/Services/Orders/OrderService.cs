@@ -1,12 +1,12 @@
-﻿using HomeCycle.Domain.Enums;
-using HomeCycle.Application.Commons.Helpers;
-using HomeCycle.Application.Interfaces.Repositories.Posts;
-using AutoMapper;
+﻿using AutoMapper;
+using HomeCycle.Application.Commons.Audits;
 using HomeCycle.Application.Commons.Errors;
+using HomeCycle.Application.Commons.Helpers;
 using HomeCycle.Application.Commons.Paginations;
 using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Requests.Agreements;
 using HomeCycle.Application.DTOs.Requests.Orders;
+using HomeCycle.Application.DTOs.Requests.Wallets;
 using HomeCycle.Application.DTOs.Responses.Disputes;
 using HomeCycle.Application.DTOs.Responses.Notifications;
 using HomeCycle.Application.DTOs.Responses.Orders;
@@ -16,25 +16,27 @@ using HomeCycle.Application.Interfaces.Repositories.Appointments;
 using HomeCycle.Application.Interfaces.Repositories.Disputes;
 using HomeCycle.Application.Interfaces.Repositories.Inspections;
 using HomeCycle.Application.Interfaces.Repositories.Orders;
+using HomeCycle.Application.Interfaces.Repositories.Posts;
 using HomeCycle.Application.Interfaces.Repositories.Reviews;
 using HomeCycle.Application.Interfaces.Repositories.Shipments;
+using HomeCycle.Application.Interfaces.Services.Appointments;
+using HomeCycle.Application.Interfaces.Services.Audits;
 using HomeCycle.Application.Interfaces.Services.Disputes;
+using HomeCycle.Application.Interfaces.Services.GHN;
 using HomeCycle.Application.Interfaces.Services.Notifications;
 using HomeCycle.Application.Interfaces.Services.Orders;
 using HomeCycle.Application.Interfaces.Services.Payments;
 using HomeCycle.Application.Interfaces.Services.PlatformPolicies;
+using HomeCycle.Application.Interfaces.Services.Wallets;
 using HomeCycle.Application.Services.Disputes;
 using HomeCycle.Domain.Entities;
+using HomeCycle.Domain.Enums;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
-using HomeCycle.Application.Interfaces.Services.Audits;
-using HomeCycle.Application.Commons.Audits;
-using HomeCycle.Application.Interfaces.Services.GHN;
-using HomeCycle.Application.Interfaces.Services.Appointments;
 
 namespace HomeCycle.Application.Services.Orders
 {
@@ -63,6 +65,7 @@ namespace HomeCycle.Application.Services.Orders
         private readonly IMapper _mapper;
         private readonly IGhnShipmentCreationService _ghnLifecycle;
         private readonly IAppointmentRealtimeService _appointmentRealtimeService;
+        private readonly IFinanceRealtimeService _financeRealtimeService;
 
         public OrderService(
             IOrderRepository orderRepo,
@@ -86,7 +89,8 @@ namespace HomeCycle.Application.Services.Orders
             IAuditService auditService,
             IMapper mapper,
             IGhnShipmentCreationService ghnLifecycle,
-            IAppointmentRealtimeService appointmentRealtimeService)
+            IAppointmentRealtimeService appointmentRealtimeService,
+            IFinanceRealtimeService financeRealtimeService)
         {
             _orderRepo = orderRepo;
             _postRepo = postRepo;
@@ -110,6 +114,7 @@ namespace HomeCycle.Application.Services.Orders
             _mapper = mapper;
             _ghnLifecycle = ghnLifecycle;
             _appointmentRealtimeService = appointmentRealtimeService;
+            _financeRealtimeService = financeRealtimeService;
         }
 
         public async Task<Result<PagedResult<OrderListItemDto>>> GetMyOrdersAsync(
@@ -594,6 +599,22 @@ namespace HomeCycle.Application.Services.Orders
                         deliveryMethod == DeliveryMethod.BuyerPickUp ||
                         deliveryMethod == DeliveryMethod.SellerDelivers)
                     {
+                        if (shipment == null)
+                        {
+                            await _unitOfWork.RollbackTransactionAsync(ct);
+
+                            return Result<OrderConfirmationResponseDto>.Fail(
+                                OrderErrors.ShipmentNotFound);
+                        }
+
+                        if (!shipment.SellerReadyAt.HasValue)
+                        {
+                            await _unitOfWork.RollbackTransactionAsync(ct);
+
+                            return Result<OrderConfirmationResponseDto>.Fail(
+                                OrderErrors.SellerReadyRequired);
+                        }
+
                         var collectionAppointment =
                             await _appointmentRepo.GetByAgreementIdAndTypeAsync(
                                 agreement.AgreementId,
@@ -1098,6 +1119,19 @@ namespace HomeCycle.Application.Services.Orders
                     }
                 };
 
+                FinanceRealtimeChange? financeChange =
+                    refundedAmount > AmountEpsilon
+                        ? new FinanceRealtimeChange
+                        {
+                            EventType = FinanceEventType.OrderRefunded,
+                            UserId = agreement.BuyerId,
+                            ReferenceType = ReferenceType.Order,
+                            ReferenceId = order.OrderId,
+                            TransactionType = TransactionType.Order_Refund,
+                            OccurredAt = now
+                        }
+                        : null;
+
                 var cancelRecipientId = userId == agreement.BuyerId
                     ? agreement.SellerId
                     : agreement.BuyerId;
@@ -1120,6 +1154,8 @@ namespace HomeCycle.Application.Services.Orders
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
 
+                if (financeChange != null)
+                    await _financeRealtimeService.PublishUpdatedSafelyAsync(financeChange);
                 await _notificationService.PublishCreatedSafelyAsync(cancellationNotification);
                 await _orderTrackingRealtimeService.PublishByOrderIdSafelyAsync(order.OrderId, order.UpdatedAt);
                 if (appointmentToCancel != null)
@@ -1393,6 +1429,19 @@ namespace HomeCycle.Application.Services.Orders
                 dispute.ResolvedAt = now;
                 dispute.UpdatedAt = now;
 
+                FinanceRealtimeChange? financeChange =
+                    refundedAmount > AmountEpsilon
+                        ? new FinanceRealtimeChange
+                        {
+                            EventType = FinanceEventType.OrderRefunded,
+                            UserId = agreement.BuyerId,
+                            ReferenceType = ReferenceType.Order,
+                            ReferenceId = order.OrderId,
+                            TransactionType = TransactionType.Order_Refund,
+                            OccurredAt = now
+                        }
+                        : null;
+
                 var completeReturnAuditDiff = new AuditDiffBuilder()
                     .Add("status", previousOrderStatus.ToString(), ((OrderStatus)order.OrderStatus.Value).ToString())
                     .Add("paymentStatus", previousPaymentStatus?.ToString(), order.PaymentStatus.HasValue ? ((PaymentStatus)order.PaymentStatus.Value).ToString() : null)
@@ -1432,6 +1481,9 @@ namespace HomeCycle.Application.Services.Orders
 
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
+
+                if (financeChange != null)
+                    await _financeRealtimeService.PublishUpdatedSafelyAsync(financeChange);
                 await _notificationService.PublishCreatedSafelyAsync(returnNotification);
                 await _orderTrackingRealtimeService.PublishByOrderIdSafelyAsync(
                     order.OrderId,
@@ -1862,7 +1914,8 @@ namespace HomeCycle.Application.Services.Orders
                         inspectionCollectNow ||
                         (
                             isDirect &&
-                            collectionConfirmationOpen
+                            collectionConfirmationOpen &&
+                            shipment?.SellerReadyAt.HasValue == true
                         ) ||
                         ghnDelivered
                     ))

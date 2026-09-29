@@ -2,6 +2,7 @@
 using HomeCycle.Application.Interfaces.Repositories.Agreements;
 using HomeCycle.Application.Interfaces.Repositories.Offers;
 using HomeCycle.Application.Interfaces.Repositories.Orders;
+using HomeCycle.Domain.Enums;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 
@@ -96,6 +97,24 @@ namespace HomeCycle.API.Hubs
                 Context.ConnectionId,
                 ChatGroupName.ForOrder(orderId),
                 Context.ConnectionAborted);
+        }
+
+
+        public override async Task OnConnectedAsync()
+        {
+            var canMonitorFinance =
+                Context.User?.IsInRole(nameof(UserRole.Moderator)) == true ||
+                Context.User?.IsInRole(nameof(UserRole.Admin)) == true;
+
+            if (canMonitorFinance)
+            {
+                await Groups.AddToGroupAsync(
+                    Context.ConnectionId,
+                    ChatGroupName.Finance,
+                    Context.ConnectionAborted);
+            }
+
+            await base.OnConnectedAsync();
         }
 
         private Guid GetCurrentUserId()

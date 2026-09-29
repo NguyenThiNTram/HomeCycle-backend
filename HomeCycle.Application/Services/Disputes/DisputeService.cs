@@ -1,13 +1,13 @@
-using HomeCycle.Application.Interfaces.Services.GHN;
-using HomeCycle.Application.Interfaces.Repositories.Posts;
 using AutoMapper;
 using FluentValidation;
+using HomeCycle.Application.Commons.Audits;
 using HomeCycle.Application.Commons.Errors;
 using HomeCycle.Application.Commons.Helpers;
 using HomeCycle.Application.Commons.Paginations;
 using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Configs;
 using HomeCycle.Application.DTOs.Requests.Disputes;
+using HomeCycle.Application.DTOs.Requests.Wallets;
 using HomeCycle.Application.DTOs.Responses.Disputes;
 using HomeCycle.Application.DTOs.Responses.Media;
 using HomeCycle.Application.DTOs.Responses.Notifications;
@@ -15,18 +15,22 @@ using HomeCycle.Application.Interfaces.Generics;
 using HomeCycle.Application.Interfaces.Repositories.Agreements;
 using HomeCycle.Application.Interfaces.Repositories.Appointments;
 using HomeCycle.Application.Interfaces.Repositories.Disputes;
+using HomeCycle.Application.Interfaces.Repositories.Offers;
 using HomeCycle.Application.Interfaces.Repositories.Orders;
+using HomeCycle.Application.Interfaces.Repositories.Posts;
 using HomeCycle.Application.Interfaces.Repositories.Profiles;
 using HomeCycle.Application.Interfaces.Repositories.Reviews;
-using HomeCycle.Application.Interfaces.Repositories.Offers;
 using HomeCycle.Application.Interfaces.Repositories.Shipments;
 using HomeCycle.Application.Interfaces.Repositories.Users;
+using HomeCycle.Application.Interfaces.Services.Audits;
 using HomeCycle.Application.Interfaces.Services.Disputes;
+using HomeCycle.Application.Interfaces.Services.GHN;
 using HomeCycle.Application.Interfaces.Services.Notifications;
 using HomeCycle.Application.Interfaces.Services.Orders;
 using HomeCycle.Application.Interfaces.Services.Payments;
 using HomeCycle.Application.Interfaces.Services.PlatformPolicies;
 using HomeCycle.Application.Interfaces.Services.Posts;
+using HomeCycle.Application.Interfaces.Services.Wallets;
 using HomeCycle.Domain.Entities;
 using HomeCycle.Domain.Enums;
 using System;
@@ -71,6 +75,7 @@ namespace HomeCycle.Application.Services.Disputes
         private readonly IAuditService _auditService;
         private readonly IEmailService _emailService;
         private readonly IAppointmentRepository _appointmentRepository;
+        private readonly IFinanceRealtimeService _financeRealtimeService;
 
         public DisputeService(IGhnShipmentCreationService ghnLifecycle,
             IDisputeRepository disputeRepository,
@@ -99,6 +104,8 @@ namespace HomeCycle.Application.Services.Disputes
             IAuditService auditService,
             IEmailService emailService,
             IAppointmentRepository appointmentRepository)
+            IAuditService auditService,
+            IFinanceRealtimeService financeRealtimeService)
         {
             _ghnLifecycle = ghnLifecycle;
             _disputeRepository = disputeRepository;
@@ -129,6 +136,7 @@ namespace HomeCycle.Application.Services.Disputes
             _auditService = auditService;
             _emailService = emailService;
             _appointmentRepository = appointmentRepository;
+            _financeRealtimeService = financeRealtimeService;
         }
 
         public async Task<Result<DisputeDecisionResponse>> ResolveByModeratorAsync(
@@ -1212,6 +1220,19 @@ namespace HomeCycle.Application.Services.Disputes
                     return Result<DisputeDecisionResponse>.Fail(reputationResult.Error!);
                 }
 
+                FinanceRealtimeChange? financeChange =
+                    refundedAmount > AmountEpsilon
+                        ? new FinanceRealtimeChange
+                        {
+                            EventType = FinanceEventType.OrderRefunded,
+                            UserId = agreement.BuyerId,
+                            ReferenceType = ReferenceType.Order,
+                            ReferenceId = order.OrderId,
+                            TransactionType = TransactionType.Order_Refund,
+                            OccurredAt = now
+                        }
+                        : null;
+
                 var resolveDisputeAuditDiff = new AuditDiffBuilder()
                     .Add("status", previousDisputeStatus.ToString(), ((DisputeStatus)dispute.DisputeStatus.Value).ToString())
                     .Add("resolutionOutcome", previousResolutionOutcome?.ToString(), ((DisputeResolutionOutcome)dispute.ResolutionOutcome.Value).ToString())
@@ -1286,6 +1307,9 @@ namespace HomeCycle.Application.Services.Disputes
 
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync(cancellationToken);
+
+                if (financeChange != null)
+                    await _financeRealtimeService.PublishUpdatedSafelyAsync(financeChange);
                 if (order.OrderStatus == (int)OrderStatus.Cancelled)
                     await _ghnLifecycle.CancelForOrderSafelyAsync(order.OrderId, cancellationToken);
                 foreach (var notification in decisionNotifications)
@@ -1622,6 +1646,18 @@ namespace HomeCycle.Application.Services.Disputes
                     order.ReturnedAt = null;
                     order.UpdatedAt = now;
                 }
+
+                FinanceRealtimeChange? financeChange = refundedAmount > AmountEpsilon
+                    ? new FinanceRealtimeChange
+                    {
+                        EventType = FinanceEventType.OrderRefunded,
+                        UserId = agreement.BuyerId,
+                        ReferenceType = ReferenceType.Order,
+                        ReferenceId = order.OrderId,
+                        TransactionType = TransactionType.Order_Refund,
+                        OccurredAt = now
+                    }
+                    : null;
 
                 var previousNote = dispute.ModeratorNote?.Trim();
                 var verificationResult = request.IsReturnCompleted ? "Hoàn thành" : "Không hoàn thành";

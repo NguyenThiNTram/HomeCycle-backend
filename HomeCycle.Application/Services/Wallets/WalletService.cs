@@ -150,5 +150,67 @@ namespace HomeCycle.Application.Services.Wallets
 
             return Result<WalletTransactionDetailDto>.Success(transaction);
         }
+
+        public async Task<Result<PagedResult<UserWalletTransactionListItemDto>>> GetMyTransactionsAsync(
+            Guid userId,
+            WalletTypeEnum walletType,
+            UserWalletTransactionSearchRequest request,
+            CancellationToken ct = default)
+        {
+            var wallet = await _walletRepo.GetByUserIdAndTypeAsync(
+                userId,
+                walletType,
+                ct);
+
+            if (wallet == null)
+            {
+                return Result<PagedResult<UserWalletTransactionListItemDto>>.Fail(
+                    new Error(
+                        "Wallet.NotFound",
+                        "Không tìm thấy ví của người dùng."));
+            }
+
+            var result = await _walletTxRepo.GetPagedByWalletIdAsync(
+                wallet.WalletId,
+                request,
+                ct);
+
+            return Result<PagedResult<UserWalletTransactionListItemDto>>.Success(result);
+        }
+
+        public async Task<Result<UserWalletTransactionDetailDto>> GetMyTransactionDetailAsync(
+            Guid userId,
+            WalletTypeEnum walletType,
+            Guid walletTransactionId,
+            CancellationToken ct = default)
+        {
+            var wallet = await _walletRepo.GetByUserIdAndTypeAsync(userId, walletType, ct);
+
+            if (wallet == null)
+                return Result<UserWalletTransactionDetailDto>.Fail(
+                    new Error("Wallet.NotFound", "Không tìm thấy ví của người dùng."));
+
+            var transaction = await _walletTxRepo.GetDetailByWalletIdAsync(
+                walletTransactionId,
+                wallet.WalletId,
+                ct);
+
+            if (transaction == null)
+                return Result<UserWalletTransactionDetailDto>.Fail(
+                    new Error("WalletTransaction.NotFound", "Không tìm thấy giao dịch ví."));
+
+            return Result<UserWalletTransactionDetailDto>.Success(transaction);
+        }
+
+        public async Task<Result<PagedResult<OrderEscrowPositionDto>>> GetActiveOrderEscrowsAsync(
+            OrderEscrowSearchRequest request,
+            CancellationToken ct = default)
+        {
+            var result = await _ledgerRepo.GetActiveOrderEscrowsAsync(
+                request,
+                ct);
+
+            return Result<PagedResult<OrderEscrowPositionDto>>.Success(result);
+        }
     }
 }

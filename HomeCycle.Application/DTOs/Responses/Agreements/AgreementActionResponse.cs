@@ -18,5 +18,7 @@ namespace HomeCycle.Application.DTOs.Responses.Agreements
         public bool BuyerConfirmed { get; set; }
         public DateTime? SellerConfirmedAt { get; set; }
         public DateTime? BuyerConfirmedAt { get; set; }
+        public DateTime? CancelledAt { get; set; }
+        public Guid? CancelledByUserId { get; set; }
     }
 }

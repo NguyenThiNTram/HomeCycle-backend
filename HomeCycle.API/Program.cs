@@ -6,6 +6,7 @@ using HomeCycle.Application.Interfaces.Repositories.Carts;
 using HomeCycle.Application.Interfaces.Repositories.Notifications;
 using HomeCycle.Application.Interfaces.Repositories.Offers;
 using HomeCycle.Application.Interfaces.Repositories.Orders;
+using HomeCycle.Application.Interfaces.Repositories.Wallets;
 using HomeCycle.Application.Interfaces.Services.Audits;
 using HomeCycle.Application.Interfaces.Services.Negotiates;
 using HomeCycle.Application.Services.Negotiates;
@@ -44,6 +45,7 @@ namespace HomeCycle.API
             builder.Services.AddSingleton<IOrderTrackingRealtimePublisher, SignalROrderTrackingRealtimePublisher>();
             builder.Services.AddSingleton<IAppointmentRealtimePublisher, SignalRAppointmentRealtimePublisher>();
             builder.Services.AddSingleton<ICartRealtimePublisher, SignalRCartRealtimePublisher>();
+            builder.Services.AddSingleton<IFinanceRealtimePublisher, SignalRFinanceRealtimePublisher>();
 
             builder.Services.AddScoped<IAuthorizationHandler, ActiveUserHandler>();
 

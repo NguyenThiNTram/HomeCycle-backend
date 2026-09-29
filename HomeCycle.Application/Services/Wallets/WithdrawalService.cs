@@ -48,6 +48,7 @@ namespace HomeCycle.Application.Services.Wallets
         private readonly IValidator<RejectWithdrawalRequest> _rejectValidator;
         private readonly IMapper _mapper;
         private readonly IEntitlementResolver _entitlementResolver;
+        private readonly IFinanceRealtimeService _financeRealtimeService;
 
         public WithdrawalService(
             IUnitOfWork unitOfWork,
@@ -65,7 +66,8 @@ namespace HomeCycle.Application.Services.Wallets
             IValidator<CreateWithdrawalRequest> createValidator,
             IValidator<RejectWithdrawalRequest> rejectValidator,
             IMapper mapper,
-            IEntitlementResolver entitlementResolver)
+            IEntitlementResolver entitlementResolver,
+            IFinanceRealtimeService financeRealtimeService)
         {
             _unitOfWork = unitOfWork;
             _bankAccountRepo = bankAccountRepo;
@@ -83,6 +85,7 @@ namespace HomeCycle.Application.Services.Wallets
             _logger = logger;
             _mapper = mapper;
             _entitlementResolver = entitlementResolver;
+            _financeRealtimeService = financeRealtimeService;
         }
 
 
@@ -244,6 +247,18 @@ namespace HomeCycle.Application.Services.Wallets
                 wallet.HoldBalance += amount;
                 wallet.UpdatedAt = now;
 
+                var financeChange = new FinanceRealtimeChange
+                {
+                    EventType = FinanceEventType.WithdrawalRequested,
+                    UserId = userId,
+                    WalletTransactionIds = new[]
+                    {
+                        walletTx.WalletTransactionId
+                    },
+                    WithdrawalId = withdrawalId,
+                    OccurredAt = now
+                };
+
                 await _withdrawalRepo.AddAsync(withdrawal, ct);
                 await _walletTxRepo.AddAsync(walletTx, ct);
                 await _ledgerRepo.AddAsync(availableOut, ct);
@@ -263,6 +278,7 @@ namespace HomeCycle.Application.Services.Wallets
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
 
+                await _financeRealtimeService.PublishUpdatedSafelyAsync(financeChange);
                 await Task.WhenAll(
                     moderatorNotifications.Select(
                         _notificationService.PublishCreatedSafelyAsync));
@@ -314,8 +330,16 @@ namespace HomeCycle.Application.Services.Wallets
             }
 
             withdrawalEntity.WithdrawalStatus = (int)WithdrawalStatus.Processing;
-            withdrawalEntity.ProcessedAt = DateTime.UtcNow;
+            var now = DateTime.UtcNow;
+            withdrawalEntity.ProcessedAt = now;
             withdrawalEntity.ProcessedBy = moderatorId;
+
+            var financeChange = new FinanceRealtimeChange
+            {
+                EventType = FinanceEventType.WithdrawalApproved,
+                WithdrawalId = withdrawalId,
+                OccurredAt = now
+            };
 
             var approveWithdrawalAuditDiff = new AuditDiffBuilder()
                 .Add(
@@ -345,6 +369,7 @@ namespace HomeCycle.Application.Services.Wallets
             await _auditService.EnqueueAsync(approveWithdrawalAuditEvent, ct);
             await _unitOfWork.SaveChangesAsync(ct);
 
+            await _financeRealtimeService.PublishUpdatedSafelyAsync(financeChange);
             await Task.Delay(2000, ct);
             await SyncWithdrawalStatusAsync(withdrawalId, ct);
 
@@ -400,6 +425,7 @@ namespace HomeCycle.Application.Services.Wallets
             }
 
             notification? rejectedNotification = null;
+            FinanceRealtimeChange? financeChange = null;
 
             await _unitOfWork.BeginTransactionAsync(ct);
 
@@ -559,6 +585,18 @@ namespace HomeCycle.Application.Services.Wallets
                 withdrawal.ProcessedAt =
                     now;
 
+                financeChange = new FinanceRealtimeChange
+                {
+                    EventType = FinanceEventType.WithdrawalRejected,
+                    UserId = recipientId,
+                    WalletTransactionIds = new[]
+                    {
+                        walletTransaction.WalletTransactionId
+                    },
+                    WithdrawalId = withdrawal.WithdrawalId,
+                    OccurredAt = now
+                };
+
                 var rejectWithdrawalAuditDiff = new AuditDiffBuilder()
                     .Add(
                         "status",
@@ -632,6 +670,8 @@ namespace HomeCycle.Application.Services.Wallets
                         "Không thể từ chối yêu cầu rút tiền."));
             }
 
+            if (financeChange != null)
+                await _financeRealtimeService.PublishUpdatedSafelyAsync(financeChange);
             await _notificationService.PublishCreatedSafelyAsync(
                 rejectedNotification);
 
@@ -821,6 +861,7 @@ namespace HomeCycle.Application.Services.Wallets
             CancellationToken ct = default)
         {
             notification? completedNotification = null;
+            FinanceRealtimeChange? financeChange = null;
 
             await _unitOfWork.BeginTransactionAsync(ct);
 
@@ -940,6 +981,18 @@ namespace HomeCycle.Application.Services.Wallets
                 withdrawal.ProcessedBy = moderatorId;
                 withdrawal.ProcessedAt = now;
 
+                financeChange = new FinanceRealtimeChange
+                {
+                    EventType = FinanceEventType.WithdrawalCompleted,
+                    UserId = recipientId,
+                    WalletTransactionIds = new[]
+                    {
+                        walletTransaction.WalletTransactionId
+                    },
+                    WithdrawalId = withdrawal.WithdrawalId,
+                    OccurredAt = now
+                };
+
                 var approveWithdrawalAuditDiff = new AuditDiffBuilder()
                     .Add(
                         "status",
@@ -1010,6 +1063,8 @@ namespace HomeCycle.Application.Services.Wallets
                         "Không thể hoàn tất yêu cầu rút tiền."));
             }
 
+            if (financeChange != null)
+                await _financeRealtimeService.PublishUpdatedSafelyAsync(financeChange);
             await _notificationService.PublishCreatedSafelyAsync(
                 completedNotification);
 
@@ -1077,6 +1132,7 @@ namespace HomeCycle.Application.Services.Wallets
             CancellationToken ct)
         {
             notification? completedNotification = null;
+            FinanceRealtimeChange? financeChange = null;
 
             await _unitOfWork.BeginTransactionAsync(ct);
 
@@ -1154,6 +1210,18 @@ namespace HomeCycle.Application.Services.Wallets
                 lockedWithdrawal.WithdrawalStatus =
                     (int)WithdrawalStatus.Completed;
 
+                financeChange = new FinanceRealtimeChange
+                {
+                    EventType = FinanceEventType.WithdrawalCompleted,
+                    UserId = recipientId,
+                    WalletTransactionIds = new[]
+                    {
+                        walletTx.WalletTransactionId
+                    },
+                    WithdrawalId = lockedWithdrawal.WithdrawalId,
+                    OccurredAt = now
+                };
+
                 var completeWithdrawalAuditDiff = new AuditDiffBuilder()
                     .Add(
                         "status",
@@ -1209,6 +1277,8 @@ namespace HomeCycle.Application.Services.Wallets
                 throw;
             }
 
+            if (financeChange != null)
+                await _financeRealtimeService.PublishUpdatedSafelyAsync(financeChange);
             await _notificationService.PublishCreatedSafelyAsync(
                 completedNotification);
         }
@@ -1220,6 +1290,7 @@ namespace HomeCycle.Application.Services.Wallets
             CancellationToken ct)
         {
             notification? revertedNotification = null;
+            FinanceRealtimeChange? financeChange = null;
 
             await _unitOfWork.BeginTransactionAsync(ct);
 
@@ -1321,6 +1392,23 @@ namespace HomeCycle.Application.Services.Wallets
                     lockedWithdrawal.ProcessedBy =
                         withdrawalEntity.ProcessedBy;
 
+                var financeEventType =
+                    finalStatus == WithdrawalStatus.Rejected
+                        ? FinanceEventType.WithdrawalRejected
+                        : FinanceEventType.WithdrawalFailed;
+
+                financeChange = new FinanceRealtimeChange
+                {
+                    EventType = financeEventType,
+                    UserId = recipientId,
+                    WalletTransactionIds = new[]
+                    {
+                        walletTx.WalletTransactionId
+                    },
+                    WithdrawalId = lockedWithdrawal.WithdrawalId,
+                    OccurredAt = now
+                };
+
                 var revertWithdrawalAuditDiff = new AuditDiffBuilder()
                     .Add(
                         "status",
@@ -1386,6 +1474,8 @@ namespace HomeCycle.Application.Services.Wallets
                 throw;
             }
 
+            if (financeChange != null)
+                await _financeRealtimeService.PublishUpdatedSafelyAsync(financeChange);
             await _notificationService.PublishCreatedSafelyAsync(
                 revertedNotification);
         }
