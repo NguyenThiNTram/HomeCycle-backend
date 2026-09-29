@@ -1373,6 +1373,8 @@ public sealed class DashboardRepository(HomeCycleDbContext db) : IDashboardRepos
                         && paidStatuses.Contains(x.PaymentStatus.Value)
                         && !x.Wallet_Transactions.Any(t =>
                             t.WalletTransactionStatus == (int)WalletTransactionStatus.Completed
+                            && (t.TransactionType == (int)TransactionType.Wallet_Payment
+                                || t.TransactionType == (int)TransactionType.Escrow_Deposit)
                             && t.Wallet_Ledgers.Any(l =>
                                 l.WalletId == orderEscrowWallet.WalletId
                                 && l.BalanceType == (int)BalanceType.Available

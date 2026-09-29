@@ -1582,6 +1582,18 @@ namespace HomeCycle.Application.Services.Disputes
                     order.UpdatedAt = now;
                 }
 
+                FinanceRealtimeChange? financeChange = refundedAmount > AmountEpsilon
+                    ? new FinanceRealtimeChange
+                    {
+                        EventType = FinanceEventType.OrderRefunded,
+                        UserId = agreement.BuyerId,
+                        ReferenceType = ReferenceType.Order,
+                        ReferenceId = order.OrderId,
+                        TransactionType = TransactionType.Order_Refund,
+                        OccurredAt = now
+                    }
+                    : null;
+
                 var previousNote = dispute.ModeratorNote?.Trim();
                 var verificationResult = request.IsReturnCompleted ? "Hoàn thành" : "Không hoàn thành";
                 var verificationNote = $"[Xác minh hoàn trả: {verificationResult}] {request.ModeratorNote.Trim()}";
