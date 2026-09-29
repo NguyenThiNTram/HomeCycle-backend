@@ -355,6 +355,7 @@ namespace HomeCycle.Infrastructure
             services.AddScoped<IReviewService, ReviewService>();
             services.AddScoped<IWithdrawalService, WithdrawalService>();
             services.AddScoped<IWalletService, WalletService>();
+            services.AddScoped<IFinanceRealtimeService, FinanceRealtimeService>();
             services.AddScoped<IDisputeService, DisputeService>();
             services.AddScoped<IDisputeWindowPolicy, DisputeWindowPolicy>();
             services.AddScoped<IDisputeTargetHandler, OrderDisputeTargetHandler>();

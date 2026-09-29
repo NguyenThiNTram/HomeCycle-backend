@@ -1,4 +1,6 @@
 ﻿using FluentValidation;
+using HomeCycle.Application.Commons.Errors;
+using HomeCycle.Application.Commons.Helpers;
 using HomeCycle.Application.DTOs.Requests.Inspections;
 using HomeCycle.Domain.Enums;
 using System;
@@ -20,7 +22,9 @@ namespace HomeCycle.Application.Validations.Inspections
 
             RuleFor(x => x.CollectionDate)
                 .GreaterThan(DateTimeOffset.UtcNow)
-                .WithMessage("Thời gian thu gom phải ở tương lai.");
+                .WithMessage("Thời gian thu gom phải ở tương lai.")
+                .Must(AppointmentScheduleHelper.IsWithinBusinessHours)
+                .WithMessage(AppointmentErrors.ScheduleOutsideBusinessHours.Message);
 
             RuleFor(x => x.DeliveryMethod)
                 .Must(x => x is DeliveryMethod.GhnDelivery

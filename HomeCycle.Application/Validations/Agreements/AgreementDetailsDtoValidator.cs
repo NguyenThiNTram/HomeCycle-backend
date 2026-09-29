@@ -1,5 +1,6 @@
 ﻿using FluentValidation;
 using HomeCycle.Application.Commons.Errors;
+using HomeCycle.Application.Commons.Helpers;
 using HomeCycle.Application.DTOs.Requests.Agreements;
 using HomeCycle.Domain.Enums;
 using System;
@@ -41,7 +42,11 @@ namespace HomeCycle.Application.Validations.Agreements
                     .NotNull()
                     .WithMessage(AgreementErrors.AppointmentScheduleMissing.Message)
                     .GreaterThan(DateTime.UtcNow)
-                    .WithMessage(AgreementErrors.AppointmentScheduleExpired.Message);
+                    .WithMessage(AgreementErrors.AppointmentScheduleExpired.Message)
+                    .Must(x =>
+                        !x.HasValue ||
+                        AppointmentScheduleHelper.IsWithinBusinessHours(x.Value))
+                    .WithMessage(AppointmentErrors.ScheduleOutsideBusinessHours.Message);
             });
 
             // Case 2: Validation địa chỉ nếu có DeliveryMethod
@@ -88,8 +93,14 @@ namespace HomeCycle.Application.Validations.Agreements
                     .NotEmpty().WithMessage("Inspection address is required for this agreement type.");
 
                 RuleFor(x => x.InspectionDate)
-                    .NotNull().WithMessage("Inspection date is required.")
-                    .GreaterThan(DateTime.UtcNow).WithMessage("Inspection date must be in the future.");
+                    .NotNull()
+                    .WithMessage("Inspection date is required.")
+                    .GreaterThan(DateTime.UtcNow)
+                    .WithMessage("Inspection date must be in the future.")
+                    .Must(x =>
+                        !x.HasValue ||
+                        AppointmentScheduleHelper.IsWithinBusinessHours(x.Value))
+                    .WithMessage(AppointmentErrors.ScheduleOutsideBusinessHours.Message);
             });
         }
     }

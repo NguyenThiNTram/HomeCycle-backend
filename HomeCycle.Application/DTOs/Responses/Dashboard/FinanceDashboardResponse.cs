@@ -137,6 +137,7 @@ namespace HomeCycle.Application.DTOs.Responses.Dashboard
         public int NegativeWalletCount { get; init; }
 
         public FinanceCountAmountMetric UnclassifiedTransactionsInPeriod { get; init; } = new(0, 0);
+        public FinanceIntegrityMetrics Integrity { get; init; } = new();
     }
 
     public sealed record FinanceCountAmountMetric(
@@ -268,5 +269,31 @@ namespace HomeCycle.Application.DTOs.Responses.Dashboard
         public int NegativeWalletCount { get; set; }
 
         public FinanceCountAmountMetric UnclassifiedTransactionsInPeriod { get; set; } = new(0, 0);
+        public FinanceIntegrityMetrics Integrity { get; set; } = new();
+    }
+
+    public sealed class FinanceIntegrityMetrics
+    {
+        public bool IsHealthy { get; init; }
+
+        public int WalletBalanceMismatchCount { get; init; }
+
+        public int CompletedTransactionWithoutLedgerCount { get; init; }
+
+        public int CompletedOrderPaymentWithoutEscrowPostingCount { get; init; }
+
+        public int LegacyOrderHoldCount { get; init; }
+
+        public decimal LegacyOrderHoldAmount { get; init; }
+
+        public bool OrderEscrowWalletExists { get; init; }
+
+        public decimal OrderEscrowSnapshotBalance { get; init; }
+
+        public decimal OrderEscrowLedgerBalance { get; init; }
+
+        public decimal OrderEscrowDifference { get; init; }
+
+        public bool OrderEscrowBalanced { get; init; }
     }
 }

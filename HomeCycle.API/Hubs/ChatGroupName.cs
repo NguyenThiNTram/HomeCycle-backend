@@ -6,5 +6,6 @@
         public static string ForConversation(Guid conversationId) => $"conversation:{conversationId:N}";
 
         public static string ForOrder(Guid orderId) => $"order:{orderId:N}";
+        public const string Finance = "finance";
     }
 }

@@ -27,5 +27,12 @@ namespace HomeCycle.Application.Interfaces.Repositories.Payments
             Guid paymentId,
             CancellationToken ct = default);
         Task<payment?> GetBySubscriptionIdAsync(Guid subscriptionId, CancellationToken ct = default);
+        Task<PagedResult<PaymentManagementListItemDto>> GetPagedForManagementAsync(
+            PaymentManagementSearchRequest request,
+            CancellationToken ct = default);
+
+        Task<PaymentManagementListItemDto?> GetManagementItemByIdAsync(
+            Guid paymentId,
+            CancellationToken ct = default);
     }
 }
