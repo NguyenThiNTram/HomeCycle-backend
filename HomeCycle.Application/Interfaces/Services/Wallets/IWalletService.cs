@@ -35,6 +35,9 @@ namespace HomeCycle.Application.Interfaces.Services.Wallets
             WalletTypeEnum walletType,
             Guid walletTransactionId,
             CancellationToken ct = default);
+        Task<Result<PagedResult<OrderEscrowPositionDto>>> GetActiveOrderEscrowsAsync(
+            OrderEscrowSearchRequest request,
+            CancellationToken ct = default);
     }
 
 }

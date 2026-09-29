@@ -1045,7 +1045,8 @@ public sealed class DashboardService(IDashboardRepository repository, IDisputeCa
                 data.NegativeWalletCount,
 
             UnclassifiedTransactionsInPeriod =
-                data.UnclassifiedTransactionsInPeriod
+                data.UnclassifiedTransactionsInPeriod,
+            Integrity = data.Integrity
         };
     }
 }

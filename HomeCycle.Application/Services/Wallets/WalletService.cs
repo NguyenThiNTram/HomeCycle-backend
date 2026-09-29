@@ -201,5 +201,16 @@ namespace HomeCycle.Application.Services.Wallets
 
             return Result<UserWalletTransactionDetailDto>.Success(transaction);
         }
+
+        public async Task<Result<PagedResult<OrderEscrowPositionDto>>> GetActiveOrderEscrowsAsync(
+            OrderEscrowSearchRequest request,
+            CancellationToken ct = default)
+        {
+            var result = await _ledgerRepo.GetActiveOrderEscrowsAsync(
+                request,
+                ct);
+
+            return Result<PagedResult<OrderEscrowPositionDto>>.Success(result);
+        }
     }
 }

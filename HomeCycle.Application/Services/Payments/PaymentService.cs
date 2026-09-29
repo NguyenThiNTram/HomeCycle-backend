@@ -1,20 +1,24 @@
-using HomeCycle.Application.Commons.Helpers;
 using AutoMapper;
 using FluentValidation;
+using HomeCycle.Application.Commons.Audits;
 using HomeCycle.Application.Commons.Errors;
+using HomeCycle.Application.Commons.Helpers;
 using HomeCycle.Application.Commons.Paginations;
 using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Requests.Agreements;
 using HomeCycle.Application.DTOs.Requests.Payments;
+using HomeCycle.Application.DTOs.Requests.Wallets;
 using HomeCycle.Application.DTOs.Responses.Conversations;
 using HomeCycle.Application.DTOs.Responses.Messages;
 using HomeCycle.Application.DTOs.Responses.Notifications;
 using HomeCycle.Application.DTOs.Responses.Payments;
+using HomeCycle.Application.DTOs.Responses.SubscriptionPackages;
 using HomeCycle.Application.Interfaces.Externals;
 using HomeCycle.Application.Interfaces.Generics;
 using HomeCycle.Application.Interfaces.Repositories.Agreements;
 using HomeCycle.Application.Interfaces.Repositories.Appointments;
 using HomeCycle.Application.Interfaces.Repositories.Banks;
+using HomeCycle.Application.Interfaces.Repositories.Carts;
 using HomeCycle.Application.Interfaces.Repositories.Disputes;
 using HomeCycle.Application.Interfaces.Repositories.GHN;
 using HomeCycle.Application.Interfaces.Repositories.Offers;
@@ -22,10 +26,16 @@ using HomeCycle.Application.Interfaces.Repositories.Orders;
 using HomeCycle.Application.Interfaces.Repositories.Payments;
 using HomeCycle.Application.Interfaces.Repositories.Posts;
 using HomeCycle.Application.Interfaces.Repositories.Shipments;
+using HomeCycle.Application.Interfaces.Repositories.SubscriptionPackages;
 using HomeCycle.Application.Interfaces.Repositories.Wallets;
+using HomeCycle.Application.Interfaces.Services.Appointments;
+using HomeCycle.Application.Interfaces.Services.Audits;
+using HomeCycle.Application.Interfaces.Services.Carts;
 using HomeCycle.Application.Interfaces.Services.Notifications;
 using HomeCycle.Application.Interfaces.Services.Payments;
 using HomeCycle.Application.Interfaces.Services.PlatformPolicies;
+using HomeCycle.Application.Interfaces.Services.SubscriptionPackages;
+using HomeCycle.Application.Interfaces.Services.Wallets;
 using HomeCycle.Domain.Entities;
 using HomeCycle.Domain.Enums;
 using Microsoft.Extensions.Logging;
@@ -35,14 +45,6 @@ using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
-using HomeCycle.Application.Interfaces.Services.Audits;
-using HomeCycle.Application.Commons.Audits;
-using HomeCycle.Application.Interfaces.Repositories.SubscriptionPackages;
-using HomeCycle.Application.Interfaces.Services.SubscriptionPackages;
-using HomeCycle.Application.DTOs.Responses.SubscriptionPackages;
-using HomeCycle.Application.Interfaces.Repositories.Carts;
-using HomeCycle.Application.Interfaces.Services.Appointments;
-using HomeCycle.Application.Interfaces.Services.Carts;
 
 namespace HomeCycle.Application.Services.Payments
 {
@@ -98,6 +100,7 @@ namespace HomeCycle.Application.Services.Payments
         private readonly ICartItemRepository _cartItemRepository;
         private readonly IAppointmentRealtimeService _appointmentRealtimeService;
         private readonly ICartRealtimeService _cartRealtimeService;
+        private readonly IFinanceRealtimeService _financeRealtimeService;
         public PaymentService(
             IUnitOfWork unitOfWork,
             IPaymentGatewayService gatewayService,
@@ -132,7 +135,8 @@ namespace HomeCycle.Application.Services.Payments
             IUserSubscriptionService userSubscriptionService,
             ICartItemRepository cartItemRepository,
             IAppointmentRealtimeService appointmentRealtimeService,
-            ICartRealtimeService cartRealtimeService)
+            ICartRealtimeService cartRealtimeService,
+            IFinanceRealtimeService financeRealtimeService)
         {
             _unitOfWork = unitOfWork;
             _gatewayService = gatewayService;
@@ -168,6 +172,7 @@ namespace HomeCycle.Application.Services.Payments
             _cartItemRepository = cartItemRepository;
             _appointmentRealtimeService = appointmentRealtimeService;
             _cartRealtimeService = cartRealtimeService;
+            _financeRealtimeService = financeRealtimeService;
         }
 
         public async Task ReconcileAgreementForExpiryAsync(Guid agreementId, CancellationToken ct = default)
@@ -528,6 +533,14 @@ namespace HomeCycle.Application.Services.Payments
                     UpdatedAt = now
                 };
 
+                var financeChange = new FinanceRealtimeChange
+                {
+                    EventType = FinanceEventType.OrderPaymentInitiated,
+                    UserId = payerId,
+                    PaymentId = payment.PaymentId,
+                    OccurredAt = now
+                };
+
                 var paymentInitiatedAuditEvent = new AuditEvent
                 {
                     Category = AuditCategory.BusinessOperation,
@@ -556,6 +569,8 @@ namespace HomeCycle.Application.Services.Payments
                 await _auditService.EnqueueAsync(paymentInitiatedAuditEvent, ct);
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync();
+
+                await _financeRealtimeService.PublishUpdatedSafelyAsync(financeChange);
 
                 return Result<string>.Success(gatewayResult.Data.CheckoutUrl);
             }
@@ -707,6 +722,14 @@ namespace HomeCycle.Application.Services.Payments
                     UpdatedAt = now
                 };
 
+                var financeChange = new FinanceRealtimeChange
+                {
+                    EventType = FinanceEventType.SubscriptionPaymentInitiated,
+                    UserId = payerId,
+                    PaymentId = payment.PaymentId,
+                    OccurredAt = now
+                };
+
                 await _paymentRepo.AddAsync(payment, ct);
                 await _paymentTxRepo.AddAsync(paymentTransaction, ct);
 
@@ -739,6 +762,7 @@ namespace HomeCycle.Application.Services.Payments
 
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
+                await _financeRealtimeService.PublishUpdatedSafelyAsync(financeChange);
 
                 return Result<SubscriptionPayOSCheckoutResponseDto>.Success(
                     new SubscriptionPayOSCheckoutResponseDto
@@ -1147,7 +1171,6 @@ namespace HomeCycle.Application.Services.Payments
 
                 negotiation.LastMessageAt = now;
 
-                // Lưu Data
                 buyerWallet.UpdatedAt = now;
 
                 await _walletRepo.UpdateAsync(buyerWallet, ct);
@@ -1182,9 +1205,31 @@ namespace HomeCycle.Application.Services.Payments
                     fulfillment.Order.OrderId,
                     ct);
 
+                var financeTransactionIds = shippingWalletTx == null
+                    ? new[]
+                    {
+                        escrowWalletTx.WalletTransactionId
+                    }
+                    : new[]
+                    {
+                        escrowWalletTx.WalletTransactionId,
+                        shippingWalletTx.WalletTransactionId
+                    };
+
+                var financeChange = new FinanceRealtimeChange
+                {
+                    EventType = FinanceEventType.OrderPaymentCompleted,
+                    UserId = payerId,
+                    WalletTransactionIds = financeTransactionIds,
+                    PaymentId = payment.PaymentId,
+                    OccurredAt = now
+                };
+
                 await _auditService.EnqueueAsync(walletPaymentAuditEvent, ct);
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
+
+                await _financeRealtimeService.PublishUpdatedSafelyAsync(financeChange);
 
                 await PublishPaymentChatActivitySafelyAsync(
                     negotiation,
@@ -1368,6 +1413,18 @@ namespace HomeCycle.Application.Services.Payments
                     CreatedAt = now
                 };
 
+                var financeChange = new FinanceRealtimeChange
+                {
+                    EventType = FinanceEventType.SubscriptionPaymentCompleted,
+                    UserId = payerId,
+                    WalletTransactionIds = new[]
+                    {
+                        walletTransaction.WalletTransactionId
+                    },
+                    PaymentId = payment.PaymentId,
+                    OccurredAt = now
+                };
+
                 userWallet.AvailableBalance -= package.Price;
                 userWallet.UpdatedAt = now;
 
@@ -1426,6 +1483,7 @@ namespace HomeCycle.Application.Services.Payments
 
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
+                await _financeRealtimeService.PublishUpdatedSafelyAsync(financeChange);
 
                 var activatedSubscription = activation.Data!;
 
@@ -1679,6 +1737,17 @@ namespace HomeCycle.Application.Services.Payments
         {
             var result = await _paymentRepo.GetPagedPaymentHistoryAsync(userId, request, ct);
             return Result<PagedResult<PaymentHistoryResponseDto>>.Success(result);
+        }
+
+        public async Task<Result<PagedResult<PaymentManagementListItemDto>>> GetPaymentManagementAsync(
+            PaymentManagementSearchRequest request,
+            CancellationToken ct = default)
+        {
+            var result = await _paymentRepo.GetPagedForManagementAsync(
+                request,
+                ct);
+
+            return Result<PagedResult<PaymentManagementListItemDto>>.Success(result);
         }
 
         //public async Task<Result<bool>> RefundOrderHeldAmountAsync(
@@ -1999,6 +2068,18 @@ namespace HomeCycle.Application.Services.Payments
                 sellerWallet.AvailableBalance += orderHeldAmount;
                 sellerWallet.UpdatedAt = now;
 
+                var financeChange = new FinanceRealtimeChange
+                {
+                    EventType = FinanceEventType.OrderPayoutReleased,
+                    UserId = agreement.SellerId,
+                    WalletTransactionIds = new[]
+                    {
+                        walletTransaction.WalletTransactionId
+                    },
+                    PaymentId = payment.PaymentId,
+                    OccurredAt = now
+                };
+
                 await _walletRepo.UpdateAsync(orderEscrowWallet, ct);
                 await _walletRepo.UpdateAsync(sellerWallet, ct);
                 await _walletTxRepo.AddAsync(walletTransaction, ct);
@@ -2035,6 +2116,7 @@ namespace HomeCycle.Application.Services.Payments
                 await _auditService.EnqueueAsync(paymentReleaseAuditEvent, ct);
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
+                await _financeRealtimeService.PublishUpdatedSafelyAsync(financeChange);
                 await _notificationService.PublishCreatedSafelyAsync(releaseNotification);
 
                 return Result<decimal>.Success(orderHeldAmount);
@@ -2097,6 +2179,8 @@ namespace HomeCycle.Application.Services.Payments
             AuditSource auditSource,
             CancellationToken ct)
         {
+            FinanceRealtimeChange? financeChange = null;
+
             await _unitOfWork.BeginTransactionAsync(ct);
 
             try
@@ -2131,9 +2215,37 @@ namespace HomeCycle.Application.Services.Payments
                 var previousTransactionStatus =
                     (PaymentTransactionStatus)paymentTransaction.PaymentTransactionStatus!.Value;
 
+                var now = DateTime.UtcNow;
+
                 payment.PaymentStatus = (int)targetPaymentStatus;
-                paymentTransaction.PaymentTransactionStatus = (int)targetTransactionStatus;
-                paymentTransaction.UpdatedAt = DateTime.UtcNow;
+
+                paymentTransaction.PaymentTransactionStatus =
+                    (int)targetTransactionStatus;
+
+                paymentTransaction.UpdatedAt = now;
+
+                var financeEventType = targetPaymentStatus switch
+                {
+                    PaymentStatus.Failed =>
+                        FinanceEventType.SubscriptionPaymentFailed,
+
+                    PaymentStatus.Cancelled =>
+                        FinanceEventType.SubscriptionPaymentCancelled,
+
+                    PaymentStatus.Expired =>
+                        FinanceEventType.SubscriptionPaymentExpired,
+
+                    _ => throw new InvalidOperationException(
+                        $"Unsupported terminal subscription payment status: {targetPaymentStatus}.")
+                };
+
+                financeChange = new FinanceRealtimeChange
+                {
+                    EventType = financeEventType,
+                    UserId = payment.PayerId,
+                    PaymentId = payment.PaymentId,
+                    OccurredAt = now
+                };
 
                 var cancellation = await _userSubscriptionService.CancelPendingSubscriptionAsync(
                     payment.SubscriptionId.Value,
@@ -2172,7 +2284,6 @@ namespace HomeCycle.Application.Services.Payments
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
 
-                return targetPaymentStatus;
             }
             catch
             {
@@ -2180,6 +2291,11 @@ namespace HomeCycle.Application.Services.Payments
                 _unitOfWork.ClearTrackedEntities();
                 throw;
             }
+
+            if (financeChange != null)
+                await _financeRealtimeService.PublishUpdatedSafelyAsync(financeChange);
+
+            return targetPaymentStatus;
         }
 
         private async Task ExecuteSuccessfulSubscriptionPaymentAsync(
@@ -2290,6 +2406,18 @@ namespace HomeCycle.Application.Services.Payments
                 paymentTransaction.PayOSTransactionId = payOsTransactionId;
                 paymentTransaction.UpdatedAt = now;
 
+                var financeChange = new FinanceRealtimeChange
+                {
+                    EventType = FinanceEventType.SubscriptionPaymentCompleted,
+                    UserId = payment.PayerId,
+                    WalletTransactionIds = new[]
+                    {
+                        walletTransaction.WalletTransactionId
+                    },
+                    PaymentId = payment.PaymentId,
+                    OccurredAt = now
+                };
+
                 var activation = await _userSubscriptionService.ActivateSubscriptionAsync(
                     payment.SubscriptionId.Value,
                     amount,
@@ -2339,6 +2467,7 @@ namespace HomeCycle.Application.Services.Payments
 
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
+                await _financeRealtimeService.PublishUpdatedSafelyAsync(financeChange);
             }
             catch
             {
@@ -2564,6 +2693,7 @@ namespace HomeCycle.Application.Services.Payments
             }
 
             notification? terminalNotification = null;
+            FinanceRealtimeChange? financeChange = null;
 
             await _unitOfWork.BeginTransactionAsync(ct);
 
@@ -2607,10 +2737,37 @@ namespace HomeCycle.Application.Services.Payments
                     return currentPaymentStatus;
                 }
 
+                var now = DateTime.UtcNow;
+
                 payment.PaymentStatus = (int)targetPaymentStatus;
+
                 transaction.PaymentTransactionStatus =
                     (int)targetTransactionStatus;
-                transaction.UpdatedAt = DateTime.UtcNow;
+
+                transaction.UpdatedAt = now;
+
+                var financeEventType = targetPaymentStatus switch
+                {
+                    PaymentStatus.Failed =>
+                        FinanceEventType.OrderPaymentFailed,
+
+                    PaymentStatus.Cancelled =>
+                        FinanceEventType.OrderPaymentCancelled,
+
+                    PaymentStatus.Expired =>
+                        FinanceEventType.OrderPaymentExpired,
+
+                    _ => throw new InvalidOperationException(
+                        $"Unsupported terminal payment status: {targetPaymentStatus}.")
+                };
+
+                financeChange = new FinanceRealtimeChange
+                {
+                    EventType = financeEventType,
+                    UserId = payment.PayerId,
+                    PaymentId = payment.PaymentId,
+                    OccurredAt = now
+                };
 
                 var paymentReconcileAuditDiff = new AuditDiffBuilder()
                     .Add("paymentStatus", currentPaymentStatus.ToString(), targetPaymentStatus.ToString())
@@ -2656,11 +2813,15 @@ namespace HomeCycle.Application.Services.Payments
                 throw;
             }
 
+            if (financeChange != null)
+                await _financeRealtimeService.PublishUpdatedSafelyAsync(financeChange);
+
             await _notificationService.PublishCreatedSafelyAsync(
                 terminalNotification);
 
             return targetPaymentStatus;
         }
+
         private async Task<bool> HasVerifiedBankAccountAsync(
             Guid userId,
             CancellationToken ct)
@@ -3292,6 +3453,26 @@ namespace HomeCycle.Application.Services.Payments
                     shippingEscrowWallet.UpdatedAt = now;
                 }
 
+                var financeTransactionIds = shippingWalletTx == null
+                    ? new[]
+                    {
+                        escrowWalletTx.WalletTransactionId
+                    }
+                    : new[]
+                    {
+                        escrowWalletTx.WalletTransactionId,
+                        shippingWalletTx.WalletTransactionId
+                    };
+
+                var financeChange = new FinanceRealtimeChange
+                {
+                    EventType = FinanceEventType.OrderPaymentCompleted,
+                    UserId = payment.PayerId,
+                    WalletTransactionIds = financeTransactionIds,
+                    PaymentId = payment.PaymentId,
+                    OccurredAt = now
+                };
+
                 await _paymentTxRepo.UpdateAsync(paymentTx, ct);
                 await _paymentRepo.UpdateAsync(payment, ct);
 
@@ -3332,6 +3513,7 @@ namespace HomeCycle.Application.Services.Payments
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
 
+                await _financeRealtimeService.PublishUpdatedSafelyAsync(financeChange);
                 await PublishPaymentChatActivitySafelyAsync(
                     negotiation,
                     _mapper.Map<MessageResponse>(paymentMessage));

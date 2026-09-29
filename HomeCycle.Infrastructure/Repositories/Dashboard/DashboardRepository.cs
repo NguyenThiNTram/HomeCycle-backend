@@ -12,6 +12,7 @@ namespace HomeCycle.Infrastructure.Repositories.Dashboard;
 
 public sealed class DashboardRepository(HomeCycleDbContext db) : IDashboardRepository
 {
+    private const decimal AmountEpsilon = 0.01m;
     public async Task<ListingDashboardData> GetListingsAsync(DashboardPeriod period, CancellationToken ct)
     {
         var posts = db.Posts.AsNoTracking().Where(x => x.CreatedAt >= period.FromUtc && x.CreatedAt < period.EndUtc);
@@ -782,17 +783,12 @@ public sealed class DashboardRepository(HomeCycleDbContext db) : IDashboardRepos
             .Select(x => (decimal?)x.HoldBalance)
             .SumAsync(ct) ?? 0;
 
-        var orderEscrowHeld = await db.Wallet_Ledgers
-            .AsNoTracking()
+        var orderEscrowHeld = await systemWallets
             .Where(x =>
-                x.BalanceType == (int)BalanceType.Hold &&
-                x.ReferenceType == (int)ReferenceType.Order &&
-                x.ReferenceId != null)
-            .Select(x => (decimal?)(
-                x.Direction == (int)LedgerDirection.In
-                    ? x.Amount
-                    : -x.Amount))
-            .SumAsync(ct) ?? 0;
+                x.Purpose ==
+                (int)SystemWalletPurpose.Order_Escrow)
+            .Select(x => (decimal?)x.AvailableBalance)
+            .SumAsync(ct) ?? 0m;
 
         var withdrawalLocked = await db.Wallet_Ledgers
             .AsNoTracking()
@@ -1311,22 +1307,153 @@ public sealed class DashboardRepository(HomeCycleDbContext db) : IDashboardRepos
                 .Select(x => x.Amount ?? 0),
             ct);
 
-        var orderHeldAmounts = db.Wallet_Ledgers
+        var orderEscrowWallet = await db.Wallets
             .AsNoTracking()
             .Where(x =>
-                x.BalanceType == (int)BalanceType.Hold &&
+                x.UserId == null &&
+                x.WalletType == (int)WalletTypeEnum.System &&
+                x.Purpose == (int)SystemWalletPurpose.Order_Escrow)
+            .Select(x => new
+            {
+                x.WalletId,
+                x.AvailableBalance
+            })
+            .SingleOrDefaultAsync(ct);
+
+        var walletBalances = db.Wallets
+            .AsNoTracking()
+            .Select(x => new
+            {
+                SnapshotAvailable = x.AvailableBalance,
+                SnapshotHold = x.HoldBalance,
+                LedgerAvailable = x.Wallet_Ledgers
+                    .Where(l => l.BalanceType == (int)BalanceType.Available)
+                    .Select(l => (decimal?)(l.Direction == (int)LedgerDirection.In ? l.Amount : -l.Amount))
+                    .Sum() ?? 0m,
+                LedgerHold = x.Wallet_Ledgers
+                    .Where(l => l.BalanceType == (int)BalanceType.Hold)
+                    .Select(l => (decimal?)(l.Direction == (int)LedgerDirection.In ? l.Amount : -l.Amount))
+                    .Sum() ?? 0m
+            });
+
+        var walletBalanceMismatchCount = await walletBalances.CountAsync(
+            x => x.SnapshotAvailable - x.LedgerAvailable > AmountEpsilon
+                || x.LedgerAvailable - x.SnapshotAvailable > AmountEpsilon
+                || x.SnapshotHold - x.LedgerHold > AmountEpsilon
+                || x.LedgerHold - x.SnapshotHold > AmountEpsilon,
+            ct);
+
+        var completedTransactionWithoutLedgerCount = await db.Wallet_Transactions
+            .AsNoTracking()
+            .CountAsync(
+                x => x.WalletTransactionStatus == (int)WalletTransactionStatus.Completed
+                    && !x.Wallet_Ledgers.Any(),
+                ct);
+
+        var paidStatuses = new[]
+        {
+            (int)PaymentStatus.Completed,
+            (int)PaymentStatus.PartiallyRefunded,
+            (int)PaymentStatus.Refunded
+        };
+
+        var completedOrderPaymentWithoutEscrowPostingCount = orderEscrowWallet == null
+            ? await db.Payments
+                .AsNoTracking()
+                .CountAsync(
+                    x => x.OrderId.HasValue
+                        && x.PaymentStatus.HasValue
+                        && paidStatuses.Contains(x.PaymentStatus.Value),
+                    ct)
+            : await db.Payments
+                .AsNoTracking()
+                .CountAsync(
+                    x => x.OrderId.HasValue
+                        && x.PaymentStatus.HasValue
+                        && paidStatuses.Contains(x.PaymentStatus.Value)
+                        && !x.Wallet_Transactions.Any(t =>
+                            t.WalletTransactionStatus == (int)WalletTransactionStatus.Completed
+                            && t.Wallet_Ledgers.Any(l =>
+                                l.WalletId == orderEscrowWallet.WalletId
+                                && l.BalanceType == (int)BalanceType.Available
+                                && l.Direction == (int)LedgerDirection.In
+                                && l.ReferenceType == (int)ReferenceType.Order
+                                && l.ReferenceId == x.OrderId)),
+                    ct);
+
+        var legacyOrderHolds = db.Wallet_Ledgers
+            .AsNoTracking()
+            .Where(x => x.Wallet.UserId.HasValue
+                && x.BalanceType == (int)BalanceType.Hold
+                && x.ReferenceType == (int)ReferenceType.Order
+                && x.ReferenceId.HasValue)
+            .GroupBy(x => new { x.WalletId, x.ReferenceId })
+            .Select(g => new
+            {
+                Amount = g.Sum(x => x.Direction == (int)LedgerDirection.In ? x.Amount : -x.Amount)
+            })
+            .Where(x => x.Amount > AmountEpsilon);
+
+        var legacyOrderHoldCount = await legacyOrderHolds.CountAsync(ct);
+        var legacyOrderHoldAmount = await legacyOrderHolds
+            .Select(x => (decimal?)x.Amount)
+            .SumAsync(ct) ?? 0m;
+
+        var orderEscrowLedgerBalance = orderEscrowWallet == null
+            ? 0m
+            : await db.Wallet_Ledgers
+                .AsNoTracking()
+                .Where(x => x.WalletId == orderEscrowWallet.WalletId
+                    && x.BalanceType == (int)BalanceType.Available)
+                .Select(x => (decimal?)(x.Direction == (int)LedgerDirection.In ? x.Amount : -x.Amount))
+                .SumAsync(ct) ?? 0m;
+
+        var orderEscrowSnapshotBalance = orderEscrowWallet?.AvailableBalance ?? 0m;
+        var orderEscrowDifference = orderEscrowSnapshotBalance - orderEscrowLedgerBalance;
+        var orderEscrowBalanced = orderEscrowWallet != null
+            && Math.Abs(orderEscrowDifference) <= AmountEpsilon;
+
+        var integrity = new FinanceIntegrityMetrics
+        {
+            WalletBalanceMismatchCount = walletBalanceMismatchCount,
+            CompletedTransactionWithoutLedgerCount = completedTransactionWithoutLedgerCount,
+            CompletedOrderPaymentWithoutEscrowPostingCount = completedOrderPaymentWithoutEscrowPostingCount,
+            LegacyOrderHoldCount = legacyOrderHoldCount,
+            LegacyOrderHoldAmount = legacyOrderHoldAmount,
+            OrderEscrowWalletExists = orderEscrowWallet != null,
+            OrderEscrowSnapshotBalance = orderEscrowSnapshotBalance,
+            OrderEscrowLedgerBalance = orderEscrowLedgerBalance,
+            OrderEscrowDifference = orderEscrowDifference,
+            OrderEscrowBalanced = orderEscrowBalanced,
+            IsHealthy = walletBalanceMismatchCount == 0
+                && completedTransactionWithoutLedgerCount == 0
+                && completedOrderPaymentWithoutEscrowPostingCount == 0
+                && legacyOrderHoldCount == 0
+                && orderEscrowBalanced
+        };
+
+        var orderEscrowWalletId =
+            orderEscrowWallet?.WalletId ??
+            Guid.Empty;
+
+        var orderEscrowAmounts = db.Wallet_Ledgers
+            .AsNoTracking()
+            .Where(x =>
+                x.WalletId == orderEscrowWalletId &&
+                x.BalanceType == (int)BalanceType.Available &&
                 x.ReferenceType == (int)ReferenceType.Order &&
                 x.ReferenceId.HasValue)
             .GroupBy(x => x.ReferenceId!.Value)
             .Select(g => new
             {
                 OrderId = g.Key,
+
                 Amount = g.Sum(x =>
                     x.Direction == (int)LedgerDirection.In
                         ? x.Amount
                         : -x.Amount)
             })
-            .Where(x => x.Amount > 0);
+            .Where(x => x.Amount > AmountEpsilon);
 
         var activeDisputeStatuses = new[]
         {
@@ -1336,7 +1463,7 @@ public sealed class DashboardRepository(HomeCycleDbContext db) : IDashboardRepos
     };
 
         var overdueReleaseAmounts =
-            from held in orderHeldAmounts
+            from held in orderEscrowAmounts
             join order in db.Orders.AsNoTracking()
                 on held.OrderId equals order.OrderId
             where
@@ -1353,7 +1480,7 @@ public sealed class DashboardRepository(HomeCycleDbContext db) : IDashboardRepos
             ct);
 
         var missingReleaseDeadlineAmounts =
-            from held in orderHeldAmounts
+            from held in orderEscrowAmounts
             join order in db.Orders.AsNoTracking()
                 on held.OrderId equals order.OrderId
             where
@@ -1366,7 +1493,7 @@ public sealed class DashboardRepository(HomeCycleDbContext db) : IDashboardRepos
             ct);
 
         var activeDisputeHeldAmounts =
-            from held in orderHeldAmounts
+            from held in orderEscrowAmounts
             join order in db.Orders.AsNoTracking()
                 on held.OrderId equals order.OrderId
             where order.Disputes.Any(d =>
@@ -1410,7 +1537,8 @@ public sealed class DashboardRepository(HomeCycleDbContext db) : IDashboardRepos
             CompletedOrdersMissingReleaseDeadline = completedOrdersMissingReleaseDeadline,
             ActiveDisputeHeldFunds = activeDisputeHeldFunds,
             NegativeWalletCount = negativeWalletCount,
-            UnclassifiedTransactionsInPeriod = unclassifiedTransactionsInPeriod
+            UnclassifiedTransactionsInPeriod = unclassifiedTransactionsInPeriod,
+            Integrity = integrity
         };
     }
 

@@ -4,6 +4,7 @@ using HomeCycle.Application.Commons.Errors;
 using HomeCycle.Application.Commons.Helpers;
 using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Requests.Inspections;
+using HomeCycle.Application.DTOs.Requests.Wallets;
 using HomeCycle.Application.DTOs.Responses.Inspections;
 using HomeCycle.Application.DTOs.Responses.Media;
 using HomeCycle.Application.DTOs.Responses.Notifications;
@@ -23,6 +24,7 @@ using HomeCycle.Application.Interfaces.Services.Notifications;
 using HomeCycle.Application.Interfaces.Services.Orders;
 using HomeCycle.Application.Interfaces.Services.Payments;
 using HomeCycle.Application.Interfaces.Services.Posts;
+using HomeCycle.Application.Interfaces.Services.Wallets;
 using HomeCycle.Domain.Entities;
 using HomeCycle.Domain.Enums;
 using System;
@@ -53,13 +55,14 @@ namespace HomeCycle.Application.Services.Inspections
         private readonly IAuditService _auditService;
         private readonly IUnitOfWork _unitOfWork;
         private readonly IAppointmentRealtimeService _appointmentRealtimeService;
+        private readonly IFinanceRealtimeService _financeRealtimeService;
 
         private readonly IValidator<CreateInspectionFormRequest> _createValidator;
         private readonly IValidator<UpdateInspectionFormRequest> _updateValidator;
         private readonly IValidator<InspectionRevisionRequest> _revisionValidator;
         private readonly IValidator<RejectInspectionFormRequest> _rejectValidator;
 
-        public InspectionFormService(IInspectionFormRepository inspectionFormRepo, IInspectionAppointmentRepository inspectionAppointmentRepo, IAppointmentRepository appointmentRepo, IAgreementFormRepository agreementRepo, IOrderRepository orderRepo, IDisputeRepository disputeRepo, IMediaService mediaService, IPaymentService paymentService, INotificationService notificationService, IShipmentRepository shipmentRepo, IOrderTrackingRealtimeService orderTrackingRealtimeService, IAuditService auditService, IUnitOfWork unitOfWork, IAppointmentRealtimeService appointmentRealtimeService, IValidator<CreateInspectionFormRequest> createValidator, IValidator<UpdateInspectionFormRequest> updateValidator, IValidator<InspectionRevisionRequest> revisionValidator, IValidator<RejectInspectionFormRequest> rejectValidator)
+        public InspectionFormService(IInspectionFormRepository inspectionFormRepo, IInspectionAppointmentRepository inspectionAppointmentRepo, IAppointmentRepository appointmentRepo, IAgreementFormRepository agreementRepo, IOrderRepository orderRepo, IDisputeRepository disputeRepo, IMediaService mediaService, IPaymentService paymentService, INotificationService notificationService, IShipmentRepository shipmentRepo, IOrderTrackingRealtimeService orderTrackingRealtimeService, IAuditService auditService, IUnitOfWork unitOfWork, IAppointmentRealtimeService appointmentRealtimeService, IFinanceRealtimeService financeRealtimeService, IValidator<CreateInspectionFormRequest> createValidator, IValidator<UpdateInspectionFormRequest> updateValidator, IValidator<InspectionRevisionRequest> revisionValidator, IValidator<RejectInspectionFormRequest> rejectValidator)
         {
             _inspectionFormRepo = inspectionFormRepo;
             _inspectionAppointmentRepo = inspectionAppointmentRepo;
@@ -75,6 +78,7 @@ namespace HomeCycle.Application.Services.Inspections
             _auditService = auditService;
             _unitOfWork = unitOfWork;
             _appointmentRealtimeService = appointmentRealtimeService;
+            _financeRealtimeService = financeRealtimeService;
             _createValidator = createValidator;
             _updateValidator = updateValidator;
             _revisionValidator = revisionValidator;
@@ -760,6 +764,7 @@ namespace HomeCycle.Application.Services.Inspections
                 var previousFinalTotalAmount = order.FinalTotalAmount;
 
                 var now = DateTime.UtcNow;
+                var refundedAmountForRealtime = 0m;
 
                 form.InspectionStatus =
                     (int)InspectionStatus.Accepted;
@@ -816,7 +821,10 @@ namespace HomeCycle.Application.Services.Inspections
                         // còn được áp dụng cho Order sau refund.
                         order.AmountPaid =
                             currentAmountPaid - refundAmount;
+
+                        refundedAmountForRealtime += refundAmount;
                     }
+
 
                     order.FinalTotalAmount = newTotal;
 
@@ -887,6 +895,8 @@ namespace HomeCycle.Application.Services.Inspections
 
                     order.DisputeWindowEndsAt = null;
                     order.UpdatedAt = now;
+
+                    refundedAmountForRealtime += deposit;
                 }
 
                 var confirmInspectionAuditDiff = new AuditDiffBuilder()
@@ -915,6 +925,19 @@ namespace HomeCycle.Application.Services.Inspections
                     }
                 };
 
+                FinanceRealtimeChange? financeChange =
+                    refundedAmountForRealtime > AmountEpsilon
+                        ? new FinanceRealtimeChange
+                        {
+                            EventType = FinanceEventType.OrderRefunded,
+                            UserId = agreement.BuyerId,
+                            ReferenceType = ReferenceType.Order,
+                            ReferenceId = order.OrderId,
+                            TransactionType = TransactionType.Order_Refund,
+                            OccurredAt = now
+                        }
+                        : null;
+
                 await _inspectionFormRepo.UpdateAsync(form, ct);
                 await _appointmentRepo.UpdateAsync(appointment, ct);
                 await _orderRepo.UpdateAsync(order, ct);
@@ -941,6 +964,9 @@ namespace HomeCycle.Application.Services.Inspections
 
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
+
+                if (financeChange != null)
+                    await _financeRealtimeService.PublishUpdatedSafelyAsync(financeChange);
                 await _notificationService.PublishCreatedSafelyAsync(inspectionNotification);
                 await _appointmentRealtimeService.PublishUpdatedSafelyAsync(
                     appointment.AppointmentId,

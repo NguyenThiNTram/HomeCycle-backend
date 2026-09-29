@@ -194,15 +194,31 @@ namespace HomeCycle.API.Controllers
         [HttpGet("finance/holds")]
         [Authorize(Roles = nameof(UserRole.Moderator) + "," + nameof(UserRole.Admin))]
         [SwaggerOperation(
-            Summary = "Lấy các khoản tiền đang được hold",
-            Description = "Trả về các khoản hold có giá trị ròng lớn hơn 0 theo wallet và reference."
-        )]
+            Summary = "Lấy các khoản Hold đang còn hiệu lực",
+            Description = "Trả các vị thế có số dư Hold ròng lớn hơn 0. Order Escrow hiện không sử dụng Hold; dùng finance/order-escrows để xem tiền Order đang được nền tảng giữ.")]
         public async Task<IActionResult> GetActiveHolds(CancellationToken ct)
         {
             var result = await _walletService.GetActiveHoldsAsync(ct);
 
             if (!result.IsSuccess)
                 return BadRequest(result.Error);
+
+            return Ok(result.Data);
+        }
+
+        [HttpGet("finance/order-escrows")]
+        [Authorize(Roles = nameof(UserRole.Moderator) + "," + nameof(UserRole.Admin))]
+        [SwaggerOperation(
+            Summary = "Lấy các Order đang còn tiền trong Order Escrow",
+            Description = "Trả các Order có vị thế ròng dương trong ví hệ thống Order_Escrow. Đây là tiền nền tảng đang giữ cho Order, không phải User Hold.")]
+        [ProducesResponseType(typeof(PagedResult<OrderEscrowPositionDto>), StatusCodes.Status200OK)]
+        public async Task<IActionResult> GetActiveOrderEscrows(
+            [FromQuery] OrderEscrowSearchRequest request,
+            CancellationToken ct)
+        {
+            var result = await _walletService.GetActiveOrderEscrowsAsync(
+                request,
+                ct);
 
             return Ok(result.Data);
         }

@@ -442,5 +442,156 @@ namespace HomeCycle.Infrastructure.Repositories.Wallets
                 })
                 .SingleOrDefaultAsync(ct);
         }
+
+        public async Task<IReadOnlyList<WalletTransactionListItemDto>> GetListByIdsAsync(
+            IReadOnlyCollection<Guid> walletTransactionIds,
+            CancellationToken ct = default)
+        {
+            var ids = walletTransactionIds.Distinct().ToArray();
+
+            if (ids.Length == 0)
+                return Array.Empty<WalletTransactionListItemDto>();
+
+            return await _db.Wallet_Transactions
+                .AsNoTracking()
+                .Where(x => ids.Contains(x.WalletTransactionId))
+                .OrderByDescending(x => x.CreatedAt)
+                .ThenByDescending(x => x.WalletTransactionId)
+                .Select(x => new WalletTransactionListItemDto
+                {
+                    WalletTransactionId = x.WalletTransactionId,
+                    FromWalletId = x.FromWalletId,
+                    ToWalletId = x.ToWalletId,
+
+                    From = x.FromWallet != null
+                        ? new WalletFinancePartyDto
+                        {
+                            WalletId = x.FromWallet.WalletId,
+                            UserId = x.FromWallet.UserId,
+                            Username = x.FromWallet.UserId.HasValue ? x.FromWallet.User.Username : null,
+                            Role = x.FromWallet.UserId.HasValue ? (UserRole?)x.FromWallet.User.Role : null,
+                            WalletType = (WalletTypeEnum)x.FromWallet.WalletType,
+                            SystemPurpose = x.FromWallet.Purpose.HasValue
+                                ? (SystemWalletPurpose?)x.FromWallet.Purpose.Value
+                                : null
+                        }
+                        : x.Payment != null
+                            ? new WalletFinancePartyDto
+                            {
+                                WalletId = null,
+                                UserId = x.Payment.PayerId,
+                                Username = x.Payment.Payer.Username,
+                                Role = (UserRole?)x.Payment.Payer.Role,
+                                WalletType = null,
+                                SystemPurpose = null
+                            }
+                            : null,
+
+                    To = x.ToWallet == null
+                        ? null
+                        : new WalletFinancePartyDto
+                        {
+                            WalletId = x.ToWallet.WalletId,
+                            UserId = x.ToWallet.UserId,
+                            Username = x.ToWallet.UserId.HasValue ? x.ToWallet.User.Username : null,
+                            Role = x.ToWallet.UserId.HasValue ? (UserRole?)x.ToWallet.User.Role : null,
+                            WalletType = (WalletTypeEnum)x.ToWallet.WalletType,
+                            SystemPurpose = x.ToWallet.Purpose.HasValue
+                                ? (SystemWalletPurpose?)x.ToWallet.Purpose.Value
+                                : null
+                        },
+
+                    PaymentId = x.PaymentId,
+                    PaymentMethod = x.Payment != null && x.Payment.PaymentMethod.HasValue
+                        ? (PaymentMethod?)x.Payment.PaymentMethod.Value
+                        : null,
+
+                    ReferenceCode = x.ReferenceType == (int)ReferenceType.Order && x.ReferenceId.HasValue
+                        ? _db.Orders
+                            .Where(o => o.OrderId == x.ReferenceId.Value)
+                            .Select(o => o.OrderCode)
+                            .FirstOrDefault()
+                        : null,
+
+                    TransactionType = x.TransactionType.HasValue
+                        ? (TransactionType?)x.TransactionType.Value
+                        : null,
+
+                    ReferenceType = x.ReferenceType.HasValue
+                        ? (ReferenceType?)x.ReferenceType.Value
+                        : null,
+
+                    ReferenceId = x.ReferenceId,
+                    Amount = x.Amount,
+
+                    Status = x.WalletTransactionStatus.HasValue
+                        ? (WalletTransactionStatus?)x.WalletTransactionStatus.Value
+                        : null,
+
+                    CreatedAt = x.CreatedAt
+                })
+                .ToListAsync(ct);
+        }
+
+        public async Task<IReadOnlyList<UserWalletTransactionListItemDto>> GetListByWalletIdAndIdsAsync(
+            Guid walletId,
+            IReadOnlyCollection<Guid> walletTransactionIds,
+            CancellationToken ct = default)
+        {
+            var ids = walletTransactionIds.Distinct().ToArray();
+
+            if (ids.Length == 0)
+                return Array.Empty<UserWalletTransactionListItemDto>();
+
+            return await _db.Wallet_Transactions
+                .AsNoTracking()
+                .Where(x =>
+                    ids.Contains(x.WalletTransactionId) &&
+                    x.Wallet_Ledgers.Any(l => l.WalletId == walletId))
+                .OrderByDescending(x => x.CreatedAt)
+                .ThenByDescending(x => x.WalletTransactionId)
+                .Select(x => new UserWalletTransactionListItemDto
+                {
+                    WalletTransactionId = x.WalletTransactionId,
+                    PaymentId = x.PaymentId,
+
+                    PaymentMethod = x.Payment != null && x.Payment.PaymentMethod.HasValue
+                        ? (PaymentMethod?)x.Payment.PaymentMethod.Value
+                        : null,
+
+                    TransactionType = x.TransactionType.HasValue
+                        ? (TransactionType?)x.TransactionType.Value
+                        : null,
+
+                    ReferenceType = x.ReferenceType.HasValue
+                        ? (ReferenceType?)x.ReferenceType.Value
+                        : null,
+
+                    ReferenceId = x.ReferenceId,
+
+                    ReferenceCode = x.ReferenceType == (int)ReferenceType.Order && x.ReferenceId.HasValue
+                        ? _db.Orders
+                            .Where(o => o.OrderId == x.ReferenceId.Value)
+                            .Select(o => o.OrderCode)
+                            .FirstOrDefault()
+                        : null,
+
+                    Amount = x.Amount ?? 0,
+
+                    Status = x.WalletTransactionStatus.HasValue
+                        ? (WalletTransactionStatus?)x.WalletTransactionStatus.Value
+                        : null,
+
+                    CreatedAt = x.CreatedAt,
+
+                    Description = x.Wallet_Ledgers
+                        .Where(l => l.WalletId == walletId)
+                        .OrderBy(l => l.CreatedAt)
+                        .ThenBy(l => l.LedgerId)
+                        .Select(l => l.Description)
+                        .FirstOrDefault() ?? string.Empty
+                })
+                .ToListAsync(ct);
+        }
     }
 }

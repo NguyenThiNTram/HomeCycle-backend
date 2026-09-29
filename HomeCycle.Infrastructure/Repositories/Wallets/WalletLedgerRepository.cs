@@ -19,6 +19,7 @@ namespace HomeCycle.Infrastructure.Repositories.Wallets
     public class WalletLedgerRepository : IWalletLedgerRepository
     {
         private readonly HomeCycleDbContext _db;
+        private const decimal AmountEpsilon = 0.01m;
         public WalletLedgerRepository(HomeCycleDbContext db) => _db = db;
 
         public async Task AddAsync(wallet_ledger ledger, CancellationToken ct = default)
@@ -143,6 +144,148 @@ namespace HomeCycle.Infrastructure.Repositories.Wallets
                 .Where(x => x.HoldAmount > 0)
                 .OrderByDescending(x => x.HoldAmount)
                 .ToListAsync(ct);
+        }
+
+        public async Task<PagedResult<OrderEscrowPositionDto>> GetActiveOrderEscrowsAsync(
+            OrderEscrowSearchRequest request,
+            CancellationToken ct = default)
+        {
+            var escrowWalletId = await _db.Wallets
+                .AsNoTracking()
+                .Where(x =>
+                    x.UserId == null &&
+                    x.WalletType == (int)WalletTypeEnum.System &&
+                    x.Purpose == (int)SystemWalletPurpose.Order_Escrow)
+                .Select(x => (Guid?)x.WalletId)
+                .SingleOrDefaultAsync(ct);
+
+            if (!escrowWalletId.HasValue)
+            {
+                return new PagedResult<OrderEscrowPositionDto>
+                {
+                    Items = new List<OrderEscrowPositionDto>(),
+                    PageNumber = request.PageNumber,
+                    PageSize = request.PageSize,
+                    TotalCount = 0
+                };
+            }
+
+            var activeDisputeStatuses = new[]
+            {
+                (int)DisputeStatus.Pending,
+                (int)DisputeStatus.UnderReview,
+                (int)DisputeStatus.AwaitingReturn
+            };
+
+            var query = _db.Orders
+                .AsNoTracking()
+                .Select(x => new
+                {
+                    x.OrderId,
+                    x.OrderCode,
+                    x.ProductName,
+
+                    BuyerId = x.Agreement.BuyerId,
+                    SellerId = x.Agreement.SellerId,
+
+                    x.OrderStatus,
+                    x.PaymentStatus,
+                    x.DisputeWindowEndsAt,
+                    x.UpdatedAt,
+
+                    HasActiveDispute = x.Disputes.Any(d =>
+                        d.DisputeStatus.HasValue &&
+                        activeDisputeStatuses.Contains(
+                            d.DisputeStatus.Value)),
+
+                    EscrowAmount = _db.Wallet_Ledgers
+                        .Where(l =>
+                            l.WalletId == escrowWalletId.Value &&
+                            l.BalanceType == (int)BalanceType.Available &&
+                            l.ReferenceType == (int)ReferenceType.Order &&
+                            l.ReferenceId == x.OrderId)
+                        .Select(l => (decimal?)(
+                            l.Direction == (int)LedgerDirection.In
+                                ? l.Amount
+                                : -l.Amount))
+                        .Sum() ?? 0m
+                })
+                .Where(x => x.EscrowAmount > AmountEpsilon);
+
+            if (!string.IsNullOrWhiteSpace(request.Keyword))
+            {
+                var keyword = request.Keyword.Trim();
+
+                query = query.Where(x =>
+                    EF.Functions.ILike(
+                        x.OrderCode,
+                        $"%{keyword}%"));
+            }
+
+            if (request.OrderStatus.HasValue)
+            {
+                query = query.Where(x =>
+                    x.OrderStatus ==
+                    (int)request.OrderStatus.Value);
+            }
+
+            if (request.PaymentStatus.HasValue)
+            {
+                query = query.Where(x =>
+                    x.PaymentStatus ==
+                    (int)request.PaymentStatus.Value);
+            }
+
+            if (request.HasActiveDispute.HasValue)
+            {
+                query = query.Where(x =>
+                    x.HasActiveDispute ==
+                    request.HasActiveDispute.Value);
+            }
+
+            var totalCount = await query.CountAsync(ct);
+
+            var items = await query
+                .OrderByDescending(x => x.UpdatedAt)
+                .ThenBy(x => x.OrderCode)
+                .Skip((request.PageNumber - 1) * request.PageSize)
+                .Take(request.PageSize)
+                .Select(x => new OrderEscrowPositionDto
+                {
+                    OrderId = x.OrderId,
+                    OrderCode = x.OrderCode,
+                    ProductName = x.ProductName,
+
+                    BuyerId = x.BuyerId,
+                    SellerId = x.SellerId,
+
+                    EscrowAmount = x.EscrowAmount,
+
+                    OrderStatus = x.OrderStatus.HasValue
+                        ? (OrderStatus?)x.OrderStatus.Value
+                        : null,
+
+                    PaymentStatus = x.PaymentStatus.HasValue
+                        ? (PaymentStatus?)x.PaymentStatus.Value
+                        : null,
+
+                    DisputeWindowEndsAt =
+                        x.DisputeWindowEndsAt,
+
+                    HasActiveDispute =
+                        x.HasActiveDispute,
+
+                    UpdatedAt = x.UpdatedAt
+                })
+                .ToListAsync(ct);
+
+            return new PagedResult<OrderEscrowPositionDto>
+            {
+                Items = items,
+                PageNumber = request.PageNumber,
+                PageSize = request.PageSize,
+                TotalCount = totalCount
+            };
         }
     }
 }

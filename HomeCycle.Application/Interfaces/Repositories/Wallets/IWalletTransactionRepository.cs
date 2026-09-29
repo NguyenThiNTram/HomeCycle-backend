@@ -32,5 +32,13 @@ namespace HomeCycle.Application.Interfaces.Repositories.Wallets
             Guid walletTransactionId,
             Guid walletId,
             CancellationToken ct = default);
+        Task<IReadOnlyList<WalletTransactionListItemDto>> GetListByIdsAsync(
+            IReadOnlyCollection<Guid> walletTransactionIds,
+            CancellationToken ct = default);
+
+        Task<IReadOnlyList<UserWalletTransactionListItemDto>> GetListByWalletIdAndIdsAsync(
+            Guid walletId,
+            IReadOnlyCollection<Guid> walletTransactionIds,
+            CancellationToken ct = default);
     }
 }

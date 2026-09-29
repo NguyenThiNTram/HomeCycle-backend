@@ -22,5 +22,8 @@ namespace HomeCycle.Application.Interfaces.Repositories.Wallets
             BalanceType balanceType,
             CancellationToken ct = default);
         Task<IReadOnlyList<WalletActiveHoldDto>> GetActiveHoldsAsync(CancellationToken ct = default);
+        Task<PagedResult<OrderEscrowPositionDto>> GetActiveOrderEscrowsAsync(
+            OrderEscrowSearchRequest request,
+            CancellationToken ct = default);
     }
 }
