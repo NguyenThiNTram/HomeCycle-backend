@@ -205,10 +205,16 @@ namespace HomeCycle.API
                 options.Events.OnForbidden = context =>
                 {
                     context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                    context.Response.Headers.CacheControl = "no-store";
+                    var isIdentityScan = context.Request.Path.Value?.EndsWith("/identity/scan", StringComparison.OrdinalIgnoreCase) == true;
                     return context.Response.WriteAsJsonAsync(new
                     {
-                        code = "AUTH_FORBIDDEN",
-                        message = "Bạn không có quyền thực hiện thao tác này."
+                        success = false,
+                        code = isIdentityScan ? "IDENTITY_SCAN_ROLE_FORBIDDEN" : "AUTH_FORBIDDEN",
+                        message = isIdentityScan
+                            ? "Tài khoản không có quyền quét CCCD theo luồng này."
+                            : "Bạn không có quyền thực hiện thao tác này.",
+                        traceId = context.HttpContext.TraceIdentifier
                     });
                 };
 
@@ -230,6 +236,7 @@ namespace HomeCycle.API
             });
 
             var app = builder.Build();
+            var logger = app.Services.GetRequiredService<ILogger<Program>>();
 
             app.Use(async (context, next) =>
             {
@@ -237,17 +244,40 @@ namespace HomeCycle.API
                 {
                     await next();
                 }
+                catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
+                {
+                    logger.LogDebug("Request {TraceId} was aborted by the client.", context.TraceIdentifier);
+                }
                 catch (UnauthorizedAccessException)
                 {
-                    if (context.Response.HasStarted) throw;
+                    if (context.Response.HasStarted) return;
                     context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-                    await context.Response.WriteAsJsonAsync(new { message = "Token không hợp lệ hoặc đã hết hạn." });
+                    context.Response.Headers.CacheControl = "no-store";
+                    await context.Response.WriteAsJsonAsync(new
+                    {
+                        success = false,
+                        code = "AUTH_UNAUTHORIZED",
+                        message = "Phiên đăng nhập không hợp lệ hoặc đã hết hạn. Vui lòng đăng nhập lại.",
+                        traceId = context.TraceIdentifier
+                    });
                 }
-                catch (Exception)
+                catch (Exception exception)
                 {
-                    if (context.Response.HasStarted) throw;
+                    logger.LogError(exception, "Unhandled request exception. TraceId: {TraceId}", context.TraceIdentifier);
+                    if (context.Response.HasStarted)
+                    {
+                        context.Abort();
+                        return;
+                    }
                     context.Response.StatusCode = StatusCodes.Status500InternalServerError;
-                    await context.Response.WriteAsJsonAsync(new { message = "Internal server error." });
+                    context.Response.Headers.CacheControl = "no-store";
+                    await context.Response.WriteAsJsonAsync(new
+                    {
+                        success = false,
+                        code = "INTERNAL_SERVER_ERROR",
+                        message = "Hệ thống chưa xử lý được yêu cầu. Vui lòng thử lại sau.",
+                        traceId = context.TraceIdentifier
+                    });
                 }
             });
 
