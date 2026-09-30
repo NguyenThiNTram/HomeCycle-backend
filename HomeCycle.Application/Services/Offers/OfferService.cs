@@ -1398,7 +1398,7 @@ namespace HomeCycle.Application.Services.Offers
             var hasReservation = false;
             foreach (var postId in relatedPostIds)
             {
-                if (await _postRepository.GetReservedQuantityAsync(postId, ct) > 0)
+                if (await _postRepository.GetReservedQuantityAsync(postId, cancellationToken: ct) > 0)
                 {
                     hasReservation = true;
                     break;

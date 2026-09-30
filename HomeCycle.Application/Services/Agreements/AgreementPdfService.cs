@@ -279,11 +279,11 @@ namespace HomeCycle.Application.Services.Agreements
                     column.Item().PaddingTop(3).Text("Tài liệu được tạo từ dữ liệu hợp đồng và thanh toán đã lưu trên HomeCycle để hai bên và moderator có căn cứ tra cứu, đối chiếu.")
                         .FontSize(8).FontColor("#64748B");
                 });
-                page.Footer().AlignCenter().Text(text =>
+                page.Footer().AlignCenter().DefaultTextStyle(style => style.FontSize(8).FontColor("#64748B")).Text(text =>
                 {
                     text.Span("HomeCycle • Tài liệu lưu trữ giao dịch • Trang ");
                     text.CurrentPageNumber();
-                }).FontSize(8).FontColor("#64748B");
+                });
             })).GeneratePdf();
         }
 
