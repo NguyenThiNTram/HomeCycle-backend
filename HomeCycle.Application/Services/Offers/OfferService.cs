@@ -228,13 +228,6 @@ namespace HomeCycle.Application.Services.Offers
                 var newPrice = request.OfferPrice ?? offer.OfferPrice!.Value;
                 var newQuantity = request.OfferQuantity ?? offer.OfferQuantity;
 
-                if (newQuantity > post.RemainingQuantity)
-                {
-                     await _unitOfWork.RollbackTransactionAsync(cancellationToken);
-                     return Result<OfferResponse>.Fail(
-                         OfferErrors.QuantityExceedsRemaining(newQuantity, post.RemainingQuantity));
-                }
-
                 var priceError = await ValidateNewOfferAsync(offer, post, await LoadBuyPostAsync(offer, cancellationToken), newPrice, newQuantity, cancellationToken);
                 if (priceError is not null)
                 {
@@ -588,6 +581,7 @@ namespace HomeCycle.Application.Services.Offers
                     }
                 }, cancellationToken);
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
+                await NotifyPendingOffersAtRiskAsync(offer, cancellationToken);
                 await _unitOfWork.CommitTransactionAsync(cancellationToken);
 
                 var initialOfferMessageResponse = _mapper.Map<MessageResponse>(initialOfferMessage);
@@ -700,15 +694,6 @@ namespace HomeCycle.Application.Services.Offers
                     return Result<NegotiationResponse>.Fail(OfferErrors.PostNotActive);
                 }
 
-                if (request.OfferQuantity > post.RemainingQuantity)
-                {
-                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
-                    return Result<NegotiationResponse>.Fail(
-                        OfferErrors.QuantityExceedsRemaining(
-                            request.OfferQuantity,
-                            post.RemainingQuantity));
-                }
-
                 var priceError = await ValidateNewOfferAsync(offer, post, await LoadBuyPostAsync(offer, cancellationToken), request.OfferPrice, request.OfferQuantity, cancellationToken);
                 if (priceError is not null)
                 {
@@ -801,6 +786,7 @@ namespace HomeCycle.Application.Services.Offers
                     }
                 }, cancellationToken);
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
+                await NotifyPendingOffersAtRiskAsync(offer, cancellationToken);
                 await _unitOfWork.CommitTransactionAsync(cancellationToken);
 
                 await _notificationService.PublishCreatedSafelyAsync(counterNotification);
@@ -1340,7 +1326,9 @@ namespace HomeCycle.Application.Services.Offers
                     return Result<OfferResponse>.Fail(OfferErrors.DuplicatePending);
                 await _offerRepository.AddAsync(entity, ct);
                 var notification = await AddOfferNotificationPendingAsync(entity, userId, "Bạn có đề nghị mới",
-                    sellerRequest ? "Bạn vừa nhận được một chào hàng từ người bán." : "Bạn vừa nhận được đề nghị mua sản phẩm.", ct);
+                    sellerRequest
+                        ? "Bạn vừa nhận được một chào hàng từ người bán. Đề nghị đang chờ phản hồi; số lượng chưa được giữ."
+                        : "Bạn vừa nhận được đề nghị mua sản phẩm. Đề nghị đang chờ phản hồi; số lượng chưa được giữ. Khi chấp nhận, hệ thống sẽ kiểm tra lại số lượng khả dụng.", ct);
 
                 await _auditService.EnqueueAsync(new AuditEvent
                 {
@@ -1401,6 +1389,46 @@ namespace HomeCycle.Application.Services.Offers
             var capacity = await _postRepository.ValidateCapacityAsync(offer, quantity, null, true, ct);
             if (capacity != null) return capacity;
             return _offerTermsPolicy.Validate(sell, price, quantity, offer.BuyPostId.HasValue, buy);
+        }
+
+        private async Task NotifyPendingOffersAtRiskAsync(offer capacityChange, CancellationToken ct)
+        {
+            var relatedPostIds = new Guid?[] { capacityChange.PostId, capacityChange.BuyPostId }
+                .Where(x => x.HasValue).Select(x => x!.Value).Distinct().ToArray();
+            var hasReservation = false;
+            foreach (var postId in relatedPostIds)
+            {
+                if (await _postRepository.GetReservedQuantityAsync(postId, ct) > 0)
+                {
+                    hasReservation = true;
+                    break;
+                }
+            }
+            if (!hasReservation) return;
+
+            var pendingOffers = await _offerRepository.GetPendingByRelatedPostsAsync(relatedPostIds, ct);
+            var notified = false;
+
+            foreach (var pendingOffer in pendingOffers)
+            {
+                var capacityError = await _postRepository.ValidateCapacityAsync(
+                    pendingOffer, pendingOffer.OfferQuantity, null, true, ct);
+                if (capacityError?.Code is not ("OFFER_BUY_QUANTITY_EXCEEDS_REMAINING" or
+                    "OFFER_SELL_QUANTITY_EXCEEDS_REMAINING" or "OFFER_QUANTITY_EXCEEDS_REMAINING"))
+                    continue;
+
+                var notification = await _notificationService.AddPendingAsync(
+                    new CreateNotificationCommand(
+                        pendingOffer.SenderId,
+                        "Số lượng có thể không còn đủ",
+                        $"{capacityError.Message} Đề nghị của bạn vẫn đang chờ phản hồi và chưa giữ số lượng. Bạn có thể cập nhật đề nghị nếu muốn tiếp tục với số lượng khác.",
+                        NotificationTargetType.Offer,
+                        pendingOffer.OfferId), ct);
+                _unitOfWork.RegisterAfterCommit(() => _notificationService.PublishCreatedSafelyAsync(notification));
+                notified = true;
+            }
+
+            if (notified) await _unitOfWork.SaveChangesAsync(ct);
         }
     }
 }

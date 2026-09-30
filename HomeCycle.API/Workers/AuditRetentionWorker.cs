@@ -1,4 +1,5 @@
-﻿using HomeCycle.Application.Commons.Audits;
+using HomeCycle.Application.Commons.Audits;
+using HomeCycle.Application.Interfaces.Security;
 using HomeCycle.Application.Interfaces.Services.Audits;
 using Microsoft.Extensions.Options;
 
@@ -24,18 +25,48 @@ namespace HomeCycle.API.Workers
 
             try
             {
-                await RunCleanupAsync(stoppingToken);
-
-                using var timer = new PeriodicTimer(TimeSpan.FromHours(_options.Retention.CleanupIntervalHours));
-
-                while (await timer.WaitForNextTickAsync(stoppingToken))
-                    await RunCleanupAsync(stoppingToken);
+                await Task.WhenAll(
+                    RunAuditRetentionLoopAsync(stoppingToken),
+                    RunOtpRetentionLoopAsync(stoppingToken));
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
             }
 
             _logger.LogInformation("Audit retention worker stopped.");
+        }
+        private async Task RunAuditRetentionLoopAsync(CancellationToken cancellationToken)
+        {
+            await RunCleanupAsync(cancellationToken);
+
+            using var timer = new PeriodicTimer(TimeSpan.FromHours(_options.Retention.CleanupIntervalHours));
+            while (await timer.WaitForNextTickAsync(cancellationToken))
+                await RunCleanupAsync(cancellationToken);
+        }
+
+        private async Task RunOtpRetentionLoopAsync(CancellationToken cancellationToken)
+        {
+            using var timer = new PeriodicTimer(TimeSpan.FromMinutes(1));
+            do
+            {
+                try
+                {
+                    using var scope = _scopeFactory.CreateScope();
+                    var repository = scope.ServiceProvider.GetRequiredService<IOtpRepository>();
+                    var deleted = await repository.DeleteExpiredOrUsedAsync(DateTime.UtcNow, cancellationToken);
+                    if (deleted > 0)
+                        _logger.LogInformation("OTP retention cleanup deleted {Count} record(s).", deleted);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception exception)
+                {
+                    _logger.LogError(exception, "OTP retention cleanup failed.");
+                }
+            }
+            while (await timer.WaitForNextTickAsync(cancellationToken));
         }
 
         private async Task RunCleanupAsync(CancellationToken cancellationToken)

@@ -13,6 +13,7 @@ using HomeCycle.Application.DTOs.Responses.Media;
 using HomeCycle.Application.DTOs.Responses.Notifications;
 using HomeCycle.Application.Interfaces.Generics;
 using HomeCycle.Application.Interfaces.Repositories.Agreements;
+using HomeCycle.Application.Interfaces.Repositories.Appointments;
 using HomeCycle.Application.Interfaces.Repositories.Disputes;
 using HomeCycle.Application.Interfaces.Repositories.Offers;
 using HomeCycle.Application.Interfaces.Repositories.Orders;
@@ -37,6 +38,9 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using HomeCycle.Application.Interfaces.Services.Audits;
+using HomeCycle.Application.Commons.Audits;
+using HomeCycle.Application.Interfaces.Services.Auths;
 
 namespace HomeCycle.Application.Services.Disputes
 {
@@ -69,6 +73,8 @@ namespace HomeCycle.Application.Services.Disputes
         private readonly IReadOnlyDictionary<DisputeTargetType, IDisputeTargetHandler> _targetHandlers;
         private readonly IDisputeCategoryRepository _disputeCategoryRepository;
         private readonly IAuditService _auditService;
+        private readonly IEmailService _emailService;
+        private readonly IAppointmentRepository _appointmentRepository;
         private readonly IFinanceRealtimeService _financeRealtimeService;
 
         public DisputeService(IGhnShipmentCreationService ghnLifecycle,
@@ -95,6 +101,9 @@ namespace HomeCycle.Application.Services.Disputes
             IValidator<VerifyDisputeReturnRequest> returnVerificationValidator,
             IEnumerable<IDisputeTargetHandler> targetHandlers,
             IDisputeCategoryRepository disputeCategoryRepository,
+            IAuditService auditService,
+            IEmailService emailService,
+            IAppointmentRepository appointmentRepository)
             IAuditService auditService,
             IFinanceRealtimeService financeRealtimeService)
         {
@@ -125,6 +134,8 @@ namespace HomeCycle.Application.Services.Disputes
                 .ToDictionary(x => x.Key, x => x.First());
             _disputeCategoryRepository = disputeCategoryRepository;
             _auditService = auditService;
+            _emailService = emailService;
+            _appointmentRepository = appointmentRepository;
             _financeRealtimeService = financeRealtimeService;
         }
 
@@ -609,6 +620,8 @@ namespace HomeCycle.Application.Services.Disputes
                 if (disputeNotification != null)
                     await _notificationService.PublishCreatedSafelyAsync(disputeNotification);
 
+                await SendNewDisputeEmailsSafelyAsync(dispute, category.Name, mediaResult.Data?.Count ?? 0, cancellationToken);
+
                 await Task.WhenAll(moderatorNotifications.Select(
                     _notificationService.PublishCreatedSafelyAsync));
 
@@ -631,6 +644,58 @@ namespace HomeCycle.Application.Services.Disputes
             {
                 await _unitOfWork.RollbackTransactionAsync(cancellationToken);
                 throw;
+            }
+        }
+
+        private async Task SendNewDisputeEmailsSafelyAsync(dispute dispute, string categoryName, int evidenceCount, CancellationToken ct)
+        {
+            if (!dispute.TargetUserId.HasValue || dispute.TargetUserId.Value == dispute.SenderId)
+                return;
+
+            try
+            {
+                var sender = await _userRepository.GetByIdAsync(dispute.SenderId, ct);
+                var target = await _userRepository.GetByIdAsync(dispute.TargetUserId.Value, ct);
+                if (sender == null || target == null)
+                    return;
+
+                var orderCode = "";
+                var productSummary = "Không áp dụng";
+                var appointmentSummary = "Chưa có lịch hẹn";
+                if (dispute.OrderId.HasValue)
+                {
+                    var order = await _orderRepository.GetByIdAsync(dispute.OrderId.Value, ct);
+                    if (order != null)
+                    {
+                        orderCode = order.OrderCode;
+                        productSummary = $"{order.ProductName ?? "Sản phẩm"} × {order.Quantity}";
+                        var appointments = await _appointmentRepository.GetAppointmentSummariesByAgreementIdAsync(order.AgreementId, ct);
+                        if (appointments.Count > 0)
+                            appointmentSummary = string.Join("; ", appointments.Select(x => $"{x.AppointmentType}: {x.ScheduledAt:dd/MM/yyyy HH:mm} ({x.AppointmentStatus}) – {x.Location}"));
+                    }
+                }
+
+                var recipients = new[] { (User: sender, Other: target), (User: target, Other: sender) }
+                    .GroupBy(x => x.User.Email, StringComparer.OrdinalIgnoreCase)
+                    .Select(x => x.First());
+                await Task.WhenAll(recipients.Select(recipient => _emailService.SendNewDisputeEmailAsync(
+                        recipient.User.Email,
+                        recipient.User.Username,
+                        dispute.DisputeId.ToString(),
+                        ((DisputeTargetType)dispute.DisputeTargetType!.Value).ToString(),
+                        categoryName,
+                        dispute.CreatedAt.ToString("dd/MM/yyyy HH:mm 'UTC'"),
+                        sender.Username,
+                        recipient.Other.Username,
+                        orderCode,
+                        productSummary,
+                        appointmentSummary,
+                        dispute.Description ?? "Không có mô tả",
+                        evidenceCount,
+                        ct)));
+            }
+            catch
+            {
             }
         }
 

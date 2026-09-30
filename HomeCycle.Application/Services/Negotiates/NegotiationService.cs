@@ -9,6 +9,7 @@ using HomeCycle.Application.DTOs.Requests.Negotiates;
 using HomeCycle.Application.DTOs.Responses.Conversations;
 using HomeCycle.Application.DTOs.Responses.Messages;
 using HomeCycle.Application.DTOs.Responses.Negotiations;
+using HomeCycle.Application.DTOs.Responses.Notifications;
 using HomeCycle.Application.DTOs.Responses.Offers;
 using HomeCycle.Application.Interfaces.Generics;
 using HomeCycle.Application.Interfaces.Repositories.Offers;
@@ -156,7 +157,7 @@ namespace HomeCycle.Application.Services.Negotiates
             {
                 var notification = await _notificationService.AddPendingAsync(
                     new HomeCycle.Application.DTOs.Responses.Notifications.CreateNotificationCommand(recipient,
-                        "Thương lượng đã hết hạn", "Phiên thương lượng không có hoạt động trong 5 phút nên đã đóng. Bạn có thể gửi yêu cầu mới.",
+                        "Thương lượng đã hết hạn", "Phiên thương lượng không có hoạt động trong 5 phút nên đã đóng và phần số lượng giữ chỗ đã được giải phóng. Bạn có thể gửi yêu cầu mới.",
                         NotificationTargetType.Offer, entity.OfferId), ct);
                 _unitOfWork.RegisterAfterCommit(() => _notificationService.PublishCreatedSafelyAsync(notification));
             }
@@ -174,7 +175,7 @@ namespace HomeCycle.Application.Services.Negotiates
                     ConversationId = entity.ConversationId,
                     SenderId = Guid.Empty,
                     MessageType = MessageType.System,
-                    MessageContent = "Phiên thương lượng đã hết hạn do không có hoạt động trong 5 phút.",
+                        MessageContent = "Phiên thương lượng đã hết hạn sau 5 phút không hoạt động. Phần số lượng giữ chỗ đã được giải phóng.",
                     CreatedAt = now,
                     UpdatedAt = now
                 }
@@ -340,15 +341,6 @@ namespace HomeCycle.Application.Services.Negotiates
                     return Result<NegotiationActionResponse>.Fail(OfferErrors.PostNotActive);
                 }
 
-                if (request.OfferQuantity > post.RemainingQuantity)
-                {
-                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
-                    return Result<NegotiationActionResponse>.Fail(
-                        OfferErrors.QuantityExceedsRemaining(
-                            request.OfferQuantity,
-                            post.RemainingQuantity));
-                }
-
                 var priceError = await _postRepository.ValidateCapacityAsync(negotiation.Offer!, request.OfferQuantity, negotiationId, false, cancellationToken)
                     ?? new HomeCycle.Application.Services.Offers.OfferTermsPolicy().Validate(post, request.OfferPrice, request.OfferQuantity, negotiation.Offer?.BuyPostId != null);
                 if (priceError is not null)
@@ -466,6 +458,7 @@ namespace HomeCycle.Application.Services.Negotiates
                     }
                 }, cancellationToken);
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
+                await NotifyPendingOffersAtRiskAsync(offer, cancellationToken);
                 await _unitOfWork.CommitTransactionAsync(cancellationToken);
 
                 committedNegotiation = negotiation;
@@ -618,16 +611,6 @@ namespace HomeCycle.Application.Services.Negotiates
                     return Result<NegotiationActionResponse>.Fail(OfferErrors.PostNotActive);
                 }
 
-                // Re-check tồn kho NGAY SAU KHI post được khóa (giá trị đã được refresh)
-                if (proposal.OfferQuantity > post.RemainingQuantity)
-                {
-                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
-                    return Result<NegotiationActionResponse>.Fail(
-                        OfferErrors.QuantityExceedsRemaining(
-                            proposal.OfferQuantity,
-                            post.RemainingQuantity));
-                }
-
                 var offer = await _offerRepository.GetByIdAsync(negotiation.OfferId, cancellationToken);
 
                 if (offer is null)
@@ -724,6 +707,7 @@ namespace HomeCycle.Application.Services.Negotiates
                     }
                 }, cancellationToken);
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
+                await NotifyPendingOffersAtRiskAsync(offer, cancellationToken);
                 await _unitOfWork.CommitTransactionAsync(cancellationToken);
 
                 committedNegotiation = negotiation;
@@ -1547,6 +1531,46 @@ namespace HomeCycle.Application.Services.Negotiates
             };
         }
 
+        private async Task NotifyPendingOffersAtRiskAsync(offer capacityChange, CancellationToken ct)
+        {
+            var postIds = new Guid?[] { capacityChange.PostId, capacityChange.BuyPostId }
+                .Where(x => x.HasValue).Select(x => x!.Value).Distinct().ToArray();
+            var hasReservation = false;
+            foreach (var postId in postIds)
+            {
+                if (await _postRepository.GetReservedQuantityAsync(postId, ct) > 0)
+                {
+                    hasReservation = true;
+                    break;
+                }
+            }
+            if (!hasReservation) return;
+
+            var pendingOffers = await _offerRepository.GetPendingByRelatedPostsAsync(postIds, ct);
+            var notified = false;
+
+            foreach (var pendingOffer in pendingOffers)
+            {
+                var capacityError = await _postRepository.ValidateCapacityAsync(
+                    pendingOffer, pendingOffer.OfferQuantity, null, true, ct);
+                if (capacityError?.Code is not ("OFFER_BUY_QUANTITY_EXCEEDS_REMAINING" or
+                    "OFFER_SELL_QUANTITY_EXCEEDS_REMAINING" or "OFFER_QUANTITY_EXCEEDS_REMAINING"))
+                    continue;
+
+                var notification = await _notificationService.AddPendingAsync(
+                    new CreateNotificationCommand(
+                        pendingOffer.SenderId,
+                        "Số lượng có thể không còn đủ",
+                        $"{capacityError.Message} Đề nghị của bạn vẫn đang chờ phản hồi và chưa giữ số lượng. Bạn có thể cập nhật đề nghị nếu muốn tiếp tục với số lượng khác.",
+                        NotificationTargetType.Offer,
+                        pendingOffer.OfferId), ct);
+                _unitOfWork.RegisterAfterCommit(() => _notificationService.PublishCreatedSafelyAsync(notification));
+                notified = true;
+            }
+
+            if (notified) await _unitOfWork.SaveChangesAsync(ct);
+        }
+
         private enum NegotiationSystemAction
         {
             Counter,
@@ -1579,16 +1603,16 @@ namespace HomeCycle.Application.Services.Negotiates
             var content = action switch
             {
                 NegotiationSystemAction.Counter =>
-                    $"Người dùng {actorName} đã đề xuất mức giá mới trong phiên thương lượng.",
+                    $"Người dùng {actorName} đã đề xuất giá hoặc số lượng mới trong phiên thương lượng.",
 
                 NegotiationSystemAction.Accept =>
-                    $"Người dùng {actorName} đã chấp nhận mức giá trong phiên thương lượng.",
+                    $"Người dùng {actorName} đã chấp nhận giá và số lượng trong phiên thương lượng.",
 
                 NegotiationSystemAction.Reject =>
-                    $"Người dùng {actorName} đã từ chối mức giá trong phiên thương lượng.",
+                    $"Người dùng {actorName} đã từ chối đề nghị đối ứng. Phiên thương lượng vẫn tiếp tục và phần số lượng giữ chỗ vẫn được tính đến khi phiên bị hủy hoặc hết hạn.",
 
                 NegotiationSystemAction.Cancel =>
-                    $"Người dùng {actorName} đã hủy phiên thương lượng.",
+                    $"Người dùng {actorName} đã hủy phiên thương lượng. Phần số lượng giữ chỗ đã được giải phóng.",
 
                 _ => "Phiên thương lượng đã được cập nhật."
             };

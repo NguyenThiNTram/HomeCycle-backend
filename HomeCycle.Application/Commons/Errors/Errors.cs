@@ -260,16 +260,16 @@ namespace HomeCycle.Application.Commons.Errors
         public static readonly Error OrderBlocksCancellation = new("Negotiation.OrderBlocksCancellation", "Giao dịch đã chuyển sang bước đơn hàng. Bạn không thể hủy phiên thương lượng; vui lòng xem đơn hàng và sử dụng chức năng tranh chấp khi cần.");
         public static readonly Error AgreementClosed = new("Negotiation.AgreementClosed", "Thỏa thuận đã kết thúc. Bạn không thể hủy phiên thương lượng này.");
         public static readonly Error Expired = new Error("Negotiation.Expired", "Phiên thương lượng đã hết hạn sau 5 phút không có hoạt động. Bạn có thể gửi yêu cầu mới nếu bài đăng còn khả dụng.");
-        public static readonly Error NotFound = new("NEGOTIATION_NOT_FOUND", "The negotiation is not found.");
+        public static readonly Error NotFound = new("NEGOTIATION_NOT_FOUND", "Không tìm thấy phiên thương lượng.");
 
-        public static readonly Error NotOpen = new("NEGOTIATION_NOT_OPEN", "The negotiation is not in open state.");
+        public static readonly Error NotOpen = new("NEGOTIATION_NOT_OPEN", "Phiên thương lượng không còn ở trạng thái đang mở.");
 
-        public static readonly Error Forbidden = new("NEGOTIATION_FORBIDDEN", "You do not have permission to access this negotiation.");
+        public static readonly Error Forbidden = new("NEGOTIATION_FORBIDDEN", "Bạn không có quyền truy cập hoặc thực hiện thao tác này trong phiên thương lượng.");
 
-        public static readonly Error InvalidStatusForCounter = new("NEGOTIATION_INVALID_STATUS_FOR_COUNTER", "You can only counter an offer when the negotiation is in open state.");
-        public static readonly Error AlreadyExists = new("NEGOTIATION_ALREADY_EXISTS", "A negotiation already exists for this offer.");
-        public static readonly Error ProposalNotFound = new("NEGOTIATION_PROPOSAL_NOT_FOUND", "The proposal message is not found.");
-        public static readonly Error InvalidStatusForCancel = new("NEGOTIATION_INVALID_STATUS_FOR_CANCEL", "You can only cancel a negotiation that is still in open or agreed state.");
+        public static readonly Error InvalidStatusForCounter = new("NEGOTIATION_INVALID_STATUS_FOR_COUNTER", "Chỉ có thể gửi đề nghị đối ứng khi phiên thương lượng đang mở.");
+        public static readonly Error AlreadyExists = new("NEGOTIATION_ALREADY_EXISTS", "Đề nghị này đã có phiên thương lượng.");
+        public static readonly Error ProposalNotFound = new("NEGOTIATION_PROPOSAL_NOT_FOUND", "Không tìm thấy đề nghị trong phiên thương lượng.");
+        public static readonly Error InvalidStatusForCancel = new("NEGOTIATION_INVALID_STATUS_FOR_CANCEL", "Chỉ có thể hủy phiên thương lượng đang mở hoặc đã thống nhất điều khoản.");
     }
 
     public static class MessageErrors
@@ -468,6 +468,18 @@ namespace HomeCycle.Application.Commons.Errors
 
         public static readonly Error InvalidStatus =
             new("Agreement.InvalidStatus", "Trạng thái hiện tại của thỏa thuận không cho phép thực hiện thao tác này.");
+
+        public static readonly Error CancelNotAvailable =
+            new("Agreement.CancelNotAvailable", "Chỉ có thể hủy hợp đồng sau khi cả hai bên đã xác nhận và trước khi hết hạn.");
+
+        public static readonly Error EditNotAllowedAfterConfirmation =
+            new("Agreement.EditNotAllowedAfterConfirmation", "Hợp đồng đã được cả hai bên xác nhận và không thể chỉnh sửa. Hai bên có thể thanh toán hoặc hủy hợp đồng trước khi thanh toán.");
+
+        public static readonly Error PaymentInProgress =
+            new("Agreement.PaymentInProgress", "Thanh toán đang được xử lý hoặc chưa xác minh được. Vui lòng kiểm tra lại giao dịch rồi thử hủy sau.");
+
+        public static readonly Error AlreadyPaid =
+            new("Agreement.AlreadyPaid", "Hợp đồng đã được thanh toán hoặc đã phát sinh đơn hàng. Vui lòng xử lý tại đơn hàng.");
 
         public static readonly Error AlreadyConfirmed =
             new("Agreement.AlreadyConfirmed", "Bạn đã xác nhận thỏa thuận này rồi.");
