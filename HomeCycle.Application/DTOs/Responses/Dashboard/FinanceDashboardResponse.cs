@@ -295,5 +295,13 @@ namespace HomeCycle.Application.DTOs.Responses.Dashboard
         public decimal OrderEscrowDifference { get; init; }
 
         public bool OrderEscrowBalanced { get; init; }
+
+        public int NegativeOrderEscrowPositionCount { get; init; }
+
+        public int DuplicatePayoutOrderCount { get; init; }
+
+        public int OverRefundedOrderCount { get; init; }
+
+        public int PayOsSuccessAccountingAnomalyCount { get; init; }
     }
 }

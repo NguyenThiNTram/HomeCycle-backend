@@ -1361,26 +1361,31 @@ public sealed class DashboardRepository(HomeCycleDbContext db) : IDashboardRepos
             ? await db.Payments
                 .AsNoTracking()
                 .CountAsync(
-                    x => x.OrderId.HasValue
+                    x => x.PaymentType.HasValue
+                        && (x.PaymentType == (int)PaymentType.Deposit
+                            || x.PaymentType == (int)PaymentType.Full_Payment)
                         && x.PaymentStatus.HasValue
                         && paidStatuses.Contains(x.PaymentStatus.Value),
                     ct)
             : await db.Payments
                 .AsNoTracking()
                 .CountAsync(
-                    x => x.OrderId.HasValue
+                    x => x.PaymentType.HasValue
+                        && (x.PaymentType == (int)PaymentType.Deposit
+                            || x.PaymentType == (int)PaymentType.Full_Payment)
                         && x.PaymentStatus.HasValue
                         && paidStatuses.Contains(x.PaymentStatus.Value)
-                        && !x.Wallet_Transactions.Any(t =>
-                            t.WalletTransactionStatus == (int)WalletTransactionStatus.Completed
-                            && (t.TransactionType == (int)TransactionType.Wallet_Payment
-                                || t.TransactionType == (int)TransactionType.Escrow_Deposit)
-                            && t.Wallet_Ledgers.Any(l =>
-                                l.WalletId == orderEscrowWallet.WalletId
-                                && l.BalanceType == (int)BalanceType.Available
-                                && l.Direction == (int)LedgerDirection.In
-                                && l.ReferenceType == (int)ReferenceType.Order
-                                && l.ReferenceId == x.OrderId)),
+                        && (!x.OrderId.HasValue
+                            || !x.Wallet_Transactions.Any(t =>
+                                t.WalletTransactionStatus == (int)WalletTransactionStatus.Completed
+                                && (t.TransactionType == (int)TransactionType.Wallet_Payment
+                                    || t.TransactionType == (int)TransactionType.Escrow_Deposit)
+                                && t.Wallet_Ledgers.Any(l =>
+                                    l.WalletId == orderEscrowWallet.WalletId
+                                    && l.BalanceType == (int)BalanceType.Available
+                                    && l.Direction == (int)LedgerDirection.In
+                                    && l.ReferenceType == (int)ReferenceType.Order
+                                    && l.ReferenceId == x.OrderId))),
                     ct);
 
         var legacyOrderHolds = db.Wallet_Ledgers
@@ -1415,30 +1420,9 @@ public sealed class DashboardRepository(HomeCycleDbContext db) : IDashboardRepos
         var orderEscrowBalanced = orderEscrowWallet != null
             && Math.Abs(orderEscrowDifference) <= AmountEpsilon;
 
-        var integrity = new FinanceIntegrityMetrics
-        {
-            WalletBalanceMismatchCount = walletBalanceMismatchCount,
-            CompletedTransactionWithoutLedgerCount = completedTransactionWithoutLedgerCount,
-            CompletedOrderPaymentWithoutEscrowPostingCount = completedOrderPaymentWithoutEscrowPostingCount,
-            LegacyOrderHoldCount = legacyOrderHoldCount,
-            LegacyOrderHoldAmount = legacyOrderHoldAmount,
-            OrderEscrowWalletExists = orderEscrowWallet != null,
-            OrderEscrowSnapshotBalance = orderEscrowSnapshotBalance,
-            OrderEscrowLedgerBalance = orderEscrowLedgerBalance,
-            OrderEscrowDifference = orderEscrowDifference,
-            OrderEscrowBalanced = orderEscrowBalanced,
-            IsHealthy = walletBalanceMismatchCount == 0
-                && completedTransactionWithoutLedgerCount == 0
-                && completedOrderPaymentWithoutEscrowPostingCount == 0
-                && legacyOrderHoldCount == 0
-                && orderEscrowBalanced
-        };
+        var orderEscrowWalletId = orderEscrowWallet?.WalletId ?? Guid.Empty;
 
-        var orderEscrowWalletId =
-            orderEscrowWallet?.WalletId ??
-            Guid.Empty;
-
-        var orderEscrowAmounts = db.Wallet_Ledgers
+        var orderEscrowPositions = db.Wallet_Ledgers
             .AsNoTracking()
             .Where(x =>
                 x.WalletId == orderEscrowWalletId &&
@@ -1449,12 +1433,129 @@ public sealed class DashboardRepository(HomeCycleDbContext db) : IDashboardRepos
             .Select(g => new
             {
                 OrderId = g.Key,
-
                 Amount = g.Sum(x =>
                     x.Direction == (int)LedgerDirection.In
                         ? x.Amount
                         : -x.Amount)
-            })
+            });
+
+        var negativeOrderEscrowPositionCount = await orderEscrowPositions
+            .CountAsync(x => x.Amount < -AmountEpsilon, ct);
+
+        var duplicatePayoutOrderCount = await db.Wallet_Transactions
+            .AsNoTracking()
+            .Where(x =>
+                x.WalletTransactionStatus == (int)WalletTransactionStatus.Completed &&
+                x.TransactionType == (int)TransactionType.Payout_Release &&
+                x.ReferenceType == (int)ReferenceType.Order &&
+                x.ReferenceId.HasValue)
+            .GroupBy(x => x.ReferenceId!.Value)
+            .Where(g => g.Count() > 1)
+            .CountAsync(ct);
+
+        var orderEscrowFlows = db.Wallet_Ledgers
+            .AsNoTracking()
+            .Where(x =>
+                x.WalletId == orderEscrowWalletId &&
+                x.BalanceType == (int)BalanceType.Available &&
+                x.ReferenceType == (int)ReferenceType.Order &&
+                x.ReferenceId.HasValue)
+            .GroupBy(x => x.ReferenceId!.Value)
+            .Select(g => new
+            {
+                Inflow = g
+                    .Where(x => x.Direction == (int)LedgerDirection.In)
+                    .Select(x => (decimal?)x.Amount)
+                    .Sum() ?? 0m,
+
+                RefundOutflow = g
+                    .Where(x =>
+                        x.Direction == (int)LedgerDirection.Out &&
+                        x.WalletTransaction.TransactionType == (int)TransactionType.Order_Refund &&
+                        x.WalletTransaction.WalletTransactionStatus == (int)WalletTransactionStatus.Completed)
+                    .Select(x => (decimal?)x.Amount)
+                    .Sum() ?? 0m
+            });
+
+        var overRefundedOrderCount = await orderEscrowFlows
+            .CountAsync(x => x.RefundOutflow > x.Inflow + AmountEpsilon, ct);
+
+        var payOsSuccessAccountingAnomalyCount = await db.Payment_Transactions
+            .AsNoTracking()
+            .CountAsync(x =>
+                x.PaymentTransactionStatus == (int)PaymentTransactionStatus.Success &&
+                (
+                    x.Payment.PaymentMethod != (int)PaymentMethod.PayOS ||
+                    !x.Payment.PaymentStatus.HasValue ||
+                    !paidStatuses.Contains(x.Payment.PaymentStatus.Value) ||
+                    string.IsNullOrEmpty(x.PayOSTransactionId) ||
+
+                    (
+                        (x.Payment.PaymentType == (int)PaymentType.Deposit ||
+                         x.Payment.PaymentType == (int)PaymentType.Full_Payment)
+                        &&
+                        (
+                            !x.Payment.OrderId.HasValue ||
+                            !x.Payment.Wallet_Transactions.Any(t =>
+                                t.WalletTransactionStatus == (int)WalletTransactionStatus.Completed &&
+                                (t.TransactionType == (int)TransactionType.Escrow_Deposit ||
+                                 t.TransactionType == (int)TransactionType.Wallet_Payment) &&
+                                t.Wallet_Ledgers.Any(l =>
+                                    l.BalanceType == (int)BalanceType.Available &&
+                                    l.Direction == (int)LedgerDirection.In &&
+                                    l.Wallet.Purpose == (int)SystemWalletPurpose.Order_Escrow))
+                        )
+                    ) ||
+
+                    (
+                        x.Payment.PaymentType == (int)PaymentType.Subscription &&
+                        !x.Payment.Wallet_Transactions.Any(t =>
+                            t.WalletTransactionStatus == (int)WalletTransactionStatus.Completed &&
+                            t.TransactionType == (int)TransactionType.Subscription_Fee &&
+                            t.Wallet_Ledgers.Any(l =>
+                                l.BalanceType == (int)BalanceType.Available &&
+                                l.Direction == (int)LedgerDirection.In &&
+                                l.Wallet.Purpose == (int)SystemWalletPurpose.Platform_Revenue))
+                    ) ||
+
+                    (
+                        x.Payment.PaymentType != (int)PaymentType.Deposit &&
+                        x.Payment.PaymentType != (int)PaymentType.Full_Payment &&
+                        x.Payment.PaymentType != (int)PaymentType.Subscription
+                    )
+                ),
+                ct);
+
+        var integrity = new FinanceIntegrityMetrics
+        {
+            WalletBalanceMismatchCount = walletBalanceMismatchCount,
+            CompletedTransactionWithoutLedgerCount = completedTransactionWithoutLedgerCount,
+            CompletedOrderPaymentWithoutEscrowPostingCount = completedOrderPaymentWithoutEscrowPostingCount,
+            LegacyOrderHoldCount = legacyOrderHoldCount,
+            LegacyOrderHoldAmount = legacyOrderHoldAmount,
+            NegativeOrderEscrowPositionCount = negativeOrderEscrowPositionCount,
+            DuplicatePayoutOrderCount = duplicatePayoutOrderCount,
+            OverRefundedOrderCount = overRefundedOrderCount,
+            PayOsSuccessAccountingAnomalyCount = payOsSuccessAccountingAnomalyCount,
+            OrderEscrowWalletExists = orderEscrowWallet != null,
+            OrderEscrowSnapshotBalance = orderEscrowSnapshotBalance,
+            OrderEscrowLedgerBalance = orderEscrowLedgerBalance,
+            OrderEscrowDifference = orderEscrowDifference,
+            OrderEscrowBalanced = orderEscrowBalanced,
+            IsHealthy = walletBalanceMismatchCount == 0
+                && completedTransactionWithoutLedgerCount == 0
+                && completedOrderPaymentWithoutEscrowPostingCount == 0
+                && legacyOrderHoldCount == 0
+                && negativeOrderEscrowPositionCount == 0
+                && duplicatePayoutOrderCount == 0
+                && overRefundedOrderCount == 0
+                && payOsSuccessAccountingAnomalyCount == 0
+                && orderEscrowBalanced
+        };
+
+
+
+        var orderEscrowAmounts = orderEscrowPositions
             .Where(x => x.Amount > AmountEpsilon);
 
         var activeDisputeStatuses = new[]
