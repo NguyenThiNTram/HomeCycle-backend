@@ -6,12 +6,15 @@ using HomeCycle.Application.Commons.Errors;
 using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Requests.Banks;
 using HomeCycle.Application.DTOs.Requests.Users;
+using HomeCycle.Application.DTOs.Requests;
+using HomeCycle.Application.DTOs.Responses;
 using HomeCycle.Application.DTOs.Responses.Banks;
 using HomeCycle.Application.DTOs.Responses.Users;
 using HomeCycle.Application.Interfaces.Generics;
 using HomeCycle.Application.Interfaces.Repositories.Banks;
 using HomeCycle.Application.Interfaces.Repositories.Users;
 using HomeCycle.Application.Interfaces.Services.Audits;
+using HomeCycle.Application.Interfaces.Services.AI;
 using HomeCycle.Application.Interfaces.Services.Configs;
 using HomeCycle.Application.Interfaces.Services.Externals;
 using HomeCycle.Application.Interfaces.Services.Notifications;
@@ -40,6 +43,7 @@ namespace HomeCycle.Application.Services.Personals
         private readonly IFileValidationService _fileValidationService;
         private readonly INotificationService _notificationService;
         private readonly IAuditService _auditService;
+        private readonly IIdentityDocumentScanService _identityDocumentScanService;
 
         private readonly IValidator<UpdatePersonalProfileRequest> _updateProfileValidator;
         private readonly IValidator<UpdateAvatarRequest> _updateAvatarValidator;
@@ -60,7 +64,8 @@ namespace HomeCycle.Application.Services.Personals
             IValidator<UpdatePersonalProfileRequest> updateProfileValidator,
             IValidator<UpdateAvatarRequest> updateAvatarValidator,
             IValidator<UpdateIdCardRequest> updateIdCardValidator,
-            IValidator<UpdateBankAccountRequest> updateBankAccountValidator)
+            IValidator<UpdateBankAccountRequest> updateBankAccountValidator,
+            IIdentityDocumentScanService identityDocumentScanService)
         {
             _userRepository = userRepository;
             _personalProfileRepository = personalProfileRepository;
@@ -76,6 +81,23 @@ namespace HomeCycle.Application.Services.Personals
             _fileValidationService = fileValidationService;
             _notificationService = notificationService;
             _auditService = auditService;
+            _identityDocumentScanService = identityDocumentScanService;
+        }
+
+        public async Task<Result<IdentityDocumentScanResponse>> ScanIdentityAsync(
+            Guid userId,
+            IdentityDocumentScanRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            var user = await _userRepository.GetByIdAsync(userId, cancellationToken);
+            if (user is null)
+                return Result<IdentityDocumentScanResponse>.Fail(ProfileErrors.UserNotFound);
+
+            if (user.Role != UserRole.Personal)
+                return Result<IdentityDocumentScanResponse>.Fail(
+                    new Error("IDENTITY_SCAN_ROLE_MISMATCH", "Chỉ tài khoản cá nhân mới có thể quét CCCD theo luồng này."));
+
+            return await _identityDocumentScanService.ScanAsync(request, cancellationToken);
         }
 
         public async Task<Result<PersonalProfileResponse>> GetMyProfileAsync(Guid userId, CancellationToken cancellationToken = default)

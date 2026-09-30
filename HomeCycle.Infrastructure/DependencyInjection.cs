@@ -223,6 +223,7 @@ namespace HomeCycle.Infrastructure
                 return new Google.GenAI.Client(apiKey: settings.ApiKey);
             });
             services.AddSingleton<GeminiRequestService>();
+            services.AddScoped<HomeCycle.Application.Interfaces.Services.AI.IIdentityDocumentScanService, GeminiIdentityDocumentScanService>();
             services.AddScoped<HomeCycle.Application.Interfaces.Services.AI.IPriceSuggestionQuota, PriceSuggestionQuota>();
             services.AddScoped<HomeCycle.Application.Interfaces.Services.AI.IPriceSuggestionAiClient, GeminiPriceSuggestionClient>();
             services.AddScoped<HomeCycle.Application.Interfaces.Services.AI.IPriceSuggestionService, HomeCycle.Application.Pricing.Services.PriceSuggestionService>();

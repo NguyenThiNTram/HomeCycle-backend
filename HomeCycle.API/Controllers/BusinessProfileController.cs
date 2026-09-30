@@ -48,6 +48,39 @@ namespace HomeCycle.API.Controllers
             return Ok(new { success = true, message = result.Data });
         }
 
+        [HttpPost("me/identity/scan")]
+        [Authorize(Roles = "Business")]
+        [Consumes("multipart/form-data")]
+        [RequestSizeLimit(HomeCycle.Application.DTOs.Requests.IdentityDocumentScanRequest.MaxMultipartBodyBytes)]
+        [RequestFormLimits(MultipartBodyLengthLimit = HomeCycle.Application.DTOs.Requests.IdentityDocumentScanRequest.MaxMultipartBodyBytes)]
+        public async Task<IActionResult> ScanIdentity(
+            [FromForm] HomeCycle.Application.DTOs.Requests.IdentityDocumentScanRequest request,
+            CancellationToken cancellationToken)
+        {
+            Response.Headers["Cache-Control"] = "no-store";
+            var userId = GetCurrentUserId();
+            var result = await _businessProfileService.ScanIdentityAsync(userId, request, cancellationToken);
+
+            if (!result.IsSuccess)
+                return IdentityScanError(result.Error!.Code, result.Error.Message);
+
+            return Ok(new { success = true, data = result.Data });
+        }
+
+        private IActionResult IdentityScanError(string code, string message)
+        {
+            var payload = new { success = false, code, message, traceId = HttpContext.TraceIdentifier };
+            return code switch
+            {
+                "IDENTITY_SCAN_ROLE_MISMATCH" => StatusCode(StatusCodes.Status403Forbidden, new { success = false, code = "IDENTITY_SCAN_ROLE_FORBIDDEN", message = "Tài khoản không có quyền quét CCCD theo luồng này.", traceId = HttpContext.TraceIdentifier }),
+                "IDENTITY_SCAN_RATE_LIMITED" => StatusCode(StatusCodes.Status429TooManyRequests, payload),
+                "IDENTITY_SCAN_TEMPORARILY_UNAVAILABLE" => StatusCode(StatusCodes.Status503ServiceUnavailable, payload),
+                "IDENTITY_SCAN_TIMEOUT" => StatusCode(StatusCodes.Status504GatewayTimeout, payload),
+                "IDENTITY_SCAN_PROVIDER_CONFIGURATION_ERROR" or "IDENTITY_SCAN_PROVIDER_INVALID_RESPONSE" => StatusCode(StatusCodes.Status502BadGateway, payload),
+                _ => BadRequest(payload)
+            };
+        }
+
         [HttpGet("onboarding-status")]
         public async Task<IActionResult> GetOnboardingStatus(CancellationToken cancellationToken)
         {
