@@ -15,6 +15,7 @@ namespace HomeCycle.Application.DTOs.Requests.Wallets
         public WalletTransactionStatus? Status { get; set; }
         public DateTime? FromDate { get; set; }
         public DateTime? ToDate { get; set; }
+        public Guid? PaymentId { get; set; }
         public Guid? ReferenceId { get; set; }
         public Guid? WalletId { get; set; }
         public Guid? UserId { get; set; }

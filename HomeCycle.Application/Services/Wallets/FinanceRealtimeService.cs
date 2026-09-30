@@ -165,12 +165,21 @@ namespace HomeCycle.Application.Services.Wallets
                         ct));
             }
 
-            var userId = change.UserId ?? withdrawal?.UserId ?? payment?.PayerId;
+            var primaryUserId = change.UserId ?? withdrawal?.UserId ?? payment?.PayerId;
 
-            if (userId.HasValue)
+            var affectedUserIds = change.AffectedUserIds
+                .Where(x => x != Guid.Empty)
+                .ToHashSet();
+
+            var userIds = new HashSet<Guid>(affectedUserIds);
+
+            if (primaryUserId.HasValue)
+                userIds.Add(primaryUserId.Value);
+
+            foreach (var userId in userIds)
             {
                 var userWallets = wallets
-                    .Where(x => x.UserId == userId.Value)
+                    .Where(x => x.UserId == userId)
                     .ToList();
 
                 var userTransactions = new List<UserWalletTransactionListItemDto>();
@@ -195,21 +204,17 @@ namespace HomeCycle.Application.Services.Wallets
                     .Select(MapWallet)
                     .ToList();
 
-                var userPayment = payment?.PayerId == userId.Value
-                    ? paymentDto
-                    : null;
-
-                var userWithdrawal = withdrawal?.UserId == userId.Value
-                    ? withdrawalDto
-                    : null;
+                var userPayment = payment?.PayerId == userId ? paymentDto : null;
+                var userWithdrawal = withdrawal?.UserId == userId ? withdrawalDto : null;
 
                 if (userWalletDtos.Count > 0 ||
                     userTransactionDtos.Count > 0 ||
                     userPayment != null ||
-                    userWithdrawal != null)
+                    userWithdrawal != null ||
+                    affectedUserIds.Contains(userId))
                 {
                     publishTasks.Add(_publisher.PublishToUserAsync(
-                        userId.Value,
+                        userId,
                         new FinanceUpdatedResponse
                         {
                             EventId = eventId,
@@ -260,6 +265,7 @@ namespace HomeCycle.Application.Services.Wallets
                 Amount = payment.Amount.Value,
                 PaymentMethod = (PaymentMethod)payment.PaymentMethod.Value,
                 PaymentStatus = (PaymentStatus)payment.PaymentStatus.Value,
+                AgreementId = payment.AgreementId,
                 OrderId = payment.OrderId,
                 SubscriptionId = payment.SubscriptionId
             };

@@ -243,7 +243,7 @@ public sealed class DashboardController(IDashboardService service) : ControllerB
         Summary = "Theo dõi sức khỏe vận hành và tính toàn vẹn tài chính",
         Description =
             "Phát hiện Payment Pending bất thường, Withdrawal đang chờ/xử lý, Order Escrow quá hạn release, tiền escrow do active dispute, wallet âm và transaction chưa phân loại. " +
-            "Integrity kiểm tra Wallet snapshot so với Ledger, Completed WalletTransaction thiếu Ledger, Payment Order đã hoàn tất thiếu posting vào Order_Escrow, legacy Order Hold và tính cân bằng của Order_Escrow.")]
+            "Integrity kiểm tra Wallet snapshot so với Ledger, Completed WalletTransaction thiếu Ledger, Payment Order đã hoàn tất thiếu Order_Escrow posting, legacy Order Hold, negative Order Escrow position, payout/refund bất thường, PayOS Success thiếu internal accounting và tính cân bằng của Order_Escrow.")]
     public async Task<ActionResult<FinanceHealthResponse>> GetFinanceHealth(
         [FromQuery] DashboardPeriodRequest request,
         CancellationToken ct)

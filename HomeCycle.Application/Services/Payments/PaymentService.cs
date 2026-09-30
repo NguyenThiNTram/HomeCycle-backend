@@ -597,7 +597,13 @@ namespace HomeCycle.Application.Services.Payments
             }
             catch (Exception ex)
             {
-                await _unitOfWork.RollbackTransactionAsync();
+                await _unitOfWork.RollbackTransactionAsync(CancellationToken.None);
+                _unitOfWork.ClearTrackedEntities();
+
+                await PersistFinancialFailureAuditSafelyAsync(
+                    AuditActions.PaymentInitiate, AuditTargetTypes.Agreement, agreementId, AuditActorType.User, AuditSource.HttpApi, payerId,
+                    "Payment.CreateFailed", new Dictionary<string, object?> { ["errorType"] = ex.GetType().Name });
+
                 _logger.LogError(ex, "Lỗi khi tạo payment link và lưu DB cho agreement {AgreementId}", agreementId);
                 return Result<string>.Fail(new Error("Payment.CreateFailed", "Không thể khởi tạo thông tin thanh toán."));
             }
@@ -808,6 +814,10 @@ namespace HomeCycle.Application.Services.Payments
             {
                 await _unitOfWork.RollbackTransactionAsync(CancellationToken.None);
                 _unitOfWork.ClearTrackedEntities();
+
+                await PersistFinancialFailureAuditSafelyAsync(
+                    AuditActions.PaymentInitiate, AuditTargetTypes.SubscriptionPackage, packageId, AuditActorType.User, AuditSource.HttpApi, payerId,
+                    "Payment.CreateFailed", new Dictionary<string, object?> { ["errorType"] = ex.GetType().Name });
 
                 _logger.LogError(
                     ex,
@@ -1251,6 +1261,7 @@ namespace HomeCycle.Application.Services.Payments
                 {
                     EventType = FinanceEventType.OrderPaymentCompleted,
                     UserId = payerId,
+                    AffectedUserIds = new[] { agreement.SellerId },
                     WalletTransactionIds = financeTransactionIds,
                     PaymentId = payment.PaymentId,
                     OccurredAt = now
@@ -1803,6 +1814,24 @@ namespace HomeCycle.Application.Services.Payments
             return Result<PagedResult<PaymentManagementListItemDto>>.Success(result);
         }
 
+        public async Task<Result<PaymentManagementDetailDto>> GetPaymentManagementDetailAsync(
+            Guid paymentId,
+            CancellationToken ct = default)
+        {
+            var payment = await _paymentRepo.GetManagementItemByIdAsync(paymentId, ct);
+
+            if (payment == null)
+                return Result<PaymentManagementDetailDto>.Fail(PaymentErrors.NotFound);
+
+            var paymentTransactions = await _paymentTxRepo.GetByPaymentIdAsync(paymentId, ct);
+
+            return Result<PaymentManagementDetailDto>.Success(new PaymentManagementDetailDto
+            {
+                Payment = payment,
+                PaymentTransactions = paymentTransactions.ToList()
+            });
+        }
+
         //public async Task<Result<bool>> RefundOrderHeldAmountAsync(
         //    order order,
         //    agreement_form agreement,
@@ -2338,10 +2367,23 @@ namespace HomeCycle.Application.Services.Payments
                 await _unitOfWork.CommitTransactionAsync(ct);
 
             }
-            catch
+            catch (Exception ex)
             {
                 await _unitOfWork.RollbackTransactionAsync(CancellationToken.None);
                 _unitOfWork.ClearTrackedEntities();
+
+                if (!ct.IsCancellationRequested)
+                {
+                    await PersistFinancialFailureAuditSafelyAsync(
+                        AuditActions.PaymentReconcile, AuditTargetTypes.Payment, paymentId, AuditActorType.ExternalSystem, auditSource, null,
+                        "Payment.ReconcileFailed", new Dictionary<string, object?>
+                        {
+                            ["payOsOrderCode"] = payOsOrderCode,
+                            ["targetPaymentStatus"] = targetPaymentStatus.ToString(),
+                            ["errorType"] = ex.GetType().Name
+                        });
+                }
+
                 throw;
             }
 
@@ -2861,9 +2903,23 @@ namespace HomeCycle.Application.Services.Payments
                 await _unitOfWork.CommitTransactionAsync(ct);
                 await SendPaymentFailureEmailSafelyAsync(payment, transaction, targetPaymentStatus, ct);
             }
-            catch
+            catch (Exception ex)
             {
-                await _unitOfWork.RollbackTransactionAsync(ct);
+                await _unitOfWork.RollbackTransactionAsync(CancellationToken.None);
+                _unitOfWork.ClearTrackedEntities();
+
+                if (!ct.IsCancellationRequested)
+                {
+                    await PersistFinancialFailureAuditSafelyAsync(
+                        AuditActions.PaymentReconcile, AuditTargetTypes.Payment, paymentId, AuditActorType.ExternalSystem, auditSource, null,
+                        "Payment.ReconcileFailed", new Dictionary<string, object?>
+                        {
+                            ["payOsOrderCode"] = payOsOrderCode,
+                            ["targetPaymentStatus"] = targetPaymentStatus.ToString(),
+                            ["errorType"] = ex.GetType().Name
+                        });
+                }
+
                 throw;
             }
 
@@ -3639,6 +3695,7 @@ namespace HomeCycle.Application.Services.Payments
                 {
                     EventType = FinanceEventType.OrderPaymentCompleted,
                     UserId = payment.PayerId,
+                    AffectedUserIds = new[] { agreement.SellerId },
                     WalletTransactionIds = financeTransactionIds,
                     PaymentId = payment.PaymentId,
                     OccurredAt = now

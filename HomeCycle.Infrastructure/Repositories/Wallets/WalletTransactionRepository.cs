@@ -81,6 +81,9 @@ namespace HomeCycle.Infrastructure.Repositories.Wallets
             if (request.ReferenceId.HasValue)
                 query = query.Where(x => x.ReferenceId == request.ReferenceId.Value);
 
+            if (request.PaymentId.HasValue)
+                query = query.Where(x => x.PaymentId == request.PaymentId.Value);
+
             if (request.WalletId.HasValue)
             {
                 var walletId = request.WalletId.Value;

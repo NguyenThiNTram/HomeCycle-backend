@@ -1,4 +1,5 @@
-﻿using HomeCycle.Application.Commons.Paginations;
+﻿using HomeCycle.Application.Commons.Errors;
+using HomeCycle.Application.Commons.Paginations;
 using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Requests.Payments;
 using HomeCycle.Application.DTOs.Responses.Payments;
@@ -157,7 +158,7 @@ namespace HomeCycle.API.Controllers
             return Ok(result.Data);
         }
 
-        [HttpGet]
+        [HttpGet("management")]
         [Authorize(Roles = nameof(UserRole.Moderator) + "," + nameof(UserRole.Admin))]
         [SwaggerOperation(
             Summary = "Lấy danh sách Payment để quản lý",
@@ -170,6 +171,30 @@ namespace HomeCycle.API.Controllers
             var result = await _paymentService.GetPaymentManagementAsync(
                 request,
                 ct);
+
+            return Ok(result.Data);
+        }
+
+        [HttpGet("management/{paymentId:guid}")]
+        [Authorize(Roles = nameof(UserRole.Moderator) + "," + nameof(UserRole.Admin))]
+        [SwaggerOperation(
+            Summary = "Lấy chi tiết Payment để quản lý",
+            Description = "Trả thông tin business Payment và toàn bộ PaymentTransaction tương ứng. Không bao gồm WalletLedger.")]
+        [ProducesResponseType(typeof(PaymentManagementDetailDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<IActionResult> GetPaymentManagementDetail(
+            [FromRoute] Guid paymentId,
+            CancellationToken ct)
+        {
+            var result = await _paymentService.GetPaymentManagementDetailAsync(paymentId, ct);
+
+            if (!result.IsSuccess)
+            {
+                if (result.Error?.Code == PaymentErrors.NotFound.Code)
+                    return NotFound(result.Error);
+
+                return BadRequest(result.Error);
+            }
 
             return Ok(result.Data);
         }

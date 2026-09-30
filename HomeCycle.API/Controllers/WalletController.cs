@@ -227,7 +227,7 @@ namespace HomeCycle.API.Controllers
         [Authorize(Roles = nameof(UserRole.Moderator) + "," + nameof(UserRole.Admin))]
         [SwaggerOperation(
             Summary = "Lấy danh sách financial transactions",
-            Description = "Hỗ trợ lọc theo transaction type, reference type, status, khoảng thời gian và phân trang."
+            Description = "Hỗ trợ lọc theo PaymentId, transaction type, reference type, status, khoảng thời gian và phân trang."
         )]
         public async Task<IActionResult> GetFinanceTransactions(
             [FromQuery] WalletTransactionSearchRequest request,
@@ -316,6 +316,22 @@ namespace HomeCycle.API.Controllers
             return Ok(result.Data);
         }
 
+
+        [HttpGet("me/pending-settlements")]
+        [SwaggerOperation(
+            Summary = "Lấy các khoản thanh toán đang chờ nhận của người bán",
+            Description = "Trả các Order của người dùng hiện tại đang còn số dư dương trong Order_Escrow. Dữ liệu này không sử dụng HoldBalance của ví người bán.")]
+        [ProducesResponseType(typeof(SellerPendingSettlementsDto), StatusCodes.Status200OK)]
+        public async Task<IActionResult> GetMyPendingSettlements(CancellationToken ct)
+        {
+            var userId = GetCurrentUserId();
+            var result = await _walletService.GetMyPendingSettlementsAsync(userId, ct);
+
+            if (!result.IsSuccess)
+                return BadRequest(result.Error);
+
+            return Ok(result.Data);
+        }
 
         private WalletTypeEnum ResolveWalletType()
         {

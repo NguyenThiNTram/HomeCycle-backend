@@ -11,6 +11,7 @@ namespace HomeCycle.Application.DTOs.Requests.Wallets
     {
         public FinanceEventType EventType { get; init; }
         public Guid? UserId { get; init; }
+        public IReadOnlyCollection<Guid> AffectedUserIds { get; init; } = Array.Empty<Guid>();
         public IReadOnlyCollection<Guid> WalletTransactionIds { get; init; } = Array.Empty<Guid>();
 
         public ReferenceType? ReferenceType { get; init; }

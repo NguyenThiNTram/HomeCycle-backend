@@ -38,6 +38,9 @@ namespace HomeCycle.Application.Interfaces.Services.Wallets
         Task<Result<PagedResult<OrderEscrowPositionDto>>> GetActiveOrderEscrowsAsync(
             OrderEscrowSearchRequest request,
             CancellationToken ct = default);
+        Task<Result<SellerPendingSettlementsDto>> GetMyPendingSettlementsAsync(
+            Guid userId,
+            CancellationToken ct = default);
     }
 
 }

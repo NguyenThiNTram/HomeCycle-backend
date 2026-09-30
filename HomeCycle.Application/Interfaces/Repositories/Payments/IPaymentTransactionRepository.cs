@@ -1,4 +1,5 @@
-﻿using HomeCycle.Domain.Entities;
+﻿using HomeCycle.Application.DTOs.Responses.Payments;
+using HomeCycle.Domain.Entities;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -13,6 +14,7 @@ namespace HomeCycle.Application.Interfaces.Repositories.Payments
         Task AddAsync(payment_transaction transaction, CancellationToken ct = default);
         Task UpdateAsync(payment_transaction transaction, CancellationToken ct = default);
         Task<payment_transaction?> GetLatestByPaymentIdAsync(Guid paymentId, CancellationToken ct = default);
+        Task<IReadOnlyList<PaymentTransactionManagementDto>> GetByPaymentIdAsync(Guid paymentId, CancellationToken ct = default);
         Task<bool> ExistsByPayOSOrderCodeAsync(string payOSOrderCode, CancellationToken ct = default);
         Task<payment_transaction?> GetByPayOSOrderCodeForUpdateAsync(
             string payOSOrderCode,

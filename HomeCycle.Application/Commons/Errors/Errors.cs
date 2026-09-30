@@ -631,6 +631,9 @@ namespace HomeCycle.Application.Commons.Errors
 
     public static class PaymentErrors
     {
+        public static readonly Error NotFound =
+            new("Payment.NotFound", "Không tìm thấy giao dịch thanh toán.");
+
         public static readonly Error RefundPaymentNotFound =
             new("Payment.RefundPaymentNotFound", "Không tìm thấy giao dịch thanh toán để thực hiện hoàn tiền.");
 
