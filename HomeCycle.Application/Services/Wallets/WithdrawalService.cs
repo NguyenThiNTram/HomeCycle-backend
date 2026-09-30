@@ -124,6 +124,8 @@ namespace HomeCycle.Application.Services.Wallets
                     "Withdrawal.BankAccountNotVerified",
                     "Vui lòng thêm và xác thực tài khoản ngân hàng trước khi rút tiền."));
 
+            var withdrawalId = Guid.NewGuid();
+
             await _unitOfWork.BeginTransactionAsync(ct);
 
             try
@@ -166,7 +168,6 @@ namespace HomeCycle.Application.Services.Wallets
                 }
 
                 var now = nowUtc.UtcDateTime;
-                var withdrawalId = Guid.NewGuid();
 
                 var withdrawal = new withdrawal
                 {
@@ -288,8 +289,14 @@ namespace HomeCycle.Application.Services.Wallets
             catch (Exception ex)
             {
                 await _unitOfWork.RollbackTransactionAsync(CancellationToken.None);
-                _logger.LogError(ex, "Lỗi tạo yêu cầu rút tiền cho user {UserId}", userId);
+                _unitOfWork.ClearTrackedEntities();
 
+
+                await PersistFinancialFailureAuditSafelyAsync(
+                   AuditActions.WithdrawalRequest, AuditTargetTypes.Withdrawal, withdrawalId, AuditActorType.User, AuditSource.HttpApi, userId,
+                   "Withdrawal.CreateFailed", new Dictionary<string, object?> { ["amount"] = request.Amount, ["errorType"] = ex.GetType().Name });
+
+                _logger.LogError(ex, "Lỗi tạo yêu cầu rút tiền cho user {UserId}", userId);
                 return Result<Guid>.Fail(
                     new Error("Withdrawal.CreateFailed", "Không thể tạo yêu cầu rút tiền."));
             }
@@ -352,6 +359,12 @@ namespace HomeCycle.Application.Services.Wallets
                 {
                     await _unitOfWork.RollbackTransactionAsync(CancellationToken.None);
 
+                    _unitOfWork.ClearTrackedEntities();
+
+                    await PersistFinancialFailureAuditSafelyAsync(
+                        AuditActions.WithdrawalApprove, AuditTargetTypes.Withdrawal, withdrawalId, AuditActorType.User, AuditSource.HttpApi, moderatorId,
+                        payoutResult.Error.Code, new Dictionary<string, object?> { ["gatewayError"] = payoutResult.Error.Message, ["processingMode"] = "PayOS" });
+
                     _logger.LogError(
                         "Gọi payOS Payout thất bại cho Withdrawal {WithdrawalId}: {Error}",
                         withdrawalId,
@@ -406,6 +419,12 @@ namespace HomeCycle.Application.Services.Wallets
             catch (Exception ex)
             {
                 await _unitOfWork.RollbackTransactionAsync(CancellationToken.None);
+                _unitOfWork.ClearTrackedEntities();
+
+                await PersistFinancialFailureAuditSafelyAsync(
+                    AuditActions.WithdrawalApprove, AuditTargetTypes.Withdrawal, withdrawalId, AuditActorType.User, AuditSource.HttpApi, moderatorId,
+                    "Withdrawal.ApproveFailed", new Dictionary<string, object?> { ["processingMode"] = "PayOS", ["errorType"] = ex.GetType().Name });
+
 
                 _logger.LogError(
                     ex,
@@ -709,6 +728,11 @@ namespace HomeCycle.Application.Services.Wallets
             {
                 await _unitOfWork.RollbackTransactionAsync(
                     CancellationToken.None);
+                _unitOfWork.ClearTrackedEntities();
+
+                await PersistFinancialFailureAuditSafelyAsync(
+                    AuditActions.WithdrawalReject, AuditTargetTypes.Withdrawal, withdrawalId, AuditActorType.User, AuditSource.HttpApi, moderatorId,
+                    "Withdrawal.RejectFailed", new Dictionary<string, object?> { ["errorType"] = ex.GetType().Name });
 
                 _logger.LogError(
                     ex,
@@ -1109,6 +1133,11 @@ namespace HomeCycle.Application.Services.Wallets
             {
                 await _unitOfWork.RollbackTransactionAsync(
                     CancellationToken.None);
+                _unitOfWork.ClearTrackedEntities();
+
+                await PersistFinancialFailureAuditSafelyAsync(
+                    AuditActions.WithdrawalApprove, AuditTargetTypes.Withdrawal, withdrawalId, AuditActorType.User, AuditSource.HttpApi, moderatorId,
+                    "Withdrawal.CompleteFailed", new Dictionary<string, object?> { ["processingMode"] = "Simulated", ["errorType"] = ex.GetType().Name });
 
                 _logger.LogError(
                     ex,
@@ -1332,6 +1361,15 @@ namespace HomeCycle.Application.Services.Wallets
             catch (Exception ex)
             {
                 await _unitOfWork.RollbackTransactionAsync(ct);
+                _unitOfWork.ClearTrackedEntities();
+
+                if (!ct.IsCancellationRequested)
+                {
+                    await PersistFinancialFailureAuditSafelyAsync(
+                        AuditActions.WithdrawalComplete, AuditTargetTypes.Withdrawal, withdrawalEntity.WithdrawalId,
+                        AuditActorType.ExternalSystem, AuditSource.Internal, null,
+                        "Withdrawal.CompleteFailed", new Dictionary<string, object?> { ["errorType"] = ex.GetType().Name });
+                }
 
                 _logger.LogError(
                     ex,
@@ -1533,7 +1571,16 @@ namespace HomeCycle.Application.Services.Wallets
             }
             catch (Exception ex)
             {
-                await _unitOfWork.RollbackTransactionAsync(ct);
+                await _unitOfWork.RollbackTransactionAsync(CancellationToken.None);
+                _unitOfWork.ClearTrackedEntities();
+
+                if (!ct.IsCancellationRequested)
+                {
+                    await PersistFinancialFailureAuditSafelyAsync(
+                        AuditActions.WithdrawalRevert, AuditTargetTypes.Withdrawal, withdrawalEntity.WithdrawalId,
+                        AuditActorType.ExternalSystem, AuditSource.Internal, null,
+                        "Withdrawal.RevertFailed", new Dictionary<string, object?> { ["finalStatus"] = finalStatus.ToString(), ["errorType"] = ex.GetType().Name });
+                }
 
                 _logger.LogError(
                     ex,
@@ -1547,6 +1594,35 @@ namespace HomeCycle.Application.Services.Wallets
                 await _financeRealtimeService.PublishUpdatedSafelyAsync(financeChange);
             await _notificationService.PublishCreatedSafelyAsync(
                 revertedNotification);
+        }
+
+        private async Task PersistFinancialFailureAuditSafelyAsync(
+            string action, string targetType, Guid targetId, AuditActorType actorType, AuditSource source,
+            Guid? userId, string reasonCode, Dictionary<string, object?> metadata)
+        {
+            try
+            {
+                await _auditService.EnqueueAsync(new AuditEvent
+                {
+                    Category = AuditCategory.BusinessOperation,
+                    Action = action,
+                    Outcome = AuditOutcome.Failed,
+                    ActorType = actorType,
+                    Source = source,
+                    UserId = userId,
+                    TargetType = targetType,
+                    TargetId = targetId,
+                    ReasonCode = reasonCode,
+                    Metadata = metadata
+                }, CancellationToken.None);
+
+                await _unitOfWork.SaveChangesAsync(CancellationToken.None);
+            }
+            catch (Exception auditException)
+            {
+                _unitOfWork.ClearTrackedEntities();
+                _logger.LogWarning(auditException, "Không thể lưu audit failure cho {Action}, Target {TargetType}/{TargetId}.", action, targetType, targetId);
+            }
         }
     }
 }
