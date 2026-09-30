@@ -11,6 +11,7 @@ namespace HomeCycle.Application.DTOs.Requests.Agreements
     public class AgreementDetailsDto
     {
         public AgreementSellerInfoDto? SellerInfo { get; set; }
+        public AgreementSellerInfoDto? BuyerInfo { get; set; }
         public int Revision { get; init; } = 1; // Tăng mỗi lần nội dung Agreement thay đổi
         public string? Notes { get; set; }
 

@@ -65,6 +65,8 @@ namespace HomeCycle.Application.Commons.Audits
         public const string AgreementConfirm = "AGREEMENT.CONFIRM";
         public const string AgreementReopen = "AGREEMENT.REOPEN";
         public const string AgreementCancel = "AGREEMENT.CANCEL";
+        public const string AgreementPdfArchive = "AGREEMENT.PDF_ARCHIVE";
+        public const string AgreementPdfRead = "AGREEMENT.PDF_READ";
 
         public const string OrderHandoverConfirm = "ORDER.HANDOVER_CONFIRM";
         public const string OrderComplete = "ORDER.COMPLETE";

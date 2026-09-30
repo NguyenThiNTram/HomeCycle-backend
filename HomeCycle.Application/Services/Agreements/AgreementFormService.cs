@@ -282,12 +282,8 @@ namespace HomeCycle.Application.Services.Agreements
                 if (!sellerInfo.IsSuccess) return Result<Guid>.Fail(sellerInfo.Error!);
                 var defaults = sellerInfo.Data!;
                 var details = request.AgreementDetails;
-                details.SellerInfo ??= new AgreementSellerInfoDto();
-                details.SellerInfo.FullName ??= defaults.FullName;
-                details.SellerInfo.Phone ??= defaults.Phone;
-                details.SellerInfo.StreetAddress ??= defaults.StreetAddress;
-                details.SellerInfo.Ward ??= defaults.Ward;
-                details.SellerInfo.City ??= defaults.City;
+                details.SellerInfo = defaults;
+                details.BuyerInfo = null;
                 if (details.DeliveryMethod.HasValue && details.PickupAddress == null)
                     details.PickupAddress = details.SellerInfo.FullAddress;
             }
@@ -489,6 +485,8 @@ namespace HomeCycle.Application.Services.Agreements
             var details = string.IsNullOrEmpty(agreement.AgreementDetailsJsonb)
                 ? null
                 : JsonSerializer.Deserialize<AgreementDetailsDto>(agreement.AgreementDetailsJsonb);
+            if (details != null)
+                details.BuyerInfo = null;
 
             decimal basePrice = agreement.FinalPrice ?? agreement.InitialPrice ?? 0;
             decimal estimatedShippingFee = details?.EstimatedShippingFee ?? 0;
@@ -619,7 +617,8 @@ namespace HomeCycle.Application.Services.Agreements
                     request.AgreementDetails = new AgreementDetailsDto
                     {
                         Revision = currentRevision + 1,
-                        SellerInfo = request.AgreementDetails.SellerInfo ?? currentSellerInfo,
+                        SellerInfo = currentSellerInfo,
+                        BuyerInfo = null,
                         Notes = request.AgreementDetails.Notes,
                         InspectionDate = request.AgreementDetails.InspectionDate,
                         InspectionAddress = request.AgreementDetails.InspectionAddress,
@@ -841,7 +840,26 @@ namespace HomeCycle.Application.Services.Agreements
 
                 bool bothConfirmed = agreement.SellerConfirmedAt != null && agreement.BuyerConfirmedAt != null;
                 if (bothConfirmed)
+                {
                     agreement.AgreementStatus = (int)AgreementStatus.Awaiting_Payment;
+                    var buyer = await _userRepo.GetByIdAsync(agreement.BuyerId, cancellationToken);
+                    var personalProfile = await _profileRepo.GetByUserIdAsync(agreement.BuyerId, cancellationToken);
+                    var businessProfile = await _businessProfileRepo.GetByUserIdAsync(agreement.BuyerId, cancellationToken);
+                    currentDetails ??= new AgreementDetailsDto { Revision = actualRevision };
+                    currentDetails.BuyerInfo = new AgreementSellerInfoDto
+                    {
+                        FullName = buyer?.Role == UserRole.Business
+                            ? businessProfile?.BusinessName ?? businessProfile?.FullName ?? buyer?.Username
+                            : personalProfile?.FullName ?? buyer?.Username,
+                        Phone = buyer?.PhoneNumber,
+                        StreetAddress = buyer?.Role == UserRole.Business
+                            ? businessProfile?.BusinessAddress ?? buyer?.Address
+                            : buyer?.Address ?? personalProfile?.RepresentativeAddress,
+                        Ward = businessProfile?.Ward,
+                        City = businessProfile?.City
+                    };
+                    agreement.AgreementDetailsJsonb = JsonSerializer.Serialize(currentDetails);
+                }
 
                 var confirmAgreementAuditDiff = new AuditDiffBuilder()
                     .Add(

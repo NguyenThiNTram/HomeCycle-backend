@@ -29,6 +29,7 @@ using HomeCycle.Application.Interfaces.Repositories.Shipments;
 using HomeCycle.Application.Interfaces.Repositories.SubscriptionPackages;
 using HomeCycle.Application.Interfaces.Repositories.Wallets;
 using HomeCycle.Application.Interfaces.Services.Appointments;
+using HomeCycle.Application.Interfaces.Services.Agreements;
 using HomeCycle.Application.Interfaces.Services.Audits;
 using HomeCycle.Application.Interfaces.Services.Carts;
 using HomeCycle.Application.Interfaces.Services.Notifications;
@@ -113,6 +114,7 @@ namespace HomeCycle.Application.Services.Payments
         private readonly IEmailService _emailService;
         private readonly IUserRepository _userRepository;
         private readonly IFinanceRealtimeService _financeRealtimeService;
+        private readonly IAgreementPdfService _agreementPdfService;
         public PaymentService(
             IUnitOfWork unitOfWork,
             IPaymentGatewayService gatewayService,
@@ -149,9 +151,9 @@ namespace HomeCycle.Application.Services.Payments
             IAppointmentRealtimeService appointmentRealtimeService,
             ICartRealtimeService cartRealtimeService,
             IEmailService emailService,
-            IUserRepository userRepository)
-            ICartRealtimeService cartRealtimeService,
-            IFinanceRealtimeService financeRealtimeService)
+            IUserRepository userRepository,
+            IFinanceRealtimeService financeRealtimeService,
+            IAgreementPdfService agreementPdfService)
         {
             _unitOfWork = unitOfWork;
             _gatewayService = gatewayService;
@@ -190,6 +192,7 @@ namespace HomeCycle.Application.Services.Payments
             _emailService = emailService;
             _userRepository = userRepository;
             _financeRealtimeService = financeRealtimeService;
+            _agreementPdfService = agreementPdfService;
         }
 
         public async Task ReconcileAgreementForExpiryAsync(Guid agreementId, CancellationToken ct = default)
@@ -1256,6 +1259,8 @@ namespace HomeCycle.Application.Services.Payments
                 await _auditService.EnqueueAsync(walletPaymentAuditEvent, ct);
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
+
+                await ArchivePaidAgreementPdfSafelyAsync(agreement.AgreementId, payment.PaymentId, fulfillment.Order.OrderId, ct);
 
                 await SendPaymentReceiptEmailSafelyAsync(
                     payment,
@@ -2883,6 +2888,20 @@ namespace HomeCycle.Application.Services.Payments
             return bankAccount?.VerifyStatus == VerifyStatus.Verified;
         }
 
+        private async Task ArchivePaidAgreementPdfSafelyAsync(Guid agreementId, Guid paymentId, Guid orderId, CancellationToken ct)
+        {
+            try
+            {
+                var result = await _agreementPdfService.ArchivePaidAgreementPdfAsync(agreementId, paymentId, orderId, ct);
+                if (!result.IsSuccess)
+                    _logger.LogError("Không lưu được PDF cho Agreement {AgreementId}, Payment {PaymentId}: {ErrorCode} {ErrorMessage}", agreementId, paymentId, result.Error?.Code, result.Error?.Message);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Lỗi lưu PDF sau thanh toán cho Agreement {AgreementId}, Payment {PaymentId}", agreementId, paymentId);
+            }
+        }
+
         private async Task SendPaymentReceiptEmailSafelyAsync(
             payment payment,
             order order,
@@ -3664,6 +3683,8 @@ namespace HomeCycle.Application.Services.Payments
                 await _auditService.EnqueueAsync(paymentCompleteAuditEvent, ct);
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
+
+                await ArchivePaidAgreementPdfSafelyAsync(agreement.AgreementId, payment.PaymentId, fulfillment.Order.OrderId, ct);
 
                 await SendPaymentReceiptEmailSafelyAsync(
                     payment,

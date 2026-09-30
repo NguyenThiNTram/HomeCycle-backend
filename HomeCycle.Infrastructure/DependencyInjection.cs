@@ -336,6 +336,7 @@ namespace HomeCycle.Infrastructure
             services.AddScoped<IBusinessProfileService, BusinessProfileService>();
             services.AddScoped<IModeratorService, ModeratorService>();
             services.AddScoped<IAgreementFormService, AgreementFormService>();
+            services.AddScoped<IAgreementPdfService, AgreementPdfService>();
             services.AddScoped<IOfferService, OfferService>();
             services.AddScoped<IOfferTermsPolicy, OfferTermsPolicy>();
             services.AddScoped<INegotiationService, NegotiationService>();
