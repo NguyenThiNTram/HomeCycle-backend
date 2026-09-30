@@ -28,6 +28,11 @@ namespace HomeCycle.Application.DTOs.Responses.Offers
 
         public DateTime CreatedAt { get; set; }
         public DateTime? ResponseDeadlineAt { get; set; }
+        public string? QuantityReservationMessage => OfferStatus == HomeCycle.Domain.Enums.OfferStatus.Pending
+            ? "Đề nghị đang chờ phản hồi; số lượng chưa được giữ."
+            : OfferStatus == HomeCycle.Domain.Enums.OfferStatus.Accepted
+                ? "Số lượng đã được giữ trong phiên thương lượng."
+                : null;
     }
 
     public class OfferListItem
@@ -54,6 +59,11 @@ namespace HomeCycle.Application.DTOs.Responses.Offers
         public int? Version { get; set; }
         public DateTime CreatedAt { get; set; }
         public DateTime? ResponseDeadlineAt { get; set; }
+        public string? QuantityReservationMessage => OfferStatus == HomeCycle.Domain.Enums.OfferStatus.Pending
+            ? "Đề nghị đang chờ phản hồi; số lượng chưa được giữ."
+            : OfferStatus == HomeCycle.Domain.Enums.OfferStatus.Accepted
+                ? "Số lượng đã được giữ trong phiên thương lượng."
+                : null;
     }
 
     public sealed class OfferDetailResponse
@@ -85,6 +95,11 @@ namespace HomeCycle.Application.DTOs.Responses.Offers
 
         public DateTime CreatedAt { get; set; }
         public DateTime? ResponseDeadlineAt { get; set; }
+        public string? QuantityReservationMessage => OfferStatus == HomeCycle.Domain.Enums.OfferStatus.Pending
+            ? "Đề nghị đang chờ phản hồi; số lượng chưa được giữ."
+            : OfferStatus == HomeCycle.Domain.Enums.OfferStatus.Accepted
+                ? "Số lượng đã được giữ trong phiên thương lượng."
+                : null;
     }
 
     public class OfferParticipantResponse

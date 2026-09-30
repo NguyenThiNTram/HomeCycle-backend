@@ -460,7 +460,6 @@ namespace HomeCycle.Application.Mappings
             CreateMap<offer, OfferListItem>()
                 .ForMember(dest => dest.ResponseDeadlineAt, opt => opt.MapFrom(src => TradingPostRules.ResponseDeadline(src)))
                 .ForMember(dest => dest.OfferId, opt => opt.MapFrom(src => src.OfferId)) // hoặc src.OfferId
-                .ForMember(dest => dest.OfferStatus, opt => opt.MapFrom(src => src.OfferStatus.ToString()))
                 .ForMember(dest => dest.SenderName, opt => opt.MapFrom(src => src.Sender != null ? src.Sender.Username : string.Empty))
                 .ForMember(dest => dest.SenderAvatarUrl, opt => opt.MapFrom(src => src.Sender != null ? src.Sender.AvatarUrl : null))
                 .ForMember(dest => dest.ReceiverName, opt => opt.MapFrom(src => src.Receiver != null ? src.Receiver.Username : string.Empty))

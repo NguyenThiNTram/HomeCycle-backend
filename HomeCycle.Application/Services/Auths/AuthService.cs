@@ -5,6 +5,7 @@ using HomeCycle.Application.Commons.Errors;
 using HomeCycle.Application.Commons.Paginations;
 using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Requests.Auths;
+using HomeCycle.Application.DTOs.Requests;
 using HomeCycle.Application.DTOs.Responses;
 using HomeCycle.Application.DTOs.Responses.Auths;
 using HomeCycle.Application.Interfaces.Generics;
@@ -15,6 +16,7 @@ using HomeCycle.Application.Interfaces.Repositories.Users;
 using HomeCycle.Application.Interfaces.Repositories.Wallets;
 using HomeCycle.Application.Interfaces.Security;
 using HomeCycle.Application.Interfaces.Services.Auths;
+using HomeCycle.Application.Interfaces.Services.AI;
 using HomeCycle.Application.Interfaces.Services.Configs;
 using HomeCycle.Application.Interfaces.Services.Externals;
 using HomeCycle.Application.Interfaces.Services.Notifications;
@@ -65,6 +67,7 @@ namespace HomeCycle.Application.Services.Auths
         private readonly IAuditService _auditService;
         private readonly IValidator<CreateModeratorRequest> _createModeratorValidator;
         private readonly IValidator<SetModeratorPasswordRequest> _setModeratorPasswordValidator;
+        private readonly IIdentityDocumentScanService _identityDocumentScanService;
         private const string ModeratorEmailPurpose = "ModeratorEmailVerification";
         private const string ModeratorPasswordPurpose = "ModeratorPasswordSetup";
 
@@ -88,7 +91,8 @@ namespace HomeCycle.Application.Services.Auths
             INotificationService notificationService,
             IAuditService auditService,
             IValidator<CreateModeratorRequest> createModeratorValidator,
-            IValidator<SetModeratorPasswordRequest> setModeratorPasswordValidator
+            IValidator<SetModeratorPasswordRequest> setModeratorPasswordValidator,
+            IIdentityDocumentScanService identityDocumentScanService
             )
         {
             _userRepository = userRepository;
@@ -114,6 +118,7 @@ namespace HomeCycle.Application.Services.Auths
             _auditService = auditService;
             _createModeratorValidator = createModeratorValidator;
             _setModeratorPasswordValidator = setModeratorPasswordValidator;
+            _identityDocumentScanService = identityDocumentScanService;
         }
 
         public async Task<Result<string>> ForgotPasswordAsync(ForgotPasswordRequest request, CancellationToken cancellationToken = default)
@@ -519,6 +524,19 @@ namespace HomeCycle.Application.Services.Auths
             };
 
             return Result<LoginResponseDto>.Success(response);
+        }
+
+        public Task<Result<IdentityDocumentScanResponse>> ScanPersonalIdentityAsync(
+            string registrationToken,
+            IdentityDocumentScanRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            var email = _jwtService.ValidateRegistrationTokenAndGetEmail(registrationToken);
+            if (string.IsNullOrWhiteSpace(email))
+                return Task.FromResult(Result<IdentityDocumentScanResponse>.Fail(
+                    new Error("REGISTRATION_TOKEN_INVALID_OR_EXPIRED", "Phiên đăng ký không hợp lệ. Vui lòng xác thực lại email.")));
+
+            return _identityDocumentScanService.ScanAsync(request, cancellationToken);
         }
 
         public async Task<Result<AuthResponse>> RegisterPersonalAsync(string registrationToken, RegisterPersonalRequest request, CancellationToken cancellationToken = default)

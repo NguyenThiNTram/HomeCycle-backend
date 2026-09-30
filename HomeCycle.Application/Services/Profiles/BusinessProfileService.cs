@@ -8,6 +8,8 @@ using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Requests.Banks;
 using HomeCycle.Application.DTOs.Requests.Profiles;
 using HomeCycle.Application.DTOs.Requests.Users;
+using HomeCycle.Application.DTOs.Requests;
+using HomeCycle.Application.DTOs.Responses;
 using HomeCycle.Application.DTOs.Responses.Banks;
 using HomeCycle.Application.DTOs.Responses.Profiles;
 using HomeCycle.Application.Interfaces.Generics;
@@ -15,6 +17,7 @@ using HomeCycle.Application.Interfaces.Repositories.Banks;
 using HomeCycle.Application.Interfaces.Repositories.Profiles;
 using HomeCycle.Application.Interfaces.Repositories.Users;
 using HomeCycle.Application.Interfaces.Services.Audits;
+using HomeCycle.Application.Interfaces.Services.AI;
 using HomeCycle.Application.Interfaces.Services.Configs;
 using HomeCycle.Application.Interfaces.Services.Externals;
 using HomeCycle.Application.Interfaces.Services.Notifications;
@@ -47,6 +50,7 @@ namespace HomeCycle.Application.Services.Profiles
         private readonly IUnitOfWork _unitOfWork;
         private readonly IMapper _mapper;
         private readonly ILogger<BusinessProfileService> _logger;
+        private readonly IIdentityDocumentScanService _identityDocumentScanService;
         private readonly IValidator<SubmitBusinessProfileRequest> _profileValidator;
         private readonly IValidator<SubmitBusinessSurveyRequest> _surveyValidator;
         private readonly IValidator<UpdateUsernameRequest> _updateUsernameValidator;
@@ -84,7 +88,8 @@ namespace HomeCycle.Application.Services.Profiles
             IFileStorageService fileStorageService,
             IValidator<UpdateIdentityRequest> updateIdentityValidator,
             IValidator<UpdateBusinessRegistrationRequest> updateBusinessRegistrationValidator,
-            IValidator<BusinessServiceAreaRequestDto> serviceAreaRequestDtoValidator)
+            IValidator<BusinessServiceAreaRequestDto> serviceAreaRequestDtoValidator,
+            IIdentityDocumentScanService identityDocumentScanService)
         {
             _businessProfileRepository = businessProfileRepository;
             _businessDocumentRepository = businessDocumentRepository;
@@ -111,6 +116,23 @@ namespace HomeCycle.Application.Services.Profiles
             _updateIdentityValidator = updateIdentityValidator;
             _updateBusinessRegistrationValidator = updateBusinessRegistrationValidator;
             _serviceAreaRequestDtoValidator = serviceAreaRequestDtoValidator;
+            _identityDocumentScanService = identityDocumentScanService;
+        }
+
+        public async Task<Result<IdentityDocumentScanResponse>> ScanIdentityAsync(
+            Guid userId,
+            IdentityDocumentScanRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            var user = await _userRepository.GetByIdAsync(userId, cancellationToken);
+            if (user is null)
+                return Result<IdentityDocumentScanResponse>.Fail(ProfileErrors.UserNotFound);
+
+            if (user.Role != UserRole.Business)
+                return Result<IdentityDocumentScanResponse>.Fail(
+                    new Error("IDENTITY_SCAN_ROLE_MISMATCH", "Chỉ tài khoản doanh nghiệp mới có thể quét CCCD theo luồng này."));
+
+            return await _identityDocumentScanService.ScanAsync(request, cancellationToken);
         }
 
         public async Task<Result<string>> SubmitBusinessProfileAsync(

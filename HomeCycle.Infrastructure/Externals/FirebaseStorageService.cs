@@ -120,6 +120,22 @@ namespace HomeCycle.Infrastructure.Externals
             return $"https://firebasestorage.googleapis.com/v0/b/{_bucketName}/o/{escapedPath}?alt=media";
         }
 
+        public async Task<byte[]?> DownloadFileAsync(string filePath, CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(filePath)) return null;
+
+            await using var destination = new MemoryStream();
+            try
+            {
+                await _storageClient.DownloadObjectAsync(_bucketName, filePath.TrimStart('/'), destination, cancellationToken: cancellationToken);
+                return destination.ToArray();
+            }
+            catch (Google.GoogleApiException ex) when (ex.Error.Code == 404)
+            {
+                return null;
+            }
+        }
+
         public async Task DeleteFileAsync(string fileUrlOrPath)
         {
             if (string.IsNullOrWhiteSpace(fileUrlOrPath)) return;

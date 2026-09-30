@@ -106,6 +106,15 @@ namespace HomeCycle.API.Controllers
 
                 if (!result.IsSuccess)
                 {
+                    if (result.Error?.Code == "Payment.AgreementCancelledLatePayment")
+                    {
+                        return Ok(new
+                        {
+                            success = true,
+                            message = "Webhook đã được ghi nhận. Giao dịch cần được nhân viên đối soát thủ công."
+                        });
+                    }
+
                     return BadRequest(result.Error);
                 }
 
@@ -126,7 +135,12 @@ namespace HomeCycle.API.Controllers
             var userId = GetUserIdFromToken();
             var result = await _paymentService.SyncPaymentStatusAsync(agreementId, userId, ct);
             if (!result.IsSuccess)
+            {
+                if (result.Error?.Code == "Payment.AgreementCancelledLatePayment")
+                    return Conflict(result.Error);
+
                 return BadRequest(result.Error);
+            }
 
             return Ok(result.Data);
         }
