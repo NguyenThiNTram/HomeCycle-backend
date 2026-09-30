@@ -8,7 +8,7 @@ namespace HomeCycle.Infrastructure;
 
 [Table("Wallet")]
 [Index("UserId", "WalletType", Name = "uq_wallet", IsUnique = true)]
-[Index("UserId", "WalletType", Name = "ux_wallet_user_type", IsUnique = true)]
+
 public partial class Wallet
 {
     [Key]

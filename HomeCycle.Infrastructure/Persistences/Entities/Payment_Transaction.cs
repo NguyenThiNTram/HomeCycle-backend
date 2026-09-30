@@ -11,8 +11,7 @@ namespace HomeCycle.Infrastructure;
 [Index("UserId", Name = "idx_payment_transaction_user")]
 [Index("PayOSOrderCode", Name = "uq_payos_order", IsUnique = true)]
 [Index("PayOSTransactionId", Name = "uq_payos_transaction", IsUnique = true)]
-[Index("PayOSTransactionId", Name = "ux_payment_transaction_id", IsUnique = true)]
-[Index("PayOSOrderCode", Name = "ux_payment_transaction_order", IsUnique = true)]
+
 public partial class Payment_Transaction
 {
     [Key]
