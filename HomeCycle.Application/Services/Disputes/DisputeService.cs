@@ -38,8 +38,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using HomeCycle.Application.Interfaces.Services.Audits;
-using HomeCycle.Application.Commons.Audits;
 using HomeCycle.Application.Interfaces.Services.Auths;
 
 namespace HomeCycle.Application.Services.Disputes
@@ -103,8 +101,7 @@ namespace HomeCycle.Application.Services.Disputes
             IDisputeCategoryRepository disputeCategoryRepository,
             IAuditService auditService,
             IEmailService emailService,
-            IAppointmentRepository appointmentRepository)
-            IAuditService auditService,
+            IAppointmentRepository appointmentRepository,
             IFinanceRealtimeService financeRealtimeService)
         {
             _ghnLifecycle = ghnLifecycle;
