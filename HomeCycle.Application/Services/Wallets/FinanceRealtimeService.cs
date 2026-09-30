@@ -260,6 +260,7 @@ namespace HomeCycle.Application.Services.Wallets
                 Amount = payment.Amount.Value,
                 PaymentMethod = (PaymentMethod)payment.PaymentMethod.Value,
                 PaymentStatus = (PaymentStatus)payment.PaymentStatus.Value,
+                AgreementId = payment.AgreementId,
                 OrderId = payment.OrderId,
                 SubscriptionId = payment.SubscriptionId
             };

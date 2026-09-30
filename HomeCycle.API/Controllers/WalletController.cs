@@ -227,7 +227,7 @@ namespace HomeCycle.API.Controllers
         [Authorize(Roles = nameof(UserRole.Moderator) + "," + nameof(UserRole.Admin))]
         [SwaggerOperation(
             Summary = "Lấy danh sách financial transactions",
-            Description = "Hỗ trợ lọc theo transaction type, reference type, status, khoảng thời gian và phân trang."
+            Description = "Hỗ trợ lọc theo PaymentId, transaction type, reference type, status, khoảng thời gian và phân trang."
         )]
         public async Task<IActionResult> GetFinanceTransactions(
             [FromQuery] WalletTransactionSearchRequest request,

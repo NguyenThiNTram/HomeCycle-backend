@@ -25,6 +25,11 @@ namespace HomeCycle.Application.Interfaces.Services.Payments
         Task<Result<PagedResult<PaymentManagementListItemDto>>> GetPaymentManagementAsync(
             PaymentManagementSearchRequest request,
             CancellationToken ct = default);
+
+        Task<Result<PaymentManagementDetailDto>> GetPaymentManagementDetailAsync(
+            Guid paymentId,
+            CancellationToken ct = default);
+
         Task<Result<bool>> RefundOrderHeldAmountAsync(order order, agreement_form agreement, decimal amount, CancellationToken ct = default);
         Task<Result<decimal>> RefundAllRemainingOrderHeldAmountAsync(
             order order,

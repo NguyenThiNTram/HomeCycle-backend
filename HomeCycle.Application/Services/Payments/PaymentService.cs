@@ -1803,6 +1803,24 @@ namespace HomeCycle.Application.Services.Payments
             return Result<PagedResult<PaymentManagementListItemDto>>.Success(result);
         }
 
+        public async Task<Result<PaymentManagementDetailDto>> GetPaymentManagementDetailAsync(
+            Guid paymentId,
+            CancellationToken ct = default)
+        {
+            var payment = await _paymentRepo.GetManagementItemByIdAsync(paymentId, ct);
+
+            if (payment == null)
+                return Result<PaymentManagementDetailDto>.Fail(PaymentErrors.NotFound);
+
+            var paymentTransactions = await _paymentTxRepo.GetByPaymentIdAsync(paymentId, ct);
+
+            return Result<PaymentManagementDetailDto>.Success(new PaymentManagementDetailDto
+            {
+                Payment = payment,
+                PaymentTransactions = paymentTransactions.ToList()
+            });
+        }
+
         //public async Task<Result<bool>> RefundOrderHeldAmountAsync(
         //    order order,
         //    agreement_form agreement,
