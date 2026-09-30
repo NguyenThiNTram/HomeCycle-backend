@@ -1251,6 +1251,7 @@ namespace HomeCycle.Application.Services.Payments
                 {
                     EventType = FinanceEventType.OrderPaymentCompleted,
                     UserId = payerId,
+                    AffectedUserIds = new[] { agreement.SellerId },
                     WalletTransactionIds = financeTransactionIds,
                     PaymentId = payment.PaymentId,
                     OccurredAt = now
@@ -3657,6 +3658,7 @@ namespace HomeCycle.Application.Services.Payments
                 {
                     EventType = FinanceEventType.OrderPaymentCompleted,
                     UserId = payment.PayerId,
+                    AffectedUserIds = new[] { agreement.SellerId },
                     WalletTransactionIds = financeTransactionIds,
                     PaymentId = payment.PaymentId,
                     OccurredAt = now

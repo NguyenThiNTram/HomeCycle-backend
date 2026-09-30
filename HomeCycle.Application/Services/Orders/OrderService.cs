@@ -1125,6 +1125,7 @@ namespace HomeCycle.Application.Services.Orders
                         {
                             EventType = FinanceEventType.OrderRefunded,
                             UserId = agreement.BuyerId,
+                            AffectedUserIds = new[] { agreement.SellerId },
                             ReferenceType = ReferenceType.Order,
                             ReferenceId = order.OrderId,
                             TransactionType = TransactionType.Order_Refund,
@@ -1435,6 +1436,7 @@ namespace HomeCycle.Application.Services.Orders
                         {
                             EventType = FinanceEventType.OrderRefunded,
                             UserId = agreement.BuyerId,
+                            AffectedUserIds = new[] { agreement.SellerId },
                             ReferenceType = ReferenceType.Order,
                             ReferenceId = order.OrderId,
                             TransactionType = TransactionType.Order_Refund,

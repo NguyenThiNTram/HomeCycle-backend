@@ -186,7 +186,9 @@ namespace HomeCycle.Infrastructure.Repositories.Wallets
                     x.ProductName,
 
                     BuyerId = x.Agreement.BuyerId,
+                    BuyerUsername = x.Agreement.Buyer.Username,
                     SellerId = x.Agreement.SellerId,
+                    SellerUsername = x.Agreement.Seller.Username,
 
                     x.OrderStatus,
                     x.PaymentStatus,
@@ -217,9 +219,9 @@ namespace HomeCycle.Infrastructure.Repositories.Wallets
                 var keyword = request.Keyword.Trim();
 
                 query = query.Where(x =>
-                    EF.Functions.ILike(
-                        x.OrderCode,
-                        $"%{keyword}%"));
+                    EF.Functions.ILike(x.OrderCode, $"%{keyword}%") ||
+                    EF.Functions.ILike(x.BuyerUsername, $"%{keyword}%") ||
+                    EF.Functions.ILike(x.SellerUsername, $"%{keyword}%"));
             }
 
             if (request.OrderStatus.HasValue)
@@ -257,7 +259,9 @@ namespace HomeCycle.Infrastructure.Repositories.Wallets
                     ProductName = x.ProductName,
 
                     BuyerId = x.BuyerId,
+                    BuyerUsername = x.BuyerUsername,
                     SellerId = x.SellerId,
+                    SellerUsername = x.SellerUsername,
 
                     EscrowAmount = x.EscrowAmount,
 
@@ -285,6 +289,64 @@ namespace HomeCycle.Infrastructure.Repositories.Wallets
                 PageNumber = request.PageNumber,
                 PageSize = request.PageSize,
                 TotalCount = totalCount
+            };
+        }
+
+        public async Task<SellerPendingSettlementsDto> GetSellerPendingSettlementsAsync(
+            Guid sellerId,
+            CancellationToken ct = default)
+        {
+            var escrowWalletId = await _db.Wallets
+                .AsNoTracking()
+                .Where(x =>
+                    x.UserId == null &&
+                    x.WalletType == (int)WalletTypeEnum.System &&
+                    x.Purpose == (int)SystemWalletPurpose.Order_Escrow)
+                .Select(x => (Guid?)x.WalletId)
+                .SingleOrDefaultAsync(ct);
+
+            if (!escrowWalletId.HasValue)
+                return new SellerPendingSettlementsDto();
+
+            var query = _db.Orders
+                .AsNoTracking()
+                .Where(x => x.Agreement.SellerId == sellerId)
+                .Select(x => new
+                {
+                    x.OrderId,
+                    x.OrderCode,
+                    x.ProductName,
+                    x.OrderStatus,
+                    x.UpdatedAt,
+                    EscrowAmount = _db.Wallet_Ledgers
+                        .Where(l =>
+                            l.WalletId == escrowWalletId.Value &&
+                            l.BalanceType == (int)BalanceType.Available &&
+                            l.ReferenceType == (int)ReferenceType.Order &&
+                            l.ReferenceId == x.OrderId)
+                        .Select(l => (decimal?)(l.Direction == (int)LedgerDirection.In ? l.Amount : -l.Amount))
+                        .Sum() ?? 0m
+                })
+                .Where(x => x.EscrowAmount > AmountEpsilon);
+
+            var items = await query
+                .OrderByDescending(x => x.UpdatedAt)
+                .ThenBy(x => x.OrderCode)
+                .Select(x => new SellerPendingSettlementItemDto
+                {
+                    OrderId = x.OrderId,
+                    OrderCode = x.OrderCode,
+                    ProductName = x.ProductName,
+                    Amount = x.EscrowAmount,
+                    OrderStatus = x.OrderStatus.HasValue ? (OrderStatus?)x.OrderStatus.Value : null,
+                    UpdatedAt = x.UpdatedAt
+                })
+                .ToListAsync(ct);
+
+            return new SellerPendingSettlementsDto
+            {
+                TotalPendingAmount = items.Sum(x => x.Amount),
+                Items = items
             };
         }
     }
