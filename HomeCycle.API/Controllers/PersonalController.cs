@@ -1,5 +1,6 @@
 ﻿using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Requests.Banks;
+using HomeCycle.Application.DTOs.Requests;
 using HomeCycle.Application.DTOs.Requests.Users;
 using HomeCycle.Application.DTOs.Responses.Users;
 using HomeCycle.Application.Interfaces.Services.Users;
@@ -99,6 +100,38 @@ namespace HomeCycle.API.Controllers
                 return BadRequest(result);
 
             return Ok(result);
+        }
+
+        [HttpPost("me/identity/scan")]
+        [Consumes("multipart/form-data")]
+        [RequestSizeLimit(IdentityDocumentScanRequest.MaxMultipartBodyBytes)]
+        [RequestFormLimits(MultipartBodyLengthLimit = IdentityDocumentScanRequest.MaxMultipartBodyBytes)]
+        public async Task<IActionResult> ScanIdentity(
+            [FromForm] IdentityDocumentScanRequest request,
+            CancellationToken cancellationToken)
+        {
+            Response.Headers["Cache-Control"] = "no-store";
+            var userId = GetCurrentUserId();
+            var result = await _personalProfileService.ScanIdentityAsync(userId, request, cancellationToken);
+
+            if (!result.IsSuccess)
+                return IdentityScanError(result.Error!.Code, result.Error.Message);
+
+            return Ok(new { success = true, data = result.Data });
+        }
+
+        private IActionResult IdentityScanError(string code, string message)
+        {
+            var payload = new { success = false, code, message, traceId = HttpContext.TraceIdentifier };
+            return code switch
+            {
+                "IDENTITY_SCAN_ROLE_MISMATCH" => StatusCode(StatusCodes.Status403Forbidden, new { success = false, code = "IDENTITY_SCAN_ROLE_FORBIDDEN", message = "Tài khoản không có quyền quét CCCD theo luồng này.", traceId = HttpContext.TraceIdentifier }),
+                "IDENTITY_SCAN_RATE_LIMITED" => StatusCode(StatusCodes.Status429TooManyRequests, payload),
+                "IDENTITY_SCAN_TEMPORARILY_UNAVAILABLE" => StatusCode(StatusCodes.Status503ServiceUnavailable, payload),
+                "IDENTITY_SCAN_TIMEOUT" => StatusCode(StatusCodes.Status504GatewayTimeout, payload),
+                "IDENTITY_SCAN_PROVIDER_CONFIGURATION_ERROR" or "IDENTITY_SCAN_PROVIDER_INVALID_RESPONSE" => StatusCode(StatusCodes.Status502BadGateway, payload),
+                _ => BadRequest(payload)
+            };
         }
 
         // update bank

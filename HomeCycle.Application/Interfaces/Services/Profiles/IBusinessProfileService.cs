@@ -3,6 +3,8 @@ using HomeCycle.Application.DTOs.Requests.Banks;
 using HomeCycle.Application.DTOs.Requests.Profiles;
 using HomeCycle.Application.DTOs.Requests.Users;
 using HomeCycle.Application.DTOs.Responses.Profiles;
+using HomeCycle.Application.DTOs.Requests;
+using HomeCycle.Application.DTOs.Responses;
 using HomeCycle.Domain.Enums;
 using System;
 using System.Collections.Generic;
@@ -34,6 +36,7 @@ namespace HomeCycle.Application.Interfaces.Services.Profiles
         Task<Result> UpdateBusinessDocumentsAsync(Guid userId, UpdateBusinessDocumentsRequest request, CancellationToken cancellationToken = default);
         Task<Result> UpdateBusinessServiceAreasAsync(Guid userId, UpdateBusinessServiceAreasRequest request, CancellationToken cancellationToken = default);
         Task<Result> UpdateIdentityAsync(Guid userId, UpdateIdentityRequest request, CancellationToken cancellationToken = default);
+        Task<Result<IdentityDocumentScanResponse>> ScanIdentityAsync(Guid userId, IdentityDocumentScanRequest request, CancellationToken cancellationToken = default);
         Task<Result> UpdateBusinessRegistrationAsync(Guid userId, UpdateBusinessRegistrationRequest request, CancellationToken cancellationToken = default);
         Task<Result<Guid>> CreateBusinessServiceAreaAsync(Guid userId, BusinessServiceAreaRequestDto request, CancellationToken cancellationToken = default);
         Task<Result> UpdateBusinessServiceAreaAsync(Guid userId, Guid businessServiceAreaId, BusinessServiceAreaRequestDto request, CancellationToken cancellationToken = default);
