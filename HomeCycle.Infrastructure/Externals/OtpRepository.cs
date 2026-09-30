@@ -130,5 +130,17 @@ namespace HomeCycle.Infrastructure.Externals
                     , cancellationToken
                 );
         }
+
+        public Task<int> DeleteExpiredOrUsedAsync(DateTime now, CancellationToken cancellationToken = default)
+        {
+            var unusedCutoff = now.AddMinutes(-10);
+            var usedCutoff = now.AddMinutes(-15);
+
+            return _db.OTPs
+                .Where(x =>
+                    (!x.IsUsed && x.ExpiredAt.HasValue && x.ExpiredAt <= now && x.CreatedAt <= unusedCutoff) ||
+                    (x.IsUsed && x.UsedAt.HasValue && x.UsedAt <= usedCutoff))
+                .ExecuteDeleteAsync(cancellationToken);
+        }
     }
 }

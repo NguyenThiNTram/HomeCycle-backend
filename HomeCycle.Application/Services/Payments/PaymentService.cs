@@ -29,6 +29,7 @@ using HomeCycle.Application.Interfaces.Repositories.Shipments;
 using HomeCycle.Application.Interfaces.Repositories.SubscriptionPackages;
 using HomeCycle.Application.Interfaces.Repositories.Wallets;
 using HomeCycle.Application.Interfaces.Services.Appointments;
+using HomeCycle.Application.Interfaces.Services.Agreements;
 using HomeCycle.Application.Interfaces.Services.Audits;
 using HomeCycle.Application.Interfaces.Services.Carts;
 using HomeCycle.Application.Interfaces.Services.Notifications;
@@ -45,6 +46,16 @@ using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
+using HomeCycle.Application.Interfaces.Services.Audits;
+using HomeCycle.Application.Commons.Audits;
+using HomeCycle.Application.Interfaces.Repositories.SubscriptionPackages;
+using HomeCycle.Application.Interfaces.Services.SubscriptionPackages;
+using HomeCycle.Application.DTOs.Responses.SubscriptionPackages;
+using HomeCycle.Application.Interfaces.Repositories.Carts;
+using HomeCycle.Application.Interfaces.Repositories.Users;
+using HomeCycle.Application.Interfaces.Services.Appointments;
+using HomeCycle.Application.Interfaces.Services.Carts;
+using HomeCycle.Application.Interfaces.Services.Auths;
 
 namespace HomeCycle.Application.Services.Payments
 {
@@ -100,7 +111,10 @@ namespace HomeCycle.Application.Services.Payments
         private readonly ICartItemRepository _cartItemRepository;
         private readonly IAppointmentRealtimeService _appointmentRealtimeService;
         private readonly ICartRealtimeService _cartRealtimeService;
+        private readonly IEmailService _emailService;
+        private readonly IUserRepository _userRepository;
         private readonly IFinanceRealtimeService _financeRealtimeService;
+        private readonly IAgreementPdfService _agreementPdfService;
         public PaymentService(
             IUnitOfWork unitOfWork,
             IPaymentGatewayService gatewayService,
@@ -136,7 +150,10 @@ namespace HomeCycle.Application.Services.Payments
             ICartItemRepository cartItemRepository,
             IAppointmentRealtimeService appointmentRealtimeService,
             ICartRealtimeService cartRealtimeService,
-            IFinanceRealtimeService financeRealtimeService)
+            IEmailService emailService,
+            IUserRepository userRepository,
+            IFinanceRealtimeService financeRealtimeService,
+            IAgreementPdfService agreementPdfService)
         {
             _unitOfWork = unitOfWork;
             _gatewayService = gatewayService;
@@ -172,7 +189,10 @@ namespace HomeCycle.Application.Services.Payments
             _cartItemRepository = cartItemRepository;
             _appointmentRealtimeService = appointmentRealtimeService;
             _cartRealtimeService = cartRealtimeService;
+            _emailService = emailService;
+            _userRepository = userRepository;
             _financeRealtimeService = financeRealtimeService;
+            _agreementPdfService = agreementPdfService;
         }
 
         public async Task ReconcileAgreementForExpiryAsync(Guid agreementId, CancellationToken ct = default)
@@ -206,7 +226,8 @@ namespace HomeCycle.Application.Services.Payments
                         continue;
                     }
                     var transaction = await _paymentTxRepo.GetLatestByPaymentIdAsync(payment.PaymentId, ct);
-                    if (string.IsNullOrWhiteSpace(transaction?.PayOSOrderCode)) return false;
+                    if (transaction?.PaymentTransactionStatus == (int)PaymentTransactionStatus.Success ||
+                        string.IsNullOrWhiteSpace(transaction?.PayOSOrderCode)) return false;
                     var result = await _gatewayService.GetPaymentStatusAsync(transaction.PayOSOrderCode, ct);
                     if (!result.IsSuccess || result.Data == null || result.Data.AmountPaid != 0 ||
                         result.Data.OrderCode?.ToString() != transaction.PayOSOrderCode || result.Data.Amount != payment.Amount)
@@ -809,7 +830,17 @@ namespace HomeCycle.Application.Services.Payments
             if (payload.Status != "Success")
                 return Result<bool>.Success(true);
 
-            await ExecuteSuccessfulPaymentCoreAsync(payload.OrderCode.ToString(), payload.ReferenceTransactionId, AuditSource.Webhook, ct, payload.Amount);
+            try
+            {
+                await ExecuteSuccessfulPaymentCoreAsync(payload.OrderCode.ToString(), payload.ReferenceTransactionId, AuditSource.Webhook, ct, payload.Amount);
+            }
+            catch (LatePaymentAfterCancelledAgreementException)
+            {
+                return Result<bool>.Fail(new Error(
+                    "Payment.AgreementCancelledLatePayment",
+                    "Cổng thanh toán xác nhận đã thu tiền nhưng hợp đồng đã bị hủy nên đơn hàng chưa được tạo. Giao dịch cần được nhân viên đối soát thủ công. Vui lòng không thanh toán lại và liên hệ hỗ trợ."));
+            }
+
             return Result<bool>.Success(true);
         }
 
@@ -880,7 +911,7 @@ namespace HomeCycle.Application.Services.Payments
             decimal basePrice = calc.BasePrice;
             decimal amountToPay = calc.AmountToPay;
             decimal shippingFee = calc.ShippingFee;
-            // ✅ THÊM
+
             decimal orderEscrowAmount = agreement.AgreementType == (int)AgreementType.Inspection
                 ? amountToPay
                 : details?.DeliveryMethod == DeliveryMethod.GhnDelivery
@@ -1229,6 +1260,18 @@ namespace HomeCycle.Application.Services.Payments
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
 
+                await ArchivePaidAgreementPdfSafelyAsync(agreement.AgreementId, payment.PaymentId, fulfillment.Order.OrderId, ct);
+
+                await SendPaymentReceiptEmailSafelyAsync(
+                    payment,
+                    fulfillment.Order,
+                    details,
+                    basePrice,
+                    shippingFee,
+                    PaymentMethod.Internal_Wallet,
+                    null,
+                    ct);
+
                 await _financeRealtimeService.PublishUpdatedSafelyAsync(financeChange);
 
                 await PublishPaymentChatActivitySafelyAsync(
@@ -1575,10 +1618,20 @@ namespace HomeCycle.Application.Services.Payments
                         ct));
             }
 
-            var reconcileResult = await ReconcilePayOsPaymentAsync(
-                payment.PaymentId,
-                AuditSource.HttpApi,
-                ct);
+            Result<PaymentStatus> reconcileResult;
+            try
+            {
+                reconcileResult = await ReconcilePayOsPaymentAsync(
+                    payment.PaymentId,
+                    AuditSource.HttpApi,
+                    ct);
+            }
+            catch (LatePaymentAfterCancelledAgreementException)
+            {
+                return Result<PaymentStatusResponseDto>.Fail(new Error(
+                    "Payment.AgreementCancelledLatePayment",
+                    "Cổng thanh toán xác nhận đã thu tiền nhưng hợp đồng đã bị hủy nên đơn hàng chưa được tạo. Giao dịch cần được nhân viên đối soát thủ công. Vui lòng không thanh toán lại và liên hệ hỗ trợ."));
+            }
 
             if (!reconcileResult.IsSuccess)
                 return Result<PaymentStatusResponseDto>.Fail(reconcileResult.Error!);
@@ -2806,6 +2859,7 @@ namespace HomeCycle.Application.Services.Payments
                 await _auditService.EnqueueAsync(paymentReconcileAuditEvent, ct);
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
+                await SendPaymentFailureEmailSafelyAsync(payment, transaction, targetPaymentStatus, ct);
             }
             catch
             {
@@ -2832,6 +2886,108 @@ namespace HomeCycle.Application.Services.Payments
                     ct);
 
             return bankAccount?.VerifyStatus == VerifyStatus.Verified;
+        }
+
+        private async Task ArchivePaidAgreementPdfSafelyAsync(Guid agreementId, Guid paymentId, Guid orderId, CancellationToken ct)
+        {
+            try
+            {
+                var result = await _agreementPdfService.ArchivePaidAgreementPdfAsync(agreementId, paymentId, orderId, ct);
+                if (!result.IsSuccess)
+                    _logger.LogError("Không lưu được PDF cho Agreement {AgreementId}, Payment {PaymentId}: {ErrorCode} {ErrorMessage}", agreementId, paymentId, result.Error?.Code, result.Error?.Message);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Lỗi lưu PDF sau thanh toán cho Agreement {AgreementId}, Payment {PaymentId}", agreementId, paymentId);
+            }
+        }
+
+        private async Task SendPaymentReceiptEmailSafelyAsync(
+            payment payment,
+            order order,
+            AgreementDetailsDto? details,
+            decimal itemAmount,
+            decimal shippingFee,
+            PaymentMethod paymentMethod,
+            string? providerTransactionId,
+            CancellationToken ct)
+        {
+            try
+            {
+                var payer = await _userRepository.GetByIdAsync(payment.PayerId, ct);
+                if (payer == null || string.IsNullOrWhiteSpace(payer.Email))
+                    return;
+
+                var scheduledAt = details?.InspectionDate ?? details?.CollectionDate;
+                var location = details?.InspectionAddress ?? details?.DeliveryAddress ?? details?.PickupAddress;
+                var appointmentSummary = scheduledAt.HasValue
+                    ? $"{scheduledAt.Value:dd/MM/yyyy HH:mm}" + (string.IsNullOrWhiteSpace(location) ? "" : $" – {location}")
+                    : "Chưa có thông tin lịch hẹn";
+                await _emailService.SendPaymentReceiptEmailAsync(
+                    payer.Email,
+                    payer.Username,
+                    payment.PaymentId.ToString(),
+                    providerTransactionId ?? "",
+                    order.OrderCode,
+                    $"{order.ProductName ?? "Sản phẩm"} × {order.Quantity}",
+                    $"{itemAmount:N0} VND",
+                    $"{shippingFee:N0} VND",
+                    $"{payment.Amount ?? 0:N0} VND",
+                    paymentMethod.ToString(),
+                    appointmentSummary,
+                    ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Không gửi được email biên nhận cho Payment {PaymentId}", payment.PaymentId);
+            }
+        }
+
+        private async Task SendPaymentFailureEmailSafelyAsync(
+            payment payment,
+            payment_transaction transaction,
+            PaymentStatus paymentStatus,
+            CancellationToken ct)
+        {
+            try
+            {
+                if (!payment.AgreementId.HasValue)
+                    return;
+
+                var payer = await _userRepository.GetByIdAsync(payment.PayerId, ct);
+                var agreement = await _agreementRepo.GetByIdAsync(payment.AgreementId.Value, ct);
+                if (payer == null || agreement == null || string.IsNullOrWhiteSpace(payer.Email))
+                    return;
+
+                var details = ParseAgreementDetails(agreement, agreement.AgreementId);
+                var post = await _postRepo.GetByIdAsync(agreement.PostId, ct);
+                var productName = post?.Product?.ProductName ?? "Sản phẩm";
+                var productSummary = $"{productName} × {agreement.Quantity}";
+                var shippingFee = details?.EstimatedShippingFee ?? 0;
+                var statusText = paymentStatus switch
+                {
+                    PaymentStatus.Expired => "Đã hết hạn",
+                    PaymentStatus.Cancelled => "Đã hủy",
+                    _ => "Thất bại"
+                };
+
+                await _emailService.SendPaymentFailureEmailAsync(
+                    payer.Email,
+                    payer.Username,
+                    payment.PaymentId.ToString(),
+                    transaction.PayOSTransactionId ?? transaction.PayOSOrderCode ?? "",
+                    agreement.AgreementId.ToString(),
+                    DateTime.UtcNow.ToString("dd/MM/yyyy HH:mm 'UTC'"),
+                    $"{payment.Amount ?? 0:N0} VND",
+                    productSummary,
+                    $"{shippingFee:N0} VND",
+                    statusText,
+                    ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Không gửi được email trạng thái thất bại cho Payment {PaymentId}", payment.PaymentId);
+            }
         }
 
         private async Task<PaymentStatusResponseDto>
@@ -3250,6 +3406,7 @@ namespace HomeCycle.Application.Services.Payments
                 throw new InvalidOperationException("Giao dịch PayOS không có thỏa thuận hợp lệ.");
 
             await _unitOfWork.BeginTransactionAsync(ct);
+            var agreementWasCancelled = false;
 
             try
             {
@@ -3265,6 +3422,20 @@ namespace HomeCycle.Application.Services.Payments
                 {
                     await _unitOfWork.CommitTransactionAsync(ct);
                     return;
+                }
+
+                if (agreement.AgreementStatus == (int)AgreementStatus.Cancelled)
+                {
+                    agreementWasCancelled = true;
+                    _logger.LogCritical(
+                        "PayOS báo thanh toán thành công sau khi agreement {AgreementId} đã bị hủy. PaymentId {PaymentId}, OrderCode {OrderCode}, TransactionId {TransactionId}, Amount {Amount}. Cần đối soát thủ công; không tạo order hoặc trừ hàng.",
+                        agreement.AgreementId,
+                        paymentTx.PaymentId,
+                        payOsOrderCode,
+                        payOsTransactionId,
+                        confirmedAmount);
+                    throw new LatePaymentAfterCancelledAgreementException(
+                        "PayOS báo đã thanh toán sau khi agreement bị hủy. Giao dịch cần được đối soát thủ công.");
                 }
 
                 if (agreement.AgreementStatus == (int)AgreementStatus.Expired)
@@ -3513,6 +3684,18 @@ namespace HomeCycle.Application.Services.Payments
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
 
+                await ArchivePaidAgreementPdfSafelyAsync(agreement.AgreementId, payment.PaymentId, fulfillment.Order.OrderId, ct);
+
+                await SendPaymentReceiptEmailSafelyAsync(
+                    payment,
+                    fulfillment.Order,
+                    details,
+                    basePrice,
+                    shippingFee,
+                    PaymentMethod.PayOS,
+                    payOsTransactionId,
+                    ct);
+
                 await _financeRealtimeService.PublishUpdatedSafelyAsync(financeChange);
                 await PublishPaymentChatActivitySafelyAsync(
                     negotiation,
@@ -3544,18 +3727,30 @@ namespace HomeCycle.Application.Services.Payments
                     AuditActorType.ExternalSystem,
                     auditSource,
                     null,
-                    "Payment.InternalPostingFailed",
+                    agreementWasCancelled ? "Payment.AgreementCancelledLatePayment" : "Payment.InternalPostingFailed",
                     new Dictionary<string, object?>
                     {
+                        ["agreementId"] = paymentSnapshot.AgreementId,
                         ["payOsOrderCode"] = payOsOrderCode,
+                        ["payOsTransactionId"] = payOsTransactionId,
+                        ["confirmedAmount"] = confirmedAmount,
                         ["method"] = PaymentMethod.PayOS.ToString(),
-                        ["errorType"] = ex.GetType().Name
+                        ["errorType"] = ex.GetType().Name,
+                        ["agreementWasCancelled"] = agreementWasCancelled
                     });
 
-                _logger.LogError(ex, "Lỗi hạch toán giao dịch PayOS OrderCode {OrderCode}", payOsOrderCode);
+                if (!agreementWasCancelled)
+                    _logger.LogError(ex, "Lỗi hạch toán giao dịch PayOS OrderCode {OrderCode}", payOsOrderCode);
                 throw;
             }
         }
+        private sealed class LatePaymentAfterCancelledAgreementException : InvalidOperationException
+        {
+            public LatePaymentAfterCancelledAgreementException(string message) : base(message)
+            {
+            }
+        }
+
         private sealed class PaymentCalculation
         {
             public decimal AmountToPay { get; init; }

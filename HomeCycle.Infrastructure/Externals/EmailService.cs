@@ -367,5 +367,417 @@ namespace HomeCycle.Infrastructure.Externals
             await smtp.SendAsync(email);
             await smtp.DisconnectAsync(true);
         }
+
+        public async Task SendNewDisputeEmailAsync(string toEmail, string recipientName, string disputeId, string disputeType, string categoryName, string createdAt, string reporterName, string otherPartyName, string orderCode, string productSummary, string appointmentSummary, string description, int evidenceCount, CancellationToken cancellationToken = default)
+        {
+            //var email = CreateEmail(toEmail, "[HomeCycle] Có tranh chấp mới liên quan đến đơn hàng " + orderCode);
+            //Func<string, string> encode = System.Net.WebUtility.HtmlEncode;
+            //var safeOrder = string.IsNullOrWhiteSpace(orderCode) ? "Không áp dụng" : encode(orderCode);
+            //var content = $"<p>Xin chào <strong>{encode(recipientName)}</strong>,</p><p>Một tranh chấp mới đã được gửi liên quan đến giao dịch của bạn.</p><table role='presentation' width='100%' cellspacing='0' cellpadding='6'><tr><td><b>Mã tranh chấp</b></td><td>{encode(disputeId)}</td></tr><tr><td><b>Loại tranh chấp</b></td><td>{encode(disputeType)}</td></tr><tr><td><b>Danh mục</b></td><td>{encode(categoryName)}</td></tr><tr><td><b>Trạng thái</b></td><td>Chờ xử lý</td></tr><tr><td><b>Thời điểm gửi</b></td><td>{encode(createdAt)}</td></tr><tr><td><b>Người gửi</b></td><td>{encode(reporterName)}</td></tr><tr><td><b>Bên liên quan</b></td><td>{encode(otherPartyName)}</td></tr><tr><td><b>Đơn hàng</b></td><td>{safeOrder}</td></tr><tr><td><b>Sản phẩm</b></td><td>{encode(productSummary)}</td></tr><tr><td><b>Lịch hẹn</b></td><td>{encode(appointmentSummary)}</td></tr></table><p><b>Nội dung:</b><br/>{encode(description)}</p><p><b>Bằng chứng:</b> {evidenceCount} tệp đã được gửi. Vui lòng vào hệ thống để xem bằng chứng và theo dõi hướng xử lý.</p>";
+            //email.Body = new BodyBuilder { HtmlBody = BuildTransactionalEmailHtml("Có tranh chấp mới", content) }.ToMessageBody();
+            //await SendEmailAsync(email, cancellationToken);
+
+            var subject = string.IsNullOrWhiteSpace(orderCode) ? "[HomeCycle] Thông Báo Tranh Chấp Mới Trên Hệ Thống" : $"[HomeCycle] Có tranh chấp mới liên quan đến đơn hàng #{orderCode}";
+
+            var email = CreateEmail(toEmail, subject);
+
+            Func<string, string> encode = System.Net.WebUtility.HtmlEncode;
+
+            var safeRecipient = encode(recipientName);
+            var safeDisputeId = encode(disputeId);
+            var safeDisputeType = encode(disputeType);
+            var safeCategory = encode(categoryName);
+            var safeCreatedAt = encode(createdAt);
+            var safeReporter = encode(reporterName);
+            var safeOtherParty = encode(otherPartyName);
+            var safeOrder = string.IsNullOrWhiteSpace(orderCode) ? "Không áp dụng" : encode(orderCode);
+            var safeProduct = string.IsNullOrWhiteSpace(productSummary) ? "Không có" : encode(productSummary);
+            var safeAppointment = string.IsNullOrWhiteSpace(appointmentSummary) ? "Không có" : encode(appointmentSummary);
+            var safeDescription = string.IsNullOrWhiteSpace(description) ? "Không có mô tả chi tiết" : encode(description);
+
+            var htmlBody = $@"
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset='UTF-8'>
+                <meta name='viewport' content='width=device-width, initial-scale=1.0'>
+            </head>
+            <body style='margin: 0; padding: 0; background-color: #f4f6f8; font-family: ""Segoe UI"", Tahoma, Geneva, Verdana, sans-serif;'>
+                <table role='presentation' width='100%' cellspacing='0' cellpadding='0' style='background-color: #f4f6f8; padding: 40px 10px;'>
+                    <tr>
+                        <td align='center'>
+                            <table role='presentation' width='100%' style='max-width: 550px; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 10px rgba(0,0,0,0.05); border: 1px solid #e5e7eb;'>
+                                <!-- Header -->
+                                <tr>
+                                    <td style='background-color: #588b8b; padding: 22px; text-align: center;'>
+                                        <h2 style='color: #ffffff; margin: 0; font-size: 20px; font-weight: 600; letter-spacing: 0.5px;'>Có Tranh Chấp Mới Phát Sinh</h2>
+                                    </td>
+                                </tr>
+                                <!-- Body Content -->
+                                <tr>
+                                    <td style='padding: 30px 25px; color: #374151; font-size: 15px; line-height: 1.6;'>
+                                        <p style='margin-top: 0; margin-bottom: 16px;'>Xin chào <strong>{safeRecipient}</strong>,</p>
+                                        <p style='margin-top: 0; margin-bottom: 20px;'>Một tranh chấp mới liên quan đến giao dịch của bạn đã được khởi tạo trên hệ thống <strong>HomeCycle</strong>. Dưới đây là thông tin chi tiết:</p>
+                                
+                                        <!-- Alert Box: Alert status -->
+                                        <div style='background-color: #fffbe3; border-left: 4px solid #f59e0b; border-radius: 4px; padding: 14px 16px; margin-bottom: 20px; color: #b45309; font-size: 14px;'>
+                                            <strong>Trạng thái:</strong> Chờ xử lý &nbsp;|&nbsp; <strong>Bằng chứng đính kèm:</strong> {evidenceCount} tệp
+                                        </div>
+
+                                        <!-- Key-Value Details Table -->
+                                        <table role='presentation' width='100%' cellspacing='0' cellpadding='0' style='border-collapse: collapse; margin-bottom: 24px; font-size: 14px;'>
+                                            <tr style='border-bottom: 1px solid #f3f4f6;'>
+                                                <td style='padding: 10px 0; color: #6b7280; width: 35%; font-weight: 500;'>Mã tranh chấp:</td>
+                                                <td style='padding: 10px 0; color: #111827; font-weight: 600;'>{safeDisputeId}</td>
+                                            </tr>
+                                            <tr style='border-bottom: 1px solid #f3f4f6;'>
+                                                <td style='padding: 10px 0; color: #6b7280; font-weight: 500;'>Loại tranh chấp:</td>
+                                                <td style='padding: 10px 0; color: #111827;'>{safeDisputeType}</td>
+                                            </tr>
+                                            <tr style='border-bottom: 1px solid #f3f4f6;'>
+                                                <td style='padding: 10px 0; color: #6b7280; font-weight: 500;'>Danh mục:</td>
+                                                <td style='padding: 10px 0; color: #111827;'>{safeCategory}</td>
+                                            </tr>
+                                            <tr style='border-bottom: 1px solid #f3f4f6;'>
+                                                <td style='padding: 10px 0; color: #6b7280; font-weight: 500;'>Thời điểm gửi:</td>
+                                                <td style='padding: 10px 0; color: #111827;'>{safeCreatedAt}</td>
+                                            </tr>
+                                            <tr style='border-bottom: 1px solid #f3f4f6;'>
+                                                <td style='padding: 10px 0; color: #6b7280; font-weight: 500;'>Người gửi yêu cầu:</td>
+                                                <td style='padding: 10px 0; color: #111827;'>{safeReporter}</td>
+                                            </tr>
+                                            <tr style='border-bottom: 1px solid #f3f4f6;'>
+                                                <td style='padding: 10px 0; color: #6b7280; font-weight: 500;'>Bên liên quan:</td>
+                                                <td style='padding: 10px 0; color: #111827;'>{safeOtherParty}</td>
+                                            </tr>
+                                            <tr style='border-bottom: 1px solid #f3f4f6;'>
+                                                <td style='padding: 10px 0; color: #6b7280; font-weight: 500;'>Đơn hàng:</td>
+                                                <td style='padding: 10px 0; color: #111827;'>{safeOrder}</td>
+                                            </tr>
+                                            <tr style='border-bottom: 1px solid #f3f4f6;'>
+                                                <td style='padding: 10px 0; color: #6b7280; font-weight: 500;'>Sản phẩm:</td>
+                                                <td style='padding: 10px 0; color: #111827;'>{safeProduct}</td>
+                                            </tr>
+                                            <tr>
+                                                <td style='padding: 10px 0; color: #6b7280; font-weight: 500;'>Lịch hẹn:</td>
+                                                <td style='padding: 10px 0; color: #111827;'>{safeAppointment}</td>
+                                            </tr>
+                                        </table>
+
+                                        <!-- Description Container -->
+                                        <div style='background-color: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 16px; margin-bottom: 24px;'>
+                                            <strong style='display: block; margin-bottom: 8px; color: #374151; font-size: 14px;'>Nội dung tranh chấp:</strong>
+                                            <p style='margin: 0; color: #4b5563; font-size: 14px; white-space: pre-wrap; line-height: 1.5;'>{safeDescription}</p>
+                                        </div>
+
+                                        <p style='margin-bottom: 20px; font-size: 14px; color: #6b7280;'>Vui lòng đăng nhập vào hệ thống HomeCycle để kiểm tra các tệp bằng chứng đính kèm và theo dõi tiến trình xử lý.</p>
+
+                                        <p style='margin-bottom: 0;'>Trân trọng,<br/>Đội ngũ hỗ trợ HomeCycle</p>
+                                    </td>
+                                </tr>
+                                <!-- Footer -->
+                                <tr>
+                                    <td style='background-color: #f9fafb; padding: 16px; text-align: center; font-size: 13px; color: #6b7280; border-top: 1px solid #f3f4f6;'>
+                                        © {DateTime.UtcNow.Year} HomeCycle. All rights reserved.
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                </table>
+            </body>
+            </html>";
+
+            email.Body = new BodyBuilder { HtmlBody = htmlBody }.ToMessageBody();
+
+            await SendEmailAsync(email, cancellationToken);
+        }
+
+        public async Task SendPaymentReceiptEmailAsync(string toEmail, string payerName, string paymentId, string providerTransactionId, string orderCode, string productSummary, string itemAmount, string shippingFee, string paidAmount, string paymentMethod, string appointmentSummary, CancellationToken cancellationToken = default)
+        {
+            //var email = CreateEmail(toEmail, "[HomeCycle] Thanh toán thành công – Đơn hàng " + orderCode);
+            //Func<string, string> encode = System.Net.WebUtility.HtmlEncode;
+            //var content = $"<p>Xin chào <strong>{encode(payerName)}</strong>, HomeCycle đã ghi nhận thanh toán thành công.</p><table role='presentation' width='100%' cellspacing='0' cellpadding='6'><tr><td><b>Mã thanh toán</b></td><td>{encode(paymentId)}</td></tr><tr><td><b>Mã giao dịch</b></td><td>{encode(string.IsNullOrWhiteSpace(providerTransactionId) ? "Không có" : providerTransactionId)}</td></tr><tr><td><b>Mã đơn hàng</b></td><td>{encode(orderCode)}</td></tr><tr><td><b>Sản phẩm</b></td><td>{encode(productSummary)}</td></tr><tr><td><b>Tiền hàng</b></td><td>{encode(itemAmount)}</td></tr><tr><td><b>Phí vận chuyển</b></td><td>{encode(shippingFee)}</td></tr><tr><td><b>Tổng thanh toán</b></td><td><strong>{encode(paidAmount)}</strong></td></tr><tr><td><b>Phương thức</b></td><td>{encode(paymentMethod)}</td></tr><tr><td><b>Lịch hẹn/giao nhận</b></td><td>{encode(appointmentSummary)}</td></tr></table><p>Vui lòng vào hệ thống để theo dõi đơn hàng, lịch hẹn và giao dịch.</p>";
+            //email.Body = new BodyBuilder { HtmlBody = BuildTransactionalEmailHtml("Thanh toán thành công", content) }.ToMessageBody();
+            //await SendEmailAsync(email, cancellationToken);
+
+            var subject = string.IsNullOrWhiteSpace(orderCode)
+        ? "[HomeCycle] Xác Nhận Thanh Toán Thành Công"
+        : $"[HomeCycle] Thanh toán thành công - Đơn hàng #{orderCode}";
+
+            var email = CreateEmail(toEmail, subject);
+
+            Func<string, string> encode = System.Net.WebUtility.HtmlEncode;
+
+            var safePayer = encode(payerName);
+            var safePaymentId = encode(paymentId);
+            var safeTxnId = string.IsNullOrWhiteSpace(providerTransactionId) ? "Không có" : encode(providerTransactionId);
+            var safeOrderCode = string.IsNullOrWhiteSpace(orderCode) ? "Không có" : encode(orderCode);
+            var safeProduct = string.IsNullOrWhiteSpace(productSummary) ? "Không có" : encode(productSummary);
+            var safeItemAmount = encode(itemAmount);
+            var safeShippingFee = encode(shippingFee);
+            var safePaidAmount = encode(paidAmount);
+            var safePaymentMethod = encode(paymentMethod);
+            var safeAppointment = string.IsNullOrWhiteSpace(appointmentSummary) ? "Chưa có thông tin" : encode(appointmentSummary);
+
+            var htmlBody = $@"
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset='UTF-8'>
+                <meta name='viewport' content='width=device-width, initial-scale=1.0'>
+            </head>
+            <body style='margin: 0; padding: 0; background-color: #f4f6f8; font-family: ""Segoe UI"", Tahoma, Geneva, Verdana, sans-serif;'>
+                <table role='presentation' width='100%' cellspacing='0' cellpadding='0' style='background-color: #f4f6f8; padding: 40px 10px;'>
+                    <tr>
+                        <td align='center'>
+                            <table role='presentation' width='100%' style='max-width: 550px; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 10px rgba(0,0,0,0.05); border: 1px solid #e5e7eb;'>
+                                <!-- Header -->
+                                <tr>
+                                    <td style='background-color: #588b8b; padding: 22px; text-align: center;'>
+                                        <h2 style='color: #ffffff; margin: 0; font-size: 20px; font-weight: 600; letter-spacing: 0.5px;'>Thanh Toán Thành Công</h2>
+                                    </td>
+                                </tr>
+                                <!-- Body Content -->
+                                <tr>
+                                    <td style='padding: 30px 25px; color: #374151; font-size: 15px; line-height: 1.6;'>
+                                        <p style='margin-top: 0; margin-bottom: 16px;'>Xin chào <strong>{safePayer}</strong>,</p>
+                                        <p style='margin-top: 0; margin-bottom: 20px;'>Cảm ơn bạn! <strong>HomeCycle</strong> đã ghi nhận giao dịch thanh toán thành công cho đơn hàng của bạn. Dưới đây là thông tin chi tiết biên nhận:</p>
+
+                                        <!-- Success Total Amount Box -->
+                                        <div style='background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 18px; text-align: center; margin-bottom: 24px;'>
+                                            <span style='display: block; font-size: 13px; color: #166534; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;'>Tổng tiền đã thanh toán</span>
+                                            <span style='font-size: 28px; font-weight: 700; color: #15803d; display: block; margin-top: 4px;'>{safePaidAmount}</span>
+                                        </div>
+
+                                        <!-- Key-Value Invoice Details Table -->
+                                        <table role='presentation' width='100%' cellspacing='0' cellpadding='0' style='border-collapse: collapse; margin-bottom: 24px; font-size: 14px;'>
+                                            <tr style='border-bottom: 1px solid #f3f4f6;'>
+                                                <td style='padding: 10px 0; color: #6b7280; width: 40%; font-weight: 500;'>Mã thanh toán (System):</td>
+                                                <td style='padding: 10px 0; color: #111827; font-weight: 600;'>{safePaymentId}</td>
+                                            </tr>
+                                            <tr style='border-bottom: 1px solid #f3f4f6;'>
+                                                <td style='padding: 10px 0; color: #6b7280; font-weight: 500;'>Mã giao dịch (Cổng TT):</td>
+                                                <td style='padding: 10px 0; color: #111827;'>{safeTxnId}</td>
+                                            </tr>
+                                            <tr style='border-bottom: 1px solid #f3f4f6;'>
+                                                <td style='padding: 10px 0; color: #6b7280; font-weight: 500;'>Mã đơn hàng:</td>
+                                                <td style='padding: 10px 0; color: #588b8b; font-weight: 600;'>{safeOrderCode}</td>
+                                            </tr>
+                                            <tr style='border-bottom: 1px solid #f3f4f6;'>
+                                                <td style='padding: 10px 0; color: #6b7280; font-weight: 500;'>Sản phẩm:</td>
+                                                <td style='padding: 10px 0; color: #111827;'>{safeProduct}</td>
+                                            </tr>
+                                            <tr style='border-bottom: 1px solid #f3f4f6;'>
+                                                <td style='padding: 10px 0; color: #6b7280; font-weight: 500;'>Phương thức thanh toán:</td>
+                                                <td style='padding: 10px 0; color: #111827;'>{safePaymentMethod}</td>
+                                            </tr>
+                                            <tr style='border-bottom: 1px solid #f3f4f6;'>
+                                                <td style='padding: 10px 0; color: #6b7280; font-weight: 500;'>Lịch hẹn / Giao nhận:</td>
+                                                <td style='padding: 10px 0; color: #111827;'>{safeAppointment}</td>
+                                            </tr>
+                                            <tr style='border-bottom: 1px solid #f3f4f6;'>
+                                                <td style='padding: 10px 0; color: #6b7280; font-weight: 500;'>Tiền hàng:</td>
+                                                <td style='padding: 10px 0; color: #111827;'>{safeItemAmount}</td>
+                                            </tr>
+                                            <tr>
+                                                <td style='padding: 10px 0; color: #6b7280; font-weight: 500;'>Phí vận chuyển:</td>
+                                                <td style='padding: 10px 0; color: #111827;'>{safeShippingFee}</td>
+                                            </tr>
+                                        </table>
+
+                                        <!-- CTA Button -->
+                                        <div style='text-align: center; margin: 28px 0;'>
+                                            <a href='https://homecycle.vn/orders' style='background-color: #588b8b; color: #ffffff; padding: 12px 28px; text-decoration: none; font-weight: 600; border-radius: 6px; display: inline-block; font-size: 15px;'>Xem Chi Tiết Đơn Hàng</a>
+                                        </div>
+
+                                        <p style='margin-bottom: 0;'>Vui lòng truy cập hệ thống HomeCycle để theo dõi tiến độ đơn hàng và lịch trình giao dịch.<br/><br/>Cảm ơn bạn đã tin tưởng HomeCycle!</p>
+                                    </td>
+                                </tr>
+                                <!-- Footer -->
+                                <tr>
+                                    <td style='background-color: #f9fafb; padding: 16px; text-align: center; font-size: 13px; color: #6b7280; border-top: 1px solid #f3f4f6;'>
+                                        © {DateTime.UtcNow.Year} HomeCycle. All rights reserved.
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                </table>
+            </body>
+            </html>";
+
+            email.Body = new BodyBuilder { HtmlBody = htmlBody }.ToMessageBody();
+
+            await SendEmailAsync(email, cancellationToken);
+        }
+
+        public async Task SendPaymentFailureEmailAsync(string toEmail, string payerName, string paymentId, string providerTransactionId, string agreementId, string attemptAt, string amount, string productSummary, string shippingFee, string paymentStatus, CancellationToken cancellationToken = default)
+        {
+            //var email = CreateEmail(toEmail, "[HomeCycle] Thanh toán chưa thành công – Giao dịch " + paymentId);
+            //Func<string, string> encode = System.Net.WebUtility.HtmlEncode;
+            //var content = $"<p>Xin chào <strong>{{encode(payerName)}}</strong>, giao dịch thanh toán của bạn chưa hoàn tất. </p>\r\n<table role='presentation' width='100%' cellspacing='0' cellpadding='6'>\r\n  <tr>\r\n    <td>\r\n      <b>Mã thanh toán</b>\r\n    </td>\r\n    <td>{{encode(paymentId)}}</td>\r\n  </tr>\r\n  <tr>\r\n    <td>\r\n      <b>Mã giao dịch cổng thanh toán</b>\r\n    </td>\r\n    <td>{{encode(string.IsNullOrWhiteSpace(providerTransactionId) ? \"Chưa được cấp\" : providerTransactionId)}}</td>\r\n  </tr>\r\n  <tr>\r\n    <td>\r\n      <b>Mã thỏa thuận</b>\r\n    </td>\r\n    <td>{{encode(agreementId)}}</td>\r\n  </tr>\r\n  <tr>\r\n    <td>\r\n      <b>Thời điểm</b>\r\n    </td>\r\n    <td>{{encode(attemptAt)}}</td>\r\n  </tr>\r\n  <tr>\r\n    <td>\r\n      <b>Số tiền dự kiến</b>\r\n    </td>\r\n    <td>{{encode(amount)}}</td>\r\n  </tr>\r\n  <tr>\r\n    <td>\r\n      <b>Sản phẩm</b>\r\n    </td>\r\n    <td>{{encode(productSummary)}}</td>\r\n  </tr>\r\n  <tr>\r\n    <td>\r\n      <b>Phí vận chuyển dự kiến</b>\r\n    </td>\r\n    <td>{{encode(shippingFee)}}</td>\r\n  </tr>\r\n  <tr>\r\n    <td>\r\n      <b>Trạng thái</b>\r\n    </td>\r\n    <td>{{encode(paymentStatus)}}</td>\r\n  </tr>\r\n</table>\r\n<p>Đơn hàng chưa được tạo từ giao dịch này. Vui lòng vào hệ thống để kiểm tra thỏa thuận và bước tiếp theo.</p>";
+            //email.Body = new BodyBuilder { HtmlBody = BuildTransactionalEmailHtml("Thanh toán chưa hoàn tất", content) }.ToMessageBody();
+            //await SendEmailAsync(email, cancellationToken);
+            var subject = string.IsNullOrWhiteSpace(paymentId)
+        ? "[HomeCycle] Thông Báo: Thanh Toán Chưa Hoàn Tất"
+        : $"[HomeCycle] Thanh toán chưa thành công – Giao dịch #{paymentId}";
+
+            var email = CreateEmail(toEmail, subject);
+
+            Func<string, string> encode = System.Net.WebUtility.HtmlEncode;
+
+            var safePayer = encode(payerName);
+            var safePaymentId = encode(paymentId);
+            var safeTxnId = string.IsNullOrWhiteSpace(providerTransactionId) ? "Chưa được cấp" : encode(providerTransactionId);
+            var safeAgreementId = string.IsNullOrWhiteSpace(agreementId) ? "Không có" : encode(agreementId);
+            var safeAttemptAt = encode(attemptAt);
+            var safeAmount = encode(amount);
+            var safeProduct = string.IsNullOrWhiteSpace(productSummary) ? "Không có" : encode(productSummary);
+            var safeShippingFee = encode(shippingFee);
+            var safeStatus = string.IsNullOrWhiteSpace(paymentStatus) ? "Thất bại / Hủy" : encode(paymentStatus);
+
+            var htmlBody = $@"
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset='UTF-8'>
+                <meta name='viewport' content='width=device-width, initial-scale=1.0'>
+            </head>
+            <body style='margin: 0; padding: 0; background-color: #f4f6f8; font-family: ""Segoe UI"", Tahoma, Geneva, Verdana, sans-serif;'>
+                <table role='presentation' width='100%' cellspacing='0' cellpadding='0' style='background-color: #f4f6f8; padding: 40px 10px;'>
+                    <tr>
+                        <td align='center'>
+                            <table role='presentation' width='100%' style='max-width: 550px; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 10px rgba(0,0,0,0.05); border: 1px solid #e5e7eb;'>
+                                <!-- Header -->
+                                <tr>
+                                    <td style='background-color: #588b8b; padding: 22px; text-align: center;'>
+                                        <h2 style='color: #ffffff; margin: 0; font-size: 20px; font-weight: 600; letter-spacing: 0.5px;'>Thanh Toán Chưa Hoàn Tất</h2>
+                                    </td>
+                                </tr>
+                                <!-- Body Content -->
+                                <tr>
+                                    <td style='padding: 30px 25px; color: #374151; font-size: 15px; line-height: 1.6;'>
+                                        <p style='margin-top: 0; margin-bottom: 16px;'>Xin chào <strong>{safePayer}</strong>,</p>
+                                        <p style='margin-top: 0; margin-bottom: 20px;'>Giao dịch thanh toán cho đơn hàng của bạn trên hệ thống <strong>HomeCycle</strong> chưa được hoàn tất hoặc đã bị gián đoạn.</p>
+
+                                        <!-- Warning Status Box -->
+                                        <div style='background-color: #fef2f2; border-left: 4px solid #dc2626; border-radius: 4px; padding: 14px 16px; margin-bottom: 24px; color: #991b1b; font-size: 14px;'>
+                                            <strong>Trạng thái giao dịch:</strong> {safeStatus}<br/>
+                                            <span style='font-size: 13px; color: #7f1d1d;'>⚠️ Đơn hàng chưa được khởi tạo chính thức từ giao dịch này.</span>
+                                        </div>
+
+                                        <!-- Key-Value Details Table -->
+                                        <table role='presentation' width='100%' cellspacing='0' cellpadding='0' style='border-collapse: collapse; margin-bottom: 24px; font-size: 14px;'>
+                                            <tr style='border-bottom: 1px solid #f3f4f6;'>
+                                                <td style='padding: 10px 0; color: #6b7280; width: 42%; font-weight: 500;'>Mã thanh toán (System):</td>
+                                                <td style='padding: 10px 0; color: #111827; font-weight: 600;'>{safePaymentId}</td>
+                                            </tr>
+                                            <tr style='border-bottom: 1px solid #f3f4f6;'>
+                                                <td style='padding: 10px 0; color: #6b7280; font-weight: 500;'>Mã giao dịch (Cổng TT):</td>
+                                                <td style='padding: 10px 0; color: #111827;'>{safeTxnId}</td>
+                                            </tr>
+                                            <tr style='border-bottom: 1px solid #f3f4f6;'>
+                                                <td style='padding: 10px 0; color: #6b7280; font-weight: 500;'>Mã thỏa thuận:</td>
+                                                <td style='padding: 10px 0; color: #588b8b; font-weight: 600;'>{safeAgreementId}</td>
+                                            </tr>
+                                            <tr style='border-bottom: 1px solid #f3f4f6;'>
+                                                <td style='padding: 10px 0; color: #6b7280; font-weight: 500;'>Thời điểm thực hiện:</td>
+                                                <td style='padding: 10px 0; color: #111827;'>{safeAttemptAt}</td>
+                                            </tr>
+                                            <tr style='border-bottom: 1px solid #f3f4f6;'>
+                                                <td style='padding: 10px 0; color: #6b7280; font-weight: 500;'>Sản phẩm:</td>
+                                                <td style='padding: 10px 0; color: #111827;'>{safeProduct}</td>
+                                            </tr>
+                                            <tr style='border-bottom: 1px solid #f3f4f6;'>
+                                                <td style='padding: 10px 0; color: #6b7280; font-weight: 500;'>Số tiền dự kiến:</td>
+                                                <td style='padding: 10px 0; color: #111827; font-weight: 600;'>{safeAmount}</td>
+                                            </tr>
+                                            <tr>
+                                                <td style='padding: 10px 0; color: #6b7280; font-weight: 500;'>Phí vận chuyển dự kiến:</td>
+                                                <td style='padding: 10px 0; color: #111827;'>{safeShippingFee}</td>
+                                            </tr>
+                                        </table>
+
+                                        <!-- CTA Button -->
+                                        <div style='text-align: center; margin: 28px 0;'>
+                                            <a href='https://homecycle.vn/agreements' style='background-color: #588b8b; color: #ffffff; padding: 12px 28px; text-decoration: none; font-weight: 600; border-radius: 6px; display: inline-block; font-size: 15px;'>Kiểm Tra Thỏa Thuận & Thực Hiện Lại</a>
+                                        </div>
+
+                                        <p style='margin-bottom: 0;'>Vui lòng truy cập lại hệ thống HomeCycle để kiểm tra trạng thái thỏa thuận mua bán và tiếp tục các bước thanh toán tiếp theo.<br/><br/>Trân trọng,<br/>Đội ngũ hỗ trợ HomeCycle</p>
+                                    </td>
+                                </tr>
+                                <!-- Footer -->
+                                <tr>
+                                    <td style='background-color: #f9fafb; padding: 16px; text-align: center; font-size: 13px; color: #6b7280; border-top: 1px solid #f3f4f6;'>
+                                        © {DateTime.UtcNow.Year} HomeCycle. All rights reserved.
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                </table>
+            </body>
+            </html>";
+
+            email.Body = new BodyBuilder { HtmlBody = htmlBody }.ToMessageBody();
+
+            await SendEmailAsync(email, cancellationToken);
+        }
+
+        private static string BuildTransactionalEmailHtml(string title, string content)
+        {
+            var safeTitle = System.Net.WebUtility.HtmlEncode(title);
+            return $@"<!DOCTYPE html>
+                <html>
+                  <head>
+                    <meta charset='UTF-8'>
+                    <meta name='viewport' content='width=device-width, initial-scale=1.0'>
+                  </head>
+                  <body style='margin:0;padding:0;background-color:#f4f6f8;font-family:Segoe UI,Tahoma,Geneva,Verdana,sans-serif'>
+                    <table role='presentation' width='100%' cellspacing='0' cellpadding='0' style='background-color:#f4f6f8;padding:40px 10px'>
+                      <tr>
+                        <td align='center'>
+                          <table role='presentation' width='100%' cellspacing='0' cellpadding='0' style='max-width:550px;background-color:#ffffff;border-radius:8px;overflow:hidden;box-shadow:0 4px 10px rgba(0,0,0,0.05);border:1px solid #e5e7eb'>
+                            <tr>
+                              <td style='background-color:#588b8b;padding:22px;text-align:center'>
+                                <h2 style='color:#ffffff;margin:0;font-size:20px;font-weight:600;letter-spacing:0.5px'>HomeCycle</h2>
+                              </td>
+                            </tr>
+                            <tr>
+                              <td style='padding:30px 25px;color:#374151;font-size:15px;line-height:1.6'>
+                                <h3 style='margin-top:0;color:#374151'>{safeTitle}</h3>{content} <p style='margin-bottom:0;font-size:13px;color:#6b7280'>Đây là email tự động từ HomeCycle. Vui lòng không trả lời email này.</p>
+                              </td>
+                            </tr>
+                            <tr>
+                              <td style='background-color:#f9fafb;padding:16px;text-align:center;font-size:13px;color:#6b7280;border-top:1px solid #f3f4f6'>© {DateTime.UtcNow.Year} HomeCycle. All rights reserved.</td>
+                            </tr>
+                          </table>
+                        </td>
+                      </tr>
+                    </table>
+                  </body>
+                </html>";
+        }
+
+        private MimeMessage CreateEmail(string toEmail, string subject)
+        {
+            var settings = _config.GetSection("EmailSettings");
+            var email = new MimeMessage();
+            email.From.Add(new MailboxAddress(settings["SenderName"], settings["SenderEmail"]));
+            email.To.Add(new MailboxAddress("", toEmail));
+            email.Subject = subject;
+            return email;
+        }
+
+        private async Task SendEmailAsync(MimeMessage email, CancellationToken cancellationToken)
+        {
+            var settings = _config.GetSection("EmailSettings");
+            using var smtp = new MailKit.Net.Smtp.SmtpClient();
+            await smtp.ConnectAsync(settings["MailServer"], int.Parse(settings["MailPort"]!), SecureSocketOptions.StartTls, cancellationToken);
+            await smtp.AuthenticateAsync(settings["SenderEmail"], settings["SenderPassword"], cancellationToken);
+            await smtp.SendAsync(email, cancellationToken);
+            await smtp.DisconnectAsync(true, cancellationToken);
+        }
     }
 }

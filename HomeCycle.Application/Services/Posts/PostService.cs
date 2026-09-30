@@ -962,6 +962,8 @@ namespace HomeCycle.Application.Services.Posts
                 var current = await _postRepository.GetDetailByIdAsync(postId, cancellationToken);
                 if (current == null) return Result<PostResponse>.Fail(PostErrors.NotFound);
                 if (current.OwnerId != ownerId) return Result<PostResponse>.Fail(PostErrors.Forbidden);
+                var roleError = await ValidateCreateRoleAsync(ownerId, UserRole.Business, cancellationToken);
+                if (roleError != null) return Result<PostResponse>.Fail(roleError);
                 if (current.PostType != PostType.Buy) return Result<PostResponse>.Fail(PostErrors.InvalidPostType);
                 if (current.Status is PostStatus.Deleted or PostStatus.Suspended ||
                     (current.Status == PostStatus.Closed && (request.Quantity ?? current.Quantity) <= current.Quantity))

@@ -18,6 +18,7 @@ namespace HomeCycle.Application.Interfaces.Repositories.Offers
 
         Task<PagedResult<offer>> GetReceivedAsync(Guid receiverId, OfferSearchRequest request, CancellationToken cancellationToken = default);
         Task<offer?> GetByIdForUpdateAsync(Guid offerId, CancellationToken cancellationToken);
+        Task<IReadOnlyList<offer>> GetPendingByRelatedPostsAsync(IReadOnlyCollection<Guid> postIds, CancellationToken cancellationToken = default);
 
         Task<bool> ExistsActivePendingByPostAndParticipantsAsync(Guid postId, Guid sellerId, Guid buyerId, DateTime now, CancellationToken cancellationToken = default);
 
