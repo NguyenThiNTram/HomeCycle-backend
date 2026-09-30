@@ -1,6 +1,7 @@
 ﻿using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Requests.Auths;
 using HomeCycle.Application.Commons.Errors;
+using HomeCycle.Application.DTOs.Requests;
 using HomeCycle.Application.DTOs.Requests.Users;
 using HomeCycle.Application.DTOs.Responses.Auths;
 using HomeCycle.Application.Interfaces.Services.Auths;
@@ -71,6 +72,48 @@ namespace HomeCycle.API.Controllers
                 return BadRequest(result.Error);
 
             return Ok(new { Message = result.Data });
+        }
+
+        [HttpPost("personal/scan-identity")]
+        [AllowAnonymous]
+        [Consumes("multipart/form-data")]
+        [RequestSizeLimit(IdentityDocumentScanRequest.MaxMultipartBodyBytes)]
+        [RequestFormLimits(MultipartBodyLengthLimit = IdentityDocumentScanRequest.MaxMultipartBodyBytes)]
+        public async Task<IActionResult> ScanPersonalIdentity(
+            [FromHeader(Name = "X-Registration-Token")] string registrationToken,
+            [FromForm] IdentityDocumentScanRequest request,
+            CancellationToken cancellationToken)
+        {
+            Response.Headers["Cache-Control"] = "no-store";
+            if (string.IsNullOrWhiteSpace(registrationToken))
+                return Unauthorized(new
+                {
+                    success = false,
+                    code = "REGISTRATION_TOKEN_REQUIRED",
+                    message = "Phiên đăng ký không hợp lệ. Vui lòng xác thực lại email.",
+                    traceId = HttpContext.TraceIdentifier
+                });
+
+            var result = await _authService.ScanPersonalIdentityAsync(registrationToken, request, cancellationToken);
+            if (!result.IsSuccess)
+                return IdentityScanError(result.Error!.Code, result.Error.Message);
+
+            return Ok(new { success = true, data = result.Data });
+        }
+
+        private IActionResult IdentityScanError(string code, string message)
+        {
+            var payload = new { success = false, code, message, traceId = HttpContext.TraceIdentifier };
+            return code switch
+            {
+                "REGISTRATION_TOKEN_INVALID_OR_EXPIRED" => Unauthorized(payload),
+                "IDENTITY_SCAN_ROLE_MISMATCH" => StatusCode(StatusCodes.Status403Forbidden, new { success = false, code = "IDENTITY_SCAN_ROLE_FORBIDDEN", message = "Tài khoản không có quyền quét CCCD theo luồng này.", traceId = HttpContext.TraceIdentifier }),
+                "IDENTITY_SCAN_RATE_LIMITED" => StatusCode(StatusCodes.Status429TooManyRequests, payload),
+                "IDENTITY_SCAN_TEMPORARILY_UNAVAILABLE" => StatusCode(StatusCodes.Status503ServiceUnavailable, payload),
+                "IDENTITY_SCAN_TIMEOUT" => StatusCode(StatusCodes.Status504GatewayTimeout, payload),
+                "IDENTITY_SCAN_PROVIDER_CONFIGURATION_ERROR" or "IDENTITY_SCAN_PROVIDER_INVALID_RESPONSE" => StatusCode(StatusCodes.Status502BadGateway, payload),
+                _ => BadRequest(payload)
+            };
         }
 
         [HttpPost("personal/register")]

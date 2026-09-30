@@ -2,6 +2,8 @@
 using HomeCycle.Application.DTOs.Requests.Banks;
 using HomeCycle.Application.DTOs.Requests.Users;
 using HomeCycle.Application.DTOs.Responses.Users;
+using HomeCycle.Application.DTOs.Requests;
+using HomeCycle.Application.DTOs.Responses;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -17,6 +19,7 @@ namespace HomeCycle.Application.Interfaces.Services.Users
         Task<Result> UpdateProfileAsync(Guid userId, UpdatePersonalProfileRequest request, CancellationToken cancellationToken = default);
 
         Task<Result> UpdateIdentityAsync(Guid userId, UpdateIdCardRequest request, CancellationToken cancellationToken = default);
+        Task<Result<IdentityDocumentScanResponse>> ScanIdentityAsync(Guid userId, IdentityDocumentScanRequest request, CancellationToken cancellationToken = default);
 
         Task<Result> UpdateBankAsync(Guid userId, UpdateBankAccountRequest request, CancellationToken cancellationToken = default);
 

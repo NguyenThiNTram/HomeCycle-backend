@@ -13,6 +13,9 @@ namespace HomeCycle.Infrastructure.Externals.Gemini
         public string PriceSuggestionModel { get; set; } = "gemini-3.5-flash-lite";
         public string BuyMatchingModel { get; set; } = "gemini-3.5-flash-lite";
         public string BusinessHomeModel { get; set; } = "gemini-3.5-flash-lite";
+        public string IdentityDocumentScanModel { get; set; } = "gemini-3.5-flash";
+        public int IdentityDocumentScanTimeoutSeconds { get; set; } = 45;
+        public int IdentityDocumentScanMaxConcurrency { get; set; } = 2;
         public int TimeoutSeconds { get; set; } = 15;
         public int MaxOutputTokens { get; set; } = 1200;
         public bool SearchGroundingEnabled { get; set; } = false;
