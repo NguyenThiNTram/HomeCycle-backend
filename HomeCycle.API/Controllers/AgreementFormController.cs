@@ -2,6 +2,7 @@
 using HomeCycle.Application.DTOs.Requests.GHN;
 using HomeCycle.Application.DTOs.Responses.GHN;
 using HomeCycle.Application.Interfaces.Services.Agreements;
+using HomeCycle.Domain.Enums;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -16,10 +17,32 @@ namespace HomeCycle.API.Controllers
     public class AgreementFormController : ControllerBase
     {
         private readonly IAgreementFormService _agreementService;
+        private readonly IAgreementPdfService _agreementPdfService;
 
-        public AgreementFormController(IAgreementFormService agreementService)
+        public AgreementFormController(IAgreementFormService agreementService, IAgreementPdfService agreementPdfService)
         {
             _agreementService = agreementService;
+            _agreementPdfService = agreementPdfService;
+        }
+
+        [HttpGet("{agreementId:guid}/pdf")]
+        public async Task<IActionResult> GetPaidAgreementPdf(Guid agreementId, CancellationToken cancellationToken)
+        {
+            var currentUserId = GetCurrentUserId();
+            var canModerate = User.IsInRole(nameof(UserRole.Moderator)) || User.IsInRole(nameof(UserRole.Admin));
+            var result = await _agreementPdfService.GetPaidAgreementPdfAsync(agreementId, currentUserId, canModerate, cancellationToken);
+            if (result.IsSuccess)
+                return File(result.Data!, "application/pdf", $"HomeCycle-Agreement-{agreementId}.pdf");
+
+            var error = result.Error!;
+            return error.Code switch
+            {
+                "Agreement.NotFound" => NotFound(error),
+                "Agreement.PdfForbidden" => StatusCode(StatusCodes.Status403Forbidden, error),
+                "Agreement.PdfPaymentNotCompleted" => Conflict(error),
+                "Agreement.PdfStorageUnavailable" => StatusCode(StatusCodes.Status503ServiceUnavailable, error),
+                _ => BadRequest(error)
+            };
         }
 
         [HttpGet("negotiations/{negotiationId:guid}/seller-info")]
@@ -115,6 +138,23 @@ namespace HomeCycle.API.Controllers
                 return BadRequest(result.Error);
 
             return Ok(result.Data);
+        }
+
+        [HttpPost("{id:guid}/cancel")]
+        public async Task<IActionResult> CancelAgreement(Guid id, CancellationToken cancellationToken)
+        {
+            var result = await _agreementService.CancelAgreementAsync(id, GetCurrentUserId(), cancellationToken);
+            if (result.IsSuccess)
+                return Ok(result.Data);
+
+            var error = result.Error!;
+            return error.Code switch
+            {
+                "Agreement.NotFound" => NotFound(error),
+                "Agreement.Forbidden" or "Auth.Forbidden" => StatusCode(StatusCodes.Status403Forbidden, error),
+                "Agreement.CancelNotAvailable" or "Agreement.PaymentInProgress" or "Agreement.AlreadyPaid" or "Agreement.DeadlinePassed" => Conflict(error),
+                _ => BadRequest(error)
+            };
         }
 
         [HttpPost("negotiations/{negotiationId:guid}/shipping-fee-preview")]

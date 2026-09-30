@@ -16,5 +16,6 @@ namespace HomeCycle.Application.DTOs.Responses.Agreements
         public bool CanCreate { get; set; }
         public bool CanEdit { get; set; }
         public bool CanConfirm { get; set; }
+        public string? CreationWarningMessage { get; set; }
     }
 }

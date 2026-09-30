@@ -290,6 +290,46 @@ namespace HomeCycle.API.Controllers
             return Ok(result.Data);
         }
 
+        [HttpPost("search/sell")]
+        [SwaggerOperation(
+            Summary = "Tìm kiếm bài đăng bán",
+            Description = "Trả về bài đăng bán đang hoạt động, có phân trang và hỗ trợ các bộ lọc tìm kiếm hiện có."
+        )]
+        [AllowAnonymous]
+        [ProducesResponseType(typeof(PagedResult<PostResponse>), StatusCodes.Status200OK)]
+        public async Task<IActionResult> SearchSellPosts(
+            [FromBody] PostSearchRequest request,
+            CancellationToken cancellationToken)
+        {
+            request.PostType = PostType.Sell;
+            var result = await _postService.SearchAsync(request, cancellationToken);
+
+            if (!result.IsSuccess)
+                return BadRequest(result.Error);
+
+            return Ok(result.Data);
+        }
+
+        [HttpPost("search/buy")]
+        [SwaggerOperation(
+            Summary = "Tìm kiếm bài đăng mua",
+            Description = "Trả về bài đăng mua đang hoạt động, có phân trang và hỗ trợ các bộ lọc tìm kiếm hiện có."
+        )]
+        [AllowAnonymous]
+        [ProducesResponseType(typeof(PagedResult<PostResponse>), StatusCodes.Status200OK)]
+        public async Task<IActionResult> SearchBuyPosts(
+            [FromBody] PostSearchRequest request,
+            CancellationToken cancellationToken)
+        {
+            request.PostType = PostType.Buy;
+            var result = await _postService.SearchAsync(request, cancellationToken);
+
+            if (!result.IsSuccess)
+                return BadRequest(result.Error);
+
+            return Ok(result.Data);
+        }
+
         [HttpPatch("{postId:guid}/close")]
         [SwaggerOperation(
             Summary = "Đóng bài đăng",
