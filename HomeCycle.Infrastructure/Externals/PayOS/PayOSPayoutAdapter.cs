@@ -5,6 +5,7 @@ using HomeCycle.Application.Interfaces.Externals;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using PayOS;
+using PayOS.Models;
 using PayOS.Models.V1.Payouts;
 using System;
 using System.Collections.Generic;
@@ -27,52 +28,110 @@ namespace HomeCycle.Infrastructure.Externals.PayOS
         }
 
         public async Task<Result<GatewayPayoutResponse>> CreatePayoutAsync(
-    GatewayPayoutRequest request, CancellationToken ct = default)
+            GatewayPayoutRequest request,
+            CancellationToken ct = default)
         {
             try
             {
-                var result = await _payoutClient.Payouts.CreateAsync(new PayoutRequest
+                var payoutRequest = new PayoutRequest
                 {
                     ReferenceId = request.ReferenceId,
                     Amount = request.Amount,
                     Description = request.Description,
                     ToBin = request.ToBin,
                     ToAccountNumber = request.ToAccountNumber
-                });
+                };
 
-                return Result<GatewayPayoutResponse>.Success(new GatewayPayoutResponse
+                var requestOptions = new RequestOptions<Payout>
                 {
-                    PayoutId = result.Id,
-                    ApprovalState = result.ApprovalState.ToString()
-                });
+                    CancellationToken = ct
+                };
+
+                var result = await _payoutClient.Payouts.CreateAsync(
+                    payoutRequest,
+                    request.ReferenceId,
+                    requestOptions);
+
+                return Result<GatewayPayoutResponse>.Success(
+                    new GatewayPayoutResponse
+                    {
+                        PayoutId = result.Id,
+                        ApprovalState =
+                            PayoutApprovalStateConverter.ToSerializedString(
+                                result.ApprovalState)
+                    });
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Lỗi gọi payOS Payout cho ReferenceId {ReferenceId}", request.ReferenceId);
-                return Result<GatewayPayoutResponse>.Fail(new Error("Payout.CreateFailed", ex.Message));
+                _logger.LogError(
+                    ex,
+                    "Lỗi gọi payOS Payout cho ReferenceId {ReferenceId}",
+                    request.ReferenceId);
+
+                return Result<GatewayPayoutResponse>.Fail(
+                    new Error("Payout.CreateFailed", ex.Message));
             }
         }
 
         public async Task<Result<GatewayPayoutStatusResponse>> GetPayoutStatusAsync(
-            string referenceId, CancellationToken ct = default)
+            string referenceId,
+            CancellationToken ct = default)
         {
             try
             {
-                var payout = await _payoutClient.Payouts.GetAsync(referenceId);
+                var requestOptions = new RequestOptions
+                {
+                    CancellationToken = ct
+                };
+
+                var page = await _payoutClient.Payouts.ListAsync(
+                    new GetPayoutListParam
+                    {
+                        ReferenceId = referenceId,
+                        Limit = 1,
+                        Offset = 0
+                    },
+                    requestOptions);
+
+                var payout = page.Data.FirstOrDefault(
+                    x => string.Equals(
+                        x.ReferenceId,
+                        referenceId,
+                        StringComparison.Ordinal));
+
+                if (payout == null)
+                {
+                    return Result<GatewayPayoutStatusResponse>.Fail(
+                        new Error(
+                            "Payout.NotFound",
+                            "Không tìm thấy lệnh chi tương ứng."));
+                }
+
                 var transaction = payout.Transactions.FirstOrDefault();
 
-                return Result<GatewayPayoutStatusResponse>.Success(new GatewayPayoutStatusResponse
-                {
-                    PayoutId = payout.Id,
-                    ApprovalState = payout.ApprovalState.ToString().ToUpperInvariant(),
-                    TransactionState = transaction?.State.ToString().ToUpperInvariant(),
-                    FailureReason = transaction?.ErrorMessage
-                });
+                return Result<GatewayPayoutStatusResponse>.Success(
+                    new GatewayPayoutStatusResponse
+                    {
+                        PayoutId = payout.Id,
+                        ApprovalState =
+                            PayoutApprovalStateConverter.ToSerializedString(
+                                payout.ApprovalState),
+                        TransactionState = transaction == null
+                            ? null
+                            : PayoutTransactionStateConverter.ToSerializedString(
+                                transaction.State),
+                        FailureReason = transaction?.ErrorMessage
+                    });
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Lỗi lấy trạng thái payout {ReferenceId}", referenceId);
-                return Result<GatewayPayoutStatusResponse>.Fail(new Error("Payout.GetStatusFailed", ex.Message));
+                _logger.LogError(
+                    ex,
+                    "Lỗi lấy trạng thái payout theo ReferenceId {ReferenceId}",
+                    referenceId);
+
+                return Result<GatewayPayoutStatusResponse>.Fail(
+                    new Error("Payout.GetStatusFailed", ex.Message));
             }
         }
     }
