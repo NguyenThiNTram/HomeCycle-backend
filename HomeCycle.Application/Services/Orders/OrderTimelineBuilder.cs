@@ -427,19 +427,19 @@ namespace HomeCycle.Application.Services.Orders
                 detail.SellerHandoverConfirmedAt,
                 new[]
                 {
-            CreateStep(
-                "seller_handover",
-                "Người bán bàn giao hàng",
-                "Người bán xác nhận đã bàn giao sản phẩm.",
-                handoverStatus,
-                detail.SellerHandoverConfirmedAt),
+                    CreateStep(
+                        "seller_handover",
+                        "Người bán bàn giao hàng",
+                        "Người bán xác nhận đã bàn giao sản phẩm.",
+                        handoverStatus,
+                        detail.SellerHandoverConfirmedAt),
 
-            CreateStep(
-                "buyer_received",
-                "Người mua nhận hàng",
-                "Người mua xác nhận đã nhận được sản phẩm.",
-                receivedStatus,
-                detail.BuyerReceivedConfirmedAt)
+                    CreateStep(
+                        "buyer_received",
+                        "Người mua nhận hàng",
+                        "Người mua xác nhận đã nhận được sản phẩm.",
+                        receivedStatus,
+                        detail.BuyerReceivedConfirmedAt)
                 });
         }
 
@@ -477,8 +477,9 @@ namespace HomeCycle.Application.Services.Orders
         {
             var status = detail.Dispute.LatestDisputeStatus switch
             {
-                DisputeStatus.Pending => OrderTimelineStepStatus.InProgress,
-                DisputeStatus.UnderReview => OrderTimelineStepStatus.InProgress,
+                DisputeStatus.AwaitingResponse or
+                DisputeStatus.Pending or
+                DisputeStatus.UnderReview or
                 DisputeStatus.AwaitingReturn => OrderTimelineStepStatus.InProgress,
                 DisputeStatus.Closed => OrderTimelineStepStatus.Cancelled,
                 _ => OrderTimelineStepStatus.Completed
@@ -486,9 +487,10 @@ namespace HomeCycle.Application.Services.Orders
 
             var description = detail.Dispute.LatestDisputeStatus switch
             {
-                DisputeStatus.Pending => "Tranh chấp đã được gửi và đang chờ moderator tiếp nhận.",
+                DisputeStatus.AwaitingResponse => "Tranh chấp đã được tạo và đang chờ bên còn lại phản hồi.",
+                DisputeStatus.Pending => "Tranh chấp đang chờ Moderator tiếp nhận.",
                 DisputeStatus.UnderReview => "Moderator đang xem xét tranh chấp.",
-                DisputeStatus.AwaitingReturn => "Moderator đã đưa ra kết luận và đang chờ xác nhận trả hàng.",
+                DisputeStatus.AwaitingReturn => "Tranh chấp đã có phương án giải quyết và đang chờ hoàn trả sản phẩm.",
                 DisputeStatus.Resolved => "Tranh chấp đã được giải quyết.",
                 DisputeStatus.Rejected => "Tranh chấp đã bị từ chối.",
                 DisputeStatus.Closed => "Tranh chấp đã được đóng.",
@@ -500,8 +502,7 @@ namespace HomeCycle.Application.Services.Orders
                 "Xử lý tranh chấp",
                 description,
                 status,
-                detail.Dispute.LatestDisputeResolvedAt ??
-                detail.Dispute.LatestDisputeCreatedAt);
+                detail.Dispute.LatestDisputeResolvedAt ?? detail.Dispute.LatestDisputeCreatedAt);
         }
 
         private static OrderTimelineStepDto BuildReturnStep(OrderDetailDto detail)

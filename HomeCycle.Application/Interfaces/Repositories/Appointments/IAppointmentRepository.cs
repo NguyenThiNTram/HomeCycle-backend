@@ -36,6 +36,10 @@ namespace HomeCycle.Application.Interfaces.Repositories.Appointments
         Task<ModeratorAppointmentReadModel?> GetForModeratorAsync(
             Guid appointmentId,
             CancellationToken ct = default);
+        Task<IReadOnlyList<Guid>> GetNoShowCandidateIdsAsync(
+            DateTime nowUtc,
+            int limit,
+            CancellationToken ct = default);
 
     }
 }

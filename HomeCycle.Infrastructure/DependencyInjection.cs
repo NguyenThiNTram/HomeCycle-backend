@@ -316,6 +316,7 @@ namespace HomeCycle.Infrastructure
             services.AddScoped<IDisputeCategoryRepository, DisputeCategoryRepository>();
             services.AddScoped<ISubscriptionPackageRepository, SubscriptionPackageRepository>();
             services.AddScoped<IUserSubscriptionRepository, UserSubscriptionRepository>();
+            services.AddScoped<IDisputeResponseRepository, DisputeResponseRepository>();
 
             // register Services
             services.AddScoped<IAuthService, AuthService>();
@@ -353,10 +354,12 @@ namespace HomeCycle.Infrastructure
             services.AddScoped<IAppointmentService, AppointmentService>();
             services.AddScoped<IAppointmentRealtimeService, AppointmentRealtimeService>();
             services.AddScoped<IOrderService, OrderService>();
+            services.AddScoped<IOrderLifecycleProcessor, DisputeLifecycleProcessor>();
             services.AddScoped<IOrderLifecycleProcessor, BuyerReturnTimeoutProcessor>();
             services.AddScoped<IOrderLifecycleProcessor, AutoCompleteOrderProcessor>();
             services.AddScoped<IOrderLifecycleProcessor, AutoReleaseOrderProcessor>();
             services.AddSingleton<IOrderTimelineBuilder, OrderTimelineBuilder>();
+            services.AddSingleton<IDisputeTimelineBuilder, DisputeTimelineBuilder>();
             services.AddScoped<IOrderTrackingRealtimeService, OrderTrackingRealtimeService>();
             services.AddScoped<IShipmentService, ShipmentService>();
             services.AddScoped<IReviewService, ReviewService>();

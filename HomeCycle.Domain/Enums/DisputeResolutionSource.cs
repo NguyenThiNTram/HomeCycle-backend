@@ -6,11 +6,10 @@ using System.Threading.Tasks;
 
 namespace HomeCycle.Domain.Enums
 {
-    public enum OrderCompletionSource
+    public enum DisputeResolutionSource
     {
-        BuyerConfirmed = 1,
-        AutoConfirmed = 2,
-        ModeratorResolved = 3,
-        MutualDisputeResolution = 4
+        MutualAgreement = 1,
+        ModeratorDecision = 2,
+        SystemAutoClosed = 3
     }
 }

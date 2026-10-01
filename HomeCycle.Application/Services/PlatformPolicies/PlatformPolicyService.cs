@@ -1388,6 +1388,7 @@ namespace HomeCycle.Application.Services.PlatformPolicies
                 && config.LowReputationDisputeWindowDays >= config.NormalDisputeWindowDays
                 && config.LowReputationThreshold is >= 0 and <= 100
                 && config.ReturnWindowDays is >= 1 and <= 30
+                && config.ResponseWindowHours is >= 1 and <= 168
                 && config.DisputeLossPenaltyPoints is >= 1 and <= 100
                 && config.PostViolationPenaltyPoints is >= 1 and <= 100
                 && config.ReviewViolationPenaltyPoints is >= 1 and <= 100;
@@ -1442,6 +1443,7 @@ namespace HomeCycle.Application.Services.PlatformPolicies
                 && current.LowReputationDisputeWindowDays == updated.LowReputationDisputeWindowDays
                 && current.LowReputationThreshold == updated.LowReputationThreshold
                 && current.ReturnWindowDays == updated.ReturnWindowDays
+                && current.ResponseWindowHours == updated.ResponseWindowHours
                 && current.DisputeLossPenaltyPoints == updated.DisputeLossPenaltyPoints
                 && current.PostViolationPenaltyPoints == updated.PostViolationPenaltyPoints
                 && current.ReviewViolationPenaltyPoints == updated.ReviewViolationPenaltyPoints;

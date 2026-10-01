@@ -148,7 +148,12 @@ public sealed class DashboardRepository(HomeCycleDbContext db) : IDashboardRepos
         [(int)AppointmentStatus.Proposed, (int)AppointmentStatus.Scheduled, (int)AppointmentStatus.InProgress];
 
     private static readonly int?[] UnresolvedDisputeStatuses =
-        [(int)DisputeStatus.Pending, (int)DisputeStatus.UnderReview, (int)DisputeStatus.AwaitingReturn];
+    [
+        (int)DisputeStatus.AwaitingResponse,
+        (int)DisputeStatus.Pending,
+        (int)DisputeStatus.UnderReview,
+        (int)DisputeStatus.AwaitingReturn
+    ];
 
     private sealed class AppointmentScheduleRow
     {

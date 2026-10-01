@@ -102,8 +102,9 @@ namespace HomeCycle.Infrastructure.Repositories.Disputes
             var query = _db.Disputes
                 .AsNoTracking()
                 .Where(x =>
+                    x.DisputeStatus == (int)DisputeStatus.AwaitingResponse ||
                     x.DisputeStatus == (int)DisputeStatus.Pending ||
-                    x.DisputeStatus ==  (int)DisputeStatus.UnderReview||
+                    x.DisputeStatus == (int)DisputeStatus.UnderReview ||
                     x.DisputeStatus == (int)DisputeStatus.AwaitingReturn);
 
             query = targetType switch
@@ -131,7 +132,17 @@ namespace HomeCycle.Infrastructure.Repositories.Disputes
                 .Include(x => x.TargetUser)
                 .Include(x => x.Order)
                 .Include(x => x.DisputeCategoryNavigation)
-                .Where(x => x.SenderId == userId || x.TargetUserId == userId)
+                .Where(x =>
+                    x.SenderId == userId ||
+                    x.TargetUserId == userId ||
+                    (
+                        x.SenderId == null &&
+                        x.Order != null &&
+                        (
+                            x.Order.Agreement.BuyerId == userId ||
+                            x.Order.Agreement.SellerId == userId
+                        )
+                    ))
                 .AsQueryable();
 
             query = ApplyFilters(query, request);
@@ -197,6 +208,76 @@ namespace HomeCycle.Infrastructure.Repositories.Disputes
                 .ToListAsync(cancellationToken);
         }
 
+        public Task<bool> ExistsForAppointmentOriginAsync(
+            Guid appointmentId,
+            DisputeOrigin origin,
+            CancellationToken ct = default)
+        {
+            return _db.Disputes
+                .AsNoTracking()
+                .AnyAsync(
+                    x =>
+                        x.AppointmentId == appointmentId &&
+                        x.Origin == (int)origin,
+                    ct);
+        }
+
+        public async Task<IReadOnlyList<Guid>> GetAwaitingResponseTimeoutCandidateIdsAsync(
+            DateTime nowUtc,
+            int limit,
+            CancellationToken ct = default)
+        {
+            return await _db.Disputes
+                .AsNoTracking()
+                .Where(x =>
+                    x.DisputeStatus == (int)DisputeStatus.AwaitingResponse &&
+                    x.ResponseDeadlineAt.HasValue &&
+                    x.ResponseDeadlineAt.Value <= nowUtc)
+                .OrderBy(x => x.ResponseDeadlineAt)
+                .ThenBy(x => x.DisputeId)
+                .Take(limit)
+                .Select(x => x.DisputeId)
+                .ToListAsync(ct);
+        }
+
+
+        public async Task<IReadOnlyList<Guid>> GetRecoverableSystemNoShowCandidateIdsAsync(
+            int limit,
+            CancellationToken ct = default)
+        {
+            return await _db.Disputes
+                .AsNoTracking()
+                .Where(x =>
+                    x.SenderId == null &&
+                    x.DisputeStatus == (int)DisputeStatus.AwaitingResponse &&
+                    x.AppointmentId.HasValue &&
+                    x.OrderId.HasValue &&
+                    (
+                        (
+                            x.Origin == (int)DisputeOrigin.InspectionNoShow &&
+                            x.Appointment != null &&
+                            x.Appointment.BuyerCheckAt.HasValue &&
+                            x.Appointment.SellerCheckAt.HasValue
+                        ) ||
+                        (
+                            x.Origin == (int)DisputeOrigin.CollectionNoShow &&
+                            x.Order != null &&
+                            (
+                                x.Order.SellerHandoverConfirmedAt.HasValue ||
+                                x.Order.BuyerReceivedConfirmedAt.HasValue ||
+                                x.Order.OrderStatus == (int)OrderStatus.Completed
+                            )
+                        )
+                    ))
+                .OrderBy(x => x.CreatedAt)
+                .ThenBy(x => x.DisputeId)
+                .Take(limit)
+                .Select(x => x.DisputeId)
+                .ToListAsync(ct);
+        }
+
+
+        //===================== HELPER METHODS =====================//
         private static IQueryable<Dispute> ApplyFilters(
            IQueryable<Dispute> query,
            DisputeSearchRequest request)
@@ -227,7 +308,7 @@ namespace HomeCycle.Infrastructure.Repositories.Disputes
                 var pattern = $"%{request.Keyword.Trim()}%";
 
                 query = query.Where(x =>
-                    EF.Functions.ILike(x.Sender.Username, pattern) ||
+                    (x.Sender != null && EF.Functions.ILike(x.Sender.Username, pattern)) ||
                     (x.TargetUser != null && EF.Functions.ILike(x.TargetUser.Username, pattern)) ||
                     (x.Description != null && EF.Functions.ILike(x.Description, pattern)) ||
                     (x.Order != null && EF.Functions.ILike(x.Order.OrderCode, pattern)));
@@ -267,7 +348,7 @@ namespace HomeCycle.Infrastructure.Repositories.Disputes
             {
                 DisputeId = entity.DisputeId,
                 SenderId = entity.SenderId,
-                SenderUsername = entity.Sender.Username,
+                SenderUsername = entity.Sender?.Username,
                 TargetUserId = entity.TargetUserId,
                 TargetUsername = entity.TargetUser?.Username,
                 TargetType = entity.DisputeTargetType.HasValue

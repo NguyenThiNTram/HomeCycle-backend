@@ -269,9 +269,18 @@ namespace HomeCycle.Infrastructure.Repositories.Appointments
             var query = _db.Appointments.AsNoTracking().AsQueryable();
 
             if (request.HasOpenDispute.HasValue)
-                query = query.Where(a => _db.Disputes.Any(d => d.Order != null && d.Order.AgreementId == a.AgreementId
-                    && (d.DisputeStatus == (int)DisputeStatus.Pending || d.DisputeStatus == (int)DisputeStatus.UnderReview
-                        || d.DisputeStatus == (int)DisputeStatus.AwaitingReturn)) == request.HasOpenDispute.Value);
+            {
+                query = query.Where(a =>
+                    _db.Disputes.Any(d =>
+                        d.Order != null &&
+                        d.Order.AgreementId == a.AgreementId &&
+                        (
+                            d.DisputeStatus == (int)DisputeStatus.AwaitingResponse ||
+                            d.DisputeStatus == (int)DisputeStatus.Pending ||
+                            d.DisputeStatus == (int)DisputeStatus.UnderReview ||
+                            d.DisputeStatus == (int)DisputeStatus.AwaitingReturn
+                        )) == request.HasOpenDispute.Value);
+            }
             if (request.DeliveryMethod.HasValue)
                 query = query.Where(a => _db.Shipments.Where(s => s.Order.AgreementId == a.AgreementId)
                     .OrderByDescending(s => s.CreatedAt).ThenByDescending(s => s.ShipmentId)
@@ -406,6 +415,55 @@ namespace HomeCycle.Infrastructure.Repositories.Appointments
                 .FirstOrDefaultAsync(ct);
         }
 
+        public async Task<IReadOnlyList<Guid>> GetNoShowCandidateIdsAsync(
+            DateTime nowUtc,
+            int limit,
+            CancellationToken ct = default)
+        {
+            return await _db.Appointments
+                .AsNoTracking()
+                .Where(a =>
+                    a.LateThresholdAt.HasValue &&
+                    a.LateThresholdAt.Value <= nowUtc &&
+                    (
+                        a.AppointmentStatus == (int)AppointmentStatus.Scheduled ||
+                        a.AppointmentStatus == (int)AppointmentStatus.InProgress
+                    ) &&
+                    a.Agreement.Order != null &&
+                    a.Agreement.Order.OrderStatus == (int)OrderStatus.Processing)
+                .Where(a =>
+                    (
+                        a.AppointmentType == (int)AppointmentType.Inspection &&
+                        (!a.BuyerCheckAt.HasValue || !a.SellerCheckAt.HasValue)
+                    ) ||
+                    (
+                        a.AppointmentType == (int)AppointmentType.Collection &&
+                        !a.Agreement.Order!.SellerHandoverConfirmedAt.HasValue &&
+                        !a.Agreement.Order.BuyerReceivedConfirmedAt.HasValue &&
+                        a.Agreement.Order.Shipments.Any(s =>
+                            s.DeliveryMethod == (int)DeliveryMethod.BuyerPickUp ||
+                            s.DeliveryMethod == (int)DeliveryMethod.SellerDelivers)
+                    ))
+                .Where(a =>
+                    !_db.Disputes.Any(d =>
+                        d.AppointmentId == a.AppointmentId &&
+                        (
+                            (
+                                a.AppointmentType == (int)AppointmentType.Inspection &&
+                                d.Origin == (int)DisputeOrigin.InspectionNoShow
+                            ) ||
+                            (
+                                a.AppointmentType == (int)AppointmentType.Collection &&
+                                d.Origin == (int)DisputeOrigin.CollectionNoShow
+                            )
+                        )))
+                .OrderBy(a => a.LateThresholdAt)
+                .ThenBy(a => a.AppointmentId)
+                .Take(limit)
+                .Select(a => a.AppointmentId)
+                .ToListAsync(ct);
+        }
+
 
         // ================ HELPER ===================
         private IQueryable<ModeratorAppointmentReadModel> ProjectModeratorAppointments(
@@ -414,9 +472,15 @@ namespace HomeCycle.Infrastructure.Repositories.Appointments
         {
             return query.Select(a => new ModeratorAppointmentReadModel
             {
-                HasOpenDispute = _db.Disputes.Any(d => d.Order != null && d.Order.AgreementId == a.AgreementId
-                    && (d.DisputeStatus == (int)DisputeStatus.Pending || d.DisputeStatus == (int)DisputeStatus.UnderReview
-                        || d.DisputeStatus == (int)DisputeStatus.AwaitingReturn)),
+                HasOpenDispute = _db.Disputes.Any(d =>
+                    d.Order != null &&
+                    d.Order.AgreementId == a.AgreementId &&
+                    (
+                        d.DisputeStatus == (int)DisputeStatus.AwaitingResponse ||
+                        d.DisputeStatus == (int)DisputeStatus.Pending ||
+                        d.DisputeStatus == (int)DisputeStatus.UnderReview ||
+                        d.DisputeStatus == (int)DisputeStatus.AwaitingReturn
+                    )),
                 CancellationReason = a.CancellationReason,
                 DeliveryMethod = _db.Shipments.Where(s => s.Order.AgreementId == a.AgreementId)
                     .OrderByDescending(s => s.CreatedAt).ThenByDescending(s => s.ShipmentId)
