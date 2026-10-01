@@ -212,5 +212,13 @@ namespace HomeCycle.Application.Services.Wallets
 
             return Result<PagedResult<OrderEscrowPositionDto>>.Success(result);
         }
+
+        public async Task<Result<SellerPendingSettlementsDto>> GetMyPendingSettlementsAsync(
+            Guid userId,
+            CancellationToken ct = default)
+        {
+            var result = await _ledgerRepo.GetSellerPendingSettlementsAsync(userId, ct);
+            return Result<SellerPendingSettlementsDto>.Success(result);
+        }
     }
 }

@@ -84,6 +84,7 @@ namespace HomeCycle.Infrastructure.Repositories.Payments
                     Amount = x.Amount ?? 0,
                     PaymentMethod = x.PaymentMethod.HasValue ? (PaymentMethod)x.PaymentMethod.Value : PaymentMethod.Unknown,
                     PaymentStatus = x.PaymentStatus.HasValue ? (PaymentStatus)x.PaymentStatus.Value : PaymentStatus.Pending,
+                    AgreementId = x.AgreementId,
                     OrderId = x.OrderId,
                     SubscriptionId = x.SubscriptionId
                 })

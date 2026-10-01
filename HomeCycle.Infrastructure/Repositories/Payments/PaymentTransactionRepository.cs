@@ -1,4 +1,5 @@
-﻿using HomeCycle.Application.Interfaces.Repositories.Payments;
+﻿using HomeCycle.Application.DTOs.Responses.Payments;
+using HomeCycle.Application.Interfaces.Repositories.Payments;
 using HomeCycle.Domain.Entities;
 using HomeCycle.Domain.Enums;
 using HomeCycle.Infrastructure.DbContexts;
@@ -46,6 +47,33 @@ namespace HomeCycle.Infrastructure.Repositories.Payments
                 .OrderByDescending(x => x.CreatedAt)
                 .FirstOrDefaultAsync(ct);
             return entity?.ToDomain();
+        }
+
+        public async Task<IReadOnlyList<PaymentTransactionManagementDto>> GetByPaymentIdAsync(
+            Guid paymentId,
+            CancellationToken ct = default)
+        {
+            return await _db.Payment_Transactions
+                .AsNoTracking()
+                .Where(x => x.PaymentId == paymentId)
+                .OrderBy(x => x.CreatedAt)
+                .ThenBy(x => x.PaymentTransactionId)
+                .Select(x => new PaymentTransactionManagementDto
+                {
+                    PaymentTransactionId = x.PaymentTransactionId,
+                    PaymentId = x.PaymentId,
+                    UserId = x.UserId,
+                    PayOSOrderCode = x.PayOSOrderCode,
+                    PayOSPaymentLinkId = x.PayOSPaymentLinkId,
+                    PayOSTransactionId = x.PayOSTransactionId,
+                    CheckoutUrl = x.CheckoutUrl,
+                    PaymentTransactionStatus = x.PaymentTransactionStatus.HasValue
+                        ? (PaymentTransactionStatus?)x.PaymentTransactionStatus.Value
+                        : null,
+                    CreatedAt = x.CreatedAt,
+                    UpdatedAt = x.UpdatedAt
+                })
+                .ToListAsync(ct);
         }
 
         public async Task<bool> ExistsByPayOSOrderCodeAsync(string payOSOrderCode, CancellationToken ct = default)

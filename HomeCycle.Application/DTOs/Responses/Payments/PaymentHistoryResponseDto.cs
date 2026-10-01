@@ -17,6 +17,7 @@ namespace HomeCycle.Application.DTOs.Responses.Payments
         public PaymentStatus PaymentStatus { get; set; }
 
         // Để FE điều hướng vào chi tiết đơn hàng khi bấm vào dòng lịch sử (giống "Order #1 >" trong app tham khảo)
+        public Guid? AgreementId { get; set; }
         public Guid? OrderId { get; set; }
         public Guid? SubscriptionId { get; set; }
 
