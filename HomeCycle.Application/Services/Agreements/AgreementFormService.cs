@@ -512,7 +512,7 @@ namespace HomeCycle.Application.Services.Agreements
             if (details != null)
                 details.BuyerInfo = null;
 
-            decimal basePrice = agreement.FinalPrice ?? agreement.InitialPrice ?? 0;
+            decimal basePrice = (agreement.FinalPrice ?? agreement.InitialPrice ?? 0) * Math.Max(agreement.Quantity, 1);
             decimal estimatedShippingFee = details?.EstimatedShippingFee ?? 0;
 
             var response = new AgreementDetailResponse
