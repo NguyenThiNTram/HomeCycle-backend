@@ -55,6 +55,9 @@ namespace HomeCycle.Infrastructure.Externals.GHN
              */
             if (request.ShopId <= 0 || request.ShopId != _settings.ShopId)
             {
+                _logger.LogWarning(
+                    "GHN webhook rejected: ShopIdMismatch. OrderCode={OrderCode}, ReceivedShopId={ReceivedShopId}, ExpectedShopId={ExpectedShopId}",
+                    SanitizeForLog(request.OrderCode), request.ShopId, _settings.ShopId);
                 return Result.Fail(new Error(
                     "GhnWebhook.InvalidShop",
                     "ShopID trong webhook không khớp với ShopID đã cấu hình."));
@@ -182,7 +185,16 @@ namespace HomeCycle.Infrastructure.Externals.GHN
             }
 
             if (!await _ghnShipmentRepository.TrySaveCarrierStateAsync(ghnShipment, shipment, expected, cancellationToken))
+            {
+                _logger.LogWarning(
+                    "GHN webhook database update failed: ConcurrentUpdate. OrderCode={OrderCode}, Status={Status}",
+                    SanitizeForLog(orderCode), SanitizeForLog(carrierStatus));
                 return Result.Fail(new Error("GhnWebhook.ConcurrentUpdate", "Trạng thái vừa thay đổi; GHN cần gửi lại callback."));
+            }
+
+            _logger.LogInformation(
+                "GHN webhook database update succeeded. OrderCode={OrderCode}, Status={Status}",
+                SanitizeForLog(orderCode), SanitizeForLog(carrierStatus));
 
             var trackingChanged =
                 previousCarrierStatus != ghnShipment.GHNStatusCode ||
