@@ -20,7 +20,7 @@ namespace HomeCycle.Infrastructure.Externals.GHN
         // Giá trị thật chỉ được truyền qua biến môi trường, không lưu trong source.
         public string? WebhookSecret { get; init; }
 
-        // Chỉ cho phép Admin gửi callback mô phỏng khi backend không chạy Production.
+        // Cho phép Admin gửi callback mô phỏng khi bật rõ ràng, kể cả host chạy Production.
         public bool EnableWebhookDemo { get; init; } = false;
 
         // Worker tự tạo đơn GHN (hosted service) chạy nền
