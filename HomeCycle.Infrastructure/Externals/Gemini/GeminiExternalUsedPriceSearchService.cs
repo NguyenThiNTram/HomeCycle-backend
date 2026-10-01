@@ -159,7 +159,7 @@ public sealed class GeminiExternalUsedPriceSearchService(
             timeout.CancelAfter(TimeSpan.FromSeconds(
                 Math.Max(1, settings.ExternalUsedPriceSearchTimeoutSeconds)));
 
-            var response = await PriceSearchGeminiCall.GenerateAsync(
+            var response = await PriceSearchGeminiCall.GenerateGroundedAsync(
                 gemini,
                 settings,
                 prompt,

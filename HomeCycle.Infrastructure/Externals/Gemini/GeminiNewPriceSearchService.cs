@@ -41,7 +41,7 @@ public sealed class GeminiNewPriceSearchService(
             searchTimeout.CancelAfter(TimeSpan.FromSeconds(
                 Math.Max(1, settings.ExternalUsedPriceSearchTimeoutSeconds)));
 
-            var groundingResponse = await PriceSearchGeminiCall.GenerateAsync(
+            var groundingResponse = await PriceSearchGeminiCall.GenerateGroundedAsync(
                 gemini,
                 settings,
                 NewPriceSearchPrompt.BuildGroundingPrompt(product, maxSources),
@@ -98,11 +98,15 @@ public sealed class GeminiNewPriceSearchService(
                 extractionResponse.Text,
                 groundedSources.ToDictionary(x => x.SourceId, StringComparer.OrdinalIgnoreCase),
                 product.Model,
-                clock.GetUtcNow());
+                clock.GetUtcNow(),
+                out var generatedItemCount,
+                out var rejections);
 
             logger.LogInformation(
-                "Gemini new-price extraction diagnostics: acceptedItemCount={AcceptedItemCount}",
-                items.Count);
+                "Gemini new-price extraction diagnostics: generatedItemCount={GeneratedItemCount}, acceptedItemCount={AcceptedItemCount}, rejected=[{Rejections}]",
+                generatedItemCount,
+                items.Count,
+                string.Join("; ", rejections));
 
             var result = new NewPriceSearchResult(items, false);
             CacheResult(cacheKey, result, settings, hasItems: items.Count > 0);
@@ -167,8 +171,12 @@ public sealed class GeminiNewPriceSearchService(
         string? responseText,
         IReadOnlyDictionary<string, GeminiExternalUsedPriceSearchService.GroundedSource> groundedSources,
         string requestedModel,
-        DateTimeOffset retrievedAt)
+        DateTimeOffset retrievedAt,
+        out int generatedItemCount,
+        out List<string> rejections)
     {
+        generatedItemCount = 0;
+        rejections = [];
         if (string.IsNullOrWhiteSpace(responseText) || groundedSources.Count == 0)
             return [];
 
@@ -177,32 +185,53 @@ public sealed class GeminiNewPriceSearchService(
             items.ValueKind != JsonValueKind.Array)
             return [];
 
+        generatedItemCount = items.GetArrayLength();
         var accepted = new List<NewPriceEvidence>();
         var seenSourceIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var item in items.EnumerateArray())
         {
             if (!item.TryGetProperty("priceVnd", out var priceElement) ||
-                !priceElement.TryGetDecimal(out var price) || price <= 0 ||
-                !ReadRequiredTrue(item, "brandMatched") ||
-                !ReadRequiredTrue(item, "isNew") ||
-                !ReadRequiredTrue(item, "isWholeProduct") ||
-                !item.TryGetProperty("observedModel", out var modelElement) ||
+                !priceElement.TryGetDecimal(out var price) || price <= 0)
+            {
+                rejections.Add("no-price");
+                continue;
+            }
+
+            var flags = new[] { "brandMatched", "isNew", "isWholeProduct" }
+                .Where(flag => !ReadRequiredTrue(item, flag))
+                .ToArray();
+            if (flags.Length > 0)
+            {
+                rejections.Add($"flags-false:{string.Join(",", flags)}");
+                continue;
+            }
+
+            if (!item.TryGetProperty("observedModel", out var modelElement) ||
                 modelElement.ValueKind != JsonValueKind.String ||
                 !item.TryGetProperty("sourceId", out var sourceIdElement) ||
                 sourceIdElement.ValueKind != JsonValueKind.String)
+            {
+                rejections.Add("missing-model-or-source");
                 continue;
+            }
 
             // Giá mới chỉ nhận đúng model hoặc biến thể hậu tố; model gần giống dễ lệch giá.
             var observedModel = modelElement.GetString()?.Trim() ?? string.Empty;
             var (matchLevel, _) = GeminiExternalUsedPriceSearchService.ClassifyModel(requestedModel, observedModel);
             if (matchLevel is not (ExternalModelMatchLevel.Exact or ExternalModelMatchLevel.Variant))
+            {
+                rejections.Add($"model-mismatch:'{observedModel}'");
                 continue;
+            }
 
             var sourceId = sourceIdElement.GetString();
             if (string.IsNullOrWhiteSpace(sourceId) ||
                 !groundedSources.TryGetValue(sourceId, out var source) ||
                 !seenSourceIds.Add(sourceId))
+            {
+                rejections.Add($"source:'{sourceId}'");
                 continue;
+            }
 
             accepted.Add(new NewPriceEvidence(
                 Math.Round(price, 0),
