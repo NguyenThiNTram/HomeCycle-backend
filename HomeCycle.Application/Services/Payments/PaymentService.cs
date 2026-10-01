@@ -293,29 +293,32 @@ namespace HomeCycle.Application.Services.Payments
 
         public async Task<Result<string>> GeneratePayOSCheckoutUrlAsync(Guid agreementId, Guid payerId, string returnUrl, string cancelUrl, CancellationToken ct = default)
         {
+            using var flowLog = new AgreementFlowLog(_logger, "PaymentService.GeneratePayOSCheckoutUrlAsync", agreementId);
+            flowLog.Step($"Calling {_payOSCheckoutValidator.GetType().Name}.ValidateAsync");
             var urlValidation = await _payOSCheckoutValidator.ValidateAsync(
                 new PayOSCheckoutRequest { ReturnUrl = returnUrl, CancelUrl = cancelUrl }, ct);
             if (!urlValidation.IsValid)
             {
                 var msg = string.Join(" ", urlValidation.Errors.Select(e => e.ErrorMessage));
-                return Result<string>.Fail(new Error("Payment.InvalidRedirectUrl", msg));
+                return flowLog.Result(Result<string>.Fail(new Error("Payment.InvalidRedirectUrl", msg)));
             }
+            flowLog.Step($"Calling {_agreementRepo.GetType().Name}.GetByIdAsync");
 
             var agreement = await _agreementRepo.GetByIdAsync(agreementId, ct);
             if (agreement == null)
-                return Result<string>.Fail(new Error("Agreement.NotFound", "Không tìm thấy thỏa thuận."));
+                return flowLog.Result(Result<string>.Fail(new Error("Agreement.NotFound", "Không tìm thấy thỏa thuận.")));
 
             if (agreement.BuyerId != payerId)
-                return Result<string>.Fail(new Error("Auth.Forbidden", "Chỉ người mua mới có quyền thanh toán thỏa thuận này."));
+                return flowLog.Result(Result<string>.Fail(new Error("Auth.Forbidden", "Chỉ người mua mới có quyền thanh toán thỏa thuận này.")));
 
             if (!await HasVerifiedBankAccountAsync(payerId, ct))
-                return Result<string>.Fail(PaymentErrors.BankAccountNotVerified);
+                return flowLog.Result(Result<string>.Fail(PaymentErrors.BankAccountNotVerified));
 
             // Chỉ cho tạo checkout link khi Agreement đang thật sự chờ thanh toán.
             if (agreement.AgreementStatus == (int)AgreementStatus.Expired || TradingPostRules.IsExpired(TradingPostRules.PaymentDeadline(agreement)))
-                return Result<string>.Fail(agreement.AgreementStatus == (int)AgreementStatus.Expired ? AgreementErrors.Expired : AgreementErrors.DeadlinePassed);
+                return flowLog.Result(Result<string>.Fail(agreement.AgreementStatus == (int)AgreementStatus.Expired ? AgreementErrors.Expired : AgreementErrors.DeadlinePassed));
             if (agreement.AgreementStatus != (int)AgreementStatus.Awaiting_Payment)
-                return Result<string>.Fail(new Error("Agreement.InvalidStatus", "Thỏa thuận không ở trạng thái chờ thanh toán."));
+                return flowLog.Result(Result<string>.Fail(new Error("Agreement.InvalidStatus", "Thỏa thuận không ở trạng thái chờ thanh toán.")));
 
             AgreementDetailsDto? details;
             try
@@ -324,7 +327,7 @@ namespace HomeCycle.Application.Services.Payments
             }
             catch (JsonException)
             {
-                return Result<string>.Fail(new Error("Data.InvalidFormat", "Dữ liệu JSONB cấu hình thỏa thuận bị lỗi."));
+                return flowLog.Result(Result<string>.Fail(new Error("Data.InvalidFormat", "Dữ liệu JSONB cấu hình thỏa thuận bị lỗi.")));
             }
 
             var scheduleError =
@@ -333,18 +336,18 @@ namespace HomeCycle.Application.Services.Payments
                     details);
 
             if (scheduleError != null)
-                return Result<string>.Fail(scheduleError);
+                return flowLog.Result(Result<string>.Fail(scheduleError));
 
             if (details?.EstimatedShippingFee is < 0)
-                return Result<string>.Fail(new Error("Payment.InvalidShippingFee", "Phí vận chuyển không được nhỏ hơn 0."));
+                return flowLog.Result(Result<string>.Fail(new Error("Payment.InvalidShippingFee", "Phí vận chuyển không được nhỏ hơn 0.")));
 
             if (HomeCycle.Application.Commons.Helpers.GhnShippingCalculationHelper.IsAgreementGhnDelivery(
                     (AgreementType?)agreement.AgreementType, details?.DeliveryMethod)
                 && details?.EstimatedShippingFee is null)
             {
-                return Result<string>.Fail(new Error(
+                return flowLog.Result(Result<string>.Fail(new Error(
                     "Payment.GhnShippingFeeMissing",
-                    "Chưa có phí vận chuyển GHN. Vui lòng tính lại phí giao hàng trước khi thanh toán."));
+                    "Chưa có phí vận chuyển GHN. Vui lòng tính lại phí giao hàng trước khi thanh toán.")));
             }
 
             var paymentPolicy = await _platformPolicyProvider.GetPaymentConfigAsync(ct);
@@ -354,9 +357,9 @@ namespace HomeCycle.Application.Services.Payments
 
             if (calc.BasePrice <= 0 || calc.AmountToPay <= 0 || calc.AmountToPay > int.MaxValue)
             {
-                return Result<string>.Fail(new Error(
+                return flowLog.Result(Result<string>.Fail(new Error(
                     "Payment.InvalidAmount",
-                    "Số tiền thanh toán không hợp lệ hoặc vượt quá giới hạn cho phép."));
+                    "Số tiền thanh toán không hợp lệ hoặc vượt quá giới hạn cho phép.")));
             }
 
             agreement.PaymentType = calc.PaymentType;
@@ -369,6 +372,7 @@ namespace HomeCycle.Application.Services.Payments
             if (pendingSnapshot?.ExpiredAt.HasValue == true &&
                 pendingSnapshot.ExpiredAt.Value <= DateTime.UtcNow)
             {
+                flowLog.Step("Calling ReconcilePayOsPaymentAsync");
                 var reconcileResult =
                     await ReconcilePayOsPaymentAsync(
                         pendingSnapshot.PaymentId,
@@ -376,22 +380,24 @@ namespace HomeCycle.Application.Services.Payments
                         ct);
 
                 if (!reconcileResult.IsSuccess)
-                    return Result<string>.Fail(
-                        reconcileResult.Error!);
+                    return flowLog.Result(Result<string>.Fail(
+                        reconcileResult.Error!));
 
                 if (reconcileResult.Data == PaymentStatus.Pending)
                 {
-                    return Result<string>.Fail(
+                    return flowLog.Result(Result<string>.Fail(
                         new Error(
                             "Payment.ActiveCheckoutExists",
-                            "Phiên thanh toán hiện tại vẫn đang được PayOS xử lý."));
+                            "Phiên thanh toán hiện tại vẫn đang được PayOS xử lý.")));
                 }
             }
+            flowLog.Step($"Calling {_unitOfWork.GetType().Name}.BeginTransactionAsync");
 
             await _unitOfWork.BeginTransactionAsync(ct);
 
             try
             {
+                flowLog.Step($"Calling {_agreementRepo.GetType().Name}.GetByIdForUpdateAsync");
                 var lockedAgreement =
                     await _agreementRepo.GetByIdForUpdateAsync(
                         agreementId,
@@ -399,38 +405,42 @@ namespace HomeCycle.Application.Services.Payments
 
                 if (lockedAgreement == null)
                 {
+                    flowLog.Step($"Calling {_unitOfWork.GetType().Name}.RollbackTransactionAsync");
                     await _unitOfWork.RollbackTransactionAsync(ct);
 
-                    return Result<string>.Fail(
+                    return flowLog.Result(Result<string>.Fail(
                         new Error(
                             "Agreement.NotFound",
-                            "Không tìm thấy thỏa thuận."));
+                            "Không tìm thấy thỏa thuận.")));
                 }
 
                 if (lockedAgreement.BuyerId != payerId)
                 {
+                    flowLog.Step($"Calling {_unitOfWork.GetType().Name}.RollbackTransactionAsync");
                     await _unitOfWork.RollbackTransactionAsync(ct);
 
-                    return Result<string>.Fail(
+                    return flowLog.Result(Result<string>.Fail(
                         new Error(
                             "Auth.Forbidden",
-                            "Chỉ người mua mới có quyền thanh toán thỏa thuận này."));
+                            "Chỉ người mua mới có quyền thanh toán thỏa thuận này.")));
                 }
 
                 if (lockedAgreement.AgreementStatus == (int)AgreementStatus.Expired || TradingPostRules.IsExpired(TradingPostRules.PaymentDeadline(lockedAgreement)))
                 {
+                    flowLog.Step($"Calling {_unitOfWork.GetType().Name}.RollbackTransactionAsync");
                     await _unitOfWork.RollbackTransactionAsync(ct);
-                    return Result<string>.Fail(lockedAgreement.AgreementStatus == (int)AgreementStatus.Expired ? AgreementErrors.Expired : AgreementErrors.DeadlinePassed);
+                    return flowLog.Result(Result<string>.Fail(lockedAgreement.AgreementStatus == (int)AgreementStatus.Expired ? AgreementErrors.Expired : AgreementErrors.DeadlinePassed));
                 }
                 if (lockedAgreement.AgreementStatus !=
                     (int)AgreementStatus.Awaiting_Payment)
                 {
+                    flowLog.Step($"Calling {_unitOfWork.GetType().Name}.RollbackTransactionAsync");
                     await _unitOfWork.RollbackTransactionAsync(ct);
 
-                    return Result<string>.Fail(
+                    return flowLog.Result(Result<string>.Fail(
                         new Error(
                             "Agreement.InvalidStatus",
-                            "Thỏa thuận không ở trạng thái chờ thanh toán."));
+                            "Thỏa thuận không ở trạng thái chờ thanh toán.")));
                 }
 
                 agreement = lockedAgreement;
@@ -455,18 +465,21 @@ namespace HomeCycle.Application.Services.Payments
                         existingTx != null &&
                         !string.IsNullOrWhiteSpace(existingTx.CheckoutUrl))
                     {
+                        flowLog.Step($"Calling {_unitOfWork.GetType().Name}.CommitTransactionAsync");
                         await _unitOfWork.CommitTransactionAsync(ct);
+                        flowLog.Step("Transaction committed successfully");
 
-                        return Result<string>.Success(
-                            existingTx.CheckoutUrl);
+                        return flowLog.Result(Result<string>.Success(
+                            existingTx.CheckoutUrl));
                     }
+                    flowLog.Step($"Calling {_unitOfWork.GetType().Name}.RollbackTransactionAsync");
 
                     await _unitOfWork.RollbackTransactionAsync(ct);
 
-                    return Result<string>.Fail(
+                    return flowLog.Result(Result<string>.Fail(
                         new Error(
                             "Payment.ActiveCheckoutExists",
-                            "Phiên thanh toán trước đang chờ đồng bộ trạng thái."));
+                            "Phiên thanh toán trước đang chờ đồng bộ trạng thái.")));
                 }
 
 
@@ -479,8 +492,9 @@ namespace HomeCycle.Application.Services.Payments
                         break;
                     if (attempt == maxOrderCodeAttempts - 1)
                         {
+                            flowLog.Step($"Calling {_unitOfWork.GetType().Name}.RollbackTransactionAsync");
                             await _unitOfWork.RollbackTransactionAsync(ct);
-                            return Result<string>.Fail(new Error("Payment.OrderCodeConflict", "Không thể khởi tạo mã đơn hàng, vui lòng thử lại."));
+                            return flowLog.Result(Result<string>.Fail(new Error("Payment.OrderCodeConflict", "Không thể khởi tạo mã đơn hàng, vui lòng thử lại.")));
                         }
                     await Task.Delay(5, ct); // đẩy timestamp sang millisecond khác
                 }
@@ -491,8 +505,9 @@ namespace HomeCycle.Application.Services.Payments
                     expiresAt = paymentDeadline.Value;
                 if (expiresAt <= DateTime.UtcNow)
                 {
+                    flowLog.Step($"Calling {_unitOfWork.GetType().Name}.RollbackTransactionAsync");
                     await _unitOfWork.RollbackTransactionAsync(ct);
-                    return Result<string>.Fail(lockedAgreement.AgreementStatus == (int)AgreementStatus.Expired ? AgreementErrors.Expired : AgreementErrors.DeadlinePassed);
+                    return flowLog.Result(Result<string>.Fail(lockedAgreement.AgreementStatus == (int)AgreementStatus.Expired ? AgreementErrors.Expired : AgreementErrors.DeadlinePassed));
                 }
                 var payOsExpiredAt = new DateTimeOffset(expiresAt).ToUnixTimeSeconds();
 
@@ -507,22 +522,25 @@ namespace HomeCycle.Application.Services.Payments
                     CancelUrl = cancelUrl,
                     ExpiredAt = payOsExpiredAt
                 };
+                flowLog.Step($"Calling {_gatewayService.GetType().Name}.CreatePaymentLinkAsync");
 
                 var gatewayResult = await _gatewayService.CreatePaymentLinkAsync(gatewayRequest, ct);
 
                 if (!gatewayResult.IsSuccess)
                 {
+                    flowLog.Step($"Calling {_unitOfWork.GetType().Name}.RollbackTransactionAsync");
                     await _unitOfWork.RollbackTransactionAsync(ct);
-                    return Result<string>.Fail(gatewayResult.Error);
+                    return flowLog.Result(Result<string>.Fail(gatewayResult.Error));
                 }
 
 
                 if (gatewayResult.Data == null || string.IsNullOrWhiteSpace(gatewayResult.Data.CheckoutUrl))
                 {
+                    flowLog.Step($"Calling {_unitOfWork.GetType().Name}.RollbackTransactionAsync");
                     await _unitOfWork.RollbackTransactionAsync(ct);
-                    return Result<string>.Fail(new Error(
+                    return flowLog.Result(Result<string>.Fail(new Error(
                         "Payment.InvalidGatewayResponse",
-                        "PayOS không trả về đường dẫn thanh toán hợp lệ."));
+                        "PayOS không trả về đường dẫn thanh toán hợp lệ.")));
                 }
 
                 var paymentId = Guid.NewGuid();
@@ -585,18 +603,26 @@ namespace HomeCycle.Application.Services.Payments
                 };
 
                 await _agreementRepo.UpdateAsync(agreement, ct);
+                flowLog.Step($"Calling {_paymentRepo.GetType().Name}.AddAsync");
                 await _paymentRepo.AddAsync(payment, ct);
+                flowLog.Step($"Calling {_paymentTxRepo.GetType().Name}.AddAsync");
                 await _paymentTxRepo.AddAsync(paymentTx, ct);
+                flowLog.Step($"Calling {_auditService.GetType().Name}.EnqueueAsync");
                 await _auditService.EnqueueAsync(paymentInitiatedAuditEvent, ct);
+                flowLog.Step($"Calling {_unitOfWork.GetType().Name}.SaveChangesAsync");
                 await _unitOfWork.SaveChangesAsync(ct);
+                flowLog.Step($"Calling {_unitOfWork.GetType().Name}.CommitTransactionAsync");
                 await _unitOfWork.CommitTransactionAsync();
+                flowLog.Step("Transaction committed successfully");
 
                 await _financeRealtimeService.PublishUpdatedSafelyAsync(financeChange);
 
-                return Result<string>.Success(gatewayResult.Data.CheckoutUrl);
+                flowLog.Step("Checkout link saved; awaiting PayOS payment confirmation before creating order/appointment");
+                return flowLog.Result(Result<string>.Success(gatewayResult.Data.CheckoutUrl));
             }
             catch (Exception ex)
             {
+                flowLog.Step($"Calling {_unitOfWork.GetType().Name}.RollbackTransactionAsync");
                 await _unitOfWork.RollbackTransactionAsync(CancellationToken.None);
                 _unitOfWork.ClearTrackedEntities();
 
@@ -605,7 +631,7 @@ namespace HomeCycle.Application.Services.Payments
                     "Payment.CreateFailed", new Dictionary<string, object?> { ["errorType"] = ex.GetType().Name });
 
                 _logger.LogError(ex, "Lỗi khi tạo payment link và lưu DB cho agreement {AgreementId}", agreementId);
-                return Result<string>.Fail(new Error("Payment.CreateFailed", "Không thể khởi tạo thông tin thanh toán."));
+                return flowLog.Result(Result<string>.Fail(new Error("Payment.CreateFailed", "Không thể khởi tạo thông tin thanh toán.")));
             }
         }
 
@@ -832,48 +858,56 @@ namespace HomeCycle.Application.Services.Payments
 
         public async Task<Result<bool>> HandlePaymentWebhookAsync(string webhookBody, CancellationToken ct = default)
         {
+            using var flowLog = new AgreementFlowLog(_logger, "PaymentService.HandlePaymentWebhookAsync", null);
+            flowLog.Step($"Calling {_gatewayService.GetType().Name}.VerifyAndParseWebhookAsync");
             var verifyResult = await _gatewayService.VerifyAndParseWebhookAsync(webhookBody);
             if (!verifyResult.IsSuccess)
-                return Result<bool>.Fail(verifyResult.Error);
+                return flowLog.Result(Result<bool>.Fail(verifyResult.Error));
 
             var payload = verifyResult.Data;
             if (payload.Status != "Success")
-                return Result<bool>.Success(true);
+            {
+                flowLog.Step("Webhook verified; status is not Success, no fulfillment performed");
+                return flowLog.Result(Result<bool>.Success(true));
+            }
 
             try
             {
+                flowLog.Step("Calling ExecuteSuccessfulPaymentCoreAsync");
                 await ExecuteSuccessfulPaymentCoreAsync(payload.OrderCode.ToString(), payload.ReferenceTransactionId, AuditSource.Webhook, ct, payload.Amount);
             }
             catch (LatePaymentAfterCancelledAgreementException)
             {
-                return Result<bool>.Fail(new Error(
+                return flowLog.Result(Result<bool>.Fail(new Error(
                     "Payment.AgreementCancelledLatePayment",
-                    "Cổng thanh toán xác nhận đã thu tiền nhưng hợp đồng đã bị hủy nên đơn hàng chưa được tạo. Giao dịch cần được nhân viên đối soát thủ công. Vui lòng không thanh toán lại và liên hệ hỗ trợ."));
+                    "Cổng thanh toán xác nhận đã thu tiền nhưng hợp đồng đã bị hủy nên đơn hàng chưa được tạo. Giao dịch cần được nhân viên đối soát thủ công. Vui lòng không thanh toán lại và liên hệ hỗ trợ.")));
             }
 
-            return Result<bool>.Success(true);
+            return flowLog.Result(Result<bool>.Success(true));
         }
 
 
         public async Task<Result<PaymentStatusResponseDto>> ExecuteWalletPaymentAsync(Guid agreementId, Guid payerId, CancellationToken ct = default)
         {
+            using var flowLog = new AgreementFlowLog(_logger, "PaymentService.ExecuteWalletPaymentAsync", agreementId);
             // 1. LẤY VÀ KIỂM TRA DỮ LIỆU CƠ BẢN
+            flowLog.Step($"Calling {_agreementRepo.GetType().Name}.GetByIdAsync");
             var agreement = await _agreementRepo.GetByIdAsync(agreementId, ct);
             if (agreement == null)
-                return Result<PaymentStatusResponseDto>.Fail(new Error("Agreement.NotFound", "Không tìm thấy thỏa thuận."));
+                return flowLog.Result(Result<PaymentStatusResponseDto>.Fail(new Error("Agreement.NotFound", "Không tìm thấy thỏa thuận.")));
 
             if (agreement.BuyerId != payerId)
-                return Result<PaymentStatusResponseDto>.Fail(new Error("Auth.Forbidden", "Chỉ người mua mới có quyền thanh toán."));
+                return flowLog.Result(Result<PaymentStatusResponseDto>.Fail(new Error("Auth.Forbidden", "Chỉ người mua mới có quyền thanh toán.")));
 
             if (!await HasVerifiedBankAccountAsync(payerId, ct))
-                return Result<PaymentStatusResponseDto>.Fail(
-                    PaymentErrors.BankAccountNotVerified);
+                return flowLog.Result(Result<PaymentStatusResponseDto>.Fail(
+                    PaymentErrors.BankAccountNotVerified));
             // Guard chống trùng thanh toán: dựa trên AgreementStatus thay vì PaymentType
             // (PaymentType luôn có giá trị ngay khi tạo Agreement nên không dùng để check đã-thanh-toán được).
             if (agreement.AgreementStatus == (int)AgreementStatus.Expired || TradingPostRules.IsExpired(TradingPostRules.PaymentDeadline(agreement)))
-                return Result<PaymentStatusResponseDto>.Fail(agreement.AgreementStatus == (int)AgreementStatus.Expired ? AgreementErrors.Expired : AgreementErrors.DeadlinePassed);
+                return flowLog.Result(Result<PaymentStatusResponseDto>.Fail(agreement.AgreementStatus == (int)AgreementStatus.Expired ? AgreementErrors.Expired : AgreementErrors.DeadlinePassed));
             if (agreement.AgreementStatus != (int)AgreementStatus.Awaiting_Payment)
-                return Result<PaymentStatusResponseDto>.Fail(new Error("Agreement.InvalidStatus", "Thỏa thuận không ở trạng thái chờ thanh toán."));
+                return flowLog.Result(Result<PaymentStatusResponseDto>.Fail(new Error("Agreement.InvalidStatus", "Thỏa thuận không ở trạng thái chờ thanh toán.")));
 
             // 2. BÓC TÁCH JSONB VÀ TÍNH TOÁN DÒNG TIỀN (dùng chung CalculatePaymentAmount)
             AgreementDetailsDto? details;
@@ -883,7 +917,7 @@ namespace HomeCycle.Application.Services.Payments
             }
             catch (JsonException)
             {
-                return Result<PaymentStatusResponseDto>.Fail(new Error("Data.InvalidFormat", "Dữ liệu JSONB bị lỗi."));
+                return flowLog.Result(Result<PaymentStatusResponseDto>.Fail(new Error("Data.InvalidFormat", "Dữ liệu JSONB bị lỗi.")));
             }
 
             var scheduleError =
@@ -892,19 +926,19 @@ namespace HomeCycle.Application.Services.Payments
                     details);
 
             if (scheduleError != null)
-                return Result<PaymentStatusResponseDto>.Fail(
-                    scheduleError);
+                return flowLog.Result(Result<PaymentStatusResponseDto>.Fail(
+                    scheduleError));
 
             if (details?.EstimatedShippingFee is < 0)
-                return Result<PaymentStatusResponseDto>.Fail(new Error("Payment.InvalidShippingFee", "Phí vận chuyển không được nhỏ hơn 0."));
+                return flowLog.Result(Result<PaymentStatusResponseDto>.Fail(new Error("Payment.InvalidShippingFee", "Phí vận chuyển không được nhỏ hơn 0.")));
 
             if (HomeCycle.Application.Commons.Helpers.GhnShippingCalculationHelper.IsAgreementGhnDelivery(
                     (AgreementType?)agreement.AgreementType, details?.DeliveryMethod)
                 && details?.EstimatedShippingFee is null)
             {
-                return Result<PaymentStatusResponseDto>.Fail(new Error(
+                return flowLog.Result(Result<PaymentStatusResponseDto>.Fail(new Error(
                     "Payment.GhnShippingFeeMissing",
-                    "Chưa có phí vận chuyển GHN. Vui lòng tính lại phí giao hàng trước khi thanh toán."));
+                    "Chưa có phí vận chuyển GHN. Vui lòng tính lại phí giao hàng trước khi thanh toán.")));
             }
 
             var paymentPolicy = await _platformPolicyProvider.GetPaymentConfigAsync(ct);
@@ -929,7 +963,7 @@ namespace HomeCycle.Application.Services.Payments
                     : amountToPay;
 
             if (basePrice <= 0 || amountToPay <= 0)
-                return Result<PaymentStatusResponseDto>.Fail(new Error("Payment.InvalidAmount", "Số tiền thanh toán không hợp lệ."));
+                return flowLog.Result(Result<PaymentStatusResponseDto>.Fail(new Error("Payment.InvalidAmount", "Số tiền thanh toán không hợp lệ.")));
 
             agreement.PaymentType = calc.PaymentType;
 
@@ -939,33 +973,40 @@ namespace HomeCycle.Application.Services.Payments
                 shippingFee > 0;
 
             // TRANSACTION CORE LÕI
+            flowLog.Step($"Calling {_unitOfWork.GetType().Name}.BeginTransactionAsync");
             await _unitOfWork.BeginTransactionAsync(ct);
             try
             {
                 var tradeSnapshot = await _postRepo.GetTradeByAgreementAsync(agreementId, ct);
+                flowLog.Step($"Calling {_postRepo.GetType().Name}.LockAsync");
                 if (tradeSnapshot != null) await _postRepo.LockAsync(tradeSnapshot.PostId, tradeSnapshot.BuyPostId, ct);
+                flowLog.Step($"Calling {_agreementRepo.GetType().Name}.GetByIdForUpdateAsync");
                 var lockedAgreement = await _agreementRepo.GetByIdForUpdateAsync(agreementId, ct);
                 if (lockedAgreement == null)
                 {
+                    flowLog.Step($"Calling {_unitOfWork.GetType().Name}.RollbackTransactionAsync");
                     await _unitOfWork.RollbackTransactionAsync(ct);
-                    return Result<PaymentStatusResponseDto>.Fail(new Error("Agreement.NotFound", "Không tìm thấy thỏa thuận."));
+                    return flowLog.Result(Result<PaymentStatusResponseDto>.Fail(new Error("Agreement.NotFound", "Không tìm thấy thỏa thuận.")));
                 }
 
                 if (lockedAgreement.BuyerId != payerId)
                 {
+                    flowLog.Step($"Calling {_unitOfWork.GetType().Name}.RollbackTransactionAsync");
                     await _unitOfWork.RollbackTransactionAsync(ct);
-                    return Result<PaymentStatusResponseDto>.Fail(new Error("Auth.Forbidden", "Chỉ người mua mới có quyền thanh toán."));
+                    return flowLog.Result(Result<PaymentStatusResponseDto>.Fail(new Error("Auth.Forbidden", "Chỉ người mua mới có quyền thanh toán.")));
                 }
 
                 if (lockedAgreement.AgreementStatus == (int)AgreementStatus.Expired || TradingPostRules.IsExpired(TradingPostRules.PaymentDeadline(lockedAgreement)))
                 {
+                    flowLog.Step($"Calling {_unitOfWork.GetType().Name}.RollbackTransactionAsync");
                     await _unitOfWork.RollbackTransactionAsync(ct);
-                    return Result<PaymentStatusResponseDto>.Fail(lockedAgreement.AgreementStatus == (int)AgreementStatus.Expired ? AgreementErrors.Expired : AgreementErrors.DeadlinePassed);
+                    return flowLog.Result(Result<PaymentStatusResponseDto>.Fail(lockedAgreement.AgreementStatus == (int)AgreementStatus.Expired ? AgreementErrors.Expired : AgreementErrors.DeadlinePassed));
                 }
                 if (lockedAgreement.AgreementStatus != (int)AgreementStatus.Awaiting_Payment)
                 {
+                    flowLog.Step($"Calling {_unitOfWork.GetType().Name}.RollbackTransactionAsync");
                     await _unitOfWork.RollbackTransactionAsync(ct);
-                    return Result<PaymentStatusResponseDto>.Fail(new Error("Agreement.InvalidStatus", "Thỏa thuận không ở trạng thái chờ thanh toán."));
+                    return flowLog.Result(Result<PaymentStatusResponseDto>.Fail(new Error("Agreement.InvalidStatus", "Thỏa thuận không ở trạng thái chờ thanh toán.")));
                 }
 
                 var now = DateTime.UtcNow;
@@ -977,12 +1018,13 @@ namespace HomeCycle.Application.Services.Payments
 
                 if (existingPending != null)
                 {
+                    flowLog.Step($"Calling {_unitOfWork.GetType().Name}.RollbackTransactionAsync");
                     await _unitOfWork.RollbackTransactionAsync(ct);
 
-                    return Result<PaymentStatusResponseDto>.Fail(
+                    return flowLog.Result(Result<PaymentStatusResponseDto>.Fail(
                         new Error(
                             "Payment.ActiveCheckoutExists",
-                            "Phiên thanh toán PayOS trước đang chờ đồng bộ trạng thái."));
+                            "Phiên thanh toán PayOS trước đang chờ đồng bộ trạng thái.")));
                 }
 
                 agreement = lockedAgreement;
@@ -1007,36 +1049,43 @@ namespace HomeCycle.Application.Services.Payments
                 wallet_transaction? shippingWalletTx = null;
                 wallet_ledger? buyerShippingLedger = null;
                 wallet_ledger? shippingLedger = null;
+                flowLog.Step($"Calling {_walletRepo.GetType().Name}.GetSystemWalletForUpdateAsync");
 
                 var orderEscrowWallet = await _walletRepo.GetSystemWalletForUpdateAsync(SystemWalletPurpose.Order_Escrow, ct);
                 if (orderEscrowWallet == null)
                 {
+                    flowLog.Step($"Calling {_unitOfWork.GetType().Name}.RollbackTransactionAsync");
                     await _unitOfWork.RollbackTransactionAsync(ct);
-                    return Result<PaymentStatusResponseDto>.Fail(new Error("Wallet.SystemWalletNotFound", "Không tìm thấy ví Order Escrow."));
+                    return flowLog.Result(Result<PaymentStatusResponseDto>.Fail(new Error("Wallet.SystemWalletNotFound", "Không tìm thấy ví Order Escrow.")));
                 }
 
                 wallet? shippingEscrowWallet = null;
                 if (needsSystemLedger)
                 {
+                    flowLog.Step($"Calling {_walletRepo.GetType().Name}.GetSystemWalletForUpdateAsync");
                     shippingEscrowWallet = await _walletRepo.GetSystemWalletForUpdateAsync(SystemWalletPurpose.Shipping_Escrow, ct);
                     if (shippingEscrowWallet == null)
                     {
+                        flowLog.Step($"Calling {_unitOfWork.GetType().Name}.RollbackTransactionAsync");
                         await _unitOfWork.RollbackTransactionAsync(ct);
-                        return Result<PaymentStatusResponseDto>.Fail(new Error("Wallet.SystemWalletNotFound", "Không tìm thấy ví hệ thống để nhận phí vận chuyển."));
+                        return flowLog.Result(Result<PaymentStatusResponseDto>.Fail(new Error("Wallet.SystemWalletNotFound", "Không tìm thấy ví hệ thống để nhận phí vận chuyển.")));
                     }
                 }
+                flowLog.Step($"Calling {_walletRepo.GetType().Name}.GetUserWalletForUpdateAsync");
 
                 var buyerWallet = await _walletRepo.GetUserWalletForUpdateAsync(payerId, ct);
                 if (buyerWallet == null)
                 {
+                    flowLog.Step($"Calling {_unitOfWork.GetType().Name}.RollbackTransactionAsync");
                     await _unitOfWork.RollbackTransactionAsync(ct);
-                    return Result<PaymentStatusResponseDto>.Fail(new Error("Wallet.BuyerNotFound", "Không tìm thấy ví của người mua."));
+                    return flowLog.Result(Result<PaymentStatusResponseDto>.Fail(new Error("Wallet.BuyerNotFound", "Không tìm thấy ví của người mua.")));
                 }
 
                 if (buyerWallet.AvailableBalance < amountToPay)
                 {
+                    flowLog.Step($"Calling {_unitOfWork.GetType().Name}.RollbackTransactionAsync");
                     await _unitOfWork.RollbackTransactionAsync(ct);
-                    return Result<PaymentStatusResponseDto>.Fail(new Error("Wallet.InsufficientBalance", "Số dư ví không đủ để thực hiện giao dịch."));
+                    return flowLog.Result(Result<PaymentStatusResponseDto>.Fail(new Error("Wallet.InsufficientBalance", "Số dư ví không đủ để thực hiện giao dịch.")));
                 }
 
                 var paymentId = Guid.NewGuid();
@@ -1166,6 +1215,7 @@ namespace HomeCycle.Application.Services.Payments
                 };
 
                 // Hiện thực hóa Agreement -> Order/Appointment/trừ Quantity/Confirmed (dùng chung với PayOS)
+                flowLog.Step("Calling FulfillAgreementAsync");
                 var fulfillment = await FulfillAgreementAsync(agreement, basePrice, amountToPay, details, ct, orderIdOverride: orderId);
 
                 var walletPaymentAuditEvent = new AuditEvent
@@ -1192,6 +1242,7 @@ namespace HomeCycle.Application.Services.Payments
                         ["shippingFee"] = shippingFee
                     }
                 };
+                flowLog.Step($"Calling {_negotiationRepo.GetType().Name}.GetByIdForUpdateAsync");
 
                 var negotiation = await _negotiationRepo.GetByIdForUpdateAsync(
                     agreement.NegotiationId,
@@ -1216,25 +1267,33 @@ namespace HomeCycle.Application.Services.Payments
 
                 await _walletRepo.UpdateAsync(buyerWallet, ct);
                 await _walletRepo.UpdateAsync(orderEscrowWallet, ct);
+                flowLog.Step($"Calling {_paymentRepo.GetType().Name}.AddAsync");
                 await _paymentRepo.AddAsync(payment, ct);
+                flowLog.Step($"Calling {_walletTxRepo.GetType().Name}.AddAsync");
 
                 await _walletTxRepo.AddAsync(escrowWalletTx, ct);
+                flowLog.Step($"Calling {_ledgerRepo.GetType().Name}.AddAsync");
                 await _ledgerRepo.AddAsync(buyerEscrowLedger, ct);
+                flowLog.Step($"Calling {_ledgerRepo.GetType().Name}.AddAsync");
                 await _ledgerRepo.AddAsync(orderEscrowLedger, ct);
 
                 if (shippingWalletTx != null)
+                    flowLog.Step($"Calling {_walletTxRepo.GetType().Name}.AddAsync");
                     await _walletTxRepo.AddAsync(shippingWalletTx, ct);
 
                 if (buyerShippingLedger != null)
+                    flowLog.Step($"Calling {_ledgerRepo.GetType().Name}.AddAsync");
                     await _ledgerRepo.AddAsync(buyerShippingLedger, ct);
 
                 if (shippingLedger != null)
+                    flowLog.Step($"Calling {_ledgerRepo.GetType().Name}.AddAsync");
                     await _ledgerRepo.AddAsync(shippingLedger, ct);
 
                 if (needsSystemLedger && shippingEscrowWallet != null)
                     await _walletRepo.UpdateAsync(shippingEscrowWallet, ct);
 
                 await _negotiationRepo.UpdateAsync(negotiation, ct);
+                flowLog.Step($"Calling {_messageRepo.GetType().Name}.AddAsync");
                 await _messageRepo.AddAsync(paymentMessage, ct);
                 await _conversationRepo.UpdateLastActivityAsync(conversation.ConversationId, now, ct);
 
@@ -1266,10 +1325,16 @@ namespace HomeCycle.Application.Services.Payments
                     PaymentId = payment.PaymentId,
                     OccurredAt = now
                 };
+                flowLog.Step($"Calling {_auditService.GetType().Name}.EnqueueAsync");
 
                 await _auditService.EnqueueAsync(walletPaymentAuditEvent, ct);
+                flowLog.Step($"Calling {_unitOfWork.GetType().Name}.SaveChangesAsync");
                 await _unitOfWork.SaveChangesAsync(ct);
+                flowLog.Step($"Calling {_unitOfWork.GetType().Name}.CommitTransactionAsync");
                 await _unitOfWork.CommitTransactionAsync(ct);
+                flowLog.Step("Transaction committed successfully");
+                flowLog.Step($"Order/appointment committed | AgreementId={agreement.AgreementId} | OrderId={fulfillment.Order.OrderId} | AppointmentId={fulfillment.Appointment.AppointmentId}");
+                flowLog.Step("Calling ArchivePaidAgreementPdfSafelyAsync");
 
                 await ArchivePaidAgreementPdfSafelyAsync(agreement.AgreementId, payment.PaymentId, fulfillment.Order.OrderId, ct);
 
@@ -1301,16 +1366,17 @@ namespace HomeCycle.Application.Services.Payments
                     agreement.BuyerId,
                     now);
 
-                return Result<PaymentStatusResponseDto>.Success(
+                return flowLog.Result(Result<PaymentStatusResponseDto>.Success(
                     new PaymentStatusResponseDto
                     {
                         PaymentStatus = PaymentStatus.Completed,
                         OrderId = fulfillment.Order.OrderId,
                         AppointmentId = fulfillment.Appointment.AppointmentId
-                    });
+                    }));
             }
             catch (Exception ex)
             {
+                flowLog.Step($"Calling {_unitOfWork.GetType().Name}.RollbackTransactionAsync");
                 await _unitOfWork.RollbackTransactionAsync(CancellationToken.None);
                 _unitOfWork.ClearTrackedEntities();
 
@@ -1330,7 +1396,7 @@ namespace HomeCycle.Application.Services.Payments
                     });
 
                 _logger.LogError(ex, "Lỗi hạch toán thanh toán ví nội bộ cho Agreement {AgreementId}", agreementId);
-                return Result<PaymentStatusResponseDto>.Fail(new Error("WalletPayment.TransactionFailed", "Giao dịch thất bại do lỗi hệ thống."));
+                return flowLog.Result(Result<PaymentStatusResponseDto>.Fail(new Error("WalletPayment.TransactionFailed", "Giao dịch thất bại do lỗi hệ thống.")));
             }
         }
 
@@ -1583,24 +1649,26 @@ namespace HomeCycle.Application.Services.Payments
             Guid payerId,
             CancellationToken ct = default)
         {
+            using var flowLog = new AgreementFlowLog(_logger, "PaymentService.SyncPaymentStatusAsync", agreementId);
+            flowLog.Step($"Calling {_agreementRepo.GetType().Name}.GetByIdAsync");
             var agreement = await _agreementRepo.GetByIdAsync(
                 agreementId,
                 ct);
 
             if (agreement == null)
             {
-                return Result<PaymentStatusResponseDto>.Fail(
+                return flowLog.Result(Result<PaymentStatusResponseDto>.Fail(
                     new Error(
                         "Agreement.NotFound",
-                        "Không tìm thấy thỏa thuận."));
+                        "Không tìm thấy thỏa thuận.")));
             }
 
             if (agreement.BuyerId != payerId)
             {
-                return Result<PaymentStatusResponseDto>.Fail(
+                return flowLog.Result(Result<PaymentStatusResponseDto>.Fail(
                     new Error(
                         "Auth.Forbidden",
-                        "Chỉ người mua mới có quyền xem trạng thái thanh toán này."));
+                        "Chỉ người mua mới có quyền xem trạng thái thanh toán này.")));
             }
 
             var payment = await _paymentRepo.GetLatestByAgreementAsync(
@@ -1609,11 +1677,11 @@ namespace HomeCycle.Application.Services.Payments
 
             if (payment == null)
             {
-                return Result<PaymentStatusResponseDto>.Success(
+                return flowLog.Result(Result<PaymentStatusResponseDto>.Success(
                     await BuildPaymentStatusResponseAsync(
                         agreementId,
                         PaymentStatus.Pending,
-                        ct));
+                        ct)));
             }
 
             var currentStatus = payment.PaymentStatus.HasValue
@@ -1622,16 +1690,17 @@ namespace HomeCycle.Application.Services.Payments
 
             if (currentStatus != PaymentStatus.Pending)
             {
-                return Result<PaymentStatusResponseDto>.Success(
+                return flowLog.Result(Result<PaymentStatusResponseDto>.Success(
                     await BuildPaymentStatusResponseAsync(
                         agreementId,
                         currentStatus,
-                        ct));
+                        ct)));
             }
 
             Result<PaymentStatus> reconcileResult;
             try
             {
+                flowLog.Step("Calling ReconcilePayOsPaymentAsync");
                 reconcileResult = await ReconcilePayOsPaymentAsync(
                     payment.PaymentId,
                     AuditSource.HttpApi,
@@ -1639,21 +1708,21 @@ namespace HomeCycle.Application.Services.Payments
             }
             catch (LatePaymentAfterCancelledAgreementException)
             {
-                return Result<PaymentStatusResponseDto>.Fail(new Error(
+                return flowLog.Result(Result<PaymentStatusResponseDto>.Fail(new Error(
                     "Payment.AgreementCancelledLatePayment",
-                    "Cổng thanh toán xác nhận đã thu tiền nhưng hợp đồng đã bị hủy nên đơn hàng chưa được tạo. Giao dịch cần được nhân viên đối soát thủ công. Vui lòng không thanh toán lại và liên hệ hỗ trợ."));
+                    "Cổng thanh toán xác nhận đã thu tiền nhưng hợp đồng đã bị hủy nên đơn hàng chưa được tạo. Giao dịch cần được nhân viên đối soát thủ công. Vui lòng không thanh toán lại và liên hệ hỗ trợ.")));
             }
 
             if (!reconcileResult.IsSuccess)
-                return Result<PaymentStatusResponseDto>.Fail(reconcileResult.Error!);
+                return flowLog.Result(Result<PaymentStatusResponseDto>.Fail(reconcileResult.Error!));
 
             var reconciledStatus = reconcileResult.Data;
 
-            return Result<PaymentStatusResponseDto>.Success(
+            return flowLog.Result(Result<PaymentStatusResponseDto>.Success(
                 await BuildPaymentStatusResponseAsync(
                     agreementId,
                     reconciledStatus,
-                    ct));
+                    ct)));
         }
 
         public async Task<Result<SubscriptionPaymentStatusResponseDto>> SyncSubscriptionPaymentStatusAsync(
@@ -3433,14 +3502,20 @@ namespace HomeCycle.Application.Services.Payments
 
         private async Task ExecuteSuccessfulPaymentCoreAsync(string payOsOrderCode, string payOsTransactionId, AuditSource auditSource, CancellationToken ct, decimal? confirmedAmount = null)
         {
+            using var flowLog = new AgreementFlowLog(_logger, "PaymentService.ExecuteSuccessfulPaymentCoreAsync", payOsOrderCode);
             var paymentTxSnapshot = await _paymentTxRepo.GetByPayOSOrderCodeAsync(payOsOrderCode, ct);
             if (paymentTxSnapshot == null)
                 throw new InvalidOperationException("Không tìm thấy giao dịch PayOS tương ứng.");
 
             if (paymentTxSnapshot.PaymentTransactionStatus == (int)PaymentTransactionStatus.Success)
+            {
+                flowLog.Complete("Already processed; skipping duplicate payment");
                 return;
+            }
+            flowLog.Step($"Calling {_paymentRepo.GetType().Name}.GetByIdAsync");
 
             var paymentSnapshot = await _paymentRepo.GetByIdAsync(paymentTxSnapshot.PaymentId, ct);
+            flowLog.Step($"Payment resolved | AgreementId={paymentSnapshot?.AgreementId} | Source={auditSource}");
 
             if (paymentSnapshot == null)
                 throw new InvalidOperationException("Không tìm thấy payment của giao dịch PayOS.");
@@ -3454,12 +3529,14 @@ namespace HomeCycle.Application.Services.Payments
                     ct,
                     confirmedAmount);
 
+                flowLog.Complete("Delegated to subscription payment; no agreement fulfillment");
                 return;
             }
 
 
             if (paymentSnapshot?.AgreementId == null)
                 throw new InvalidOperationException("Giao dịch PayOS không có thỏa thuận hợp lệ.");
+            flowLog.Step($"Calling {_unitOfWork.GetType().Name}.BeginTransactionAsync");
 
             await _unitOfWork.BeginTransactionAsync(ct);
             var agreementWasCancelled = false;
@@ -3467,7 +3544,9 @@ namespace HomeCycle.Application.Services.Payments
             try
             {
                 var tradeSnapshot = await _postRepo.GetTradeByAgreementAsync(paymentSnapshot.AgreementId.Value, ct);
+                flowLog.Step($"Calling {_postRepo.GetType().Name}.LockAsync");
                 if (tradeSnapshot != null) await _postRepo.LockAsync(tradeSnapshot.PostId, tradeSnapshot.BuyPostId, ct);
+                flowLog.Step($"Calling {_agreementRepo.GetType().Name}.GetByIdForUpdateAsync");
                 var agreement = await _agreementRepo.GetByIdForUpdateAsync(paymentSnapshot.AgreementId.Value, ct)
                     ?? throw new InvalidOperationException("Không tìm thấy thỏa thuận của giao dịch PayOS.");
 
@@ -3476,7 +3555,10 @@ namespace HomeCycle.Application.Services.Payments
 
                 if (paymentTx.PaymentTransactionStatus == (int)PaymentTransactionStatus.Success)
                 {
+                    flowLog.Step($"Calling {_unitOfWork.GetType().Name}.CommitTransactionAsync");
                     await _unitOfWork.CommitTransactionAsync(ct);
+                    flowLog.Step("Transaction committed successfully");
+                    flowLog.Complete("Already processed; skipping duplicate payment");
                     return;
                 }
 
@@ -3501,6 +3583,7 @@ namespace HomeCycle.Application.Services.Payments
                 }
                 if (agreement.AgreementStatus != (int)AgreementStatus.Awaiting_Payment)
                     throw new InvalidOperationException("Thỏa thuận không còn ở trạng thái chờ thanh toán.");
+                flowLog.Step($"Calling {_paymentRepo.GetType().Name}.GetByIdAsync");
 
                 var payment = await _paymentRepo.GetByIdAsync(paymentTx.PaymentId, ct)
                     ?? throw new InvalidOperationException("Không tìm thấy payment của giao dịch PayOS.");
@@ -3548,6 +3631,7 @@ namespace HomeCycle.Application.Services.Payments
 
                 wallet_transaction? shippingWalletTx = null;
                 wallet_ledger? shippingLedger = null;
+                flowLog.Step($"Calling {_walletRepo.GetType().Name}.GetSystemWalletForUpdateAsync");
 
                 var orderEscrowWallet = await _walletRepo.GetSystemWalletForUpdateAsync(SystemWalletPurpose.Order_Escrow, ct)
                     ?? throw new InvalidOperationException("Không tìm thấy ví Order Escrow.");
@@ -3555,6 +3639,7 @@ namespace HomeCycle.Application.Services.Payments
                 wallet? shippingEscrowWallet = null;
                 if (needsSystemLedger)
                 {
+                    flowLog.Step($"Calling {_walletRepo.GetType().Name}.GetSystemWalletForUpdateAsync");
                     shippingEscrowWallet = await _walletRepo.GetSystemWalletForUpdateAsync(SystemWalletPurpose.Shipping_Escrow, ct);
                     if (shippingEscrowWallet == null)
                         throw new InvalidOperationException("Không tìm thấy ví hệ thống để nhận phí vận chuyển.");
@@ -3568,6 +3653,7 @@ namespace HomeCycle.Application.Services.Payments
 
                 payment.PaymentStatus = (int)PaymentStatus.Completed;
                 payment.PaidAt = now;
+                flowLog.Step("Calling FulfillAgreementAsync");
 
                 var fulfillment = await FulfillAgreementAsync(agreement, basePrice, paidAmount, details, ct);
                 payment.OrderId = fulfillment.Order.OrderId;
@@ -3598,6 +3684,7 @@ namespace HomeCycle.Application.Services.Payments
                         ["payOsOrderCode"] = payOsOrderCode
                     }
                 };
+                flowLog.Step($"Calling {_negotiationRepo.GetType().Name}.GetByIdForUpdateAsync");
 
                 var negotiation = await _negotiationRepo.GetByIdForUpdateAsync(agreement.NegotiationId, ct)
                     ?? throw new InvalidOperationException("Không tìm thấy cuộc thương lượng của thỏa thuận.");
@@ -3703,21 +3790,26 @@ namespace HomeCycle.Application.Services.Payments
 
                 await _paymentTxRepo.UpdateAsync(paymentTx, ct);
                 await _paymentRepo.UpdateAsync(payment, ct);
+                flowLog.Step($"Calling {_walletTxRepo.GetType().Name}.AddAsync");
 
                 await _walletTxRepo.AddAsync(escrowWalletTx, ct);
+                flowLog.Step($"Calling {_ledgerRepo.GetType().Name}.AddAsync");
                 await _ledgerRepo.AddAsync(orderEscrowLedger, ct);
                 await _walletRepo.UpdateAsync(orderEscrowWallet, ct);
 
                 if (shippingWalletTx != null)
+                    flowLog.Step($"Calling {_walletTxRepo.GetType().Name}.AddAsync");
                     await _walletTxRepo.AddAsync(shippingWalletTx, ct);
 
                 if (shippingLedger != null)
+                    flowLog.Step($"Calling {_ledgerRepo.GetType().Name}.AddAsync");
                     await _ledgerRepo.AddAsync(shippingLedger, ct);
 
                 if (needsSystemLedger && shippingEscrowWallet != null)
                     await _walletRepo.UpdateAsync(shippingEscrowWallet, ct);
 
                 await _negotiationRepo.UpdateAsync(negotiation, ct);
+                flowLog.Step($"Calling {_messageRepo.GetType().Name}.AddAsync");
                 await _messageRepo.AddAsync(paymentMessage, ct);
                 await _conversationRepo.UpdateLastActivityAsync(conversation.ConversationId, now, ct);
 
@@ -3736,10 +3828,16 @@ namespace HomeCycle.Application.Services.Payments
                     NotificationTargetType.Order,
                     fulfillment.Order.OrderId,
                     ct);
+                flowLog.Step($"Calling {_auditService.GetType().Name}.EnqueueAsync");
 
                 await _auditService.EnqueueAsync(paymentCompleteAuditEvent, ct);
+                flowLog.Step($"Calling {_unitOfWork.GetType().Name}.SaveChangesAsync");
                 await _unitOfWork.SaveChangesAsync(ct);
+                flowLog.Step($"Calling {_unitOfWork.GetType().Name}.CommitTransactionAsync");
                 await _unitOfWork.CommitTransactionAsync(ct);
+                flowLog.Step("Transaction committed successfully");
+                flowLog.Step($"Order/appointment committed | AgreementId={agreement.AgreementId} | OrderId={fulfillment.Order.OrderId} | AppointmentId={fulfillment.Appointment.AppointmentId}");
+                flowLog.Step("Calling ArchivePaidAgreementPdfSafelyAsync");
 
                 await ArchivePaidAgreementPdfSafelyAsync(agreement.AgreementId, payment.PaymentId, fulfillment.Order.OrderId, ct);
 
@@ -3774,6 +3872,7 @@ namespace HomeCycle.Application.Services.Payments
             }
             catch (Exception ex)
             {
+                flowLog.Step($"Calling {_unitOfWork.GetType().Name}.RollbackTransactionAsync");
                 await _unitOfWork.RollbackTransactionAsync(CancellationToken.None);
                 _unitOfWork.ClearTrackedEntities();
 
@@ -3800,6 +3899,7 @@ namespace HomeCycle.Application.Services.Payments
                     _logger.LogError(ex, "Lỗi hạch toán giao dịch PayOS OrderCode {OrderCode}", payOsOrderCode);
                 throw;
             }
+            flowLog.Complete("PayOS payment processing completed");
         }
         private sealed class LatePaymentAfterCancelledAgreementException : InvalidOperationException
         {
@@ -3920,7 +4020,9 @@ namespace HomeCycle.Application.Services.Payments
             CancellationToken ct,
             Guid? orderIdOverride = null)
         {
+            using var flowLog = new AgreementFlowLog(_logger, "PaymentService.FulfillAgreementAsync", agreement.AgreementId);
             var orderId = orderIdOverride ?? Guid.NewGuid();
+            flowLog.Step("Check for existing order; prevent duplicate fulfillment");
 
             // Chống fulfill trùng: 1 Agreement chỉ được phát sinh đúng 1 Order.
             // (Lưu ý: để chặn tuyệt đối khi webhook gọi song song, cần thêm unique index trên Order.AgreementId.)
@@ -3951,12 +4053,14 @@ namespace HomeCycle.Application.Services.Payments
             var paymentStatus = isFullyPaid
                 ? PaymentStatus.Completed
                 : PaymentStatus.Pending;
+            flowLog.Step($"Calling {_postRepo.GetType().Name}.GetByIdAsync");
 
             var postSnapshot = await _postRepo.GetByIdAsync(agreement.PostId, ct);
             if (postSnapshot == null)
                 throw new InvalidOperationException("Không tìm thấy bài đăng của thỏa thuận.");
 
 
+            flowLog.Step("Prepare order from paid agreement");
             var order = new order
             {
                 OrderId = orderId,
@@ -3989,6 +4093,7 @@ namespace HomeCycle.Application.Services.Payments
                     "Agreement không có thời gian lịch hẹn hợp lệ.");
             }
 
+            flowLog.Step("Validate appointment schedule and load appointment policy");
             var appointmentPolicy =
                 await _platformPolicyProvider
                     .GetAppointmentConfigAsync(ct);
@@ -3999,6 +4104,7 @@ namespace HomeCycle.Application.Services.Payments
                 details?.DeliveryMethod == DeliveryMethod.SellerDelivers;
 
             var appointmentId = Guid.NewGuid();
+            flowLog.Step($"Prepare appointment | Type={appointmentType}");
             var appointment = new appointment
             {
                 AppointmentId = appointmentId,
@@ -4027,6 +4133,7 @@ namespace HomeCycle.Application.Services.Payments
                     InspectionAddress = details?.InspectionAddress ?? string.Empty,
                     InspectionDate = scheduledAt.Value
                 };
+                flowLog.Step($"Calling {_inspectionRepo.GetType().Name}.AddAsync");
                 await _inspectionRepo.AddAsync(inspectionAppt, ct);
             }
             else
@@ -4040,6 +4147,7 @@ namespace HomeCycle.Application.Services.Payments
                     DeliveryAddress = details?.DeliveryAddress,
                     DeliveryMethod = details?.DeliveryMethod?.ToString()
                 };
+                flowLog.Step($"Calling {_collectionRepo.GetType().Name}.AddAsync");
                 await _collectionRepo.AddAsync(collectionAppt, ct);
             }
 
@@ -4148,6 +4256,7 @@ namespace HomeCycle.Application.Services.Payments
                     CreatedAt = now,
                     UpdatedAt = now
                 };
+                flowLog.Step($"Calling {_shipmentRepo.GetType().Name}.AddAsync");
 
                 await _shipmentRepo.AddAsync(localShipment, ct);
 
@@ -4200,16 +4309,21 @@ namespace HomeCycle.Application.Services.Payments
                         LastErrorCode = null,
                         CreatedAt = now
                     };
+                    flowLog.Step($"Calling {_ghnShipmentRepo.GetType().Name}.AddAsync");
 
                     await _ghnShipmentRepo.AddAsync(localGhnShipment, ct);
                 }
             }
+            flowLog.Step($"Calling {_appointmentRepo.GetType().Name}.AddAsync");
 
             await _appointmentRepo.AddAsync(appointment, ct);
+            flowLog.Step($"Calling {_orderRepo.GetType().Name}.AddAsync");
             await _orderRepo.AddAsync(order, ct);
 
+            flowLog.Step("Validate inventory capacity before reducing remaining quantity");
             var trade = await _postRepo.GetTradeByAgreementAsync(agreement.AgreementId, ct)
                 ?? throw new InvalidOperationException("Không tìm thấy đề nghị của thỏa thuận.");
+            flowLog.Step($"Calling {_postRepo.GetType().Name}.ValidateCapacityAsync");
             var capacityError = await _postRepo.ValidateCapacityAsync(trade, agreement.Quantity, agreement.NegotiationId, false, ct);
             if (capacityError != null) throw new InvalidOperationException(capacityError.Message);
             post? postForUpdate = null;
@@ -4217,6 +4331,7 @@ namespace HomeCycle.Application.Services.Payments
             var postNotifications = new List<notification>();
             foreach (var id in new Guid?[] { trade.PostId, trade.BuyPostId }.Where(x => x.HasValue).Select(x => x!.Value).Distinct().OrderBy(x => x))
             {
+                flowLog.Step($"Calling {_postRepo.GetType().Name}.GetByIdForUpdateAsync");
                 var relatedPost = await _postRepo.GetByIdForUpdateAsync(id, ct)
                     ?? throw new InvalidOperationException("Không tìm thấy bài đăng của giao dịch.");
                 relatedPost.RemainingQuantity -= agreement.Quantity;
@@ -4252,9 +4367,11 @@ namespace HomeCycle.Application.Services.Payments
 
             await _cartItemRepository.DeleteByUserAndPostAsync(agreement.BuyerId, trade.PostId, ct);
 
+            flowLog.Step("Inventory updated in transaction; set agreement status to Confirmed");
             agreement.AgreementStatus = (int)AgreementStatus.Confirmed;
             await _agreementRepo.UpdateAsync(agreement, ct);
 
+            flowLog.Complete($"Order/appointment staged | OrderId={order.OrderId} | AppointmentId={appointment.AppointmentId}; awaiting payment transaction commit");
             return new FulfillmentResult
             {
                 Order = order,

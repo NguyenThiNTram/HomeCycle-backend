@@ -276,10 +276,11 @@ namespace HomeCycle.Application.Services.Agreements
 
         public async Task<Result<Guid>> CreateAgreementAsync(CreateAgreementFormRequest request, Guid currentUserId, CancellationToken cancellationToken = default)
         {
+            using var flowLog = new AgreementFlowLog(_logger, "AgreementFormService.CreateAgreementAsync", request.NegotiationId);
             if (request.AgreementDetails != null)
             {
                 var sellerInfo = await GetSellerInfoAsync(request.NegotiationId, currentUserId, cancellationToken);
-                if (!sellerInfo.IsSuccess) return Result<Guid>.Fail(sellerInfo.Error!);
+                if (!sellerInfo.IsSuccess) return flowLog.Result(Result<Guid>.Fail(sellerInfo.Error!));
                 var defaults = sellerInfo.Data!;
                 var details = request.AgreementDetails;
                 details.SellerInfo = defaults;
@@ -287,73 +288,86 @@ namespace HomeCycle.Application.Services.Agreements
                 if (details.DeliveryMethod.HasValue && details.PickupAddress == null)
                     details.PickupAddress = details.SellerInfo.FullAddress;
             }
+            flowLog.Step($"Calling {_createValidator.GetType().Name}.ValidateAsync");
             var validationResult = await _createValidator.ValidateAsync(request, cancellationToken);
             if (!validationResult.IsValid)
             {
                 var errorMessage = string.Join(" | ", validationResult.Errors.Select(e => e.ErrorMessage));
 
-                return Result<Guid>.Fail(new Error("Validation.InvalidRequest", errorMessage));
+                return flowLog.Result(Result<Guid>.Fail(new Error("Validation.InvalidRequest", errorMessage)));
             }
 
             // Giao hàng qua GHN: server tự gọi lại API tính phí để con số trong hợp đồng luôn chính xác
             if (GhnShippingCalculationHelper.IsAgreementGhnDelivery(request.AgreementType, request.AgreementDetails?.DeliveryMethod))
             {
                 var authorized = await GetAuthorizedNegotiationAsync(request.NegotiationId, currentUserId, cancellationToken);
-                if (!authorized.IsSuccess) return Result<Guid>.Fail(authorized.Error!);
+                if (!authorized.IsSuccess) return flowLog.Result(Result<Guid>.Fail(authorized.Error!));
                 var negotiation = authorized.Data!;
                 if (negotiation.SellerId != currentUserId)
-                    return Result<Guid>.Fail(new Error("Auth.Forbidden", "Chỉ người bán được tạo thỏa thuận."));
+                    return flowLog.Result(Result<Guid>.Fail(new Error("Auth.Forbidden", "Chỉ người bán được tạo thỏa thuận.")));
                 if (negotiation.NegotiationStatus != NegotiationStatus.Agreed || negotiation.FinalQuantity is not > 0 || negotiation.FinalPrice is not > 0)
-                    return Result<Guid>.Fail(new Error("Agreement.TermsNotAgreed", "Cần thống nhất giá và số lượng trước khi gọi GHN."));
+                    return flowLog.Result(Result<Guid>.Fail(new Error("Agreement.TermsNotAgreed", "Cần thống nhất giá và số lượng trước khi gọi GHN.")));
+                flowLog.Step($"Calling {_agreementRepo.GetType().Name}.GetByNegotiationIdAsync");
                 if (await _agreementRepo.GetByNegotiationIdAsync(request.NegotiationId, cancellationToken) != null)
-                    return Result<Guid>.Fail(new Error("Agreement.AlreadyExists", "Thỏa thuận đã tồn tại."));
+                    return flowLog.Result(Result<Guid>.Fail(new Error("Agreement.AlreadyExists", "Thỏa thuận đã tồn tại.")));
 
+                flowLog.Step("Compute and validate shipping fee via ComputeShippingFeeAsync");
                 var feeResult = await ComputeShippingFeeAsync(request.AgreementDetails, negotiation.PostId, request.NegotiationId, cancellationToken);
                 if (!feeResult.IsSuccess)
-                    return Result<Guid>.Fail(feeResult.Error!);
+                    return flowLog.Result(Result<Guid>.Fail(feeResult.Error!));
             }
+            flowLog.Step($"Calling {_unitOfWork.GetType().Name}.BeginTransactionAsync");
 
             await _unitOfWork.BeginTransactionAsync(cancellationToken);
 
             try
             {
+                flowLog.Step($"Calling {_negotiationRepo.GetType().Name}.GetByIdAsync");
                 var contextSnapshot = await _negotiationRepo.GetByIdAsync(request.NegotiationId, cancellationToken);
+                flowLog.Step($"Calling {_postRepo.GetType().Name}.LockAsync");
                 if (contextSnapshot != null) await _postRepo.LockAsync(contextSnapshot.PostId, contextSnapshot.Offer?.BuyPostId, cancellationToken);
+                flowLog.Step($"Calling {_negotiationRepo.GetType().Name}.GetByIdForUpdateAsync");
                 var negotiation = await _negotiationRepo.GetByIdForUpdateAsync(request.NegotiationId, cancellationToken);
                 if (negotiation == null)
-                    return Result<Guid>.Fail(new Error("Negotiation.NotFound", "Không tìm thấy cuộc thương lượng."));
+                    return flowLog.Result(Result<Guid>.Fail(new Error("Negotiation.NotFound", "Không tìm thấy cuộc thương lượng.")));
 
                 if (negotiation.SellerId != currentUserId)
-                    return Result<Guid>.Fail(new Error("Auth.Forbidden", "Chỉ người bán mới có quyền tạo thỏa thuận."));
+                    return flowLog.Result(Result<Guid>.Fail(new Error("Auth.Forbidden", "Chỉ người bán mới có quyền tạo thỏa thuận.")));
 
                 if (negotiation.NegotiationStatus == NegotiationStatus.Expired ||
                     TradingPostRules.IsExpired(TradingPostRules.NegotiationDeadline(negotiation)))
                 {
+                    flowLog.Step($"Calling {_unitOfWork.GetType().Name}.RollbackTransactionAsync");
                     await _unitOfWork.RollbackTransactionAsync(cancellationToken);
                     await _negotiationService.ExpireIfDueAsync(request.NegotiationId, cancellationToken);
-                    return Result<Guid>.Fail(NegotiationErrors.Expired);
+                    return flowLog.Result(Result<Guid>.Fail(NegotiationErrors.Expired));
                 }
+                flowLog.Step($"Calling {_agreementRepo.GetType().Name}.GetByNegotiationIdAsync");
 
                 var existingAgreement = await _agreementRepo.GetByNegotiationIdAsync(request.NegotiationId, cancellationToken);
                 if (existingAgreement != null)
-                    return Result<Guid>.Fail(new Error("Agreement.AlreadyExists", "Thỏa thuận đã tồn tại."));
+                    return flowLog.Result(Result<Guid>.Fail(new Error("Agreement.AlreadyExists", "Thỏa thuận đã tồn tại.")));
+                flowLog.Step($"Calling {_postRepo.GetType().Name}.GetByIdAsync");
 
                 var post = await _postRepo.GetByIdAsync(negotiation.PostId, cancellationToken);
                 if (post == null)
-                    return Result<Guid>.Fail(new Error("Post.NotFound", "Bài đăng không tồn tại."));
+                    return flowLog.Result(Result<Guid>.Fail(new Error("Post.NotFound", "Bài đăng không tồn tại.")));
+                flowLog.Step($"Calling {_offerRepo.GetType().Name}.GetByIdAsync");
 
 
                 var offer = await _offerRepo.GetByIdAsync(negotiation.OfferId, cancellationToken);
                 if (offer == null)
-                    return Result<Guid>.Fail(new Error("Offer.NotFound", "Không tìm thấy Offer ban đầu."));
+                    return flowLog.Result(Result<Guid>.Fail(new Error("Offer.NotFound", "Không tìm thấy Offer ban đầu.")));
 
                 if (negotiation.NegotiationStatus != NegotiationStatus.Agreed || negotiation.FinalQuantity is not > 0 || negotiation.FinalPrice is not > 0)
-                    return Result<Guid>.Fail(new Error("Agreement.TermsNotAgreed", "Cần thống nhất giá và số lượng trước khi tạo thỏa thuận."));
+                    return flowLog.Result(Result<Guid>.Fail(new Error("Agreement.TermsNotAgreed", "Cần thống nhất giá và số lượng trước khi tạo thỏa thuận.")));
+                flowLog.Step($"Calling {_postRepo.GetType().Name}.ValidateCapacityAsync");
                 var capacityError = await _postRepo.ValidateCapacityAsync(offer, negotiation.FinalQuantity.Value, negotiation.NegotiationId, false, cancellationToken);
-                if (capacityError != null) return Result<Guid>.Fail(capacityError);
+                if (capacityError != null) return flowLog.Result(Result<Guid>.Fail(capacityError));
+                flowLog.Step("Build product snapshot via BuildProductSnapshotAsync");
                 var snapshotResult = await BuildProductSnapshotAsync(post.PostId, cancellationToken);
                 if (!snapshotResult.IsSuccess)
-                    return Result<Guid>.Fail(snapshotResult.Error!);
+                    return flowLog.Result(Result<Guid>.Fail(snapshotResult.Error!));
 
                 var now = DateTime.UtcNow;
                 var conversation = await GetOrCreateConversationAsync(negotiation, now, cancellationToken);
@@ -424,9 +438,12 @@ namespace HomeCycle.Application.Services.Agreements
                 };
 
                 negotiation.LastMessageAt = now;
+                flowLog.Step($"Calling {_agreementRepo.GetType().Name}.AddAsync");
 
                 await _agreementRepo.AddAsync(newAgreement, cancellationToken);
+                flowLog.Step($"Agreement staged | AgreementId={newAgreement.AgreementId}; awaiting commit");
                 await _negotiationRepo.UpdateAsync(negotiation, cancellationToken);
+                flowLog.Step($"Calling {_messageRepo.GetType().Name}.AddAsync");
                 await _messageRepo.AddAsync(agreementMessage, cancellationToken);
                 await _conversationRepo.UpdateLastActivityAsync(conversation.ConversationId, now, cancellationToken);
 
@@ -436,11 +453,14 @@ namespace HomeCycle.Application.Services.Agreements
                     "Người bán vừa tạo thỏa thuận mua bán. Vui lòng kiểm tra và xác nhận.",
                     newAgreement.AgreementId,
                     cancellationToken);
+                flowLog.Step($"Calling {_auditService.GetType().Name}.EnqueueAsync");
                 await _auditService.EnqueueAsync(createAgreementAuditEvent, cancellationToken);
+                flowLog.Step($"Calling {_unitOfWork.GetType().Name}.SaveChangesAsync");
 
                 await _unitOfWork.SaveChangesAsync();
                 if (offer.BuyPostId.HasValue)
                 {
+                    flowLog.Step($"Calling {_postRepo.GetType().Name}.GetByIdForUpdateAsync");
                     var buyPost = await _postRepo.GetByIdForUpdateAsync(offer.BuyPostId.Value, cancellationToken);
                     if (buyPost != null && await _postRepo.GetAgreedBuyQuantityAsync(buyPost.PostId, null, cancellationToken) >= buyPost.Quantity)
                     {
@@ -453,19 +473,23 @@ namespace HomeCycle.Application.Services.Agreements
                                 $"Tin thu mua đã lập hợp đồng đủ {buyPost.Quantity}/{buyPost.Quantity} sản phẩm và được đóng. Vui lòng kiểm tra và chỉnh sửa số lượng nếu muốn tiếp tục thu mua.",
                                 NotificationTargetType.Post, buyPost.PostId), cancellationToken);
                         _unitOfWork.RegisterAfterCommit(() => _notificationService.PublishCreatedSafelyAsync(targetNotification));
+                        flowLog.Step($"Calling {_unitOfWork.GetType().Name}.SaveChangesAsync");
                         await _unitOfWork.SaveChangesAsync(cancellationToken);
                     }
                 }
+                flowLog.Step($"Calling {_unitOfWork.GetType().Name}.CommitTransactionAsync");
                 await _unitOfWork.CommitTransactionAsync();
+                flowLog.Step("Transaction committed successfully");
 
                 var response = _mapper.Map<MessageResponse>(agreementMessage);
                 await PublishChatActivitySafelyAsync(negotiation, response);
                 await _notificationService.PublishCreatedSafelyAsync(agreementNotification);
 
-                return Result<Guid>.Success(newAgreement.AgreementId);
+                return flowLog.Result(Result<Guid>.Success(newAgreement.AgreementId));
             }
             catch (Exception)
             {
+                flowLog.Step($"Calling {_unitOfWork.GetType().Name}.RollbackTransactionAsync");
                 await _unitOfWork.RollbackTransactionAsync(cancellationToken);
                 throw;
             }
@@ -760,6 +784,8 @@ namespace HomeCycle.Application.Services.Agreements
 
         public async Task<Result<AgreementActionResponse>> AcceptAgreementAsync(Guid agreementId, Guid currentUserId, int expectedRevision, CancellationToken cancellationToken = default)
         {
+            using var flowLog = new AgreementFlowLog(_logger, "AgreementFormService.AcceptAgreementAsync", agreementId);
+            flowLog.Step($"Calling {_acceptValidator.GetType().Name}.ValidateAsync");
             var validationResult = await _acceptValidator.ValidateAsync(
                 new AcceptAgreementRequest { ExpectedRevision = expectedRevision },
                 cancellationToken);
@@ -767,47 +793,56 @@ namespace HomeCycle.Application.Services.Agreements
             if (!validationResult.IsValid)
             {
                 var errorMessage = string.Join(" | ", validationResult.Errors.Select(e => e.ErrorMessage));
-                return Result<AgreementActionResponse>.Fail(new Error("Validation.InvalidRequest", errorMessage));
+                return flowLog.Result(Result<AgreementActionResponse>.Fail(new Error("Validation.InvalidRequest", errorMessage)));
             }
+            flowLog.Step($"Calling {_unitOfWork.GetType().Name}.BeginTransactionAsync");
 
             await _unitOfWork.BeginTransactionAsync(cancellationToken);
 
             try
             {
                 var tradeSnapshot = await _postRepo.GetTradeByAgreementAsync(agreementId, cancellationToken);
+                flowLog.Step($"Calling {_postRepo.GetType().Name}.LockAsync");
                 if (tradeSnapshot != null) await _postRepo.LockAsync(tradeSnapshot.PostId, tradeSnapshot.BuyPostId, cancellationToken);
+                flowLog.Step($"Calling {_agreementRepo.GetType().Name}.GetByIdForUpdateAsync");
                 var agreement = await _agreementRepo.GetByIdForUpdateAsync(agreementId, cancellationToken);
                 if (agreement == null)
                 {
+                    flowLog.Step($"Calling {_unitOfWork.GetType().Name}.RollbackTransactionAsync");
                     await _unitOfWork.RollbackTransactionAsync(cancellationToken);
-                    return Result<AgreementActionResponse>.Fail(new Error("Agreement.NotFound", "Không tìm thấy thỏa thuận."));
+                    return flowLog.Result(Result<AgreementActionResponse>.Fail(new Error("Agreement.NotFound", "Không tìm thấy thỏa thuận.")));
                 }
 
                 bool isSeller = agreement.SellerId == currentUserId;
                 bool isBuyer = agreement.BuyerId == currentUserId;
                 if (!isSeller && !isBuyer)
                 {
+                    flowLog.Step($"Calling {_unitOfWork.GetType().Name}.RollbackTransactionAsync");
                     await _unitOfWork.RollbackTransactionAsync(cancellationToken);
-                    return Result<AgreementActionResponse>.Fail(new Error("Auth.Forbidden", "Bạn không có quyền chấp nhận thỏa thuận này."));
+                    return flowLog.Result(Result<AgreementActionResponse>.Fail(new Error("Auth.Forbidden", "Bạn không có quyền chấp nhận thỏa thuận này.")));
                 }
 
                 if (agreement.AgreementStatus == (int)AgreementStatus.Expired ||
                     (agreement.AgreementStatus is (int)AgreementStatus.Pending or (int)AgreementStatus.Awaiting_Payment && TradingPostRules.IsExpired(TradingPostRules.PaymentDeadline(agreement))))
                 {
                     var expired = agreement.AgreementStatus == (int)AgreementStatus.Expired || await ExpireLockedAgreementAsync(agreement, cancellationToken);
+                    flowLog.Step($"Calling {_unitOfWork.GetType().Name}.CommitTransactionAsync");
                     await _unitOfWork.CommitTransactionAsync(cancellationToken);
-                    return Result<AgreementActionResponse>.Fail(expired ? AgreementErrors.Expired : AgreementErrors.PaymentResolutionPending);
+                    flowLog.Step("Transaction committed successfully");
+                    return flowLog.Result(Result<AgreementActionResponse>.Fail(expired ? AgreementErrors.Expired : AgreementErrors.PaymentResolutionPending));
                 }
                 if (agreement.AgreementStatus != (int)AgreementStatus.Pending)
                 {
+                    flowLog.Step($"Calling {_unitOfWork.GetType().Name}.RollbackTransactionAsync");
                     await _unitOfWork.RollbackTransactionAsync(cancellationToken);
-                    return Result<AgreementActionResponse>.Fail(new Error("Agreement.InvalidStatus", "Thỏa thuận không ở trạng thái chờ xác nhận."));
+                    return flowLog.Result(Result<AgreementActionResponse>.Fail(new Error("Agreement.InvalidStatus", "Thỏa thuận không ở trạng thái chờ xác nhận.")));
                 }
 
                 if ((isSeller && agreement.SellerConfirmedAt != null) || (isBuyer && agreement.BuyerConfirmedAt != null))
                 {
+                    flowLog.Step($"Calling {_unitOfWork.GetType().Name}.RollbackTransactionAsync");
                     await _unitOfWork.RollbackTransactionAsync(cancellationToken);
-                    return Result<AgreementActionResponse>.Fail(new Error("Agreement.AlreadyConfirmed", "Bạn đã xác nhận thỏa thuận này rồi."));
+                    return flowLog.Result(Result<AgreementActionResponse>.Fail(new Error("Agreement.AlreadyConfirmed", "Bạn đã xác nhận thỏa thuận này rồi.")));
                 }
 
                 var currentDetails = string.IsNullOrWhiteSpace(agreement.AgreementDetailsJsonb)
@@ -817,10 +852,11 @@ namespace HomeCycle.Application.Services.Agreements
 
                 if (actualRevision != expectedRevision)
                 {
+                    flowLog.Step($"Calling {_unitOfWork.GetType().Name}.RollbackTransactionAsync");
                     await _unitOfWork.RollbackTransactionAsync(cancellationToken);
-                    return Result<AgreementActionResponse>.Fail(new Error(
+                    return flowLog.Result(Result<AgreementActionResponse>.Fail(new Error(
                         "Agreement.RevisionMismatch",
-                        "Nội dung thỏa thuận vừa được cập nhật. Vui lòng tải lại và xem nội dung mới nhất trước khi xác nhận."));
+                        "Nội dung thỏa thuận vừa được cập nhật. Vui lòng tải lại và xem nội dung mới nhất trước khi xác nhận.")));
                 }
 
                 var previousAgreementStatus =
@@ -839,9 +875,11 @@ namespace HomeCycle.Application.Services.Agreements
                     agreement.BuyerConfirmedAt = now;
 
                 bool bothConfirmed = agreement.SellerConfirmedAt != null && agreement.BuyerConfirmedAt != null;
+                flowLog.Step(bothConfirmed ? "Both parties confirmed; preparing Awaiting_Payment state" : "One party confirmed; waiting for the other party");
                 if (bothConfirmed)
                 {
                     agreement.AgreementStatus = (int)AgreementStatus.Awaiting_Payment;
+                    flowLog.Step($"Calling {_userRepo.GetType().Name}.GetByIdAsync");
                     var buyer = await _userRepo.GetByIdAsync(agreement.BuyerId, cancellationToken);
                     var personalProfile = await _profileRepo.GetByUserIdAsync(agreement.BuyerId, cancellationToken);
                     var businessProfile = await _businessProfileRepo.GetByUserIdAsync(agreement.BuyerId, cancellationToken);
@@ -892,6 +930,7 @@ namespace HomeCycle.Application.Services.Agreements
                         ["revision"] = actualRevision
                     }
                 };
+                flowLog.Step($"Calling {_negotiationRepo.GetType().Name}.GetByIdForUpdateAsync");
 
                 var negotiation = await _negotiationRepo.GetByIdForUpdateAsync(agreement.NegotiationId, cancellationToken);
                 if (negotiation == null)
@@ -928,6 +967,7 @@ namespace HomeCycle.Application.Services.Agreements
 
                 await _agreementRepo.UpdateAsync(agreement, cancellationToken);
                 await _negotiationRepo.UpdateAsync(negotiation, cancellationToken);
+                flowLog.Step($"Calling {_messageRepo.GetType().Name}.AddAsync");
                 await _messageRepo.AddAsync(agreementMessage, cancellationToken);
                 await _conversationRepo.UpdateLastActivityAsync(conversation.ConversationId, now, cancellationToken);
 
@@ -937,10 +977,14 @@ namespace HomeCycle.Application.Services.Agreements
                     acceptMessage,
                     agreement.AgreementId,
                     cancellationToken);
+                flowLog.Step($"Calling {_auditService.GetType().Name}.EnqueueAsync");
                 await _auditService.EnqueueAsync(confirmAgreementAuditEvent, cancellationToken);
+                flowLog.Step($"Calling {_unitOfWork.GetType().Name}.SaveChangesAsync");
 
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
+                flowLog.Step($"Calling {_unitOfWork.GetType().Name}.CommitTransactionAsync");
                 await _unitOfWork.CommitTransactionAsync(cancellationToken);
+                flowLog.Step("Transaction committed successfully");
 
                 await PublishChatActivitySafelyAsync(negotiation, _mapper.Map<MessageResponse>(agreementMessage));
 
@@ -948,7 +992,7 @@ namespace HomeCycle.Application.Services.Agreements
                 await _notificationService.PublishCreatedSafelyAsync(agreementNotification);
 
 
-                return Result<AgreementActionResponse>.Success(new AgreementActionResponse
+                return flowLog.Result(Result<AgreementActionResponse>.Success(new AgreementActionResponse
                 {
                     Message = bothConfirmed
                         ? "Cả hai bên đã xác nhận. Hợp đồng đã được chốt và không thể chỉnh sửa; người mua có thể thanh toán hoặc một trong hai bên có thể hủy trước khi thanh toán."
@@ -962,10 +1006,11 @@ namespace HomeCycle.Application.Services.Agreements
                     BuyerConfirmed = agreement.BuyerConfirmedAt != null,
                     SellerConfirmedAt = agreement.SellerConfirmedAt,
                     BuyerConfirmedAt = agreement.BuyerConfirmedAt
-                });
+                }));
             }
             catch
             {
+                flowLog.Step($"Calling {_unitOfWork.GetType().Name}.RollbackTransactionAsync");
                 await _unitOfWork.RollbackTransactionAsync(cancellationToken);
                 throw;
             }

@@ -11,6 +11,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
+using System.Diagnostics;
 
 namespace HomeCycle.API.Controllers
 {
@@ -21,12 +22,14 @@ namespace HomeCycle.API.Controllers
         private readonly IAuthService _authService;
         private readonly IEmailService _emailService;
         private readonly IUserService _userService;
+        private readonly ILogger<AuthController> _logger;
 
-        public AuthController(IAuthService authService, IEmailService emailService, IUserService userService)
+        public AuthController(IAuthService authService, IEmailService emailService, IUserService userService, ILogger<AuthController> logger)
         {
             _authService = authService;
             _emailService = emailService;
             _userService = userService;
+            _logger = logger;
         }
 
         [HttpGet("users/{userId:guid}/profile")]
@@ -44,12 +47,31 @@ namespace HomeCycle.API.Controllers
         [HttpPost("login")]
         public async Task<IActionResult> Login( [FromBody] LoginRequest request, CancellationToken cancellationToken)
         {
-            var result = await _authService.LoginAsync(request, cancellationToken);
+            var timer = Stopwatch.StartNew();
+            _logger.LogInformation("[Login] AuthController.Login -> POST /api/auth/login started");
+            try
+            {
+                var result = await _authService.LoginAsync(request, cancellationToken);
+                if (!result.IsSuccess)
+                {
+                    _logger.LogInformation("[Login] AuthController.Login -> Failed | Code={Code} | HTTP 400 | {ElapsedMs}ms",
+                        result.Error?.Code, timer.ElapsedMilliseconds);
+                    return BadRequest(result.Error);
+                }
 
-            if (!result.IsSuccess)
-                return BadRequest(result.Error);
-
-            return Ok(result.Data);
+                _logger.LogInformation("[Login] AuthController.Login -> Success | HTTP 200 | {ElapsedMs}ms", timer.ElapsedMilliseconds);
+                return Ok(result.Data);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                _logger.LogInformation("[Login] AuthController.Login -> Request cancelled | {ElapsedMs}ms", timer.ElapsedMilliseconds);
+                throw;
+            }
+            catch (Exception exception)
+            {
+                _logger.LogError(exception, "[Login] AuthController.Login -> Exception | {ElapsedMs}ms", timer.ElapsedMilliseconds);
+                throw;
+            }
         }
 
         [HttpPost("forgot-password")]
