@@ -201,7 +201,7 @@ public sealed class GeminiExternalUsedPriceSearchService(
         }
     }
 
-    private static IReadOnlyList<GroundedSource> BuildGroundedSources(
+    internal static IReadOnlyList<GroundedSource> BuildGroundedSources(
         IEnumerable<GenerateContentResponse> responses,
         int maxResults)
     {
@@ -382,7 +382,7 @@ public sealed class GeminiExternalUsedPriceSearchService(
                 .ToArray();
     }
 
-    private static (ExternalModelMatchLevel Level, decimal Similarity) ClassifyModel(
+    internal static (ExternalModelMatchLevel Level, decimal Similarity) ClassifyModel(
         string requestedModel,
         string observedModel)
     {
@@ -499,6 +499,6 @@ public sealed class GeminiExternalUsedPriceSearchService(
 
     private sealed record SearchAttemptResult(GenerateContentResponse Response, string? ResponseText);
     private sealed record SourceCandidate(string Title, string Url);
-    private sealed record GroundedSource(string SourceId, string Title, string Url);
+    internal sealed record GroundedSource(string SourceId, string Title, string Url);
 }
 

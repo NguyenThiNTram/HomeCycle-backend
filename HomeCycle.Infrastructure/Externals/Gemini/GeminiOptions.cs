@@ -27,6 +27,8 @@ namespace HomeCycle.Infrastructure.Externals.Gemini
         public int ExternalUsedPriceSearchMaxOutputTokens { get; set; } = 600;
         public int ExternalUsedPriceExtractionTimeoutSeconds { get; set; } = 15;
         public int ExternalUsedPriceExtractionMaxOutputTokens { get; set; } = 600;
+        public bool NewPriceSearchEnabled { get; set; } = true;
+        public int NewPriceSearchMaxSources { get; set; } = 3;
         public int RequestsPerMinute { get; set; } = 15;
         public int ResponseCacheMinutes { get; set; } = 10;
         public bool SupplierMatchRerankingEnabled { get; set; } = true;

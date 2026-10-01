@@ -232,6 +232,7 @@ namespace HomeCycle.Infrastructure
             services.AddScoped<HomeCycle.Application.Pricing.Matching.DynamicAttributeMatcher>();
             services.AddScoped<HomeCycle.Application.Pricing.Matching.EquivalentModelMatcher>();
             services.AddScoped<HomeCycle.Application.Interfaces.Services.AI.IExternalUsedPriceSearchService, GeminiExternalUsedPriceSearchService>();
+            services.AddScoped<HomeCycle.Application.Interfaces.Services.AI.INewPriceSearchService, GeminiNewPriceSearchService>();
             services.AddScoped<HomeCycle.Application.Interfaces.Services.SupplierMatching.ISupplierMatchAiReranker,
                 GeminiSupplierMatchReranker>();
             services.AddScoped<HomeCycle.Application.Interfaces.Services.SupplierMatching.ISupplierMatchEntitlementService,
