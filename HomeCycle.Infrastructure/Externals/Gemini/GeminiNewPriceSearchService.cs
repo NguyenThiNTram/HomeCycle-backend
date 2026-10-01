@@ -272,7 +272,7 @@ public sealed class GeminiNewPriceSearchService(
             product.BrandId.ToString("D"),
             product.Model,
             string.Join(';', attributes));
-        return "gemini:new-price:v3:" +
+        return "gemini:new-price:v4:" +
                Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(rawKey)));
     }
 }
