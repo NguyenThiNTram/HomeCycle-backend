@@ -86,6 +86,7 @@ namespace HomeCycle.Application.Commons.Audits
         public const string InspectionCollectNow = "INSPECTION.COLLECT_NOW";
 
         public const string InspectionScheduleCollection = "INSPECTION.SCHEDULE_COLLECTION";
+        public const string InspectionQuickAccept = "INSPECTION.QUICK_ACCEPT";
 
         public const string ShipmentSellerReady = "SHIPMENT.SELLER_READY";
 

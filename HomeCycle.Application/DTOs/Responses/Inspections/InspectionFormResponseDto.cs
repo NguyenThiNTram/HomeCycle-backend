@@ -19,7 +19,7 @@ namespace HomeCycle.Application.DTOs.Responses.Inspections
 
         public int Revision { get; set; }
         public InspectionStatus InspectionStatus { get; set; }
-
+        public InspectionMode InspectionMode { get; set; }
         public DateTime? InspectionTime { get; set; }
 
         public InspectionOperatingStatus? OperatingStatus { get; set; }

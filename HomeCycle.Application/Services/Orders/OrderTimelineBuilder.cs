@@ -357,6 +357,35 @@ namespace HomeCycle.Application.Services.Orders
             OrderDetailDto detail,
             bool isInspectionCollectNow)
         {
+            if (isInspectionCollectNow)
+            {
+                var collectNowCompleted = detail.BuyerReceivedConfirmedAt.HasValue;
+
+                return CreateStep(
+                    "handover",
+                    "Giao nhận sau kiểm định",
+                    collectNowCompleted
+                        ? "Người mua đã chọn nhận sản phẩm ngay sau kiểm định và giao nhận đã hoàn tất."
+                        : "Người mua đã chọn nhận sản phẩm ngay sau kiểm định.",
+                    collectNowCompleted
+                        ? OrderTimelineStepStatus.Completed
+                        : OrderTimelineStepStatus.InProgress,
+                    detail.BuyerReceivedConfirmedAt,
+                    new[]
+                    {
+                        CreateStep(
+                            "collect_now_received",
+                            "Nhận hàng ngay sau kiểm định",
+                            collectNowCompleted
+                                ? "Người mua đã xác nhận nhận sản phẩm thông qua thao tác nhận hàng ngay."
+                                : "Đang chờ hoàn tất việc nhận sản phẩm.",
+                            collectNowCompleted
+                                ? OrderTimelineStepStatus.Completed
+                                : OrderTimelineStepStatus.InProgress,
+                            detail.BuyerReceivedConfirmedAt)
+                    });
+            }
+
             var handoverCompleted =
                 detail.SellerHandoverConfirmedAt.HasValue;
 
@@ -365,8 +394,7 @@ namespace HomeCycle.Application.Services.Orders
 
             var handoverStatus = handoverCompleted
                 ? OrderTimelineStepStatus.Completed
-                : detail.Shipment?.SellerReadyAt.HasValue == true ||
-                  isInspectionCollectNow
+                : detail.Shipment?.SellerReadyAt.HasValue == true
                     ? OrderTimelineStepStatus.InProgress
                     : OrderTimelineStepStatus.Upcoming;
 
@@ -379,19 +407,16 @@ namespace HomeCycle.Application.Services.Orders
             var overallStatus = receivedCompleted
                 ? OrderTimelineStepStatus.Completed
                 : handoverCompleted ||
-                  detail.Shipment?.SellerReadyAt.HasValue == true ||
-                  isInspectionCollectNow
+                  detail.Shipment?.SellerReadyAt.HasValue == true
                     ? OrderTimelineStepStatus.InProgress
                     : OrderTimelineStepStatus.Upcoming;
 
-            var title = isInspectionCollectNow
-                ? "Giao nhận sau kiểm định"
-                : detail.DeliveryMethod switch
-                {
-                    DeliveryMethod.BuyerPickUp => "Người mua đến nhận hàng",
-                    DeliveryMethod.SellerDelivers => "Người bán giao hàng",
-                    _ => "Giao nhận sản phẩm"
-                };
+            var title = detail.DeliveryMethod switch
+            {
+                DeliveryMethod.BuyerPickUp => "Người mua đến nhận hàng",
+                DeliveryMethod.SellerDelivers => "Người bán giao hàng",
+                _ => "Giao nhận sản phẩm"
+            };
 
             return CreateStep(
                 "handover",
@@ -402,19 +427,19 @@ namespace HomeCycle.Application.Services.Orders
                 detail.SellerHandoverConfirmedAt,
                 new[]
                 {
-                    CreateStep(
-                        "seller_handover",
-                        "Người bán bàn giao hàng",
-                        "Người bán xác nhận đã bàn giao sản phẩm.",
-                        handoverStatus,
-                        detail.SellerHandoverConfirmedAt),
+            CreateStep(
+                "seller_handover",
+                "Người bán bàn giao hàng",
+                "Người bán xác nhận đã bàn giao sản phẩm.",
+                handoverStatus,
+                detail.SellerHandoverConfirmedAt),
 
-                    CreateStep(
-                        "buyer_received",
-                        "Người mua nhận hàng",
-                        "Người mua xác nhận đã nhận được sản phẩm.",
-                        receivedStatus,
-                        detail.BuyerReceivedConfirmedAt)
+            CreateStep(
+                "buyer_received",
+                "Người mua nhận hàng",
+                "Người mua xác nhận đã nhận được sản phẩm.",
+                receivedStatus,
+                detail.BuyerReceivedConfirmedAt)
                 });
         }
 
@@ -568,20 +593,13 @@ namespace HomeCycle.Application.Services.Orders
 
         private static DateTime? GetInspectionStartedAt(AppointmentSummaryDto appointment)
         {
-            var buyerCheckAt =
-                appointment.InspectionCheckIn?.BuyerCheckAt;
+            var buyerCheckAt = appointment.InspectionCheckIn?.BuyerCheckAt;
+            var sellerCheckAt = appointment.InspectionCheckIn?.SellerCheckAt;
 
-            var sellerCheckAt =
-                appointment.InspectionCheckIn?.SellerCheckAt;
+            if (!buyerCheckAt.HasValue || !sellerCheckAt.HasValue)
+                return null;
 
-            if (buyerCheckAt.HasValue && sellerCheckAt.HasValue)
-            {
-                return buyerCheckAt.Value <= sellerCheckAt.Value
-                    ? buyerCheckAt
-                    : sellerCheckAt;
-            }
-
-            return buyerCheckAt ?? sellerCheckAt;
+            return buyerCheckAt.Value >= sellerCheckAt.Value ? buyerCheckAt : sellerCheckAt;
         }
 
         private static string BuildAppointmentDescription(AppointmentSummaryDto appointment)

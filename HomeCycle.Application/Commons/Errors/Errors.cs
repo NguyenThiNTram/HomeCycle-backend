@@ -611,7 +611,7 @@ namespace HomeCycle.Application.Commons.Errors
             new("Inspection.InvalidOrderPrice", "Không xác định được giá giao dịch hiện tại.");
 
         public static readonly Error AcceptedRequired =
-            new("Inspection.AcceptedRequired", "Biểu mẫu phải được người bán xác nhận trước khi tiếp tục thu gom.");
+            new("Inspection.AcceptedRequired", "Kết quả kiểm định phải ở trạng thái đã chấp nhận trước khi tiếp tục thu gom.");
 
         public static readonly Error FailedCannotCollect =
             new("Inspection.FailedCannotCollect", "Kết quả kiểm định không đạt nên không thể tiếp tục thu gom.");
@@ -627,6 +627,9 @@ namespace HomeCycle.Application.Commons.Errors
 
         public static readonly Error CollectionScheduleFailed =
             new("Inspection.CollectionScheduleFailed", "Không thể tạo lịch thu gom.");
+
+        public static readonly Error QuickAcceptPersonalOnly =
+            new("Inspection.QuickAcceptPersonalOnly", "Chỉ người mua tài khoản cá nhân mới có thể sử dụng xác nhận nhanh.");
     }
 
     public static class PaymentErrors
