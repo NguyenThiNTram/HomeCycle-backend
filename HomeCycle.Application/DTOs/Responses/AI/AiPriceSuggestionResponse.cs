@@ -50,4 +50,6 @@ public sealed record AiPriceSource(
     string SourceType,
     string SourceName,
     string SourceUrl,
-    DateTimeOffset ObservedAt);
+    DateTimeOffset ObservedAt,
+    string? TrustLevel = null,
+    bool UsedInCalculation = false);

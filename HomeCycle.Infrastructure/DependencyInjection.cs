@@ -233,6 +233,10 @@ namespace HomeCycle.Infrastructure
             services.AddScoped<HomeCycle.Application.Pricing.Matching.EquivalentModelMatcher>();
             services.AddScoped<HomeCycle.Application.Interfaces.Services.AI.IExternalUsedPriceSearchService, GeminiExternalUsedPriceSearchService>();
             services.AddScoped<HomeCycle.Application.Interfaces.Services.AI.INewPriceSearchService, GeminiNewPriceSearchService>();
+            services.AddSingleton(
+                configuration.GetSection(HomeCycle.Application.Pricing.Models.PriceSuggestionOptions.SectionName)
+                    .Get<HomeCycle.Application.Pricing.Models.PriceSuggestionOptions>()
+                ?? new HomeCycle.Application.Pricing.Models.PriceSuggestionOptions());
             services.AddScoped<HomeCycle.Application.Interfaces.Services.SupplierMatching.ISupplierMatchAiReranker,
                 GeminiSupplierMatchReranker>();
             services.AddScoped<HomeCycle.Application.Interfaces.Services.SupplierMatching.ISupplierMatchEntitlementService,

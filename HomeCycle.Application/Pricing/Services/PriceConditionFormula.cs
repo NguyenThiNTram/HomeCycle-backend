@@ -1,4 +1,5 @@
 using System.Text;
+using HomeCycle.Application.Validations.Posts;
 using HomeCycle.Domain.Enums;
 
 namespace HomeCycle.Application.Pricing.Services;
@@ -17,6 +18,9 @@ public static class PriceConditionFormula
     public const decimal UsedPriceOutlierBand = 0.40m;
     public const decimal NewPriceOutlierBand = 0.25m;
     public const decimal DefaultAnnualDepreciationRate = 0.10m;
+
+    // Giá máy cũ (đã quy về tình trạng tốt) thấp hơn 5% giá mới coi là bất thường (cọc, linh kiện...).
+    public const decimal MinUsedToNewPriceRatio = 0.05m;
 
     // Mẫu có hệ số thấp hơn mức này định giá theo linh kiện/thanh lý, không quy đổi về máy tốt được.
     public const decimal MinComparableSampleFactor = 0.50m;
@@ -100,6 +104,10 @@ public static class PriceConditionFormula
         return factor.Value < MinComparableSampleFactor ? null : price / factor.Value;
     }
 
+    // Giá AI trích từ web phải nằm trong giới hạn giá đăng bán của hệ thống.
+    public static bool IsWithinPostingLimits(decimal price) =>
+        price >= PostValidationLimits.MinPrice && price <= PostValidationLimits.MaxPrice;
+
     public static decimal AnnualDepreciationRate(string? productTypeName)
     {
         var name = (productTypeName ?? string.Empty).Trim().Normalize(NormalizationForm.FormC).ToLowerInvariant();
@@ -118,12 +126,13 @@ public static class PriceConditionFormula
     public static decimal RemainingValueRatio(decimal annualRate, decimal years) =>
         Math.Max(MinRemainingValueRatio, 1m - annualRate * Math.Max(0m, years));
 
-    // Lọc giá ảo của giá máy cũ (đã quy về tình trạng tốt): bỏ mẫu cao hơn giá mới,
-    // bỏ mẫu lệch quá ±40% so với giá giữa, rồi lọc IQR khi có từ 4 mẫu.
+    // Lọc giá ảo của giá máy cũ (đã quy về tình trạng tốt): bỏ mẫu cao hơn giá mới hoặc thấp hơn
+    // 5% giá mới, bỏ mẫu lệch quá ±40% so với giá giữa, rồi lọc IQR khi có từ 4 mẫu.
     public static decimal[] FilterUsedPrices(IEnumerable<decimal> prices, decimal? newPrice)
     {
         var values = prices
-            .Where(x => x > 0 && (newPrice is not > 0 || x <= newPrice.Value))
+            .Where(x => x > 0 && (newPrice is not > 0 ||
+                                  (x <= newPrice.Value && x >= newPrice.Value * MinUsedToNewPriceRatio)))
             .OrderBy(x => x)
             .ToArray();
         if (values.Length == 0)
@@ -153,18 +162,19 @@ public static class PriceConditionFormula
         return values;
     }
 
-    // Giá bán mới đồng thuận: giá giữa, bỏ nguồn lệch quá 25%; cần ít nhất 2 nguồn khớp nhau.
-    public static decimal? ConsensusNewPrice(IEnumerable<decimal> prices)
+    // Các giá bán mới khớp nhau: bỏ nguồn lệch quá 25% so với giá giữa. Trả mảng rỗng nếu
+    // không có ít nhất 2 nguồn khớp. Giá đồng thuận là giá giữa của mảng trả về.
+    public static decimal[] AgreeingNewPrices(IEnumerable<decimal> prices)
     {
         var values = prices.Where(x => x > 0).OrderBy(x => x).ToArray();
         if (values.Length < 2)
-            return null;
+            return [];
 
         var median = Median(values);
         var agreed = values
             .Where(x => Math.Abs(x - median) <= median * NewPriceOutlierBand)
             .ToArray();
-        return agreed.Length >= 2 ? Median(agreed) : null;
+        return agreed.Length >= 2 ? agreed : [];
     }
 
     public static decimal Median(IReadOnlyList<decimal> sortedValues)

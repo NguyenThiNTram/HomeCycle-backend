@@ -1,5 +1,6 @@
 using System.Text.Json;
 using HomeCycle.Application.Pricing.Models;
+using HomeCycle.Application.Pricing.Services;
 
 namespace HomeCycle.Infrastructure.Externals.Gemini;
 
@@ -19,6 +20,9 @@ internal static class NewPriceSearchPrompt
         return $"Dùng Google Search tìm giá bán MỚI chính hãng của \"{productType} {brand} {productName} {attributeHint}\" " +
                $"(model {product.Model}) tại các nhà bán lẻ ở Việt Nam. " +
                $"Lấy tối đa {maxSources} nhà bán lẻ khác nhau. " +
+               "Ưu tiên trang chính hãng của hãng, sau đó tới các chuỗi bán lẻ lớn: " +
+               string.Join(", ", PriceSourceCatalog.NewPriceSearchDomains) + ". " +
+               "Không dùng sàn thương mại điện tử nhiều người bán, blog, diễn đàn hay trang so sánh giá. " +
                "Chỉ lấy hàng mới nguyên hộp, không lấy hàng cũ, trưng bày, trả góp hay giá linh kiện. " +
                "Mỗi nhà bán lẻ ghi tên, tên sản phẩm hoặc model và giá VND đang niêm yết.";
     }

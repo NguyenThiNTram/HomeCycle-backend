@@ -1,3 +1,5 @@
+using HomeCycle.Application.Pricing.Services;
+
 namespace HomeCycle.Application.Pricing.Models;
 
 // Giá bán mới của đúng model (hoặc biến thể hậu tố) ở các nhà bán lẻ, tìm qua Google.
@@ -13,4 +15,6 @@ public sealed record NewPriceEvidence(
     string ObservedModel,
     string SourceName,
     string SourceUrl,
-    DateTimeOffset RetrievedAt);
+    DateTimeOffset RetrievedAt,
+    PriceSourceTier SourceTier = PriceSourceTier.Untrusted,
+    string? SourceDomain = null);

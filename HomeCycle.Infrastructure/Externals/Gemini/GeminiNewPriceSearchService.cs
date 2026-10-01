@@ -5,6 +5,7 @@ using Google.GenAI.Types;
 using HomeCycle.Application.Interfaces.Services.AI;
 using HomeCycle.Application.Pricing.Matching;
 using HomeCycle.Application.Pricing.Models;
+using HomeCycle.Application.Pricing.Services;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -52,7 +53,7 @@ public sealed class GeminiNewPriceSearchService(
                 searchTimeout.Token);
 
             var groundedSources = GeminiExternalUsedPriceSearchService.BuildGroundedSources(
-                [groundingResponse], maxSources);
+                [groundingResponse], maxSources, PriceSourceCatalog.AcceptsNewPrice);
             var responseText = groundingResponse.Text?.Trim() ?? string.Empty;
 
             logger.LogInformation(
@@ -201,7 +202,9 @@ public sealed class GeminiNewPriceSearchService(
                 observedModel.Length > 100 ? observedModel[..100] : observedModel,
                 source.Title,
                 source.Url,
-                retrievedAt));
+                retrievedAt,
+                source.Tier,
+                source.Domain));
         }
 
         return accepted;
@@ -233,7 +236,7 @@ public sealed class GeminiNewPriceSearchService(
             product.BrandId.ToString("D"),
             product.Model,
             string.Join(';', attributes));
-        return "gemini:new-price:v1:" +
+        return "gemini:new-price:v2:" +
                Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(rawKey)));
     }
 }
