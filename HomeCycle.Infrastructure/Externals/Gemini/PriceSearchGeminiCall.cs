@@ -4,11 +4,18 @@ using Microsoft.Extensions.Logging;
 
 namespace HomeCycle.Infrastructure.Externals.Gemini;
 
-// Lệnh Gemini cho phần tìm giá: đặt mức suy nghĩ thấp để trả lời nhanh và ghi log thời gian.
-// Nếu model không nhận mức suy nghĩ đã cấu hình thì gọi lại một lần không kèm thiết lập này.
+// Lệnh Gemini cho phần tìm giá, có ghi log thời gian.
+// - Lệnh trích giá (chỉ đọc chữ có sẵn): đặt mức suy nghĩ thấp để trả lời nhanh; model không nhận
+//   mức này thì gọi lại một lần không kèm thiết lập.
+// - Lệnh tìm Google: giữ mức suy nghĩ mặc định, vì ở mức thấp model hay trả lời luôn mà không tìm.
+//   Nếu vẫn không có nguồn nào thì thử lại một lần với yêu cầu bắt buộc dùng Google Search.
 internal static class PriceSearchGeminiCall
 {
-    public static async Task<GenerateContentResponse> GenerateAsync(
+    private const string ForceSearchPrefix =
+        "Bắt buộc dùng công cụ Google Search để tìm thông tin mới nhất trước khi trả lời; " +
+        "không trả lời từ kiến thức có sẵn. ";
+
+    public static async Task<GenerateContentResponse> GenerateGroundedAsync(
         GeminiRequestService gemini,
         GeminiOptions settings,
         string prompt,
@@ -17,10 +24,35 @@ internal static class PriceSearchGeminiCall
         string stage,
         CancellationToken cancellationToken)
     {
+        var response = await GenerateAsync(
+            gemini, settings, prompt, config, logger, stage, cancellationToken, applyThinkingLevel: false);
+        if (CountGroundingChunks(response) > 0)
+            return response;
+
+        logger.LogInformation("Gemini {Stage} returned no search sources; retrying with forced search", stage);
+        return await GenerateAsync(
+            gemini, settings, ForceSearchPrefix + prompt, config, logger, stage + " retry", cancellationToken,
+            applyThinkingLevel: false);
+    }
+
+    public static int CountGroundingChunks(GenerateContentResponse response) =>
+        (response.Candidates ?? [])
+            .Sum(candidate => candidate.GroundingMetadata?.GroundingChunks?.Count(chunk => chunk.Web is not null) ?? 0);
+
+    public static async Task<GenerateContentResponse> GenerateAsync(
+        GeminiRequestService gemini,
+        GeminiOptions settings,
+        string prompt,
+        GenerateContentConfig config,
+        ILogger logger,
+        string stage,
+        CancellationToken cancellationToken,
+        bool applyThinkingLevel = true)
+    {
         var stopwatch = Stopwatch.StartNew();
         try
         {
-            var thinkingLevel = ParseThinkingLevel(settings.PriceSearchThinkingLevel);
+            var thinkingLevel = applyThinkingLevel ? ParseThinkingLevel(settings.PriceSearchThinkingLevel) : null;
             if (thinkingLevel is not null)
             {
                 config.ThinkingConfig = new ThinkingConfig { ThinkingLevel = thinkingLevel };
