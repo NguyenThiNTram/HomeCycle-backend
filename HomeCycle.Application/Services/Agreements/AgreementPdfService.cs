@@ -179,13 +179,12 @@ namespace HomeCycle.Application.Services.Agreements
 
             var productName = product?.ProductInfo?.ProductName;
             if (string.IsNullOrWhiteSpace(productName)) productName = order.ProductName ?? "Sản phẩm HomeCycle";
-            var isGhnDelivery = details?.DeliveryMethod == DeliveryMethod.GhnDelivery;
             var buyer = ResolvePartyInfo(
-                isGhnDelivery ? details?.GhnInfo?.Receiver : null,
-                details?.BuyerInfo);
+                details?.BuyerInfo,
+                details?.GhnInfo?.Receiver);
             var seller = ResolvePartyInfo(
-                isGhnDelivery ? details?.GhnInfo?.Sender : null,
-                details?.SellerInfo);
+                details?.SellerInfo,
+                details?.GhnInfo?.Sender);
             var deliveryDate = details?.InspectionDate ?? details?.CollectionDate;
             var deliveryAddress = details?.InspectionAddress ?? details?.DeliveryAddress ?? details?.PickupAddress;
             var totalAmount = order.FinalTotalAmount ?? ((agreement.FinalPrice ?? agreement.InitialPrice ?? 0) * agreement.Quantity + (details?.EstimatedShippingFee ?? 0));
@@ -384,21 +383,23 @@ namespace HomeCycle.Application.Services.Agreements
             return items.Length == 0 ? "Chưa ghi nhận" : string.Join(" / ", items);
         }
 
-        private static AgreementSellerInfoDto? ResolvePartyInfo(GhnContactSnapshotDto? shippingContact, AgreementSellerInfoDto? partySnapshot)
+        private static AgreementSellerInfoDto? ResolvePartyInfo(AgreementSellerInfoDto? partySnapshot, GhnContactSnapshotDto? contactSnapshot)
         {
-            if (shippingContact is null)
+            if (partySnapshot is null && contactSnapshot is null)
+                return null;
+            if (contactSnapshot is null)
                 return partySnapshot;
 
-            var shippingAddress = shippingContact.Address;
+            var contactAddress = contactSnapshot.Address;
             return new AgreementSellerInfoDto
             {
-                FullName = FirstValue(shippingContact.FullName, partySnapshot?.FullName),
-                Phone = FirstValue(shippingContact.Phone, partySnapshot?.Phone),
-                StreetAddress = FirstValue(shippingAddress?.AddressDetail, partySnapshot?.StreetAddress),
-                Ward = FirstValue(shippingAddress?.WardName, partySnapshot?.Ward),
+                FullName = FirstValue(partySnapshot?.FullName, contactSnapshot.FullName),
+                Phone = FirstValue(partySnapshot?.Phone, contactSnapshot.Phone),
+                StreetAddress = FirstValue(partySnapshot?.StreetAddress, contactAddress?.AddressDetail),
+                Ward = FirstValue(partySnapshot?.Ward, contactAddress?.WardName),
                 City = FirstValue(
-                    JoinAddressParts(shippingAddress?.DistrictName, shippingAddress?.ProvinceName),
-                    partySnapshot?.City)
+                    partySnapshot?.City,
+                    JoinAddressParts(contactAddress?.DistrictName, contactAddress?.ProvinceName))
             };
         }
 
