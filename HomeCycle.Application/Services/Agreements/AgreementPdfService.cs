@@ -2,6 +2,7 @@ using HomeCycle.Application.Commons.Audits;
 using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Requests.Agreements;
 using HomeCycle.Application.DTOs.Responses.Agreements;
+using HomeCycle.Application.DTOs.Responses.GHN;
 using HomeCycle.Application.Interfaces.Repositories.Agreements;
 using HomeCycle.Application.Interfaces.Repositories.Disputes;
 using HomeCycle.Application.Interfaces.Repositories.Orders;
@@ -178,8 +179,13 @@ namespace HomeCycle.Application.Services.Agreements
 
             var productName = product?.ProductInfo?.ProductName;
             if (string.IsNullOrWhiteSpace(productName)) productName = order.ProductName ?? "Sản phẩm HomeCycle";
-            var buyer = details?.BuyerInfo;
-            var seller = details?.SellerInfo;
+            var isGhnDelivery = details?.DeliveryMethod == DeliveryMethod.GhnDelivery;
+            var buyer = ResolvePartyInfo(
+                isGhnDelivery ? details?.GhnInfo?.Receiver : null,
+                details?.BuyerInfo);
+            var seller = ResolvePartyInfo(
+                isGhnDelivery ? details?.GhnInfo?.Sender : null,
+                details?.SellerInfo);
             var deliveryDate = details?.InspectionDate ?? details?.CollectionDate;
             var deliveryAddress = details?.InspectionAddress ?? details?.DeliveryAddress ?? details?.PickupAddress;
             var totalAmount = order.FinalTotalAmount ?? ((agreement.FinalPrice ?? agreement.InitialPrice ?? 0) * agreement.Quantity + (details?.EstimatedShippingFee ?? 0));
@@ -376,6 +382,34 @@ namespace HomeCycle.Application.Services.Agreements
         {
             var items = values.Where(value => !string.IsNullOrWhiteSpace(value)).Select(value => value!.Trim()).ToArray();
             return items.Length == 0 ? "Chưa ghi nhận" : string.Join(" / ", items);
+        }
+
+        private static AgreementSellerInfoDto? ResolvePartyInfo(GhnContactSnapshotDto? shippingContact, AgreementSellerInfoDto? partySnapshot)
+        {
+            if (shippingContact is null)
+                return partySnapshot;
+
+            var shippingAddress = shippingContact.Address;
+            return new AgreementSellerInfoDto
+            {
+                FullName = FirstValue(shippingContact.FullName, partySnapshot?.FullName),
+                Phone = FirstValue(shippingContact.Phone, partySnapshot?.Phone),
+                StreetAddress = FirstValue(shippingAddress?.AddressDetail, partySnapshot?.StreetAddress),
+                Ward = FirstValue(shippingAddress?.WardName, partySnapshot?.Ward),
+                City = FirstValue(
+                    JoinAddressParts(shippingAddress?.DistrictName, shippingAddress?.ProvinceName),
+                    partySnapshot?.City)
+            };
+        }
+
+        private static string? FirstValue(params string?[] values) =>
+            values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.Trim();
+
+        private static string? JoinAddressParts(params string?[] values)
+        {
+            var parts = values.Where(value => !string.IsNullOrWhiteSpace(value)).Select(value => value!.Trim());
+            var address = string.Join(", ", parts);
+            return string.IsNullOrWhiteSpace(address) ? null : address;
         }
 
         private static IContainer Section(IContainer container) => container
