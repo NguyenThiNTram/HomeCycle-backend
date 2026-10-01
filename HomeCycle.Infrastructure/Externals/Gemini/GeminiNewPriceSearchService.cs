@@ -41,8 +41,9 @@ public sealed class GeminiNewPriceSearchService(
             searchTimeout.CancelAfter(TimeSpan.FromSeconds(
                 Math.Max(1, settings.ExternalUsedPriceSearchTimeoutSeconds)));
 
-            var groundingResponse = await gemini.GenerateContentAsync(
-                settings.MarketSearchModel,
+            var groundingResponse = await PriceSearchGeminiCall.GenerateAsync(
+                gemini,
+                settings,
                 NewPriceSearchPrompt.BuildGroundingPrompt(product, maxSources),
                 new GenerateContentConfig
                 {
@@ -50,6 +51,8 @@ public sealed class GeminiNewPriceSearchService(
                     Temperature = 0.1,
                     MaxOutputTokens = Math.Clamp(settings.ExternalUsedPriceSearchMaxOutputTokens, 100, 600)
                 },
+                logger,
+                "new-price grounding",
                 searchTimeout.Token);
 
             var groundedSources = GeminiExternalUsedPriceSearchService.BuildGroundedSources(
@@ -57,9 +60,10 @@ public sealed class GeminiNewPriceSearchService(
             var responseText = groundingResponse.Text?.Trim() ?? string.Empty;
 
             logger.LogInformation(
-                "Gemini new-price grounding diagnostics: groundedSourceCount={GroundedSourceCount}, responseLength={ResponseLength}",
+                "Gemini new-price grounding diagnostics: groundedSourceCount={GroundedSourceCount}, responseLength={ResponseLength}, returnedDomains=[{ReturnedDomains}]",
                 groundedSources.Count,
-                responseText.Length);
+                responseText.Length,
+                GeminiExternalUsedPriceSearchService.DescribeGroundingDomains([groundingResponse]));
 
             if (groundedSources.Count == 0 || responseText.Length == 0)
             {
@@ -72,8 +76,9 @@ public sealed class GeminiNewPriceSearchService(
             extractionTimeout.CancelAfter(TimeSpan.FromSeconds(
                 Math.Max(1, settings.ExternalUsedPriceExtractionTimeoutSeconds)));
 
-            var extractionResponse = await gemini.GenerateContentAsync(
-                settings.MarketSearchModel,
+            var extractionResponse = await PriceSearchGeminiCall.GenerateAsync(
+                gemini,
+                settings,
                 NewPriceSearchPrompt.BuildExtractionPrompt(
                     product,
                     responseText,
@@ -85,6 +90,8 @@ public sealed class GeminiNewPriceSearchService(
                     Temperature = 0.1,
                     MaxOutputTokens = Math.Clamp(settings.ExternalUsedPriceExtractionMaxOutputTokens, 100, 600)
                 },
+                logger,
+                "new-price extraction",
                 extractionTimeout.Token);
 
             var items = ParseItems(
@@ -236,7 +243,7 @@ public sealed class GeminiNewPriceSearchService(
             product.BrandId.ToString("D"),
             product.Model,
             string.Join(';', attributes));
-        return "gemini:new-price:v2:" +
+        return "gemini:new-price:v3:" +
                Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(rawKey)));
     }
 }

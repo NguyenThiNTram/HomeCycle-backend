@@ -58,11 +58,12 @@ public sealed class GeminiExternalUsedPriceSearchService(
             var responseText = string.Join("\n\n", responseTexts);
 
             logger.LogInformation(
-                "Gemini external grounding diagnostics: searchCallCount={SearchCallCount}, successfulSearchCallCount={SuccessfulSearchCallCount}, groundedSourceCount={GroundedSourceCount}, responseLength={ResponseLength}",
+                "Gemini external grounding diagnostics: searchCallCount={SearchCallCount}, successfulSearchCallCount={SuccessfulSearchCallCount}, groundedSourceCount={GroundedSourceCount}, responseLength={ResponseLength}, returnedDomains=[{ReturnedDomains}]",
                 prompts.Count,
                 groundingResponses.Count,
                 groundedSources.Count,
-                responseText.Length);
+                responseText.Length,
+                DescribeGroundingDomains(groundingResponses));
 
             if (groundedSources.Count == 0 || string.IsNullOrWhiteSpace(responseText))
             {
@@ -81,8 +82,9 @@ public sealed class GeminiExternalUsedPriceSearchService(
             extractionTimeout.CancelAfter(TimeSpan.FromSeconds(
                 Math.Max(1, settings.ExternalUsedPriceExtractionTimeoutSeconds)));
 
-            var extractionResponse = await gemini.GenerateContentAsync(
-                settings.MarketSearchModel,
+            var extractionResponse = await PriceSearchGeminiCall.GenerateAsync(
+                gemini,
+                settings,
                 ExternalUsedPriceSearchPrompt.BuildExtractionPrompt(
                     product,
                     responseText,
@@ -95,6 +97,8 @@ public sealed class GeminiExternalUsedPriceSearchService(
                     MaxOutputTokens = Math.Clamp(
                         settings.ExternalUsedPriceExtractionMaxOutputTokens, 100, 600)
                 },
+                logger,
+                "used-price extraction",
                 extractionTimeout.Token);
 
             logger.LogInformation(
@@ -155,8 +159,9 @@ public sealed class GeminiExternalUsedPriceSearchService(
             timeout.CancelAfter(TimeSpan.FromSeconds(
                 Math.Max(1, settings.ExternalUsedPriceSearchTimeoutSeconds)));
 
-            var response = await gemini.GenerateContentAsync(
-                settings.MarketSearchModel,
+            var response = await PriceSearchGeminiCall.GenerateAsync(
+                gemini,
+                settings,
                 prompt,
                 new GenerateContentConfig
                 {
@@ -165,6 +170,8 @@ public sealed class GeminiExternalUsedPriceSearchService(
                     MaxOutputTokens = Math.Clamp(
                         settings.ExternalUsedPriceSearchMaxOutputTokens, 100, 600)
                 },
+                logger,
+                $"used-price grounding {attemptNumber}",
                 timeout.Token);
 
             logger.LogInformation(
@@ -201,6 +208,19 @@ public sealed class GeminiExternalUsedPriceSearchService(
             return null;
         }
     }
+
+    // Liệt kê tên miền Google trả về kèm mức uy tín, để log biết nguồn nào bị loại vì ngoài danh mục.
+    internal static string DescribeGroundingDomains(IEnumerable<GenerateContentResponse> responses) =>
+        string.Join(", ", responses
+            .SelectMany(response => response.Candidates ?? [])
+            .SelectMany(candidate => candidate.GroundingMetadata?.GroundingChunks ?? [])
+            .Where(chunk => chunk.Web is not null)
+            .Select(chunk =>
+            {
+                var domain = PriceSourceCatalog.ResolveDomain(chunk.Web!.Domain, chunk.Web.Title, chunk.Web.Uri);
+                return $"{domain ?? chunk.Web.Title ?? "?"}:{PriceSourceCatalog.Classify(domain)}";
+            })
+            .Distinct(StringComparer.OrdinalIgnoreCase));
 
     // Chỉ giữ nguồn có mức uy tín được chấp nhận; nguồn uy tín hơn được chọn trước,
     // cùng mức thì xen kẽ giữa các lượt tìm. Ưu tiên mỗi tên miền một nguồn trước,
@@ -493,7 +513,7 @@ public sealed class GeminiExternalUsedPriceSearchService(
             product.BrandId.ToString("D"),
             product.Model,
             string.Join(';', attributes));
-        return "gemini:external-used-price:v5:" +
+        return "gemini:external-used-price:v6:" +
                Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(rawKey)));
     }
 

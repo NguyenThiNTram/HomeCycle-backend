@@ -12,29 +12,19 @@ internal static class ExternalUsedPriceSearchPrompt
 
     public static IReadOnlyList<string> BuildGroundingPrompts(DynamicProductContext product)
     {
+        // product.Model đã chuẩn hóa (chữ thường, bỏ ký tự đặc biệt) nên kèm loại và tên sản phẩm
+        // để Google dễ khớp. Chỉ còn một lượt tìm: mẫu khác model chỉ để tham khảo, không vào phép tính.
         var model = product.Model?.Trim() ?? string.Empty;
         var brand = product.BrandName?.Trim() ?? string.Empty;
         var productType = product.ProductTypeName?.Trim() ?? string.Empty;
         var productName = product.ProductName?.Trim() ?? string.Empty;
-        var attributeHint = string.Join(" ", product.Attributes
-            .Where(x => !string.IsNullOrWhiteSpace(x.DisplayValue))
-            .OrderBy(x => x.DisplayOrder)
-            .Take(4)
-            .Select(x => $"{x.DisplayValue}{(string.IsNullOrWhiteSpace(x.Unit) ? "" : $" {x.Unit}")}"));
-        var attributeQuery = string.Join(" ", new[] { productType, brand, attributeHint, "thanh lý" }
-            .Where(x => !string.IsNullOrWhiteSpace(x)));
 
         return
         [
-            $"Dùng Google Search tìm \"{brand} {model} cũ tại Việt Nam\". " +
+            $"Dùng Google Search tìm tin bán \"{productType} {brand} {model} cũ\" ({productName}) tại Việt Nam. " +
             $"Ưu tiên đúng model, nhưng chấp nhận biến thể hậu tố của {model}. " +
             "Chỉ dùng mục máy cũ của chuỗi bán lẻ lớn hoặc trang rao vặt lớn: " + TrustedDomains + ". " +
-            "Trả tối đa 5 tin có tên nguồn, tên sản phẩm, tình trạng và giá VND.",
-            $"Dùng Google Search lần lượt với \"{productType} {brand} cũ tại Việt Nam\", " +
-            $"\"{productName} cũ\" và \"{attributeQuery}\". " +
-            "Không yêu cầu cùng mã model. Ưu tiên sản phẩm cùng loại, cùng hãng và có thông số gần với truy vấn. " +
-            "Chỉ dùng mục máy cũ của chuỗi bán lẻ lớn hoặc trang rao vặt lớn: " + TrustedDomains + ". " +
-            "Trả tối đa 5 tin có tên nguồn, tên sản phẩm hoặc model nếu có, tình trạng và giá VND."
+            "Trả tối đa 5 tin có tên nguồn, tên sản phẩm, tình trạng và giá VND."
         ];
     }
 

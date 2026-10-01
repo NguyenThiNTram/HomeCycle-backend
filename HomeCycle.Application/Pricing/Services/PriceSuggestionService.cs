@@ -77,16 +77,12 @@ public sealed class PriceSuggestionService(
             reserved = true;
             remaining = reservedRemaining.Value;
 
-            // Hai lượt tìm độc lập, chạy song song để không vượt thời gian chờ của app.
-            var externalTask = needsExternalUsed
-                ? externalSearch.SearchAsync(product, cancellationToken)
-                : Task.FromResult(ExternalUsedPriceSearchResult.Empty);
-            var newPriceTask = needsNewPriceSearch
-                ? newPriceSearch.SearchAsync(product, cancellationToken)
-                : Task.FromResult(NewPriceSearchResult.Empty);
-            await Task.WhenAll(externalTask, newPriceTask);
-            external = await externalTask;
-            searchedNewPrices = await newPriceTask;
+            // Chạy lần lượt: GeminiRequestService chỉ cho một lệnh Gemini chạy tại một thời điểm và
+            // thời gian chờ của từng lệnh tính cả lúc xếp hàng, nên chạy song song làm lệnh sau hết giờ.
+            if (needsExternalUsed)
+                external = await externalSearch.SearchAsync(product, cancellationToken);
+            if (needsNewPriceSearch)
+                searchedNewPrices = await newPriceSearch.SearchAsync(product, cancellationToken);
         }
 
         var exactExternalItems = external.Items
