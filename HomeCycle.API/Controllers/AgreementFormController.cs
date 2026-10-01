@@ -14,6 +14,7 @@ namespace HomeCycle.API.Controllers
     [ApiController]
     [Route("api/agreements")]
     [Authorize]
+    [HomeCycle.API.Filters.AgreementFlowLog]
     public class AgreementFormController : ControllerBase
     {
         private readonly IAgreementFormService _agreementService;

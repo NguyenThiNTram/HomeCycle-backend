@@ -238,6 +238,9 @@ namespace HomeCycle.API
             var app = builder.Build();
             var logger = app.Services.GetRequiredService<ILogger<Program>>();
 
+            // Wrap exception handling/authentication so rejected agreement requests are visible too.
+            app.UseMiddleware<AgreementRequestLogMiddleware>();
+
             app.Use(async (context, next) =>
             {
                 try
