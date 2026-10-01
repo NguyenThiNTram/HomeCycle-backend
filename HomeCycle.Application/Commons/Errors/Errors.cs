@@ -11,162 +11,162 @@ namespace HomeCycle.Application.Commons.Errors
     public static class AuthErrors
     {
         public static readonly Error PasswordResetEmailNotFound = new("AUTH_PASSWORD_RESET_EMAIL_NOT_FOUND", "Email chưa được đăng ký trong hệ thống.");
-        public static readonly Error PasswordResetUnavailable = new("AUTH_PASSWORD_RESET_UNAVAILABLE", "Chỉ tài khoản Personal hoặc Business không bị khóa hoặc xóa mới được đặt lại mật khẩu.");
+        public static readonly Error PasswordResetUnavailable = new("AUTH_PASSWORD_RESET_UNAVAILABLE", "Chỉ tài khoản cá nhân hoặc doanh nghiệp không bị khóa hoặc xóa mới được đặt lại mật khẩu.");
         public static readonly Error InvalidPasswordResetOtp = new("AUTH_PASSWORD_RESET_OTP_INVALID", "OTP không hợp lệ, đã hết hạn hoặc đã được sử dụng.");
         public static readonly Error PasswordResetOtpLocked = new("AUTH_PASSWORD_RESET_OTP_LOCKED", "Bạn đã nhập sai OTP quá nhiều lần. Vui lòng thử lại sau 15 phút.");
-        public static readonly Error ModeratorCreationForbidden = new("AUTH_MODERATOR_CREATION_FORBIDDEN", "Only an active admin can create moderators.");
-        public static readonly Error InvalidModeratorToken = new("AUTH_MODERATOR_TOKEN_INVALID", "The activation link or password setup session is invalid, expired, or already used.");
-        public static readonly Error ModeratorActivationUnavailable = new("AUTH_MODERATOR_ACTIVATION_UNAVAILABLE", "This moderator account cannot be activated.");
-        public static readonly Error ModeratorEmailFailed = new("AUTH_MODERATOR_EMAIL_FAILED", "The pending account was created, but the confirmation email could not be sent.");
-        public static readonly Error ModeratorConfigurationInvalid = new("AUTH_MODERATOR_CONFIGURATION_INVALID", "Moderator activation settings are invalid.");
-        public static readonly Error EmailRequired = new("AUTH_EMAIL_REQUIRED", "Email is required.");
+        public static readonly Error ModeratorCreationForbidden = new("AUTH_MODERATOR_CREATION_FORBIDDEN", "Chỉ quản trị viên đang hoạt động mới có thể tạo tài khoản kiểm duyệt viên.");
+        public static readonly Error InvalidModeratorToken = new("AUTH_MODERATOR_TOKEN_INVALID", "Liên kết kích hoạt hoặc phiên thiết lập mật khẩu không hợp lệ, đã hết hạn hoặc đã được sử dụng.");
+        public static readonly Error ModeratorActivationUnavailable = new("AUTH_MODERATOR_ACTIVATION_UNAVAILABLE", "Không thể kích hoạt tài khoản kiểm duyệt viên này.");
+        public static readonly Error ModeratorEmailFailed = new("AUTH_MODERATOR_EMAIL_FAILED", "Tài khoản chờ kích hoạt đã được tạo nhưng không thể gửi email xác nhận.");
+        public static readonly Error ModeratorConfigurationInvalid = new("AUTH_MODERATOR_CONFIGURATION_INVALID", "Cấu hình kích hoạt tài khoản kiểm duyệt viên không hợp lệ.");
+        public static readonly Error EmailRequired = new("AUTH_EMAIL_REQUIRED", "Vui lòng nhập email.");
 
-        public static readonly Error InvalidEmail = new("AUTH_EMAIL_INVALID", "Email format is invalid.");
+        public static readonly Error InvalidEmail = new("AUTH_EMAIL_INVALID", "Định dạng email không hợp lệ.");
 
-        public static readonly Error FullNameRequired = new("AUTH_FULLNAME_REQUIRED", "Full name is required.");
+        public static readonly Error FullNameRequired = new("AUTH_FULLNAME_REQUIRED", "Vui lòng nhập họ tên.");
 
-        public static readonly Error InvalidFullName = new("AUTH_FULLNAME_INVALID", "Full name may contain letters and spaces only.");
+        public static readonly Error InvalidFullName = new("AUTH_FULLNAME_INVALID", "Họ tên chỉ được chứa chữ cái và khoảng trắng.");
 
-        public static readonly Error UsernameRequired = new("AUTH_USERNAME_REQUIRED", "Username is required.");
+        public static readonly Error UsernameRequired = new("AUTH_USERNAME_REQUIRED", "Vui lòng nhập tên đăng nhập.");
 
-        public static readonly Error InvalidUsername = new("AUTH_USERNAME_INVALID", "Username may contain letters, numbers, and underscores only.");
+        public static readonly Error InvalidUsername = new("AUTH_USERNAME_INVALID", "Tên đăng nhập chỉ được chứa chữ cái, chữ số và dấu gạch dưới.");
 
-        public static readonly Error PasswordRequired = new("AUTH_PASSWORD_REQUIRED", "Password is required.");
+        public static readonly Error PasswordRequired = new("AUTH_PASSWORD_REQUIRED", "Vui lòng nhập mật khẩu.");
 
-        public static readonly Error InvalidPasswordLength = new("AUTH_PASSWORD_LENGTH_INVALID", "Password must be between 6 and 20 characters.");
+        public static readonly Error InvalidPasswordLength = new("AUTH_PASSWORD_LENGTH_INVALID", "Mật khẩu phải có từ 6 đến 20 ký tự.");
 
-        public static readonly Error PhoneNumberRequired = new("AUTH_PHONE_REQUIRED", "Phone number is required.");
+        public static readonly Error PhoneNumberRequired = new("AUTH_PHONE_REQUIRED", "Vui lòng nhập số điện thoại.");
 
-        public static readonly Error InvalidPhoneNumber = new("AUTH_PHONE_INVALID", "Phone number must contain 9 or 10 digits and start with 0.");
+        public static readonly Error InvalidPhoneNumber = new("AUTH_PHONE_INVALID", "Số điện thoại phải có 9 hoặc 10 chữ số và bắt đầu bằng số 0.");
 
         // AUTHENTICATION
 
-        public static readonly Error InvalidCredential = new("AUTH_INVALID_CREDENTIAL", "Invalid username or password.");
+        public static readonly Error InvalidCredential = new("AUTH_INVALID_CREDENTIAL", "Tên đăng nhập hoặc mật khẩu không đúng.");
 
-        public static readonly Error UserNotFound = new("AUTH_USER_NOT_FOUND", "User not found.");
+        public static readonly Error UserNotFound = new("AUTH_USER_NOT_FOUND", "Không tìm thấy người dùng.");
 
-        public static readonly Error InvalidRefreshToken = new("AUTH_INVALID_REFRESH_TOKEN", "Refresh token is invalid.");
+        public static readonly Error InvalidRefreshToken = new("AUTH_INVALID_REFRESH_TOKEN", "Mã làm mới phiên đăng nhập không hợp lệ.");
 
-        public static readonly Error ExpiredRefreshToken = new("AUTH_REFRESH_TOKEN_EXPIRED", "Refresh token has expired.");
+        public static readonly Error ExpiredRefreshToken = new("AUTH_REFRESH_TOKEN_EXPIRED", "Mã làm mới phiên đăng nhập đã hết hạn.");
 
-        public static readonly Error RevokedRefreshToken = new("AUTH_REFRESH_TOKEN_REVOKED", "Refresh token has been revoked.");
+        public static readonly Error RevokedRefreshToken = new("AUTH_REFRESH_TOKEN_REVOKED", "Mã làm mới phiên đăng nhập đã bị thu hồi.");
 
-        public static readonly Error EmailNotVerified = new("AUTH_EMAIL_NOT_VERIFIED", "Email has not been verified.");
+        public static readonly Error EmailNotVerified = new("AUTH_EMAIL_NOT_VERIFIED", "Email chưa được xác minh.");
 
-        public static readonly Error InvalidOtp = new("AUTH_INVALID_OTP", "Invalid OTP.");
+        public static readonly Error InvalidOtp = new("AUTH_INVALID_OTP", "Mã OTP không hợp lệ.");
 
-        public static readonly Error OtpSendFailed = new("AUTH_OTP_SEND_FAILED", "Failed to send OTP. Please try again later.");
+        public static readonly Error OtpSendFailed = new("AUTH_OTP_SEND_FAILED", "Không thể gửi mã OTP. Vui lòng thử lại sau.");
 
         public static Error OtpRateLimited(int minutes) => new("AUTH_OTP_RATE_LIMITED", $"Bạn chỉ có thể yêu cầu OTP lại sau {minutes} phút.");
 
         // ACCOUNT STATUS
 
-        public static readonly Error AccountSuspended = new("AUTH_ACCOUNT_SUSPENDED", "Account has been suspended.");
+        public static readonly Error AccountSuspended = new("AUTH_ACCOUNT_SUSPENDED", "Tài khoản đã bị đình chỉ.");
 
-        public static readonly Error CannotLockSelf = new("AUTH_CANNOT_LOCK_SELF", "Admin cannot lock their own account.");
+        public static readonly Error CannotLockSelf = new("AUTH_CANNOT_LOCK_SELF", "Quản trị viên không thể khóa tài khoản của chính mình.");
 
-        public static readonly Error CannotLockAdmin = new("AUTH_CANNOT_LOCK_ADMIN", "Cannot lock another admin account.");
+        public static readonly Error CannotLockAdmin = new("AUTH_CANNOT_LOCK_ADMIN", "Không thể khóa tài khoản của quản trị viên khác.");
 
-        public static readonly Error AlreadyLocked = new("AUTH_ACCOUNT_ALREADY_LOCKED", "Account is already locked.");
+        public static readonly Error AlreadyLocked = new("AUTH_ACCOUNT_ALREADY_LOCKED", "Tài khoản đã bị khóa.");
 
-        public static readonly Error NotLocked = new("AUTH_ACCOUNT_NOT_LOCKED", "Account is not locked.");
+        public static readonly Error NotLocked = new("AUTH_ACCOUNT_NOT_LOCKED", "Tài khoản chưa bị khóa.");
 
-        public static readonly Error AccountDeleted = new("AUTH_ACCOUNT_DELETED", "Account has been deleted.");
+        public static readonly Error AccountDeleted = new("AUTH_ACCOUNT_DELETED", "Tài khoản đã bị xóa.");
 
         // REGISTRATION
 
-        public static readonly Error EmailExists = new("AUTH_EMAIL_EXISTS", "Email already exists.");
+        public static readonly Error EmailExists = new("AUTH_EMAIL_EXISTS", "Email đã tồn tại.");
 
-        public static readonly Error UsernameExists = new("AUTH_USERNAME_EXISTS", "Username already exists.");
+        public static readonly Error UsernameExists = new("AUTH_USERNAME_EXISTS", "Tên đăng nhập đã tồn tại.");
 
-        public static readonly Error InvalidRegistrationSession = new("AUTH_INVALID_REGISTRATION_SESSION", "The registration session is invalid or has expired.");
+        public static readonly Error InvalidRegistrationSession = new("AUTH_INVALID_REGISTRATION_SESSION", "Phiên đăng ký không hợp lệ hoặc đã hết hạn.");
     }
 
     public static class ProfileErrors
     {
-        public static readonly Error UserNotFound = new("AUTH_USER_NOT_FOUND", "User not found! Please try again.");
-        public static readonly Error ProfileNotFound = new("AUTH_PROFILE_NOT_FOUND", "Profile not found! Please try again.");
-        public static readonly Error AvatarUploadFailed = new("PROFILE_AVATAR_UPLOAD_FAILED", "Failed to upload avatar or logo image to storage.");
-        public static readonly Error AvatarUpdateFailed = new("PROFILE_AVATAR_UPDATE_FAILED", "Failed to update avatar or logo image.");
+        public static readonly Error UserNotFound = new("AUTH_USER_NOT_FOUND", "Không tìm thấy người dùng. Vui lòng thử lại.");
+        public static readonly Error ProfileNotFound = new("AUTH_PROFILE_NOT_FOUND", "Không tìm thấy hồ sơ. Vui lòng thử lại.");
+        public static readonly Error AvatarUploadFailed = new("PROFILE_AVATAR_UPLOAD_FAILED", "Không thể tải ảnh đại diện hoặc logo lên hệ thống lưu trữ.");
+        public static readonly Error AvatarUpdateFailed = new("PROFILE_AVATAR_UPDATE_FAILED", "Không thể cập nhật ảnh đại diện hoặc logo.");
     }
 
     public static class CategoryErrors
     {
-        public static readonly Error CategoryNotFound = new("CATEGORY_NOT_FOUND", "Category not found.");
+        public static readonly Error CategoryNotFound = new("CATEGORY_NOT_FOUND", "Không tìm thấy danh mục.");
 
-        public static readonly Error CategoryAlreadyExists = new("CATEGORY_ALREADY_EXISTS", "Category name already exists.");
+        public static readonly Error CategoryAlreadyExists = new("CATEGORY_ALREADY_EXISTS", "Tên danh mục đã tồn tại.");
 
-        public static readonly Error CategoryInactive = new("CATEGORY_INACTIVE", "Category has been deactivated.");
+        public static readonly Error CategoryInactive = new("CATEGORY_INACTIVE", "Danh mục đã bị vô hiệu hóa.");
     }
 
     public static class BrandErrors
     {
-        public static readonly Error BrandNotFound = new("BRAND_NOT_FOUND", "Brand does not exist.");
+        public static readonly Error BrandNotFound = new("BRAND_NOT_FOUND", "Thương hiệu không tồn tại.");
 
-        public static readonly Error BrandAlreadyExists = new("BRAND_ALREADY_EXISTS", "Brand already exists.");
+        public static readonly Error BrandAlreadyExists = new("BRAND_ALREADY_EXISTS", "Thương hiệu đã tồn tại.");
     }
 
     public static class ProductTypeErrors
     {
-        public static readonly Error ProductTypeNotFound = new("PRODUCT_TYPE_NOT_FOUND", "Product type does not exist.");
+        public static readonly Error ProductTypeNotFound = new("PRODUCT_TYPE_NOT_FOUND", "Loại sản phẩm không tồn tại.");
 
-        public static readonly Error ProductTypeAlreadyExists = new("PRODUCT_TYPE_ALREADY_EXISTS", "Product type already exists.");
+        public static readonly Error ProductTypeAlreadyExists = new("PRODUCT_TYPE_ALREADY_EXISTS", "Loại sản phẩm đã tồn tại.");
 
-        public static readonly Error CategoryNotFound = new("CATEGORY_NOT_FOUND", "Category does not exist.");
+        public static readonly Error CategoryNotFound = new("CATEGORY_NOT_FOUND", "Danh mục không tồn tại.");
 
-        public static readonly Error AttributeAlreadyExists = new("ATTRIBUTE_ALREADY_EXISTS", "Attribute already exists.");
-        public static readonly Error AttributeNotFound = new("ATTRIBUTE_NOT_FOUND", "Attribute does not exist.");
-        public static readonly Error AttributeInUse = new("ATTRIBUTE_ALREADY_IN_USE", "Attribute already in use.");
-        public static readonly Error CannotChangeDataTypeInUse = new("DATA_TYPE_CANNOT_CHANGE_IN_USE", "Cannot change the data because in used");
-        public static readonly Error CannotChangeInputModeInUse = new("INPUT_MODE_CANNOT_CHANGE_IN_USE", "Cannot change the Input Mode because in used");
+        public static readonly Error AttributeAlreadyExists = new("ATTRIBUTE_ALREADY_EXISTS", "Thuộc tính đã tồn tại.");
+        public static readonly Error AttributeNotFound = new("ATTRIBUTE_NOT_FOUND", "Thuộc tính không tồn tại.");
+        public static readonly Error AttributeInUse = new("ATTRIBUTE_ALREADY_IN_USE", "Thuộc tính đang được sử dụng.");
+        public static readonly Error CannotChangeDataTypeInUse = new("DATA_TYPE_CANNOT_CHANGE_IN_USE", "Không thể thay đổi kiểu dữ liệu vì thuộc tính đang được sử dụng.");
+        public static readonly Error CannotChangeInputModeInUse = new("INPUT_MODE_CANNOT_CHANGE_IN_USE", "Không thể thay đổi chế độ nhập vì thuộc tính đang được sử dụng.");
 
     }
 
     public static class ProductAttributeErrors
     {
-        public static readonly Error AttributeNotFound = new("ATTRIBUTE_NOT_FOUND", "Product attribute does not exist.");
+        public static readonly Error AttributeNotFound = new("ATTRIBUTE_NOT_FOUND", "Thuộc tính sản phẩm không tồn tại.");
 
-        public static readonly Error AttributeAlreadyExists = new("ATTRIBUTE_ALREADY_EXISTS", "Attribute already exists in this product type.");
+        public static readonly Error AttributeAlreadyExists = new("ATTRIBUTE_ALREADY_EXISTS", "Thuộc tính đã tồn tại trong loại sản phẩm này.");
 
-        public static readonly Error RequiredAttributeMissing = new("ATTRIBUTE_REQUIRED_MISSING", "Required attribute is missing.");
+        public static readonly Error RequiredAttributeMissing = new("ATTRIBUTE_REQUIRED_MISSING", "Thiếu thuộc tính bắt buộc.");
 
     }
 
     public static class ProductAttributeOptionErrors
     {
-        public static readonly Error OptionNotFound = new("ATTRIBUTE_OPTION_NOT_FOUND", "Attribute option does not exist.");
+        public static readonly Error OptionNotFound = new("ATTRIBUTE_OPTION_NOT_FOUND", "Tùy chọn thuộc tính không tồn tại.");
 
-        public static readonly Error OptionAlreadyExists = new("ATTRIBUTE_OPTION_ALREADY_EXISTS", "Attribute option already exists.");
-        public static readonly Error OptionInUse = new("ATTRIBUTE_OPTION_ALREADY_IN_USE", "Attribute option already in use.");
+        public static readonly Error OptionAlreadyExists = new("ATTRIBUTE_OPTION_ALREADY_EXISTS", "Tùy chọn thuộc tính đã tồn tại.");
+        public static readonly Error OptionInUse = new("ATTRIBUTE_OPTION_ALREADY_IN_USE", "Tùy chọn thuộc tính đang được sử dụng.");
     }
 
     public static class ProductErrors
     {
-        public static readonly Error ProductNotFound = new("PRODUCT_NOT_FOUND", "Product not found.");
+        public static readonly Error ProductNotFound = new("PRODUCT_NOT_FOUND", "Không tìm thấy sản phẩm.");
 
-        public static readonly Error InvalidCategory = new("PRODUCT_INVALID_CATEGORY", "Invalid product category.");
+        public static readonly Error InvalidCategory = new("PRODUCT_INVALID_CATEGORY", "Danh mục sản phẩm không hợp lệ.");
 
-        public static readonly Error InvalidProductType = new("PRODUCT_INVALID_PRODUCT_TYPE", "Invalid product type for the category.");
-        public static readonly Error InvalidBrand = new("PRODUCT_INVALID_BRAND", "Invalid brand.");
+        public static readonly Error InvalidProductType = new("PRODUCT_INVALID_PRODUCT_TYPE", "Loại sản phẩm không phù hợp với danh mục.");
+        public static readonly Error InvalidBrand = new("PRODUCT_INVALID_BRAND", "Thương hiệu không hợp lệ.");
     }
 
     public static class PostErrors
     {
-        public static readonly Error NotFound = new("POST_NOT_FOUND", "The post is not found.");
+        public static readonly Error NotFound = new("POST_NOT_FOUND", "Không tìm thấy bài đăng.");
 
-        public static readonly Error InvalidPostType = new("POST_INVALID_TYPE", "Invalid post type.");
+        public static readonly Error InvalidPostType = new("POST_INVALID_TYPE", "Loại bài đăng không hợp lệ.");
 
-        public static readonly Error UnauthorizedOwner = new("POST_UNAUTHORIZED", "You do not have permission to perform this action on the post.");
+        public static readonly Error UnauthorizedOwner = new("POST_UNAUTHORIZED", "Bạn không có quyền thực hiện thao tác này trên bài đăng.");
 
-        public static readonly Error PostAlreadyClosedOrDeleted = new("POST_ALREADY_CLOSED_OR_DELETED", "The post is already closed or deleted.");
+        public static readonly Error PostAlreadyClosedOrDeleted = new("POST_ALREADY_CLOSED_OR_DELETED", "Bài đăng đã đóng hoặc đã bị xóa.");
 
-        public static readonly Error PostAlreadySuspended = new("POST_ALREADY_SUSPENDED", "The post is already suspended.");
+        public static readonly Error PostAlreadySuspended = new("POST_ALREADY_SUSPENDED", "Bài đăng đã bị đình chỉ.");
 
-        public static readonly Error Forbidden = new("POST_FORBIDDEN", "You do not have permission to access this post.");
+        public static readonly Error Forbidden = new("POST_FORBIDDEN", "Bạn không có quyền truy cập bài đăng này.");
 
         public static readonly Error PostExpired = new("POST_EXPIRED", "Bài đăng đã hết thời hạn cho phép chỉnh sửa.");
 
-        public static readonly Error RoleNotAllowed = new("POST_ROLE_NOT_ALLOWED", "Your account role is not allowed to create this type of post.");
+        public static readonly Error RoleNotAllowed = new("POST_ROLE_NOT_ALLOWED", "Vai trò tài khoản của bạn không được phép tạo loại bài đăng này.");
 
         public static Error InvalidUpdateQuantity(int soldQuantity, int requestedQuantity)
             => new(
@@ -217,7 +217,7 @@ namespace HomeCycle.Application.Commons.Errors
 
         public static readonly Error RoleNotAllowed = new("OFFER_ROLE_NOT_ALLOWED", "Loại tài khoản của bạn không được phép thực hiện thao tác chào bán này.");
 
-        public static readonly Error BusinessCannotOfferBuyPost = new("OFFER_B2B_NOT_ALLOWED", "Business accounts cannot offer on a business buy post.");
+        public static readonly Error BusinessCannotOfferBuyPost = new("OFFER_B2B_NOT_ALLOWED", "Tài khoản doanh nghiệp không thể gửi chào bán cho bài mua của doanh nghiệp.");
         public static readonly Error UserNotActive = new("OFFER_USER_NOT_ACTIVE", "Tài khoản hiện không hoạt động nên không thể gửi hoặc nhận đề nghị.");
 
         public static Error PriceOutOfRange(decimal minPrice, decimal maxPrice)
@@ -274,32 +274,32 @@ namespace HomeCycle.Application.Commons.Errors
 
     public static class MessageErrors
     {
-        public static readonly Error NotFound = new("MESSAGE_NOT_FOUND", "The message is not found.");
-        public static readonly Error Forbidden = new("MESSAGE_FORBIDDEN", "You do not have permission to access this message.");
-        public static readonly Error ClientMessageIdConflict = new("MESSAGE_CLIENT_ID_CONFLICT", "A message with the same client message ID already exists.");
-        public static readonly Error InvalidMessage = new("MESSAGE_INVALID", "The message is invalid or cannot be processed.");
-        public static readonly Error NegotiationReadOnly = new("MESSAGE_NEGOTIATION_READ_ONLY", "Cannot send messages in a negotiation that is not open.");
+        public static readonly Error NotFound = new("MESSAGE_NOT_FOUND", "Không tìm thấy tin nhắn.");
+        public static readonly Error Forbidden = new("MESSAGE_FORBIDDEN", "Bạn không có quyền truy cập tin nhắn này.");
+        public static readonly Error ClientMessageIdConflict = new("MESSAGE_CLIENT_ID_CONFLICT", "Đã tồn tại tin nhắn có cùng mã tin nhắn phía ứng dụng khách.");
+        public static readonly Error InvalidMessage = new("MESSAGE_INVALID", "Tin nhắn không hợp lệ hoặc không thể xử lý.");
+        public static readonly Error NegotiationReadOnly = new("MESSAGE_NEGOTIATION_READ_ONLY", "Không thể gửi tin nhắn trong phiên thương lượng không ở trạng thái đang mở.");
     }
 
     public static class CartErrors
     {
-        public static readonly Error ItemNotFound = new("CART_ITEM_NOT_FOUND", "The cart item is not found.");
+        public static readonly Error ItemNotFound = new("CART_ITEM_NOT_FOUND", "Không tìm thấy mục trong giỏ hàng.");
 
-        public static readonly Error ItemExists = new("CART_ITEM_EXISTS", "The post is already in your cart.");
+        public static readonly Error ItemExists = new("CART_ITEM_EXISTS", "Bài đăng đã có trong giỏ hàng của bạn.");
 
-        public static readonly Error PostNotFound = new("CART_POST_NOT_FOUND", "The post does not exist.");
+        public static readonly Error PostNotFound = new("CART_POST_NOT_FOUND", "Bài đăng không tồn tại.");
 
-        public static readonly Error PostNotActive = new("CART_POST_NOT_ACTIVE", "The post is not active.");
+        public static readonly Error PostNotActive = new("CART_POST_NOT_ACTIVE", "Bài đăng hiện không hoạt động.");
 
-        public static readonly Error CannotAddOwnPost = new("CART_CANNOT_ADD_OWN_POST", "You cannot add your own post to the cart.");
+        public static readonly Error CannotAddOwnPost = new("CART_CANNOT_ADD_OWN_POST", "Bạn không thể thêm bài đăng của chính mình vào giỏ hàng.");
 
-        public static readonly Error InvalidQuantity = new("CART_INVALID_QUANTITY", "Quantity must be greater than zero.");
+        public static readonly Error InvalidQuantity = new("CART_INVALID_QUANTITY", "Số lượng phải lớn hơn 0.");
 
         public static Error QuantityExceedsRemaining(int requested, int remaining)
             => new("CART_QUANTITY_EXCEEDS_REMAINING",
-                   $"Quantity ({requested}) exceeds the remaining quantity ({remaining}).");
+                   $"Số lượng ({requested}) vượt quá số lượng còn lại ({remaining}).");
 
-        public static readonly Error Forbidden = new("CART_FORBIDDEN", "You do not have permission to access this cart item.");
+        public static readonly Error Forbidden = new("CART_FORBIDDEN", "Bạn không có quyền truy cập mục này trong giỏ hàng.");
     }
 
     public static class ContentDisputeErrors
@@ -345,25 +345,25 @@ namespace HomeCycle.Application.Commons.Errors
             new("DISPUTE_CLOSE_NOT_ALLOWED", "Chỉ có thể đóng tranh chấp đang ở trạng thái chờ xử lý.");
 
         public static readonly Error AlreadyUnderReview =
-            new("DISPUTE_ALREADY_UNDER_REVIEW", "Tranh chấp đã được Moderator tiếp nhận và không thể tự đóng.");
+            new("DISPUTE_ALREADY_UNDER_REVIEW", "Tranh chấp đã được kiểm duyệt viên tiếp nhận và không thể tự đóng.");
 
         public static readonly Error ClaimNotAllowed =
             new("DISPUTE_CLAIM_NOT_ALLOWED", "Chỉ có thể tiếp nhận tranh chấp đang ở trạng thái chờ xử lý.");
 
         public static readonly Error AlreadyClaimed =
-            new("DISPUTE_ALREADY_CLAIMED", "Tranh chấp đã được Moderator khác tiếp nhận.");
+            new("DISPUTE_ALREADY_CLAIMED", "Tranh chấp đã được kiểm duyệt viên khác tiếp nhận.");
 
         public static readonly Error DecisionNotAllowed =
-            new("DISPUTE_DECISION_NOT_ALLOWED", "Chỉ có thể đưa ra kết luận khi tranh chấp đang được Moderator xử lý.");
+            new("DISPUTE_DECISION_NOT_ALLOWED", "Chỉ có thể đưa ra kết luận khi tranh chấp đang được kiểm duyệt viên xử lý.");
 
         public static readonly Error NotAssignedModerator =
-            new("DISPUTE_NOT_ASSIGNED_MODERATOR", "Bạn không phải Moderator đang phụ trách tranh chấp này.");
+            new("DISPUTE_NOT_ASSIGNED_MODERATOR", "Bạn không phải kiểm duyệt viên đang phụ trách tranh chấp này.");
 
         public static readonly Error ReturnVerificationNotAllowed =
             new("DISPUTE_RETURN_VERIFICATION_NOT_ALLOWED", "Tranh chấp hiện không ở trạng thái chờ xác minh hoàn trả.");
 
         public static Error ReturnVerificationNotDue(DateTime dueAt) =>
-            new("DISPUTE_RETURN_VERIFICATION_NOT_DUE", $"Moderator chỉ có thể xác minh hoàn trả sau thời hạn {dueAt:O}.");
+            new("DISPUTE_RETURN_VERIFICATION_NOT_DUE", $"Kiểm duyệt viên chỉ có thể xác minh hoàn trả sau thời hạn {dueAt:O}.");
     }
 
     public static class OrderErrors
@@ -384,7 +384,7 @@ namespace HomeCycle.Application.Commons.Errors
             new("Order.DeliveryMethodMissing", "Không xác định được phương thức giao nhận của đơn hàng.");
 
         public static readonly Error DirectHandoverOnly =
-            new("Order.DirectHandoverOnly", "Xác nhận bàn giao của Seller chỉ áp dụng cho giao nhận trực tiếp.");
+            new("Order.DirectHandoverOnly", "Xác nhận bàn giao của người bán chỉ áp dụng cho giao nhận trực tiếp.");
 
         public static readonly Error ShipmentNotFound =
             new("Order.ShipmentNotFound", "Không tìm thấy thông tin vận chuyển của đơn hàng.");
@@ -419,13 +419,13 @@ namespace HomeCycle.Application.Commons.Errors
     public static class PlatformPolicyErrors
     {
         public static Error ActiveNotFound(PlatformPolicyType policyType) =>
-            new("PlatformPolicy.ActiveNotFound", $"Không tìm thấy policy đang hoạt động cho '{policyType}'.");
+            new("PlatformPolicy.ActiveNotFound", $"Không tìm thấy chính sách đang hoạt động cho '{policyType}'.");
 
         public static Error InvalidContent(PlatformPolicyType policyType) =>
-            new("PlatformPolicy.InvalidContent", $"Nội dung cấu hình của policy '{policyType}' không hợp lệ.");
+            new("PlatformPolicy.InvalidContent", $"Nội dung cấu hình của chính sách '{policyType}' không hợp lệ.");
 
         public static readonly Error InvalidDisputePolicy =
-            new("PlatformPolicy.InvalidDisputePolicy", "Thời gian dispute của tài khoản uy tín thấp không được ngắn hơn thời gian dispute thông thường.");
+            new("PlatformPolicy.InvalidDisputePolicy", "Thời gian tranh chấp của tài khoản uy tín thấp không được ngắn hơn thời gian tranh chấp thông thường.");
 
         public static readonly Error InvalidAppointmentPolicy =
             new("PlatformPolicy.InvalidAppointmentPolicy", "Thời hạn yêu cầu đổi lịch phải lớn hơn hoặc bằng thời hạn được phép hủy lịch.");
@@ -433,23 +433,23 @@ namespace HomeCycle.Application.Commons.Errors
         public static readonly Error InvalidPaymentPolicy =
             new(
         "PlatformPolicy.InvalidPaymentPolicy",
-        "Cấu hình Payment Policy không hợp lệ.");
+        "Cấu hình chính sách thanh toán không hợp lệ.");
 
         public static readonly Error InvalidOrderPolicy =
             new(
                 "PlatformPolicy.InvalidOrderPolicy",
-                "Cấu hình Order Policy không hợp lệ.");
+                "Cấu hình chính sách đơn hàng không hợp lệ.");
         public static Error VersionNotFound(PlatformPolicyType policyType, int version) =>
-            new("PlatformPolicy.VersionNotFound", $"Không tìm thấy version {version} của policy '{policyType}'.");
+            new("PlatformPolicy.VersionNotFound", $"Không tìm thấy phiên bản {version} của chính sách '{policyType}'.");
 
         public static readonly Error VersionAlreadyActive =
-            new("PlatformPolicy.VersionAlreadyActive", "Version này hiện đang là version được áp dụng.");
+            new("PlatformPolicy.VersionAlreadyActive", "Phiên bản này hiện đang là phiên bản được áp dụng.");
 
         public static Error UnsupportedType(string policyType) =>
-            new("PlatformPolicy.UnsupportedType", $"Policy type '{policyType}' không được hệ thống hỗ trợ.");
+            new("PlatformPolicy.UnsupportedType", $"Loại chính sách '{policyType}' không được hệ thống hỗ trợ.");
 
         public static readonly Error InvalidWithdrawalPolicy =
-            new("PlatformPolicy.InvalidWithdrawalPolicy", "Withdrawal Policy không hợp lệ. Các hạn mức tiền phải là số nguyên dương, MinimumWithdrawalAmount <= MaximumWithdrawalAmount <= DailyWithdrawalLimit và DailyWithdrawalCountLimit > 0.");
+            new("PlatformPolicy.InvalidWithdrawalPolicy", "Chính sách rút tiền không hợp lệ. Các hạn mức tiền phải là số nguyên dương; số tiền rút tối thiểu không được vượt quá số tiền rút tối đa, số tiền rút tối đa không được vượt quá hạn mức rút trong ngày và số lần rút tối đa trong ngày phải lớn hơn 0.");
     }
 
     public static class AgreementErrors
@@ -530,10 +530,10 @@ namespace HomeCycle.Application.Commons.Errors
             new("Appointment.UnsupportedAction", "Lịch hẹn này không hỗ trợ thao tác trực tiếp của người dùng.");
 
         public static readonly Error CheckInInspectionOnly =
-            new("Appointment.CheckInInspectionOnly", "Check-in chỉ áp dụng cho lịch kiểm định.");
+            new("Appointment.CheckInInspectionOnly", "Xác nhận có mặt chỉ áp dụng cho lịch kiểm định.");
 
         public static readonly Error CheckInAlreadyStarted =
-            new("Appointment.CheckInAlreadyStarted", "Không thể thay đổi lịch sau khi một trong hai bên đã check-in.");
+            new("Appointment.CheckInAlreadyStarted", "Không thể thay đổi lịch sau khi một trong hai bên đã xác nhận có mặt.");
 
         public static readonly Error PendingRescheduleExists =
             new("Appointment.PendingRescheduleExists", "Lịch hẹn đang có một yêu cầu đổi lịch chưa được phản hồi.");
@@ -551,7 +551,7 @@ namespace HomeCycle.Application.Commons.Errors
             new("Appointment.SameSchedule", "Thời gian đề xuất mới phải khác lịch hiện tại.");
 
         public static Error CheckInNotOpen(DateTime openAt) =>
-            new("Appointment.CheckInNotOpen", $"Check-in chưa mở. Có thể check-in từ {openAt:O}.");
+            new("Appointment.CheckInNotOpen", $"Xác nhận có mặt chưa mở. Có thể xác nhận có mặt từ {openAt:O}.");
 
         public static Error RescheduleCutoffPassed(DateTime cutoff) =>
             new("Appointment.RescheduleCutoffPassed", $"Đã quá thời hạn yêu cầu đổi lịch. Hạn cuối: {cutoff:O}.");
@@ -575,10 +575,10 @@ namespace HomeCycle.Application.Commons.Errors
             new("Inspection.AlreadyExists", "Lịch kiểm định này đã có biểu mẫu kiểm định.");
 
         public static readonly Error BuyerOnly =
-            new("Inspection.BuyerOnly", "Chỉ Buyer thực hiện kiểm định mới có quyền thao tác biểu mẫu.");
+            new("Inspection.BuyerOnly", "Chỉ người mua thực hiện kiểm định mới có quyền thao tác biểu mẫu.");
 
         public static readonly Error SellerOnly =
-            new("Inspection.SellerOnly", "Chỉ Seller của giao dịch mới có quyền xác nhận kết quả kiểm định.");
+            new("Inspection.SellerOnly", "Chỉ người bán của giao dịch mới có quyền xác nhận kết quả kiểm định.");
 
         public static readonly Error InvalidAppointment =
             new("Inspection.InvalidAppointment", "Lịch hẹn này không phải lịch kiểm định hợp lệ.");
@@ -587,19 +587,19 @@ namespace HomeCycle.Application.Commons.Errors
             new("Inspection.AppointmentNotInProgress", "Biểu mẫu chỉ được xử lý khi lịch kiểm định đang diễn ra.");
 
         public static readonly Error BothCheckInRequired =
-            new("Inspection.BothCheckInRequired", "Buyer và Seller phải check-in trước khi tiến hành kiểm định.");
+            new("Inspection.BothCheckInRequired", "Người mua và người bán phải xác nhận có mặt trước khi tiến hành kiểm định.");
 
         public static readonly Error DraftOnly =
-            new("Inspection.DraftOnly", "Chỉ biểu mẫu Draft mới được chỉnh sửa hoặc gửi.");
+            new("Inspection.DraftOnly", "Chỉ biểu mẫu ở trạng thái bản nháp mới được chỉnh sửa hoặc gửi.");
 
         public static readonly Error PendingConfirmationOnly =
-            new("Inspection.PendingConfirmationOnly", "Biểu mẫu không ở trạng thái chờ Seller xác nhận.");
+            new("Inspection.PendingConfirmationOnly", "Biểu mẫu không ở trạng thái chờ người bán xác nhận.");
 
         public static readonly Error RevisionMismatch =
             new("Inspection.RevisionMismatch", "Biểu mẫu kiểm định đã được cập nhật. Vui lòng tải lại phiên bản mới nhất.");
 
         public static readonly Error Incomplete =
-            new("Inspection.Incomplete", "Vui lòng hoàn thành đầy đủ checklist và kết luận kiểm định trước khi gửi.");
+            new("Inspection.Incomplete", "Vui lòng hoàn thành đầy đủ danh sách kiểm tra và kết luận kiểm định trước khi gửi.");
 
         public static readonly Error SuggestedPriceRequired =
             new("Inspection.SuggestedPriceRequired", "Kết luận điều chỉnh giá yêu cầu nhập giá mới.");
@@ -611,7 +611,7 @@ namespace HomeCycle.Application.Commons.Errors
             new("Inspection.InvalidOrderPrice", "Không xác định được giá giao dịch hiện tại.");
 
         public static readonly Error AcceptedRequired =
-            new("Inspection.AcceptedRequired", "Biểu mẫu phải được Seller xác nhận trước khi tiếp tục thu gom.");
+            new("Inspection.AcceptedRequired", "Biểu mẫu phải được người bán xác nhận trước khi tiếp tục thu gom.");
 
         public static readonly Error FailedCannotCollect =
             new("Inspection.FailedCannotCollect", "Kết quả kiểm định không đạt nên không thể tiếp tục thu gom.");
@@ -641,7 +641,7 @@ namespace HomeCycle.Application.Commons.Errors
             new("Payment.RefundWalletNotFound", "Không tìm thấy ví cần thiết để thực hiện hoàn tiền.");
 
         public static readonly Error InsufficientHeldBalance =
-            new("Payment.InsufficientHeldBalance", "Số dư Order Escrow không đủ để thực hiện hoàn tiền.");
+            new("Payment.InsufficientHeldBalance", "Số dư tiền tạm giữ của đơn hàng không đủ để thực hiện hoàn tiền.");
 
         public static readonly Error InvalidRefundAmount =
             new("Payment.InvalidRefundAmount", "Số tiền hoàn không hợp lệ.");
@@ -677,7 +677,7 @@ namespace HomeCycle.Application.Commons.Errors
             new("Payment.ReleaseOrderHeldAmountNotFound", "Đơn hàng không còn khoản tiền tạm giữ có thể giải ngân.");
 
         public static readonly Error InsufficientHeldBalanceForRelease =
-            new("Payment.InsufficientHeldBalanceForRelease", "Số dư Order Escrow không đủ để giải ngân cho đơn hàng.");
+            new("Payment.InsufficientHeldBalanceForRelease", "Số dư tiền tạm giữ của đơn hàng không đủ để giải ngân cho đơn hàng.");
 
         public static readonly Error ReleaseFailed =
             new("Payment.ReleaseFailed", "Không thể giải ngân khoản tiền tạm giữ của đơn hàng.");
@@ -691,7 +691,7 @@ namespace HomeCycle.Application.Commons.Errors
 
     public static class NotificationErrors
     {
-        public static readonly Error NotFound = new("NOTIFICATION_NOT_FOUND", "can not found notification");
+        public static readonly Error NotFound = new("NOTIFICATION_NOT_FOUND", "Không tìm thấy thông báo.");
     }
 
     public static class ShipmentErrors
@@ -721,7 +721,7 @@ namespace HomeCycle.Application.Commons.Errors
             new("DisputeCategory.NotFound", "Không tìm thấy loại tranh chấp.");
 
         public static readonly Error CodeAlreadyExists =
-            new("DisputeCategory.CodeAlreadyExists", "Code của loại tranh chấp đã tồn tại.");
+            new("DisputeCategory.CodeAlreadyExists", "Mã của loại tranh chấp đã tồn tại.");
 
         public static readonly Error Inactive =
             new("DisputeCategory.Inactive", "Loại tranh chấp này hiện đã bị vô hiệu hóa.");
@@ -732,8 +732,8 @@ namespace HomeCycle.Application.Commons.Errors
 
     public static class AuditErrors
     {
-        public static readonly Error NotFound = new("AuditLog.NotFound", "Không tìm thấy audit log.");
-        public static readonly Error InvalidDateRange = new("AuditLog.InvalidDateRange", "FromUtc không được lớn hơn ToUtc.");
+        public static readonly Error NotFound = new("AuditLog.NotFound", "Không tìm thấy nhật ký hoạt động.");
+        public static readonly Error InvalidDateRange = new("AuditLog.InvalidDateRange", "Thời gian bắt đầu (FromUtc) không được sau thời gian kết thúc (ToUtc).");
         public static Error InvalidFilter(string field) =>
             new("AuditLog.InvalidFilter", $"Bộ lọc '{field}' không hợp lệ.");
         public static Error FilterTooLong(string field, int maxLength) =>
@@ -746,7 +746,7 @@ namespace HomeCycle.Application.Commons.Errors
             new("SubscriptionPackage.NotFound", "Không tìm thấy gói đăng ký.");
 
         public static readonly Error CodeAlreadyExists =
-            new("SubscriptionPackage.CodeAlreadyExists", "Code của gói đăng ký đã tồn tại.");
+            new("SubscriptionPackage.CodeAlreadyExists", "Mã của gói đăng ký đã tồn tại.");
 
         public static readonly Error NameAlreadyExists =
             new("SubscriptionPackage.NameAlreadyExists", "Tên gói đăng ký đã tồn tại.");
@@ -759,21 +759,21 @@ namespace HomeCycle.Application.Commons.Errors
 
     public static class UserSubscriptionErrors
     {
-        public static readonly Error InvalidSnapshot = new("UserSubscription.InvalidSnapshot", "Subscription thiếu snapshot hợp lệ; cần đối soát trước khi kích hoạt.");
+        public static readonly Error InvalidSnapshot = new("UserSubscription.InvalidSnapshot", "Đăng ký gói thiếu bản ghi thông tin hợp lệ; cần đối soát trước khi kích hoạt.");
         public static readonly Error NotFound =
-            new("UserSubscription.NotFound", "Không tìm thấy subscription.");
+            new("UserSubscription.NotFound", "Không tìm thấy đăng ký gói.");
 
         public static readonly Error OpenSubscriptionExists =
-            new("UserSubscription.OpenExists", "Bạn đang có subscription Pending hoặc Active.");
+            new("UserSubscription.OpenExists", "Bạn đang có đăng ký gói đang chờ xử lý hoặc đang hoạt động.");
 
         public static readonly Error RoleNotEligible =
             new("UserSubscription.RoleNotEligible", "Gói đăng ký không áp dụng cho loại tài khoản hiện tại.");
 
         public static readonly Error UserInactive =
-            new("UserSubscription.UserInactive", "Tài khoản phải ở trạng thái Active để mua gói đăng ký.");
+            new("UserSubscription.UserInactive", "Tài khoản phải ở trạng thái đang hoạt động để mua gói đăng ký.");
 
         public static readonly Error InvalidStatus =
-            new("UserSubscription.InvalidStatus", "Trạng thái subscription hiện tại không cho phép thao tác này.");
+            new("UserSubscription.InvalidStatus", "Trạng thái đăng ký gói hiện tại không cho phép thao tác này.");
 
         public static readonly Error WalletNotFound =
             new("UserSubscription.WalletNotFound", "Không tìm thấy ví người dùng.");

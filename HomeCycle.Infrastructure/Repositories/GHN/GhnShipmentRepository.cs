@@ -124,6 +124,7 @@ namespace HomeCycle.Infrastructure.Repositories.GHN
             var count = await _db.GHN_Shipments.Where(x => x.ShipmentId == shipmentId &&
                 (x.GHNOrderCode == null || x.GHNOrderCode == response.OrderCode))
                 .ExecuteUpdateAsync(s => s.SetProperty(x => x.GHNOrderCode, response.OrderCode)
+                    .SetProperty(x => x.GHNStatusCode, x => x.GHNStatusCode ?? "ready_to_pick")
                     .SetProperty(x => x.CreationStatus, (int)GHNCreationStatus.Success)
                     .SetProperty(x => x.GHNServiceFee, response.ServiceFee)
                     .SetProperty(x => x.GHNCodFee, response.CodFee)

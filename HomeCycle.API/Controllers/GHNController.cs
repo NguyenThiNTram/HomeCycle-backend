@@ -324,7 +324,9 @@ namespace HomeCycle.API.Controllers
             }
             catch (Exception exception)
             {
-                _logger.LogError( exception, "Lỗi không mong muốn khi xử lý webhook GHN.");
+                _logger.LogError(exception,
+                    "Lỗi không mong muốn khi xử lý webhook GHN. OrderCode={OrderCode}",
+                    request.OrderCode?.Replace("\r", " ").Replace("\n", " "));
 
                 // Non-200 để GHN thực hiện retry.
                 return StatusCode(
@@ -355,7 +357,30 @@ namespace HomeCycle.API.Controllers
                     "true",
                     StringComparison.OrdinalIgnoreCase);
 
-            return isDemoRequest;
+            if (isDemoRequest)
+                return true;
+
+            // Chỉ log lý do; không ghi giá trị header secret hoặc JWT.
+            var secretReason = string.IsNullOrWhiteSpace(configuredSecret)
+                ? "SecretNotConfigured"
+                : string.IsNullOrWhiteSpace(receivedSecret)
+                    ? "SecretMissing"
+                    : "SecretMismatch";
+            var demoReason = !_settings.EnableWebhookDemo
+                ? "DemoDisabled"
+                : _environment.IsProduction()
+                    ? "DemoBlockedInProduction"
+                    : User.Identity?.IsAuthenticated != true
+                        ? "DemoUnauthenticated"
+                        : !User.IsInRole(nameof(UserRole.Admin))
+                            ? "DemoAdminRequired"
+                            : "DemoHeaderMissingOrInvalid";
+
+            _logger.LogWarning(
+                "GHN webhook rejected. SecretReason={SecretReason}, DemoReason={DemoReason}",
+                secretReason,
+                demoReason);
+            return false;
         }
 
         private static bool FixedTimeEquals(string expected, string actual)
