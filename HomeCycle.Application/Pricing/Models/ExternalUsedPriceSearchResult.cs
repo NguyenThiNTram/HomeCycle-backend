@@ -1,3 +1,5 @@
+using HomeCycle.Application.Pricing.Services;
+
 namespace HomeCycle.Application.Pricing.Models;
 
 public enum ExternalModelMatchLevel
@@ -24,4 +26,6 @@ public sealed record ExternalUsedPriceEvidence(
     string? Condition,
     string SourceName,
     string SourceUrl,
-    DateTimeOffset RetrievedAt);
+    DateTimeOffset RetrievedAt,
+    PriceSourceTier SourceTier = PriceSourceTier.Untrusted,
+    string? SourceDomain = null);

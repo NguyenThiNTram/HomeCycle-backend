@@ -1,5 +1,6 @@
 using System.Text.Json;
 using HomeCycle.Application.Pricing.Models;
+using HomeCycle.Application.Pricing.Services;
 
 namespace HomeCycle.Infrastructure.Externals.Gemini;
 
@@ -7,6 +8,8 @@ internal sealed record GroundedSourcePromptReference(string SourceId, string Tit
 
 internal static class ExternalUsedPriceSearchPrompt
 {
+    private static readonly string TrustedDomains = string.Join(", ", PriceSourceCatalog.UsedPriceSearchDomains);
+
     public static IReadOnlyList<string> BuildGroundingPrompts(DynamicProductContext product)
     {
         var model = product.Model?.Trim() ?? string.Empty;
@@ -25,10 +28,12 @@ internal static class ExternalUsedPriceSearchPrompt
         [
             $"Dùng Google Search tìm \"{brand} {model} cũ tại Việt Nam\". " +
             $"Ưu tiên đúng model, nhưng chấp nhận biến thể hậu tố của {model}. " +
+            "Chỉ dùng mục máy cũ của chuỗi bán lẻ lớn hoặc trang rao vặt lớn: " + TrustedDomains + ". " +
             "Trả tối đa 5 tin có tên nguồn, tên sản phẩm, tình trạng và giá VND.",
             $"Dùng Google Search lần lượt với \"{productType} {brand} cũ tại Việt Nam\", " +
             $"\"{productName} cũ\" và \"{attributeQuery}\". " +
             "Không yêu cầu cùng mã model. Ưu tiên sản phẩm cùng loại, cùng hãng và có thông số gần với truy vấn. " +
+            "Chỉ dùng mục máy cũ của chuỗi bán lẻ lớn hoặc trang rao vặt lớn: " + TrustedDomains + ". " +
             "Trả tối đa 5 tin có tên nguồn, tên sản phẩm hoặc model nếu có, tình trạng và giá VND."
         ];
     }
