@@ -21,10 +21,10 @@ internal static class ExternalUsedPriceSearchPrompt
 
         return
         [
-            $"Dùng Google Search tìm tin bán \"{productType} {brand} {model} cũ\" ({productName}) tại Việt Nam. " +
-            $"Ưu tiên đúng model, nhưng chấp nhận biến thể hậu tố của {model}. " +
-            "Chỉ dùng mục máy cũ của chuỗi bán lẻ lớn hoặc trang rao vặt lớn: " + TrustedDomains + ". " +
-            "Trả tối đa 5 tin có tên nguồn, tên sản phẩm, tình trạng và giá VND."
+            $"Dùng Google Search tìm giá bán máy CŨ (đã qua sử dụng) của \"{productType} {brand} {productName}\" " +
+            $"(model {model}) tại Việt Nam. Ưu tiên đúng model, chấp nhận biến thể hậu tố của {model}. " +
+            "Ưu tiên mục máy cũ của các chuỗi bán lẻ lớn và trang rao vặt lớn như: " + TrustedDomains + ". " +
+            "Trả tối đa 5 tin, mỗi tin ghi tên nguồn, mã model, tình trạng và giá VND."
         ];
     }
 

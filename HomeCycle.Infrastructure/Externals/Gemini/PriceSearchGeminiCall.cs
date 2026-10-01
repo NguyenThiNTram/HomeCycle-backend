@@ -29,10 +29,24 @@ internal static class PriceSearchGeminiCall
         if (CountGroundingChunks(response) > 0)
             return response;
 
-        logger.LogInformation("Gemini {Stage} returned no search sources; retrying with forced search", stage);
-        return await GenerateAsync(
+        logger.LogInformation(
+            "Gemini {Stage} returned no search sources; retrying with forced search. Answer: {Answer}",
+            stage,
+            Snippet(response.Text));
+        var retry = await GenerateAsync(
             gemini, settings, ForceSearchPrefix + prompt, config, logger, stage + " retry", cancellationToken,
             applyThinkingLevel: false);
+        if (CountGroundingChunks(retry) == 0)
+            logger.LogInformation("Gemini {Stage} retry still returned no search sources. Answer: {Answer}",
+                stage,
+                Snippet(retry.Text));
+        return retry;
+    }
+
+    private static string Snippet(string? text)
+    {
+        var value = (text ?? string.Empty).Replace('\n', ' ').Trim();
+        return value.Length <= 300 ? value : value[..300] + "…";
     }
 
     public static int CountGroundingChunks(GenerateContentResponse response) =>

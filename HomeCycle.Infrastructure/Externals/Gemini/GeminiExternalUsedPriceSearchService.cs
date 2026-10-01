@@ -422,7 +422,32 @@ public sealed class GeminiExternalUsedPriceSearchService(
                 .ToArray();
     }
 
+    // Gemini đôi khi trả cả tên sản phẩm ("Máy giặt Samsung Inverter 9.5 kg WW95TA046AX/SV") thay vì
+    // chỉ mã model, nên ngoài cả chuỗi còn so từng cụm có chứa chữ số và lấy kết quả khớp nhất.
     internal static (ExternalModelMatchLevel Level, decimal Similarity) ClassifyModel(
+        string requestedModel,
+        string observedModel)
+    {
+        var best = ClassifySingleModel(requestedModel, observedModel);
+        if (best.Level == ExternalModelMatchLevel.Exact)
+            return best;
+
+        foreach (var token in observedModel.Split(
+                     new[] { ' ', ',', ';', '(', ')', '[', ']', '|' },
+                     StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (!token.Any(char.IsDigit))
+                continue;
+            var candidate = ClassifySingleModel(requestedModel, token);
+            if (candidate.Level > best.Level ||
+                (candidate.Level == best.Level && candidate.Similarity > best.Similarity))
+                best = candidate;
+        }
+
+        return best;
+    }
+
+    private static (ExternalModelMatchLevel Level, decimal Similarity) ClassifySingleModel(
         string requestedModel,
         string observedModel)
     {
@@ -513,7 +538,7 @@ public sealed class GeminiExternalUsedPriceSearchService(
             product.BrandId.ToString("D"),
             product.Model,
             string.Join(';', attributes));
-        return "gemini:external-used-price:v6:" +
+        return "gemini:external-used-price:v7:" +
                Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(rawKey)));
     }
 
