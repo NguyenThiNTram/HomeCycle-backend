@@ -447,17 +447,24 @@ namespace HomeCycle.Application.Services.Auths
             LoginRequest request,
             CancellationToken cancellationToken = default)
         {
+            _logger.LogInformation("[Login] AuthService.LoginAsync -> Validate request via {Validator}", _loginValidator.GetType().Name);
             var validationResult = await _loginValidator.ValidateAsync(request, cancellationToken);
             if (!validationResult.IsValid)
             {
                 var errors = string.Join(", ", validationResult.Errors.Select(x => x.ErrorMessage));
+                _logger.LogInformation("[Login] AuthService.LoginAsync -> Request validation failed");
                 return Result<LoginResponseDto>.Fail(ValidationErrors.InvalidRequest(errors));
             }
 
+            _logger.LogInformation("[Login] AuthService.LoginAsync -> Find account via {Repository}.GetByEmailAsync", _userRepository.GetType().Name);
             var user = await _userRepository.GetByEmailAsync(request.Email, cancellationToken);
             if (user is null)
+            {
+                _logger.LogInformation("[Login] AuthService.LoginAsync -> Account lookup failed");
                 return Result<LoginResponseDto>.Fail(AuthErrors.InvalidCredential);
+            }
 
+            _logger.LogInformation("[Login] AuthService.LoginAsync -> Check account status");
             if (user.Status == UserStatus.Suspended || user.Status == UserStatus.Deleted)
             {
                 var blockedUserAuditEvent = new AuditEvent
@@ -476,14 +483,20 @@ namespace HomeCycle.Application.Services.Auths
                     }
                 };
 
+                _logger.LogInformation("[Login] AuthService.LoginAsync -> Account blocked; persist denied-login audit");
                 await PersistStandaloneAuditSafelyAsync(blockedUserAuditEvent, cancellationToken);
                 return Result<LoginResponseDto>.Fail(AuthErrors.AccountSuspended);
             }
 
+            _logger.LogInformation("[Login] AuthService.LoginAsync -> Verify password via {Service}.VerifyPassword", _passwordHasher.GetType().Name);
             var isPasswordValid = _passwordHasher.VerifyPassword(request.Password, user.Password);
             if (!isPasswordValid)
+            {
+                _logger.LogInformation("[Login] AuthService.LoginAsync -> Password verification failed");
                 return Result<LoginResponseDto>.Fail(AuthErrors.InvalidCredential);
+            }
 
+            _logger.LogInformation("[Login] AuthService.LoginAsync -> Generate access/refresh tokens via {Service}", _jwtService.GetType().Name);
             var accessToken = _jwtService.GenerateAccessToken(user);
             var refreshToken = _jwtService.GenerateRefreshToken();
             var now = DateTime.UtcNow;
@@ -501,6 +514,7 @@ namespace HomeCycle.Application.Services.Auths
                 Metadata = new Dictionary<string, object?> { ["authMethod"] = "Password" }
             };
 
+            _logger.LogInformation("[Login] AuthService.LoginAsync -> Add refresh token via {Repository}.AddRefreshTokenAsync", _userRepository.GetType().Name);
             await _userRepository.AddRefreshTokenAsync(
                 new refresh_token
                 {
@@ -511,7 +525,9 @@ namespace HomeCycle.Application.Services.Auths
                     CreatedAt = now
                 }, cancellationToken);
 
+            _logger.LogInformation("[Login] AuthService.LoginAsync -> Enqueue audit via {Service}.EnqueueAsync", _auditService.GetType().Name);
             await _auditService.EnqueueAsync(loginAuditEvent, cancellationToken);
+            _logger.LogInformation("[Login] AuthService.LoginAsync -> Save changes via {Service}.SaveChangesAsync", _unitOfWork.GetType().Name);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
             var response = new LoginResponseDto
@@ -523,6 +539,7 @@ namespace HomeCycle.Application.Services.Auths
                 Role = user.Role.ToString(), // Tự động lấy Role của User (Personal/Business/Moderator/Admin)
             };
 
+            _logger.LogInformation("[Login] AuthService.LoginAsync -> Completed successfully");
             return Result<LoginResponseDto>.Success(response);
         }
 

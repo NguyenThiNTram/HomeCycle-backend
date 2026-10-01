@@ -47,6 +47,7 @@ namespace HomeCycle.API.Controllers
 
         [HttpPost("payos/checkout/{agreementId}")]
         [Authorize]
+        [HomeCycle.API.Filters.AgreementFlowLog]
         public async Task<IActionResult> CreatePayOSCheckout([FromRoute] Guid agreementId, [FromBody] PayOSCheckoutRequest request, CancellationToken ct)
         {
             var userId = GetUserIdFromToken();
@@ -72,6 +73,7 @@ namespace HomeCycle.API.Controllers
 
         [HttpPost("wallet/checkout/{agreementId}")]
         [Authorize]
+        [HomeCycle.API.Filters.AgreementFlowLog]
         public async Task<IActionResult> WalletCheckout([FromRoute] Guid agreementId, CancellationToken ct)
         {
             var userId = GetUserIdFromToken();
@@ -95,6 +97,7 @@ namespace HomeCycle.API.Controllers
 
         [HttpPost("payos/webhook")]
         [AllowAnonymous]
+        [HomeCycle.API.Filters.AgreementFlowLog]
         public async Task<IActionResult> PayOSWebhook(CancellationToken ct)
         {
             try
@@ -130,6 +133,7 @@ namespace HomeCycle.API.Controllers
 
         [HttpGet("{agreementId:guid}/status")]
         [Authorize]
+        [HomeCycle.API.Filters.AgreementFlowLog]
         public async Task<IActionResult> SyncPaymentStatus(Guid agreementId, CancellationToken ct)
         {
             var userId = GetUserIdFromToken();

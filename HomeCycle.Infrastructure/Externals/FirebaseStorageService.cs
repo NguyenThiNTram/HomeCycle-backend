@@ -13,6 +13,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -130,7 +131,7 @@ namespace HomeCycle.Infrastructure.Externals
                 await _storageClient.DownloadObjectAsync(_bucketName, filePath.TrimStart('/'), destination, cancellationToken: cancellationToken);
                 return destination.ToArray();
             }
-            catch (Google.GoogleApiException ex) when (ex.Error.Code == 404)
+            catch (Google.GoogleApiException ex) when (ex.HttpStatusCode == HttpStatusCode.NotFound)
             {
                 return null;
             }
