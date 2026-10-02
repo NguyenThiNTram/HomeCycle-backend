@@ -382,6 +382,10 @@ namespace HomeCycle.Application.Commons.Errors
             new("DISPUTE_INVALID_ORDER_SENDER",
                 "Không xác định được vai trò của người tạo tranh chấp trong đơn hàng.");
 
+        public static readonly Error GhnShipmentInTransit =
+            new("DISPUTE_GHN_SHIPMENT_IN_TRANSIT",
+                "Kiện hàng đang được GHN vận chuyển. Vui lòng chờ GHN giao xong hoặc hoàn về rồi mới kết luận tranh chấp.");
+
         public static readonly Error AcceptedInspectionBlocksReturn =
             new("DISPUTE_ACCEPTED_INSPECTION_BLOCKS_RETURN",
                 "Sản phẩm đã được chấp nhận qua kiểm định nên tranh chấp về tình trạng sản phẩm không thể dẫn tới hoàn trả vật lý.");
