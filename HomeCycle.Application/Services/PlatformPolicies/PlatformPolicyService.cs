@@ -1401,6 +1401,7 @@ namespace HomeCycle.Application.Services.PlatformPolicies
                 && config.LateThresholdMinutes is >= 1 and <= 10080
                 && config.RescheduleCutoffHours is >= 1 and <= 720
                 && config.CancellationCutoffHours is >= 1 and <= 720
+                && config.ReminderBeforeMinutes is >= 1 and <= 1440
                 && config.RescheduleCutoffHours >= config.CancellationCutoffHours;
         }
 
@@ -1473,7 +1474,8 @@ namespace HomeCycle.Application.Services.PlatformPolicies
             return current.CheckInOpenBeforeMinutes == updated.CheckInOpenBeforeMinutes
                 && current.LateThresholdMinutes == updated.LateThresholdMinutes
                 && current.RescheduleCutoffHours == updated.RescheduleCutoffHours
-                && current.CancellationCutoffHours == updated.CancellationCutoffHours;
+                && current.CancellationCutoffHours == updated.CancellationCutoffHours
+                && current.ReminderBeforeMinutes == updated.ReminderBeforeMinutes;
         }
 
         private static FileUploadPolicyConfigDto CloneFileUploadConfig(FileUploadPolicyConfigDto source)

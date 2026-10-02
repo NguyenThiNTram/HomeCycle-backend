@@ -464,6 +464,44 @@ namespace HomeCycle.Infrastructure.Repositories.Appointments
                 .ToListAsync(ct);
         }
 
+        public async Task<IReadOnlyList<Guid>> GetReminderCandidateIdsAsync(
+            DateTime nowUtc,
+            int reminderBeforeMinutes,
+            int limit,
+            CancellationToken ct = default)
+        {
+            var reminderWindowEnd =
+                nowUtc.AddMinutes(reminderBeforeMinutes);
+
+            return await _db.Appointments
+                .AsNoTracking()
+                .Where(a =>
+                    a.AppointmentStatus == (int)AppointmentStatus.Scheduled &&
+                    !a.ReminderSentAt.HasValue)
+                .Where(a =>
+                    (
+                        a.AppointmentType == (int)AppointmentType.Inspection &&
+                        a.Inspection_Appointment != null &&
+                        a.Inspection_Appointment.InspectionDate.HasValue &&
+                        a.Inspection_Appointment.InspectionDate.Value > nowUtc &&
+                        a.Inspection_Appointment.InspectionDate.Value <= reminderWindowEnd
+                    ) ||
+                    (
+                        a.AppointmentType == (int)AppointmentType.Collection &&
+                        a.Collection_Appointment != null &&
+                        a.Collection_Appointment.CollectionDate.HasValue &&
+                        a.Collection_Appointment.CollectionDate.Value > nowUtc &&
+                        a.Collection_Appointment.CollectionDate.Value <= reminderWindowEnd
+                    ))
+                .OrderBy(a =>
+                    a.AppointmentType == (int)AppointmentType.Inspection
+                        ? a.Inspection_Appointment!.InspectionDate
+                        : a.Collection_Appointment!.CollectionDate)
+                .ThenBy(a => a.AppointmentId)
+                .Take(limit)
+                .Select(a => a.AppointmentId)
+                .ToListAsync(ct);
+        }
 
         // ================ HELPER ===================
         private IQueryable<ModeratorAppointmentReadModel> ProjectModeratorAppointments(

@@ -2424,6 +2424,44 @@ if (dispute.TargetUserId.HasValue &&
         }
 
 
+        private async Task<bool> IsProposedAcceptanceBlockedByAcceptedInspectionAsync(
+            dispute dispute,
+            DisputeResolutionOutcome? proposedOutcome,
+            CancellationToken cancellationToken)
+        {
+            if (proposedOutcome != DisputeResolutionOutcome.BuyerFavored ||
+                !dispute.OrderId.HasValue)
+            {
+                return false;
+            }
+
+            var order = await _orderRepository.GetByIdAsync(
+                dispute.OrderId.Value,
+                cancellationToken);
+
+            if (order == null)
+                return false;
+
+            var shipment = await _shipmentRepository.GetByOrderIdAsync(
+                order.OrderId,
+                cancellationToken);
+
+            var buyerHasItem =
+                order.CompletedAt.HasValue ||
+                (
+                    shipment?.DeliveryMethod == DeliveryMethod.GhnDelivery &&
+                    shipment.ShipmentStatus == ShipmentStatus.Delivered &&
+                    shipment.DeliveredAt.HasValue
+                );
+
+            if (!buyerHasItem)
+                return false;
+
+            return await IsAcceptedInspectionReturnBlockedAsync(
+                dispute,
+                order.OrderId,
+                cancellationToken);
+        }
 
         private async Task<bool> IsAcceptedInspectionReturnBlockedAsync(
             dispute dispute,
@@ -2837,6 +2875,15 @@ if (dispute.TargetUserId.HasValue &&
                 dispute.TargetUserId.HasValue &&
                 dispute.TargetUserId.Value == currentUserId.Value;
 
+            var acceptBlockedByAcceptedInspection =
+                responseWindowOpen &&
+                !systemNoShow &&
+                currentUserIsTarget &&
+                await IsProposedAcceptanceBlockedByAcceptedInspectionAsync(
+                    dispute,
+                    proposedOutcome,
+                    cancellationToken);
+
             var canVerifyReturn =
                 moderatorId.HasValue &&
                 disputeStatus == DisputeStatus.AwaitingReturn &&
@@ -2895,7 +2942,11 @@ if (dispute.TargetUserId.HasValue &&
                         disputeStatus is DisputeStatus.AwaitingResponse or DisputeStatus.Pending &&
                         !dispute.ModeratorId.HasValue,
 
-                    CanAccept = responseWindowOpen && !systemNoShow && currentUserIsTarget,
+                    CanAccept =
+                        responseWindowOpen &&
+                        !systemNoShow &&
+                        currentUserIsTarget &&
+                        !acceptBlockedByAcceptedInspection,
                     CanRebut = responseWindowOpen && !systemNoShow && currentUserIsTarget,
                     CanSubmitStatement = responseWindowOpen && systemNoShow && currentUserId.HasValue,
 

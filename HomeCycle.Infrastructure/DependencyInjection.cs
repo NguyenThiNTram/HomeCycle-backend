@@ -353,6 +353,7 @@ namespace HomeCycle.Infrastructure
             //services.AddScoped<IOrderSettlementService, OrderSettlementService>();
             services.AddScoped<IAppointmentService, AppointmentService>();
             services.AddScoped<IAppointmentRealtimeService, AppointmentRealtimeService>();
+            services.AddScoped<IAppointmentReminderProcessor, AppointmentReminderProcessor>();
             services.AddScoped<IOrderService, OrderService>();
             services.AddScoped<IOrderLifecycleProcessor, DisputeLifecycleProcessor>();
             services.AddScoped<IOrderLifecycleProcessor, BuyerReturnTimeoutProcessor>();

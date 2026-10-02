@@ -18,7 +18,8 @@ namespace HomeCycle.Application.Validations.PlatformPolicies
                     x.CheckInOpenBeforeMinutes.HasValue ||
                     x.LateThresholdMinutes.HasValue ||
                     x.RescheduleCutoffHours.HasValue ||
-                    x.CancellationCutoffHours.HasValue)
+                    x.CancellationCutoffHours.HasValue||
+                    x.ReminderBeforeMinutes.HasValue)
                 .WithMessage("Phải cung cấp ít nhất một cấu hình cần thay đổi.");
 
             RuleFor(x => x.CheckInOpenBeforeMinutes)
@@ -36,6 +37,10 @@ namespace HomeCycle.Application.Validations.PlatformPolicies
             RuleFor(x => x.CancellationCutoffHours)
                 .Must(x => !x.HasValue || x.Value is >= 1 and <= 720)
                 .WithMessage("CancellationCutoffHours phải từ 1 đến 720 giờ.");
+
+            RuleFor(x => x.ReminderBeforeMinutes)
+                .Must(x => !x.HasValue || x.Value is >= 1 and <= 1440)
+                .WithMessage("ReminderBeforeMinutes phải từ 1 đến 1440 phút.");
         }
     }
 }

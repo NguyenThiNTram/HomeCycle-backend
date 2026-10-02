@@ -27,7 +27,7 @@ public partial class Appointment
     public DateTime? SellerCheckAt { get; set; }
 
     public DateTime? LateThresholdAt { get; set; }
-
+    public DateTime? ReminderSentAt { get; set; }
     public Guid? RescheduledFromAppointmentId { get; set; }
     public Guid? RescheduleRequestedByUserId { get; set; }
     public DateTime? RescheduleRequestedAt { get; set; }

@@ -170,6 +170,26 @@ namespace HomeCycle.API
             builder.Services.AddHostedService<HomeCycle.API.Workers.AuditLogWorker>();
             builder.Services.AddHostedService<HomeCycle.API.Workers.AuditRetentionWorker>();
 
+            // Worker AppointmentReminder
+            builder.Services
+                .AddOptions<HomeCycle.API.Workers.AppointmentReminderWorkerOptions>()
+                .Bind(
+                    builder.Configuration.GetSection(
+                        HomeCycle.API.Workers
+                            .AppointmentReminderWorkerOptions
+                            .SectionName))
+                .Validate(
+                    x => x.PollSeconds is >= 15 and <= 3600,
+                    "AppointmentReminderWorker PollSeconds phải từ 15 đến 3600 giây.")
+                .Validate(
+                    x => x.BatchSize is >= 1 and <= 200,
+                    "AppointmentReminderWorker BatchSize phải từ 1 đến 200.")
+                .ValidateOnStart();
+
+            builder.Services.AddHostedService<
+                HomeCycle.API.Workers.AppointmentReminderWorker>();
+
+
             // Add DbContext with PostgreSQL configuration
             builder.Services.AddDbContext<HomeCycleDbContext>(options =>
                 options.UseNpgsql(

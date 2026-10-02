@@ -190,6 +190,10 @@ public partial class HomeCycleDbContext : DbContext
                 .HasForeignKey(e => e.RescheduleRequestedByUserId)
                 .OnDelete(DeleteBehavior.SetNull)
                 .HasConstraintName("fk_appointment_reschedule_requested_by");
+
+            entity.HasIndex(e => e.AppointmentStatus)
+                .HasDatabaseName("idx_appointment_reminder_pending")
+                .HasFilter("\"ReminderSentAt\" IS NULL");
         });
 
         modelBuilder.Entity<Audit_Log>(entity =>
