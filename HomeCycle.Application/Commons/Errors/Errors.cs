@@ -426,6 +426,9 @@ namespace HomeCycle.Application.Commons.Errors
         public static readonly Error CancellationNotAllowed =
             new("Order.CancellationNotAllowed", "Đơn hàng đã vượt mốc cho phép hủy trực tiếp. Nếu phát sinh vấn đề, vui lòng sử dụng tranh chấp.");
 
+        public static readonly Error GhnRefusedCancellation =
+            new("Order.GhnRefusedCancellation", "GHN đã lấy hàng hoặc không cho hủy vận đơn này nên không thể hủy đơn. Nếu phát sinh vấn đề, vui lòng sử dụng tranh chấp khi GHN đang giao.");
+
         public static readonly Error ActiveDisputeBlocksCancellation =
             new("Order.ActiveDisputeBlocksCancellation", "Đơn hàng đang có tranh chấp nên không thể hủy trực tiếp.");
 

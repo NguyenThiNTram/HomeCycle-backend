@@ -1001,10 +1001,14 @@ namespace HomeCycle.Application.Services.Orders
                         appointmentToCancel.LateThresholdAt.HasValue &&
                         now >= appointmentToCancel.LateThresholdAt.Value;
 
+                    var isGhnCollection = shipmentToCancel.DeliveryMethod == DeliveryMethod.GhnDelivery;
+
+                    // GHN: hủy được tới trước khi GHN lấy hàng (ready_to_pick/picking), kể cả khi người bán đã sẵn sàng.
+                    // Giao trực tiếp: chỉ hủy được trước khi người bán sẵn sàng.
                     var canCancelCollection =
                         appointmentToCancel.AppointmentStatus == (int)AppointmentStatus.Scheduled &&
                         shipmentToCancel.ShipmentStatus == ShipmentStatus.ReadyToPick &&
-                        !shipmentToCancel.SellerReadyAt.HasValue &&
+                        (isGhnCollection || !shipmentToCancel.SellerReadyAt.HasValue) &&
                         !shipmentToCancel.PickedUpAt.HasValue &&
                         !collectionOverdue;
 
@@ -1013,6 +1017,22 @@ namespace HomeCycle.Application.Services.Orders
                         await _unitOfWork.RollbackTransactionAsync(ct);
                         return Result<OrderCancellationResponseDto>.Fail(OrderErrors.CancellationNotAllowed);
                     }
+
+                    if (isGhnCollection)
+                    {
+                        // Hủy vận đơn GHN trước rồi mới hoàn tiền. GHN từ chối (đã lấy hàng) hoặc chưa rõ kết quả
+                        // (vận đơn đang được tạo) thì không hủy đơn, tránh hoàn tiền trong khi hàng vẫn được giao.
+                        var ghnCancelResult = await _ghnLifecycle.CancelForOrderAsync(order.OrderId, ct);
+
+                        if (!ghnCancelResult.IsSuccess)
+                        {
+                            await _unitOfWork.RollbackTransactionAsync(ct);
+                            return Result<OrderCancellationResponseDto>.Fail(
+                                ghnCancelResult.Error?.Code == "Ghn.CancellationRefused"
+                                    ? OrderErrors.GhnRefusedCancellation
+                                    : ghnCancelResult.Error!);
+                        }
+                    }
                 }
                 else
                 {
@@ -1020,7 +1040,8 @@ namespace HomeCycle.Application.Services.Orders
                     return Result<OrderCancellationResponseDto>.Fail(OrderErrors.CancellationNotAllowed);
                 }
 
-                var refundResult = await _paymentService.RefundAllRemainingOrderHeldAmountAsync(
+                // Hủy trước khi GHN lấy hàng: hoàn cả tiền hàng lẫn phí ship GHN (nếu có).
+                var refundResult = await _paymentService.RefundAllRemainingOrderHeldAmountWithShippingAsync(
                     order,
                     agreement,
                     ct);
@@ -1039,7 +1060,9 @@ namespace HomeCycle.Application.Services.Orders
 
                 var cancellationReason = agreement.AgreementType == (int)AgreementType.Inspection
                     ? "Transaction cancelled before inspection started."
-                    : "Transaction cancelled before seller confirmed readiness.";
+                    : shipmentToCancel?.DeliveryMethod == DeliveryMethod.GhnDelivery
+                        ? "Transaction cancelled before GHN picked up the parcel."
+                        : "Transaction cancelled before seller confirmed readiness.";
 
                 appointmentToCancel.AppointmentStatus = (int)AppointmentStatus.Cancelled;
                 appointmentToCancel.CancelledAt = now;
@@ -1165,9 +1188,6 @@ namespace HomeCycle.Application.Services.Orders
                         appointmentToCancel.AppointmentId,
                         appointmentToCancel.UpdatedAt);
                 }
-
-                if (isGhnDelivery)
-                    await _ghnLifecycle.CancelForOrderSafelyAsync(order.OrderId, CancellationToken.None);
 
                 return Result<OrderCancellationResponseDto>.Success(new OrderCancellationResponseDto
                 {
@@ -2029,11 +2049,12 @@ namespace HomeCycle.Application.Services.Orders
                 latestInspection.InspectionCheckIn?.SellerCheckAt == null &&
                 !inspectionNoShowEligible;
 
+            // Cùng điều kiện với CancelOrderAsync: đơn GHN hủy được tới trước khi GHN lấy hàng.
             var canCancelCollection =
                 agreement.AgreementType == (int)AgreementType.No_Inspection &&
                 latestCollection?.AppointmentStatus == AppointmentStatus.Scheduled &&
                 shipment?.ShipmentStatus == ShipmentStatus.ReadyToPick &&
-                !shipment.SellerReadyAt.HasValue &&
+                (shipment.DeliveryMethod == DeliveryMethod.GhnDelivery || !shipment.SellerReadyAt.HasValue) &&
                 !shipment.PickedUpAt.HasValue &&
                 !directCollectionNoShowEligible;
 
