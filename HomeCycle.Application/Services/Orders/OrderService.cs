@@ -1156,23 +1156,37 @@ namespace HomeCycle.Application.Services.Orders
                         }
                         : null;
 
-                var cancelRecipientId = userId == agreement.BuyerId
+                var cancelledByBuyer = userId == agreement.BuyerId;
+                var cancelRecipientId = cancelledByBuyer
                     ? agreement.SellerId
                     : agreement.BuyerId;
 
-                var isGhnDelivery = shipmentToCancel?.DeliveryMethod == DeliveryMethod.GhnDelivery;
-                var notificationMessage = isGhnDelivery
-                    ? "Đơn hàng đã bị hủy. Khoản tiền hàng nền tảng đang tạm giữ đã được hoàn lại; phí vận chuyển GHN không được hoàn."
-                    : "Đơn hàng đã bị hủy. Khoản tiền nền tảng đang tạm giữ đã được hoàn lại.";
+                // Thông tin tiền hoàn chỉ gửi cho người mua (người nhận tiền), dù ai bấm hủy.
+                var refundMessage = refundedAmount > AmountEpsilon
+                    ? $" Khoản tiền {refundedAmount:N0}đ (gồm tiền hàng và phí vận chuyển nếu có) đã được hoàn về ví của bạn."
+                    : string.Empty;
 
                 var cancellationNotification = await _notificationService.AddPendingAsync(
                     new CreateNotificationCommand(
                         cancelRecipientId,
                         "Đơn hàng đã bị hủy",
-                        notificationMessage,
+                        cancelledByBuyer
+                            ? "Người mua đã hủy đơn hàng."
+                            : "Người bán đã hủy đơn hàng." + refundMessage,
                         NotificationTargetType.Order,
                         order.OrderId),
                     ct);
+
+                var buyerRefundNotification = cancelledByBuyer && refundedAmount > AmountEpsilon
+                    ? await _notificationService.AddPendingAsync(
+                        new CreateNotificationCommand(
+                            agreement.BuyerId,
+                            "Đã hoàn tiền đơn hàng",
+                            "Bạn đã hủy đơn hàng." + refundMessage,
+                            NotificationTargetType.Order,
+                            order.OrderId),
+                        ct)
+                    : null;
 
                 await _auditService.EnqueueAsync(cancelOrderAuditEvent, ct);
                 await _unitOfWork.SaveChangesAsync(ct);
@@ -1181,6 +1195,8 @@ namespace HomeCycle.Application.Services.Orders
                 if (financeChange != null)
                     await _financeRealtimeService.PublishUpdatedSafelyAsync(financeChange);
                 await _notificationService.PublishCreatedSafelyAsync(cancellationNotification);
+                if (buyerRefundNotification != null)
+                    await _notificationService.PublishCreatedSafelyAsync(buyerRefundNotification);
                 await _orderTrackingRealtimeService.PublishByOrderIdSafelyAsync(order.OrderId, order.UpdatedAt);
                 if (appointmentToCancel != null)
                 {

@@ -141,7 +141,7 @@ flowchart TD
 - Offer đang chờ chưa đồng nghĩa với đơn hàng đã được tạo. Chấp nhận giá/số lượng mở hoặc chốt phiên thương lượng; bước thỏa thuận và thanh toán được xử lý riêng.
 - Chấp nhận Offer chỉ giữ chỗ, chưa trừ `RemainingQuantity` tại bước đó.
 - Trạng thái bài đăng gồm `Draft`, `Active`, `Suspended`, `Closed`, `Deleted`; trạng thái đơn hàng gồm `Pending`, `Processing`, `Completed`, `Cancelled`, `Disputing`, `Returned`.
-- Việc hủy đơn phụ thuộc mốc thực hiện: đơn có kiểm định trước check-in, hoặc đơn nhận hàng trước khi người bán xác nhận chuẩn bị hàng. Sau mốc này, vấn đề được xử lý qua tranh chấp; phí GHN đã phát sinh không được hoàn theo luồng hủy hiện tại.
+- Việc hủy đơn phụ thuộc mốc thực hiện: đơn có kiểm định trước check-in, đơn giao trực tiếp trước khi người bán xác nhận chuẩn bị hàng, hoặc đơn GHN trước khi GHN lấy hàng (`ready_to_pick`/`picking`). Khi hủy, người mua được hoàn tiền hàng và phí ship GHN. Sau mốc này, vấn đề được xử lý qua tranh chấp.
 - Khi trả hàng, hệ thống ghi nhận xác nhận của bên mua và bên bán; Moderator có luồng xác minh khi bên bán không phản hồi đúng hạn.
 
 ## Kiến trúc và công nghệ
