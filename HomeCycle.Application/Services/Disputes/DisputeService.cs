@@ -2446,13 +2446,7 @@ if (dispute.TargetUserId.HasValue &&
                 order.OrderId,
                 cancellationToken);
 
-            var buyerHasItem =
-                order.CompletedAt.HasValue ||
-                (
-                    shipment?.DeliveryMethod == DeliveryMethod.GhnDelivery &&
-                    shipment.ShipmentStatus == ShipmentStatus.Delivered &&
-                    shipment.DeliveredAt.HasValue
-                );
+            var buyerHasItem = BuyerHasItem(order, shipment);
 
             if (!buyerHasItem)
                 return false;
@@ -2462,6 +2456,17 @@ if (dispute.TargetUserId.HasValue &&
                 order.OrderId,
                 cancellationToken);
         }
+
+        // Người mua đã cầm hàng khi: đơn đã hoàn tất, người bán đã xác nhận bàn giao trực tiếp
+        // (giống cách tự hoàn tất đơn tính mốc bàn giao), hoặc GHN báo đã giao.
+        private static bool BuyerHasItem(order order, shipment? shipment) =>
+            order.CompletedAt.HasValue ||
+            order.SellerHandoverConfirmedAt.HasValue ||
+            (
+                shipment?.DeliveryMethod == DeliveryMethod.GhnDelivery &&
+                shipment.ShipmentStatus == ShipmentStatus.Delivered &&
+                shipment.DeliveredAt.HasValue
+            );
 
         private async Task<bool> IsAcceptedInspectionReturnBlockedAsync(
             dispute dispute,
@@ -2503,13 +2508,7 @@ if (dispute.TargetUserId.HasValue &&
                 order.OrderId,
                 cancellationToken);
 
-            var buyerHasItem =
-                order.CompletedAt.HasValue ||
-                (
-                    shipment?.DeliveryMethod == DeliveryMethod.GhnDelivery &&
-                    shipment.ShipmentStatus == ShipmentStatus.Delivered &&
-                    shipment.DeliveredAt.HasValue
-                );
+            var buyerHasItem = BuyerHasItem(order, shipment);
 
             if (outcome == DisputeResolutionOutcome.BuyerFavored &&
                 buyerHasItem &&
@@ -2578,6 +2577,9 @@ if (dispute.TargetUserId.HasValue &&
             else
             {
                 order.OrderStatus = (int)OrderStatus.Completed;
+                // Đơn đặt cọc (phần còn lại trả trực tiếp) hoàn tất giống khi người mua xác nhận đã nhận hàng.
+                if (order.PaymentStatus == (int)PaymentStatus.Pending)
+                    order.PaymentStatus = (int)PaymentStatus.Completed;
                 order.ReturnDueAt = null;
                 order.UpdatedAt = now;
             }
