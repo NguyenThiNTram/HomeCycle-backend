@@ -274,8 +274,27 @@ namespace HomeCycle.API.Controllers
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         [ProducesResponseType(StatusCodes.Status409Conflict)]
         [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
-        public async Task<IActionResult> HandleAsync([FromBody] GhnWebhookRequest request, CancellationToken cancellationToken)
+        [SwaggerOperation(
+            Summary = "Nhận callback trạng thái GHN hoặc mô phỏng callback",
+            Description = "Để mô phỏng trên Swagger: Authorize bằng JWT Admin, nhập true vào header X-HomeCycle-Demo và bật GHNSettings.EnableWebhookDemo. Callback GHN thật không cần header demo.")]
+        public async Task<IActionResult> HandleAsync(
+            [FromBody] GhnWebhookRequest request,
+            CancellationToken cancellationToken,
+            [FromHeader(Name = WebhookDemoHeader)]
+            [SwaggerParameter("Nhập true khi mô phỏng callback bằng tài khoản Admin; để trống với callback GHN thật.")]
+            string? demoHeader = null)
         {
+            using var scope = _logger.BeginScope(new Dictionary<string, object?>
+            {
+                ["TraceId"] = HttpContext.TraceIdentifier,
+                ["OrderCode"] = request.OrderCode?.Replace("\r", " ").Replace("\n", " ")
+            });
+            _logger.LogInformation(
+                "GHN webhook received. TraceId={TraceId}, OrderCode={OrderCode}, ShopId={ShopId}, Type={Type}, Status={Status}, EventTime={EventTime}",
+                HttpContext.TraceIdentifier,
+                request.OrderCode?.Replace("\r", " ").Replace("\n", " "), request.ShopId,
+                request.Type?.Replace("\r", " ").Replace("\n", " "),
+                request.Status?.Replace("\r", " ").Replace("\n", " "), request.Time);
             if (!IsAuthorizedWebhookRequest())
             {
                 return Unauthorized(new Error(
@@ -291,6 +310,7 @@ namespace HomeCycle.API.Controllers
 
                 if (result.IsSuccess)
                 {
+                    _logger.LogInformation("GHN webhook completed. TraceId={TraceId}, HttpStatus=200", HttpContext.TraceIdentifier);
                     // GHN yêu cầu HTTP 200 sau khi xử lý thành công.
                     return Ok(new
                     {
@@ -300,6 +320,9 @@ namespace HomeCycle.API.Controllers
 
                 var error = result.Error ??
                     new Error( "GhnWebhook.UnknownError", "Không thể xử lý webhook GHN.");
+
+                _logger.LogWarning("GHN webhook processing rejected. TraceId={TraceId}, ErrorCode={ErrorCode}",
+                    HttpContext.TraceIdentifier, error.Code);
 
                 return error.Code switch
                 {
@@ -345,11 +368,13 @@ namespace HomeCycle.API.Controllers
                 FixedTimeEquals(configuredSecret, receivedSecret);
 
             if (isGhnCallback)
+            {
+                _logger.LogInformation("GHN webhook authorized. Source=Carrier, TraceId={TraceId}", HttpContext.TraceIdentifier);
                 return true;
+            }
 
             var isDemoRequest =
                 _settings.EnableWebhookDemo &&
-                !_environment.IsProduction() &&
                 User.Identity?.IsAuthenticated == true &&
                 User.IsInRole(nameof(UserRole.Admin)) &&
                 string.Equals(
@@ -358,7 +383,10 @@ namespace HomeCycle.API.Controllers
                     StringComparison.OrdinalIgnoreCase);
 
             if (isDemoRequest)
+            {
+                _logger.LogInformation("GHN webhook authorized. Source=AdminDemo, TraceId={TraceId}", HttpContext.TraceIdentifier);
                 return true;
+            }
 
             // Chỉ log lý do; không ghi giá trị header secret hoặc JWT.
             var secretReason = string.IsNullOrWhiteSpace(configuredSecret)
@@ -368,9 +396,7 @@ namespace HomeCycle.API.Controllers
                     : "SecretMismatch";
             var demoReason = !_settings.EnableWebhookDemo
                 ? "DemoDisabled"
-                : _environment.IsProduction()
-                    ? "DemoBlockedInProduction"
-                    : User.Identity?.IsAuthenticated != true
+                : User.Identity?.IsAuthenticated != true
                         ? "DemoUnauthenticated"
                         : !User.IsInRole(nameof(UserRole.Admin))
                             ? "DemoAdminRequired"

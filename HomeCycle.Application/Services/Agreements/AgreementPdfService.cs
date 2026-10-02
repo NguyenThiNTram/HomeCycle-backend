@@ -2,6 +2,7 @@ using HomeCycle.Application.Commons.Audits;
 using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Requests.Agreements;
 using HomeCycle.Application.DTOs.Responses.Agreements;
+using HomeCycle.Application.DTOs.Responses.GHN;
 using HomeCycle.Application.Interfaces.Repositories.Agreements;
 using HomeCycle.Application.Interfaces.Repositories.Disputes;
 using HomeCycle.Application.Interfaces.Repositories.Orders;
@@ -178,8 +179,12 @@ namespace HomeCycle.Application.Services.Agreements
 
             var productName = product?.ProductInfo?.ProductName;
             if (string.IsNullOrWhiteSpace(productName)) productName = order.ProductName ?? "Sản phẩm HomeCycle";
-            var buyer = details?.BuyerInfo;
-            var seller = details?.SellerInfo;
+            var buyer = ResolvePartyInfo(
+                details?.BuyerInfo,
+                details?.GhnInfo?.Receiver);
+            var seller = ResolvePartyInfo(
+                details?.SellerInfo,
+                details?.GhnInfo?.Sender);
             var deliveryDate = details?.InspectionDate ?? details?.CollectionDate;
             var deliveryAddress = details?.InspectionAddress ?? details?.DeliveryAddress ?? details?.PickupAddress;
             var totalAmount = order.FinalTotalAmount ?? ((agreement.FinalPrice ?? agreement.InitialPrice ?? 0) * agreement.Quantity + (details?.EstimatedShippingFee ?? 0));
@@ -376,6 +381,36 @@ namespace HomeCycle.Application.Services.Agreements
         {
             var items = values.Where(value => !string.IsNullOrWhiteSpace(value)).Select(value => value!.Trim()).ToArray();
             return items.Length == 0 ? "Chưa ghi nhận" : string.Join(" / ", items);
+        }
+
+        private static AgreementSellerInfoDto? ResolvePartyInfo(AgreementSellerInfoDto? partySnapshot, GhnContactSnapshotDto? contactSnapshot)
+        {
+            if (partySnapshot is null && contactSnapshot is null)
+                return null;
+            if (contactSnapshot is null)
+                return partySnapshot;
+
+            var contactAddress = contactSnapshot.Address;
+            return new AgreementSellerInfoDto
+            {
+                FullName = FirstValue(partySnapshot?.FullName, contactSnapshot.FullName),
+                Phone = FirstValue(partySnapshot?.Phone, contactSnapshot.Phone),
+                StreetAddress = FirstValue(partySnapshot?.StreetAddress, contactAddress?.AddressDetail),
+                Ward = FirstValue(partySnapshot?.Ward, contactAddress?.WardName),
+                City = FirstValue(
+                    partySnapshot?.City,
+                    JoinAddressParts(contactAddress?.DistrictName, contactAddress?.ProvinceName))
+            };
+        }
+
+        private static string? FirstValue(params string?[] values) =>
+            values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.Trim();
+
+        private static string? JoinAddressParts(params string?[] values)
+        {
+            var parts = values.Where(value => !string.IsNullOrWhiteSpace(value)).Select(value => value!.Trim());
+            var address = string.Join(", ", parts);
+            return string.IsNullOrWhiteSpace(address) ? null : address;
         }
 
         private static IContainer Section(IContainer container) => container

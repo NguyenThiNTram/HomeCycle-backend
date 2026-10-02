@@ -67,6 +67,7 @@ namespace HomeCycle.Infrastructure.Externals.GHN
 
             if (string.IsNullOrWhiteSpace(orderCode))
             {
+                _logger.LogWarning("GHN webhook payload rejected: MissingOrderCode.");
                 return Result.Fail(new Error(
                     "GhnWebhook.InvalidPayload",
                     "Webhook GHN không chứa OrderCode."));
@@ -78,6 +79,7 @@ namespace HomeCycle.Infrastructure.Externals.GHN
 
             if (string.IsNullOrWhiteSpace(carrierStatus))
             {
+                _logger.LogWarning("GHN webhook payload rejected: MissingStatus. OrderCode={OrderCode}", SanitizeForLog(orderCode));
                 return Result.Fail(new Error(
                     "GhnWebhook.InvalidPayload",
                     "Webhook GHN không chứa Status."));
@@ -94,6 +96,7 @@ namespace HomeCycle.Infrastructure.Externals.GHN
             if (ghnShipment is null &&
                 !string.IsNullOrWhiteSpace(clientOrderCode))
             {
+                _logger.LogInformation("GHN webhook lookup fallback. OrderCode={OrderCode}, Lookup=ClientOrderCode", SanitizeForLog(orderCode));
                 ghnShipment =
                     await _ghnShipmentRepository.GetByClientOrderCodeAsync(
                         clientOrderCode,
@@ -102,6 +105,7 @@ namespace HomeCycle.Infrastructure.Externals.GHN
 
             if (ghnShipment is null)
             {
+                _logger.LogWarning("GHN webhook lookup failed: CarrierShipmentNotFound. OrderCode={OrderCode}", SanitizeForLog(orderCode));
                 return Result.Fail(new Error(
                     "GhnWebhook.ShipmentNotFound",
                     $"Không tìm thấy vận đơn GHN {orderCode}."));
@@ -113,6 +117,8 @@ namespace HomeCycle.Infrastructure.Externals.GHN
                     orderCode,
                     StringComparison.OrdinalIgnoreCase))
             {
+                _logger.LogWarning("GHN webhook rejected: OrderCodeConflict. IncomingOrderCode={IncomingOrderCode}, StoredOrderCode={StoredOrderCode}",
+                    SanitizeForLog(orderCode), SanitizeForLog(ghnShipment.GHNOrderCode));
                 return Result.Fail(new Error(
                     "GhnWebhook.OrderCodeConflict",
                     "OrderCode webhook không khớp với vận đơn hiện tại."));
@@ -124,6 +130,8 @@ namespace HomeCycle.Infrastructure.Externals.GHN
 
             if (shipment is null)
             {
+                _logger.LogWarning("GHN webhook lookup failed: ShipmentNotFound. OrderCode={OrderCode}, ShipmentId={ShipmentId}",
+                    SanitizeForLog(orderCode), ghnShipment.ShipmentId);
                 return Result.Fail(new Error(
                     "GhnWebhook.ShipmentNotFound",
                     "Không tìm thấy Shipment tương ứng."));
@@ -131,7 +139,11 @@ namespace HomeCycle.Infrastructure.Externals.GHN
 
             var expected = GhnStateVersion.Capture(ghnShipment);
             if (!GhnStatusMapper.CanApply(ghnShipment.GHNStatusCode, carrierStatus))
+            {
+                _logger.LogInformation("GHN webhook status ignored by transition rules. OrderCode={OrderCode}, PreviousStatus={PreviousStatus}, IncomingStatus={IncomingStatus}",
+                    SanitizeForLog(orderCode), SanitizeForLog(ghnShipment.GHNStatusCode), SanitizeForLog(carrierStatus));
                 return Result.Success();
+            }
 
             // Callback là nguồn cập nhật trạng thái. Không gọi ngược Order Detail GHN
             // vì sandbox có thể vẫn trả ready_to_pick và ghi đè luồng demo webhook.
@@ -146,6 +158,14 @@ namespace HomeCycle.Infrastructure.Externals.GHN
 
             // Dùng trực tiếp status GHN gửi qua webhook.
             var mappedStatus = GhnStatusMapper.Map(carrierStatus);
+
+            _logger.LogInformation(
+                "GHN webhook applying state. OrderCode={OrderCode}, ShipmentId={ShipmentId}, PreviousCarrierStatus={PreviousCarrierStatus}, IncomingCarrierStatus={IncomingCarrierStatus}, PreviousShipmentStatus={PreviousShipmentStatus}, MappedShipmentStatus={MappedShipmentStatus}, EventTime={EventTime}",
+                SanitizeForLog(orderCode), shipment.ShipmentId, SanitizeForLog(previousCarrierStatus),
+                SanitizeForLog(carrierStatus), previousShipmentStatus, mappedStatus, eventTime);
+            if (!eventTime.HasValue && carrierStatus is "picked" or "delivered")
+                _logger.LogWarning("GHN webhook missing event time; pickup/delivery timestamp cannot be set. OrderCode={OrderCode}, Status={Status}",
+                    SanitizeForLog(orderCode), SanitizeForLog(carrierStatus));
 
             ghnShipment.GHNOrderCode ??= orderCode;
             ghnShipment.GHNStatusCode = carrierStatus;
@@ -205,6 +225,8 @@ namespace HomeCycle.Infrastructure.Externals.GHN
             // Chỉ phát sau khi dữ liệu đã lưu thành công.
             if (trackingChanged)
             {
+                _logger.LogInformation("GHN webhook requesting realtime publication. OrderCode={OrderCode}, OrderId={OrderId}",
+                    SanitizeForLog(orderCode), shipment.OrderId);
                 await _orderTrackingRealtimeService.PublishByOrderIdSafelyAsync(
                     shipment.OrderId,
                     shipment.UpdatedAt);
