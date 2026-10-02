@@ -2468,6 +2468,39 @@ if (dispute.TargetUserId.HasValue &&
                 shipment.DeliveredAt.HasValue
             );
 
+        // GHN đã lấy hàng và đang giao (gồm giao thất bại chờ giao lại). Có PickedUpAt mà trạng thái
+        // còn ReadyToPick thì coi như webhook cập nhật trạng thái chưa tới.
+        private static bool IsGhnParcelInTransit(shipment? shipment) =>
+            shipment?.DeliveryMethod == DeliveryMethod.GhnDelivery &&
+            (
+                shipment.ShipmentStatus == ShipmentStatus.Delivering ||
+                (
+                    shipment.PickedUpAt.HasValue &&
+                    shipment.ShipmentStatus == ShipmentStatus.ReadyToPick
+                )
+            );
+
+        private async Task<bool> IsGhnParcelInTransitAsync(
+            dispute dispute,
+            CancellationToken cancellationToken)
+        {
+            if (!dispute.OrderId.HasValue)
+                return false;
+
+            var order = await _orderRepository.GetByIdAsync(
+                dispute.OrderId.Value,
+                cancellationToken);
+
+            if (order == null)
+                return false;
+
+            var shipment = await _shipmentRepository.GetByOrderIdAsync(
+                order.OrderId,
+                cancellationToken);
+
+            return !BuyerHasItem(order, shipment) && IsGhnParcelInTransit(shipment);
+        }
+
         private async Task<bool> IsAcceptedInspectionReturnBlockedAsync(
             dispute dispute,
             Guid orderId,
@@ -2509,6 +2542,14 @@ if (dispute.TargetUserId.HasValue &&
                 cancellationToken);
 
             var buyerHasItem = BuyerHasItem(order, shipment);
+
+            // Mọi kết luận khi người mua chưa có hàng đều hủy đơn và hoàn tiền. GHN không cho hủy
+            // vận đơn đã lấy hàng, nên nếu kết luận lúc này thì hàng vẫn tới tay người mua.
+            if (!buyerHasItem && IsGhnParcelInTransit(shipment))
+            {
+                return Result<OrderResolutionExecution>.Fail(
+                    DisputeErrors.GhnShipmentInTransit);
+            }
 
             if (outcome == DisputeResolutionOutcome.BuyerFavored &&
                 buyerHasItem &&
@@ -2886,6 +2927,12 @@ if (dispute.TargetUserId.HasValue &&
                     proposedOutcome,
                     cancellationToken);
 
+            var acceptBlockedByGhnInTransit =
+                responseWindowOpen &&
+                !systemNoShow &&
+                currentUserIsTarget &&
+                await IsGhnParcelInTransitAsync(dispute, cancellationToken);
+
             var canVerifyReturn =
                 moderatorId.HasValue &&
                 disputeStatus == DisputeStatus.AwaitingReturn &&
@@ -2948,7 +2995,8 @@ if (dispute.TargetUserId.HasValue &&
                         responseWindowOpen &&
                         !systemNoShow &&
                         currentUserIsTarget &&
-                        !acceptBlockedByAcceptedInspection,
+                        !acceptBlockedByAcceptedInspection &&
+                        !acceptBlockedByGhnInTransit,
                     CanRebut = responseWindowOpen && !systemNoShow && currentUserIsTarget,
                     CanSubmitStatement = responseWindowOpen && systemNoShow && currentUserId.HasValue,
 
