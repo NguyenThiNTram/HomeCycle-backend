@@ -412,6 +412,7 @@ namespace HomeCycle.Application.Services.Appointments
                 appointment.LateThresholdAt ??= lateThresholdAt;
 
                 var pendingProposal = await _appointmentRepo.GetPendingRescheduleProposalAsync(appointment.AppointmentId, ct);
+                Guid? cancelledProposalId = null;
 
                 if (pendingProposal != null)
                 {
@@ -425,6 +426,7 @@ namespace HomeCycle.Application.Services.Appointments
                         lockedProposal.UpdatedAt = now;
 
                         await _appointmentRepo.UpdateAsync(lockedProposal, ct);
+                        cancelledProposalId = lockedProposal.AppointmentId;
                     }
                 }
 
@@ -483,6 +485,8 @@ namespace HomeCycle.Application.Services.Appointments
                 await _appointmentRealtimeService.PublishUpdatedSafelyAsync(
                     appointment.AppointmentId,
                     appointment.UpdatedAt);
+                if (cancelledProposalId.HasValue)
+                    await _appointmentRealtimeService.PublishUpdatedSafelyAsync(cancelledProposalId.Value, now);
                 await _orderTrackingRealtimeService.PublishByAgreementIdSafelyAsync(
                     appointment.AgreementId,
                     appointment.UpdatedAt);
@@ -719,8 +723,12 @@ namespace HomeCycle.Application.Services.Appointments
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
                 await _notificationService.PublishCreatedSafelyAsync(rescheduleNotification);
+                // Đổi lịch tác động cả lịch gốc lẫn lịch đề xuất nên phát event cho cả hai.
                 await _appointmentRealtimeService.PublishUpdatedSafelyAsync(
                     original.AppointmentId,
+                    now);
+                await _appointmentRealtimeService.PublishUpdatedSafelyAsync(
+                    proposal.AppointmentId,
                     now);
 
                 return Result<AppointmentRescheduleResponseDto>.Success(
@@ -881,8 +889,12 @@ namespace HomeCycle.Application.Services.Appointments
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
                 await _notificationService.PublishCreatedSafelyAsync(rescheduleNotification);
+                // Đổi lịch tác động cả lịch gốc lẫn lịch đề xuất nên phát event cho cả hai.
                 await _appointmentRealtimeService.PublishUpdatedSafelyAsync(
                     original.AppointmentId,
+                    now);
+                await _appointmentRealtimeService.PublishUpdatedSafelyAsync(
+                    proposal.AppointmentId,
                     now);
                 await _orderTrackingRealtimeService.PublishByAgreementIdSafelyAsync(
                     agreement.AgreementId,
@@ -1029,8 +1041,12 @@ namespace HomeCycle.Application.Services.Appointments
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
                 await _notificationService.PublishCreatedSafelyAsync(rescheduleNotification);
+                // Đổi lịch tác động cả lịch gốc lẫn lịch đề xuất nên phát event cho cả hai.
                 await _appointmentRealtimeService.PublishUpdatedSafelyAsync(
                     original.AppointmentId,
+                    now);
+                await _appointmentRealtimeService.PublishUpdatedSafelyAsync(
+                    proposal.AppointmentId,
                     now);
                 return Result<AppointmentRescheduleResponseDto>.Success(
                     new AppointmentRescheduleResponseDto
@@ -1141,6 +1157,8 @@ namespace HomeCycle.Application.Services.Appointments
                     appointment.AppointmentId,
                     ct);
 
+                Guid? cancelledProposalId = null;
+
                 if (pendingProposal != null)
                 {
                     var lockedProposal = await _appointmentRepo.GetByIdForUpdateAsync(
@@ -1155,6 +1173,7 @@ namespace HomeCycle.Application.Services.Appointments
                         lockedProposal.UpdatedAt = now;
 
                         await _appointmentRepo.UpdateAsync(lockedProposal, ct);
+                        cancelledProposalId = lockedProposal.AppointmentId;
                     }
                 }
                 var previousAppointmentStatus = (AppointmentStatus)appointment.AppointmentStatus.Value;
@@ -1201,6 +1220,8 @@ namespace HomeCycle.Application.Services.Appointments
                 await _appointmentRealtimeService.PublishUpdatedSafelyAsync(
                     appointment.AppointmentId,
                     appointment.UpdatedAt);
+                if (cancelledProposalId.HasValue)
+                    await _appointmentRealtimeService.PublishUpdatedSafelyAsync(cancelledProposalId.Value, now);
                 await _orderTrackingRealtimeService.PublishByAgreementIdSafelyAsync(
                     agreement.AgreementId,
                     appointment.UpdatedAt);
