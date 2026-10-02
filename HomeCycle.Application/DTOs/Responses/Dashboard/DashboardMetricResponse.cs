@@ -20,6 +20,78 @@ public sealed record ValueSeriesPoint(DateOnly From, DateOnly ToExclusive, decim
 public sealed record DistributionItem(string Key, string Label, int Count, decimal Percentage);
 public sealed record AgingBucket(string Key, string Label, int Count, decimal Percentage);
 
+public sealed class ListingMonitorOverviewResponse
+{
+    public DateTime GeneratedAtUtc { get; init; }
+    public string TimeZone => "Asia/Ho_Chi_Minh";
+    public string ScopeBasis => "CurrentListings.ExcludesDraft.AppliesSearchAndFilters.NoDateFilter";
+    public string ActiveBasis => "StoredStatus.Active.ExpiryIsSeparate";
+    public string ReportBasis => "DistinctPostsWithUnresolvedPostDisputes";
+    public string GrowthBasis => "CreatedAtOfCurrentlyNonDraftListings.Fixed30CompletedDays.NotNetGrowth";
+    public int TotalCount { get; init; }
+    public int ActiveCount { get; init; }
+    public int InactiveCount { get; init; }
+    public int SellCount { get; init; }
+    public int BuyCount { get; init; }
+    public int UnknownPostTypeCount { get; init; }
+    public int CurrentlyReportedListingCount { get; init; }
+    public IReadOnlyList<DistributionItem> SellStatusDistribution { get; init; } = [];
+    public IReadOnlyList<DistributionItem> BuyStatusDistribution { get; init; } = [];
+    public IReadOnlyList<ListingTypeCategoryMetric> Categories { get; init; } = [];
+    public DashboardPeriod GrowthPeriod { get; init; } = new();
+    public IReadOnlyList<ListingGrowthPoint> GrowthSeries { get; init; } = [];
+}
+
+public sealed record ListingTypeCategoryMetric(Guid? CategoryId, string Name, int SellCount, int BuyCount, int UnknownPostTypeCount);
+public sealed record ListingGrowthPoint(DateOnly Date, int SellCount, int BuyCount, int UnknownPostTypeCount);
+public sealed record ListingTypeStatusCount(int? PostType, int? Status, int Count);
+public sealed record ListingTypeDailyCount(DateTime Date, int? PostType, int Count);
+
+public sealed class ListingMonitorOverviewData
+{
+    public int CurrentlyReportedListingCount { get; init; }
+    public IReadOnlyList<ListingTypeStatusCount> Statuses { get; init; } = [];
+    public IReadOnlyList<ListingTypeCategoryMetric> Categories { get; init; } = [];
+    public IReadOnlyList<ListingTypeDailyCount> Daily { get; init; } = [];
+}
+
+public sealed class ListingMonitorItem
+{
+    public Guid PostId { get; init; }
+    public Guid OwnerId { get; init; }
+    public string? OwnerName { get; init; }
+    public UserRole? OwnerRole { get; init; }
+    public PostType? PostType { get; init; }
+    public PostStatus? Status { get; init; }
+    public string? ProductName { get; init; }
+    public Guid? CategoryId { get; init; }
+    public string? CategoryName { get; init; }
+    public string? ProductTypeName { get; init; }
+    public string? BrandName { get; init; }
+    public string? Description { get; init; }
+    public decimal? BasePrice { get; init; }
+    public decimal? PriceFrom { get; init; }
+    public decimal? PriceTo { get; init; }
+    public int Quantity { get; init; }
+    public int RemainingQuantity { get; init; }
+    public string? City { get; init; }
+    public string? Ward { get; init; }
+    public string? StreetAddress { get; init; }
+    public DateTime CreatedAt { get; init; }
+    public DateTime UpdatedAt { get; init; }
+    public DateTime? ExpiryDate { get; init; }
+    public bool IsExpired { get; init; }
+    public int OpenReportCount { get; init; }
+    public int TotalReportCount { get; init; }
+}
+
+public sealed class ListingMonitorDetailResponse
+{
+    public DateTime GeneratedAtUtc { get; init; }
+    public ListingMonitorItem Listing { get; init; } = new();
+    public DashboardAccountDetail? Owner { get; init; }
+}
+
 public sealed class ListingDashboardResponse
 {
     public DateTime GeneratedAtUtc { get; init; }
