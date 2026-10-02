@@ -33,6 +33,11 @@ namespace HomeCycle.Application.Interfaces.Services.Payments
             order order,
             agreement_form agreement,
             CancellationToken ct = default);
+        // Hoàn toàn bộ tiền hàng đang giữ và phí ship GHN đang ở Shipping_Escrow của đơn. Trả về tổng đã hoàn.
+        Task<Result<decimal>> RefundAllRemainingOrderHeldAmountWithShippingAsync(
+            order order,
+            agreement_form agreement,
+            CancellationToken ct = default);
         Task<Result<decimal>> ReleaseCompletedOrderHeldAmountAsync(Guid orderId, CancellationToken ct = default);
         Task<int> ProcessPendingPayOsSyncAsync(
             int batchSize,
