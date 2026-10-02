@@ -4221,15 +4221,17 @@ namespace HomeCycle.Application.Services.Payments
                     throw new InvalidOperationException("Agreement chưa có phí GHN hợp lệ.");
             }
 
-            // KHỞI TẠO LUỒNG VẬN ĐƠN (SHIPMENT) — chỉ khi thanh toán đủ:
-            // - GhnDelivery                : Shipment + GHN_Shipment (CreationStatus = Pending, chưa gửi GHN)
-            // - SellerDelivers/BuyerPickUp : chỉ Shipment
+            // KHỞI TẠO LUỒNG VẬN ĐƠN (SHIPMENT):
+            // - GhnDelivery                : Shipment + GHN_Shipment (CreationStatus = Pending, chưa gửi GHN), luôn thanh toán đủ
+            // - SellerDelivers/BuyerPickUp : chỉ Shipment, kể cả khi đặt cọc (phần còn lại trả trực tiếp khi giao),
+            //                                vì sẵn sàng giao, bàn giao và hủy đơn đều cần Shipment
             // - Inspection (chỉ đóng cọc)  : chưa tạo shipment
             bool shouldCreateShipment =
-                isFullyPaid
-                && agreement.AgreementType != (int)AgreementType.Inspection
-                && details?.DeliveryMethod is
-                    DeliveryMethod.GhnDelivery or DeliveryMethod.SellerDelivers or DeliveryMethod.BuyerPickUp;
+                agreement.AgreementType != (int)AgreementType.Inspection
+                && (
+                    (isFullyPaid && details?.DeliveryMethod == DeliveryMethod.GhnDelivery) ||
+                    details?.DeliveryMethod is DeliveryMethod.SellerDelivers or DeliveryMethod.BuyerPickUp
+                );
 
             if (shouldCreateShipment)
             {
