@@ -14,6 +14,7 @@ using HomeCycle.Application.Interfaces.Generics;
 using HomeCycle.Application.Interfaces.Repositories.Agreements;
 using HomeCycle.Application.Interfaces.Repositories.Appointments;
 using HomeCycle.Application.Interfaces.Repositories.Disputes;
+using HomeCycle.Application.Interfaces.Repositories.GHN;
 using HomeCycle.Application.Interfaces.Repositories.Inspections;
 using HomeCycle.Application.Interfaces.Repositories.Orders;
 using HomeCycle.Application.Interfaces.Repositories.Posts;
@@ -29,6 +30,7 @@ using HomeCycle.Application.Interfaces.Services.Payments;
 using HomeCycle.Application.Interfaces.Services.PlatformPolicies;
 using HomeCycle.Application.Interfaces.Services.Wallets;
 using HomeCycle.Application.Services.Disputes;
+using HomeCycle.Application.Services.GHN;
 using HomeCycle.Domain.Entities;
 using HomeCycle.Domain.Enums;
 using System;
@@ -66,6 +68,7 @@ namespace HomeCycle.Application.Services.Orders
         private readonly IGhnShipmentCreationService _ghnLifecycle;
         private readonly IAppointmentRealtimeService _appointmentRealtimeService;
         private readonly IFinanceRealtimeService _financeRealtimeService;
+        private readonly IGhnShipmentRepository _ghnShipmentRepo;
 
         public OrderService(
             IOrderRepository orderRepo,
@@ -90,7 +93,8 @@ namespace HomeCycle.Application.Services.Orders
             IMapper mapper,
             IGhnShipmentCreationService ghnLifecycle,
             IAppointmentRealtimeService appointmentRealtimeService,
-            IFinanceRealtimeService financeRealtimeService)
+            IFinanceRealtimeService financeRealtimeService,
+            IGhnShipmentRepository ghnShipmentRepo)
         {
             _orderRepo = orderRepo;
             _postRepo = postRepo;
@@ -115,6 +119,7 @@ namespace HomeCycle.Application.Services.Orders
             _ghnLifecycle = ghnLifecycle;
             _appointmentRealtimeService = appointmentRealtimeService;
             _financeRealtimeService = financeRealtimeService;
+            _ghnShipmentRepo = ghnShipmentRepo;
         }
 
         public async Task<Result<PagedResult<OrderListItemDto>>> GetMyOrdersAsync(
@@ -1944,12 +1949,18 @@ namespace HomeCycle.Application.Services.Orders
                 inspectionNoShowEligible ||
                 directCollectionNoShowEligible;
 
-            var deliveryStarted =
-                shipment != null &&
-                (shipment.SellerReadyAt.HasValue ||
-                 shipment.PickedUpAt.HasValue ||
-                 (shipment.ShipmentStatus.HasValue &&
-                  shipment.ShipmentStatus != ShipmentStatus.ReadyToPick));
+            // Cùng điều kiện với OrderDisputeTargetHandler: đơn GHN chỉ khiếu nại được từ khi GHN bắt đầu giao.
+            var ghnShipment = shipment?.DeliveryMethod == DeliveryMethod.GhnDelivery
+                ? await _ghnShipmentRepo.GetByOrderIdAsync(detail.OrderId, ct)
+                : null;
+
+            var deliveryStarted = shipment?.DeliveryMethod == DeliveryMethod.GhnDelivery
+                ? GhnStatusMapper.HasStartedDelivery(ghnShipment?.GHNStatusCode)
+                : shipment != null &&
+                  (shipment.SellerReadyAt.HasValue ||
+                   shipment.PickedUpAt.HasValue ||
+                   (shipment.ShipmentStatus.HasValue &&
+                    shipment.ShipmentStatus != ShipmentStatus.ReadyToPick));
 
             var collectionConfirmationOpen =
                 latestCollection?.ScheduledAt.HasValue == true &&
