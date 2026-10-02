@@ -47,7 +47,7 @@ public partial class HomeCycleDbContext : DbContext
 
     public virtual DbSet<Dispute_Category> Dispute_Categories { get; set; }
     public virtual DbSet<Dispute_Category_Target> Dispute_Category_Targets { get; set; }
-
+    public virtual DbSet<Dispute_Response> Dispute_Responses { get; set; }
     public virtual DbSet<GHN_Shipment> GHN_Shipments { get; set; }
 
     public virtual DbSet<Inspection_Appointment> Inspection_Appointments { get; set; }
@@ -190,6 +190,10 @@ public partial class HomeCycleDbContext : DbContext
                 .HasForeignKey(e => e.RescheduleRequestedByUserId)
                 .OnDelete(DeleteBehavior.SetNull)
                 .HasConstraintName("fk_appointment_reschedule_requested_by");
+
+            entity.HasIndex(e => e.AppointmentStatus)
+                .HasDatabaseName("idx_appointment_reminder_pending")
+                .HasFilter("\"ReminderSentAt\" IS NULL");
         });
 
         modelBuilder.Entity<Audit_Log>(entity =>
@@ -476,7 +480,9 @@ public partial class HomeCycleDbContext : DbContext
                 .OnDelete(DeleteBehavior.Restrict)
                 .HasConstraintName("fk_dispute_postid");
 
-            entity.HasOne(d => d.Sender).WithMany(p => p.DisputeSenders)
+            entity.HasOne(d => d.Sender)
+                .WithMany(p => p.DisputeSenders)
+                .HasForeignKey(d => d.SenderId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("fk_dispute_senderid");
 
@@ -487,6 +493,12 @@ public partial class HomeCycleDbContext : DbContext
                 .HasForeignKey(x => x.DisputeCategory)
                 .OnDelete(DeleteBehavior.Restrict)
                 .HasConstraintName("fk_dispute_category");
+
+            entity.HasOne(d => d.Appointment)
+                .WithMany()
+                .HasForeignKey(d => d.AppointmentId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("fk_dispute_appointmentid");
         });
 
         modelBuilder.Entity<Dispute_Category>(entity =>
@@ -516,6 +528,32 @@ public partial class HomeCycleDbContext : DbContext
                 .HasForeignKey(x => x.DisputeCategoryId)
                 .OnDelete(DeleteBehavior.Cascade)
                 .HasConstraintName("fk_dispute_category_target_category");
+        });
+
+        modelBuilder.Entity<Dispute_Response>(entity =>
+        {
+            entity.HasKey(x => x.DisputeResponseId).HasName("Dispute_Response_pkey");
+            entity.Property(x => x.DisputeResponseId).ValueGeneratedNever();
+            entity.Property(x => x.CreatedAt).HasDefaultValueSql("now()");
+
+            entity.HasIndex(x => x.DisputeId)
+                .HasDatabaseName("idx_dispute_response_dispute");
+
+            entity.HasIndex(x => new { x.DisputeId, x.ResponderId })
+                .IsUnique()
+                .HasDatabaseName("uq_dispute_response_responder");
+
+            entity.HasOne(x => x.Dispute)
+                .WithMany()
+                .HasForeignKey(x => x.DisputeId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("fk_dispute_response_dispute");
+
+            entity.HasOne(x => x.Responder)
+                .WithMany()
+                .HasForeignKey(x => x.ResponderId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("fk_dispute_response_responder");
         });
 
         modelBuilder.Entity<GHN_Shipment>(entity =>

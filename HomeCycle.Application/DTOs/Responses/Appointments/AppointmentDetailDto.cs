@@ -47,6 +47,7 @@ namespace HomeCycle.Application.DTOs.Responses.Appointments
         public Guid InspectionFormId { get; set; }
         public int Revision { get; set; }
         public InspectionStatus InspectionStatus { get; set; }
+        public InspectionMode InspectionMode { get; set; }
         public InspectionConclusion? Conclusion { get; set; }
     }
     public class InspectionCheckInDto

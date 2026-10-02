@@ -86,6 +86,7 @@ namespace HomeCycle.Application.Commons.Audits
         public const string InspectionCollectNow = "INSPECTION.COLLECT_NOW";
 
         public const string InspectionScheduleCollection = "INSPECTION.SCHEDULE_COLLECTION";
+        public const string InspectionQuickAccept = "INSPECTION.QUICK_ACCEPT";
 
         public const string ShipmentSellerReady = "SHIPMENT.SELLER_READY";
 
@@ -95,6 +96,9 @@ namespace HomeCycle.Application.Commons.Audits
         public const string DisputeResolve = "DISPUTE.RESOLVE";
         public const string DisputeReject = "DISPUTE.REJECT";
         public const string DisputeReturnVerify = "DISPUTE.RETURN_VERIFY";
+        public const string DisputeRespond = "DISPUTE.RESPOND";
+        public const string DisputeEscalate = "DISPUTE.ESCALATE";
+        public const string DisputeAutoClose = "DISPUTE.AUTO_CLOSE";
 
         public const string SubscriptionPackageCreate = "SUBSCRIPTION_PACKAGE.CREATE";
         public const string PostWarn = "POST.WARN";

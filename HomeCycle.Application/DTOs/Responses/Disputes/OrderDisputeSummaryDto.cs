@@ -43,5 +43,10 @@ namespace HomeCycle.Application.DTOs.Responses.Disputes
         public DateTime? DisputeDeadlineUtc { get; set; }
 
         public int DisputeWindowHours { get; set; }
+        public DeliveryMethod? DeliveryMethod { get; set; }
+
+        public DateTime? SellerHandoverConfirmedAt { get; set; }
+
+        public DateTime? BuyerReceivedConfirmedAt { get; set; }
     }
 }

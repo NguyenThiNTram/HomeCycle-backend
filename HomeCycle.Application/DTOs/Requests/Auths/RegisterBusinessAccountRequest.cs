@@ -8,7 +8,8 @@ namespace HomeCycle.Application.DTOs.Requests.Auths
 {
     public class RegisterBusinessAccountRequest
     {
+        public string Username { get; set; } = null!;
         public string Password { get; set; } = null!;
-
+        public string? PhoneNumber { get; set; }
     }
 }

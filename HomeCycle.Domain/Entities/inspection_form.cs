@@ -16,7 +16,7 @@ public class inspection_form
     public Guid InspectorId { get; set; }
 
     public DateTime? InspectionTime { get; set; }
-
+    public int InspectionMode { get; set; }
     public int? OperatingStatus { get; set; }
     public int? AppearanceStatus { get; set; }
     public int? PartsStatus { get; set; }

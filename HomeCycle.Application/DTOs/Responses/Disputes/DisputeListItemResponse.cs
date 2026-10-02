@@ -11,9 +11,9 @@ namespace HomeCycle.Application.DTOs.Responses.Disputes
     {
         public Guid DisputeId { get; set; }
 
-        public Guid SenderId { get; set; }
+        public Guid? SenderId { get; set; }
 
-        public string SenderUsername { get; set; } = string.Empty;
+        public string? SenderUsername { get; set; } = string.Empty;
 
         public Guid? TargetUserId { get; set; }
 

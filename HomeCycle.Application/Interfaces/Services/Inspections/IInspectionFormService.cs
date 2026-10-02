@@ -14,6 +14,7 @@ namespace HomeCycle.Application.Interfaces.Services.Inspections
         Task<Result<InspectionFormResponseDto>> GetByAppointmentAsync(Guid appointmentId, Guid userId, CancellationToken ct = default);
 
         Task<Result<InspectionFormResponseDto>> CreateDraftAsync(Guid appointmentId, Guid buyerId, CreateInspectionFormRequest request, CancellationToken ct = default);
+        Task<Result<InspectionFormResponseDto>> QuickAcceptAsync(Guid appointmentId, Guid buyerId, CancellationToken ct = default);
         Task<Result<InspectionFormResponseDto>> UpdateDraftAsync(Guid inspectionFormId, Guid buyerId, UpdateInspectionFormRequest request, CancellationToken ct = default);
 
         Task<Result<InspectionFormResponseDto>> SubmitAsync(Guid inspectionFormId, Guid buyerId, InspectionRevisionRequest request, CancellationToken ct = default);

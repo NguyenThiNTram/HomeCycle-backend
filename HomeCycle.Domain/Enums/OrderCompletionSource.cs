@@ -10,6 +10,7 @@ namespace HomeCycle.Domain.Enums
     {
         BuyerConfirmed = 1,
         AutoConfirmed = 2,
-        ModeratorResolved = 3
+        ModeratorResolved = 3,
+        MutualDisputeResolution = 4
     }
 }

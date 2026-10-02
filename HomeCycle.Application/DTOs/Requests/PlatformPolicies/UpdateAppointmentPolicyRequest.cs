@@ -15,5 +15,6 @@ namespace HomeCycle.Application.DTOs.Requests.PlatformPolicies
         public int? RescheduleCutoffHours { get; set; }
 
         public int? CancellationCutoffHours { get; set; }
+        public int? ReminderBeforeMinutes { get; set; }
     }
 }

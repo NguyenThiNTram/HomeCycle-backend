@@ -23,7 +23,7 @@ public partial class Inspection_Form
     public Guid InspectorId { get; set; }
 
     public DateTime? InspectionTime { get; set; }
-
+    public int InspectionMode { get; set; }
     public int? OperatingStatus { get; set; }
     public int? AppearanceStatus { get; set; }
     public int? PartsStatus { get; set; }

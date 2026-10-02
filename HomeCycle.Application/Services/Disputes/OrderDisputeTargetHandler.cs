@@ -5,6 +5,7 @@ using HomeCycle.Application.DTOs.Responses.Disputes;
 using HomeCycle.Application.Interfaces.Repositories.Agreements;
 using HomeCycle.Application.Interfaces.Repositories.Appointments;
 using HomeCycle.Application.Interfaces.Repositories.Disputes;
+using HomeCycle.Application.Interfaces.Repositories.Inspections;
 using HomeCycle.Application.Interfaces.Repositories.Orders;
 using HomeCycle.Application.Interfaces.Repositories.Shipments;
 using HomeCycle.Application.Interfaces.Services.Disputes;
@@ -27,7 +28,6 @@ namespace HomeCycle.Application.Services.Disputes
         private readonly IAppointmentRepository _appointmentRepository;
         private readonly IDisputeRepository _disputeRepository;
         private readonly IDisputeWindowPolicy _windowPolicy;
-
         public DisputeTargetType TargetType => DisputeTargetType.Order;
 
         public OrderDisputeTargetHandler(
@@ -119,7 +119,9 @@ namespace HomeCycle.Application.Services.Disputes
                 latestCollection != null &&
                 latestCollection.AppointmentStatus is AppointmentStatus.Scheduled or AppointmentStatus.InProgress &&
                 latestCollection.LateThresholdAt.HasValue &&
-                nowUtc >= latestCollection.LateThresholdAt.Value;
+                nowUtc >= latestCollection.LateThresholdAt.Value &&
+                !order.SellerHandoverConfirmedAt.HasValue &&
+                !order.BuyerReceivedConfirmedAt.HasValue;
 
             var noShowEligible =
                 inspectionNoShowEligible ||
@@ -143,8 +145,15 @@ namespace HomeCycle.Application.Services.Disputes
                     return Result<DisputeTargetCreateContext>.Fail(OrderErrors.InvalidStatus);
             }
 
-            if (!OrderDisputeCategoryPolicy.IsAllowed(categoryCode, noShowEligible, deliveryMethod))
-                return Result<DisputeTargetCreateContext>.Fail(DisputeErrors.InvalidCategory(categoryCode));
+
+            if (!OrderDisputeCategoryPolicy.IsAllowed(
+                categoryCode,
+                noShowEligible,
+                deliveryMethod))
+            {
+                return Result<DisputeTargetCreateContext>.Fail(
+                    DisputeErrors.InvalidCategory(categoryCode));
+            }
 
             // Order đã được lock trước khi check duplicate nên 2 request tạo dispute song song
             // trên cùng Order không thể cùng thay đổi state thành công.
@@ -271,7 +280,10 @@ namespace HomeCycle.Application.Services.Disputes
                 ReturnDueAt = order.ReturnDueAt,
                 ReturnedAt = order.ReturnedAt,
                 DisputeDeadlineUtc = deadline,
-                DisputeWindowHours = windowHours
+                DisputeWindowHours = windowHours,
+                DeliveryMethod = shipment?.DeliveryMethod,
+                SellerHandoverConfirmedAt = order.SellerHandoverConfirmedAt,
+                BuyerReceivedConfirmedAt = order.BuyerReceivedConfirmedAt,
             };
 
             return Result<DisputeTargetSummaryDto>.Success(new DisputeTargetSummaryDto

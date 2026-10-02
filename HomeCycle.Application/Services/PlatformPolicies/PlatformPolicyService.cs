@@ -1388,6 +1388,7 @@ namespace HomeCycle.Application.Services.PlatformPolicies
                 && config.LowReputationDisputeWindowDays >= config.NormalDisputeWindowDays
                 && config.LowReputationThreshold is >= 0 and <= 100
                 && config.ReturnWindowDays is >= 1 and <= 30
+                && config.ResponseWindowHours is >= 1 and <= 168
                 && config.DisputeLossPenaltyPoints is >= 1 and <= 100
                 && config.PostViolationPenaltyPoints is >= 1 and <= 100
                 && config.ReviewViolationPenaltyPoints is >= 1 and <= 100;
@@ -1400,6 +1401,7 @@ namespace HomeCycle.Application.Services.PlatformPolicies
                 && config.LateThresholdMinutes is >= 1 and <= 10080
                 && config.RescheduleCutoffHours is >= 1 and <= 720
                 && config.CancellationCutoffHours is >= 1 and <= 720
+                && config.ReminderBeforeMinutes is >= 1 and <= 1440
                 && config.RescheduleCutoffHours >= config.CancellationCutoffHours;
         }
 
@@ -1442,6 +1444,7 @@ namespace HomeCycle.Application.Services.PlatformPolicies
                 && current.LowReputationDisputeWindowDays == updated.LowReputationDisputeWindowDays
                 && current.LowReputationThreshold == updated.LowReputationThreshold
                 && current.ReturnWindowDays == updated.ReturnWindowDays
+                && current.ResponseWindowHours == updated.ResponseWindowHours
                 && current.DisputeLossPenaltyPoints == updated.DisputeLossPenaltyPoints
                 && current.PostViolationPenaltyPoints == updated.PostViolationPenaltyPoints
                 && current.ReviewViolationPenaltyPoints == updated.ReviewViolationPenaltyPoints;
@@ -1471,7 +1474,8 @@ namespace HomeCycle.Application.Services.PlatformPolicies
             return current.CheckInOpenBeforeMinutes == updated.CheckInOpenBeforeMinutes
                 && current.LateThresholdMinutes == updated.LateThresholdMinutes
                 && current.RescheduleCutoffHours == updated.RescheduleCutoffHours
-                && current.CancellationCutoffHours == updated.CancellationCutoffHours;
+                && current.CancellationCutoffHours == updated.CancellationCutoffHours
+                && current.ReminderBeforeMinutes == updated.ReminderBeforeMinutes;
         }
 
         private static FileUploadPolicyConfigDto CloneFileUploadConfig(FileUploadPolicyConfigDto source)

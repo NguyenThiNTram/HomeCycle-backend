@@ -172,6 +172,7 @@ namespace HomeCycle.Infrastructure.Repositories.Wallets
 
             var activeDisputeStatuses = new[]
             {
+                (int)DisputeStatus.AwaitingResponse,
                 (int)DisputeStatus.Pending,
                 (int)DisputeStatus.UnderReview,
                 (int)DisputeStatus.AwaitingReturn

@@ -9,19 +9,31 @@ namespace HomeCycle.Domain.Entities;
 public class dispute
 {
     public Guid DisputeId { get; set; }
-    public Guid SenderId { get; set; }
+    public Guid? SenderId { get; set; }
     public Guid? TargetUserId { get; set; }
     public Guid? ModeratorId { get; set; }
+
     public Guid? ReviewId { get; set; }
     public Guid? PostId { get; set; }
     public Guid? OrderId { get; set; }
+    public Guid? AppointmentId { get; set; }
 
     public int? DisputeTargetType { get; set; }
     public int? DisputeCategory { get; set; }
+    public int Origin { get; set; }
+
     public string? Description { get; set; }
     public int? DisputeStatus { get; set; }
-    public string? ModeratorNote { get; set; }
+
     public int? ResolutionOutcome { get; set; }
+    public int? ResolutionSource { get; set; }
+
+    public string? ModeratorNote { get; set; }
+
+    public DateTime? ResponseDeadlineAt { get; set; }
+    public DateTime? EscalatedAt { get; set; }
+    public DateTime? ModeratorClaimedAt { get; set; }
+
     public DateTime CreatedAt { get; set; }
     public DateTime? ResolvedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
@@ -30,7 +42,7 @@ public class dispute
     {
     }
 
-    public dispute(Guid DisputeId, Guid SenderId)
+    public dispute(Guid DisputeId, Guid? SenderId)
     {
         this.DisputeId = DisputeId;
         this.SenderId = SenderId;

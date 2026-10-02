@@ -16,9 +16,11 @@ using HomeCycle.Application.Interfaces.Repositories.Inspections;
 using HomeCycle.Application.Interfaces.Repositories.Orders;
 using HomeCycle.Application.Interfaces.Repositories.Payments;
 using HomeCycle.Application.Interfaces.Repositories.Shipments;
+using HomeCycle.Application.Interfaces.Repositories.Users;
 using HomeCycle.Application.Interfaces.Repositories.Wallets;
 using HomeCycle.Application.Interfaces.Services.Appointments;
 using HomeCycle.Application.Interfaces.Services.Audits;
+using HomeCycle.Application.Interfaces.Services.Disputes;
 using HomeCycle.Application.Interfaces.Services.Inspections;
 using HomeCycle.Application.Interfaces.Services.Notifications;
 using HomeCycle.Application.Interfaces.Services.Orders;
@@ -56,13 +58,15 @@ namespace HomeCycle.Application.Services.Inspections
         private readonly IUnitOfWork _unitOfWork;
         private readonly IAppointmentRealtimeService _appointmentRealtimeService;
         private readonly IFinanceRealtimeService _financeRealtimeService;
+        private readonly IUserRepository _userRepo;
+        private readonly IDisputeWindowPolicy _disputeWindowPolicy;
 
         private readonly IValidator<CreateInspectionFormRequest> _createValidator;
         private readonly IValidator<UpdateInspectionFormRequest> _updateValidator;
         private readonly IValidator<InspectionRevisionRequest> _revisionValidator;
         private readonly IValidator<RejectInspectionFormRequest> _rejectValidator;
 
-        public InspectionFormService(IInspectionFormRepository inspectionFormRepo, IInspectionAppointmentRepository inspectionAppointmentRepo, IAppointmentRepository appointmentRepo, IAgreementFormRepository agreementRepo, IOrderRepository orderRepo, IDisputeRepository disputeRepo, IMediaService mediaService, IPaymentService paymentService, INotificationService notificationService, IShipmentRepository shipmentRepo, IOrderTrackingRealtimeService orderTrackingRealtimeService, IAuditService auditService, IUnitOfWork unitOfWork, IAppointmentRealtimeService appointmentRealtimeService, IFinanceRealtimeService financeRealtimeService, IValidator<CreateInspectionFormRequest> createValidator, IValidator<UpdateInspectionFormRequest> updateValidator, IValidator<InspectionRevisionRequest> revisionValidator, IValidator<RejectInspectionFormRequest> rejectValidator)
+        public InspectionFormService(IInspectionFormRepository inspectionFormRepo, IInspectionAppointmentRepository inspectionAppointmentRepo, IAppointmentRepository appointmentRepo, IAgreementFormRepository agreementRepo, IOrderRepository orderRepo, IDisputeRepository disputeRepo, IMediaService mediaService, IPaymentService paymentService, INotificationService notificationService, IShipmentRepository shipmentRepo, IOrderTrackingRealtimeService orderTrackingRealtimeService, IAuditService auditService, IUnitOfWork unitOfWork, IAppointmentRealtimeService appointmentRealtimeService, IFinanceRealtimeService financeRealtimeService, IUserRepository userRepo, IDisputeWindowPolicy disputeWindowPolicy, IValidator<CreateInspectionFormRequest> createValidator, IValidator<UpdateInspectionFormRequest> updateValidator, IValidator<InspectionRevisionRequest> revisionValidator, IValidator<RejectInspectionFormRequest> rejectValidator)
         {
             _inspectionFormRepo = inspectionFormRepo;
             _inspectionAppointmentRepo = inspectionAppointmentRepo;
@@ -79,6 +83,8 @@ namespace HomeCycle.Application.Services.Inspections
             _unitOfWork = unitOfWork;
             _appointmentRealtimeService = appointmentRealtimeService;
             _financeRealtimeService = financeRealtimeService;
+            _userRepo = userRepo;
+            _disputeWindowPolicy = disputeWindowPolicy;
             _createValidator = createValidator;
             _updateValidator = updateValidator;
             _revisionValidator = revisionValidator;
@@ -204,7 +210,7 @@ namespace HomeCycle.Application.Services.Inspections
                     SuggestedPrice = request.Conclusion == InspectionConclusion.PriceAdjustment
                         ? request.SuggestedPrice
                         : null,
-
+                    InspectionMode = (int)InspectionMode.Detailed,
                     InspectionStatus = (int)InspectionStatus.Draft,
                     Revision = 1,
 
@@ -245,6 +251,180 @@ namespace HomeCycle.Application.Services.Inspections
             }
         }
 
+        public async Task<Result<InspectionFormResponseDto>> QuickAcceptAsync(Guid appointmentId, Guid buyerId, CancellationToken ct = default)
+        {
+            await _unitOfWork.BeginTransactionAsync(ct);
+
+            try
+            {
+                var appointment = await _appointmentRepo.GetByIdForUpdateAsync(appointmentId, ct);
+
+                if (appointment == null)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    return Result<InspectionFormResponseDto>.Fail(AppointmentErrors.NotFound);
+                }
+
+                if (appointment.AppointmentType != (int)AppointmentType.Inspection)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    return Result<InspectionFormResponseDto>.Fail(InspectionErrors.InvalidAppointment);
+                }
+
+                var agreement = await _agreementRepo.GetByIdAsync(appointment.AgreementId, ct);
+
+                if (agreement == null)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    return Result<InspectionFormResponseDto>.Fail(AgreementErrors.NotFound);
+                }
+
+                if (agreement.BuyerId != buyerId)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    return Result<InspectionFormResponseDto>.Fail(InspectionErrors.BuyerOnly);
+                }
+
+                var buyer = await _userRepo.GetByIdAsync(buyerId, ct);
+
+                if (buyer == null)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    return Result<InspectionFormResponseDto>.Fail(AuthErrors.UserNotFound);
+                }
+
+                if (buyer.Role != UserRole.Personal)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    return Result<InspectionFormResponseDto>.Fail(InspectionErrors.QuickAcceptPersonalOnly);
+                }
+
+                if (appointment.AppointmentStatus != (int)AppointmentStatus.InProgress)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    return Result<InspectionFormResponseDto>.Fail(InspectionErrors.AppointmentNotInProgress);
+                }
+
+                if (!appointment.BuyerCheckAt.HasValue || !appointment.SellerCheckAt.HasValue)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    return Result<InspectionFormResponseDto>.Fail(InspectionErrors.BothCheckInRequired);
+                }
+
+                var inspection = await _inspectionAppointmentRepo.GetByAppointmentIdAsync(appointmentId, ct);
+
+                if (inspection == null)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    return Result<InspectionFormResponseDto>.Fail(AppointmentErrors.InspectionDetailNotFound);
+                }
+
+                var existing = await _inspectionFormRepo.GetByInspectionAppointmentIdAsync(inspection.InspectionAppointmentId, ct);
+
+                if (existing != null)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    return Result<InspectionFormResponseDto>.Fail(InspectionErrors.AlreadyExists);
+                }
+
+                var order = await _orderRepo.GetByAgreementIdAsync(agreement.AgreementId, ct);
+
+                if (order == null)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    return Result<InspectionFormResponseDto>.Fail(OrderErrors.NotFound);
+                }
+
+                if (order.OrderStatus != (int)OrderStatus.Processing)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    return Result<InspectionFormResponseDto>.Fail(OrderErrors.InvalidStatus);
+                }
+
+                var originalPrice = order.FinalTotalAmount ?? order.OriginalTotalAmount;
+
+                if (!originalPrice.HasValue || originalPrice.Value <= 0)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+                    return Result<InspectionFormResponseDto>.Fail(InspectionErrors.InvalidOrderPrice);
+                }
+
+                var now = DateTime.UtcNow;
+                var previousAppointmentStatus = (AppointmentStatus)appointment.AppointmentStatus.Value;
+
+                var form = new inspection_form
+                {
+                    InspectionFormId = Guid.NewGuid(),
+                    InspectionAppointmentId = inspection.InspectionAppointmentId,
+                    OrderId = order.OrderId,
+                    InspectorId = buyerId,
+                    InspectionTime = now,
+                    InspectionMode = (int)InspectionMode.QuickAccept,
+                    Conclusion = (int)InspectionConclusion.Passed,
+                    OriginalPrice = originalPrice.Value,
+                    InspectionStatus = (int)InspectionStatus.Accepted,
+                    Revision = 1,
+                    SubmittedAt = now,
+                    CreatedAt = now,
+                    UpdatedAt = now
+                };
+
+                appointment.AppointmentStatus = (int)AppointmentStatus.Completed;
+                appointment.CompletedAt = now;
+                appointment.UpdatedAt = now;
+
+                var quickAcceptAuditEvent = new AuditEvent
+                {
+                    Category = AuditCategory.BusinessOperation,
+                    Action = AuditActions.InspectionQuickAccept,
+                    Outcome = AuditOutcome.Success,
+                    ActorType = AuditActorType.User,
+                    UserId = buyerId,
+                    TargetType = AuditTargetTypes.Inspection,
+                    TargetId = form.InspectionFormId,
+                    NewValues = new Dictionary<string, object?>
+                    {
+                        ["inspectionMode"] = InspectionMode.QuickAccept.ToString(),
+                        ["inspectionStatus"] = InspectionStatus.Accepted.ToString(),
+                        ["conclusion"] = InspectionConclusion.Passed.ToString(),
+                        ["appointmentStatus"] = AppointmentStatus.Completed.ToString()
+                    },
+                    Metadata = new Dictionary<string, object?>
+                    {
+                        ["orderId"] = order.OrderId,
+                        ["appointmentId"] = appointment.AppointmentId,
+                        ["previousAppointmentStatus"] = previousAppointmentStatus.ToString()
+                    }
+                };
+
+                await _inspectionFormRepo.AddAsync(form, ct);
+                await _appointmentRepo.UpdateAsync(appointment, ct);
+
+                var notification = await _notificationService.AddPendingAsync(
+                    new CreateNotificationCommand(
+                        agreement.SellerId,
+                        "Kiểm định đã được xác nhận nhanh",
+                        "Người mua đã chọn xác nhận nhanh và chấp nhận tình trạng sản phẩm. Buổi kiểm định đã hoàn tất.",
+                        NotificationTargetType.Appointment,
+                        appointment.AppointmentId),
+                    ct);
+
+                await _auditService.EnqueueAsync(quickAcceptAuditEvent, ct);
+                await _unitOfWork.SaveChangesAsync(ct);
+                await _unitOfWork.CommitTransactionAsync(ct);
+
+                await _notificationService.PublishCreatedSafelyAsync(notification);
+                await _appointmentRealtimeService.PublishUpdatedSafelyAsync(appointment.AppointmentId, appointment.UpdatedAt);
+                await _orderTrackingRealtimeService.PublishByOrderIdSafelyAsync(order.OrderId, now);
+
+                return Result<InspectionFormResponseDto>.Success(await BuildResponseAsync(form, buyerId, ct));
+            }
+            catch
+            {
+                await _unitOfWork.RollbackTransactionAsync(ct);
+                throw;
+            }
+        }
 
         public async Task<Result<InspectionFormResponseDto>> UpdateDraftAsync(Guid inspectionFormId, Guid buyerId, UpdateInspectionFormRequest request, CancellationToken ct = default)
         {
@@ -1029,7 +1209,7 @@ namespace HomeCycle.Application.Services.Inspections
                     return Result<InspectionFormResponseDto>.Fail(InspectionErrors.CollectActionAlreadySelected);
                 }
 
-                var order = await _orderRepo.GetByIdAsync(form.OrderId, ct);
+                var order = await _orderRepo.GetByIdForUpdateAsync(form.OrderId, ct);
 
                 if (order == null)
                 {
@@ -1051,9 +1231,7 @@ namespace HomeCycle.Application.Services.Inspections
                     return Result<InspectionFormResponseDto>.Fail(InspectionErrors.BuyerOnly);
                 }
 
-                var inspection = await _inspectionAppointmentRepo.GetByIdAsync(
-                    form.InspectionAppointmentId,
-                    ct);
+                var inspection = await _inspectionAppointmentRepo.GetByIdAsync(form.InspectionAppointmentId, ct);
 
                 if (inspection == null)
                 {
@@ -1074,6 +1252,13 @@ namespace HomeCycle.Application.Services.Inspections
                 }
 
                 var now = DateTime.UtcNow;
+                var disputeWindow = await _disputeWindowPolicy.GetOrderDisputeWindowAsync(agreement.SellerId, ct);
+
+                var previousCollectAction = form.CollectAction.HasValue ? (InspectionCollectAction?)form.CollectAction.Value : null;
+                var previousOrderStatus = (OrderStatus)order.OrderStatus;
+                var previousPaymentStatus = order.PaymentStatus.HasValue ? (PaymentStatus?)order.PaymentStatus.Value : null;
+                var previousBuyerReceivedConfirmed = order.BuyerReceivedConfirmedAt.HasValue;
+                var previousCompletionSource = order.CompletionSource.HasValue ? (OrderCompletionSource?)order.CompletionSource.Value : null;
 
                 var shipment = new shipment
                 {
@@ -1089,10 +1274,17 @@ namespace HomeCycle.Application.Services.Inspections
                     UpdatedAt = now
                 };
 
-                var previousCollectAction = form.CollectAction.HasValue ? (InspectionCollectAction?)form.CollectAction.Value : null;
                 form.CollectAction = (int)InspectionCollectAction.CollectNow;
                 form.Revision++;
                 form.UpdatedAt = now;
+
+                order.BuyerReceivedConfirmedAt = now;
+                order.OrderStatus = (int)OrderStatus.Completed;
+                order.PaymentStatus = (int)PaymentStatus.Completed;
+                order.CompletedAt = now;
+                order.CompletionSource = (int)OrderCompletionSource.BuyerConfirmed;
+                order.DisputeWindowEndsAt ??= now.Add(disputeWindow);
+                order.UpdatedAt = now;
 
                 var collectNowAuditDiff = new AuditDiffBuilder()
                     .Add("collectAction", previousCollectAction?.ToString(), InspectionCollectAction.CollectNow.ToString());
@@ -1116,30 +1308,53 @@ namespace HomeCycle.Application.Services.Inspections
                     }
                 };
 
+                var completeOrderAuditDiff = new AuditDiffBuilder()
+                    .Add("status", previousOrderStatus.ToString(), OrderStatus.Completed.ToString())
+                    .Add("paymentStatus", previousPaymentStatus?.ToString(), PaymentStatus.Completed.ToString())
+                    .Add("buyerReceivedConfirmed", previousBuyerReceivedConfirmed, true)
+                    .Add("completionSource", previousCompletionSource?.ToString(), OrderCompletionSource.BuyerConfirmed.ToString());
+
+                var completeOrderAuditEvent = new AuditEvent
+                {
+                    Category = AuditCategory.BusinessOperation,
+                    Action = AuditActions.OrderComplete,
+                    Outcome = AuditOutcome.Success,
+                    ActorType = AuditActorType.User,
+                    UserId = buyerId,
+                    TargetType = AuditTargetTypes.Order,
+                    TargetId = order.OrderId,
+                    OldValues = completeOrderAuditDiff.OldValues,
+                    NewValues = completeOrderAuditDiff.NewValues,
+                    Metadata = new Dictionary<string, object?>
+                    {
+                        ["inspectionFormId"] = form.InspectionFormId,
+                        ["completionTrigger"] = InspectionCollectAction.CollectNow.ToString(),
+                        ["disputeWindowEndsAt"] = order.DisputeWindowEndsAt
+                    }
+                };
+
                 await _shipmentRepo.AddAsync(shipment, ct);
-
                 await _inspectionFormRepo.UpdateAsync(form, ct);
+                await _orderRepo.UpdateAsync(order, ct);
 
-                var collectNotification = await _notificationService.AddPendingAsync(
+                var notification = await _notificationService.AddPendingAsync(
                     new CreateNotificationCommand(
                         agreement.SellerId,
-                        "Người mua chọn nhận hàng",
-                        "Người mua đã chọn nhận sản phẩm ngay sau khi hoàn tất kiểm định.",
-                        NotificationTargetType.Appointment,
-                        inspection.AppointmentId),
+                        "Đơn hàng đã hoàn thành",
+                        "Người mua đã chọn nhận sản phẩm ngay sau kiểm định. Đơn hàng đã được xác nhận hoàn thành.",
+                        NotificationTargetType.Order,
+                        order.OrderId),
                     ct);
+
                 await _auditService.EnqueueAsync(collectNowAuditEvent, ct);
+                await _auditService.EnqueueAsync(completeOrderAuditEvent, ct);
 
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
-                await _notificationService.PublishCreatedSafelyAsync(collectNotification);
-                await _appointmentRealtimeService.PublishUpdatedSafelyAsync(
-                    inspection.AppointmentId,
-                    form.UpdatedAt);
 
-                await _orderTrackingRealtimeService.PublishByAgreementIdSafelyAsync(
-                    agreement.AgreementId,
-                    form.UpdatedAt);
+                await _notificationService.PublishCreatedSafelyAsync(notification);
+                await _appointmentRealtimeService.PublishUpdatedSafelyAsync(inspection.AppointmentId, form.UpdatedAt);
+                await _orderTrackingRealtimeService.PublishByOrderIdSafelyAsync(order.OrderId, order.UpdatedAt);
 
                 return Result<InspectionFormResponseDto>.Success(await BuildResponseAsync(form, buyerId, ct));
             }
@@ -1267,7 +1482,7 @@ namespace HomeCycle.Application.Services.Inspections
 
                 Revision = form.Revision,
                 InspectionStatus = status,
-
+                InspectionMode = (InspectionMode)form.InspectionMode,
                 InspectionTime = form.InspectionTime,
 
                 OperatingStatus = form.OperatingStatus.HasValue

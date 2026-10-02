@@ -357,6 +357,35 @@ namespace HomeCycle.Application.Services.Orders
             OrderDetailDto detail,
             bool isInspectionCollectNow)
         {
+            if (isInspectionCollectNow)
+            {
+                var collectNowCompleted = detail.BuyerReceivedConfirmedAt.HasValue;
+
+                return CreateStep(
+                    "handover",
+                    "Giao nhận sau kiểm định",
+                    collectNowCompleted
+                        ? "Người mua đã chọn nhận sản phẩm ngay sau kiểm định và giao nhận đã hoàn tất."
+                        : "Người mua đã chọn nhận sản phẩm ngay sau kiểm định.",
+                    collectNowCompleted
+                        ? OrderTimelineStepStatus.Completed
+                        : OrderTimelineStepStatus.InProgress,
+                    detail.BuyerReceivedConfirmedAt,
+                    new[]
+                    {
+                        CreateStep(
+                            "collect_now_received",
+                            "Nhận hàng ngay sau kiểm định",
+                            collectNowCompleted
+                                ? "Người mua đã xác nhận nhận sản phẩm thông qua thao tác nhận hàng ngay."
+                                : "Đang chờ hoàn tất việc nhận sản phẩm.",
+                            collectNowCompleted
+                                ? OrderTimelineStepStatus.Completed
+                                : OrderTimelineStepStatus.InProgress,
+                            detail.BuyerReceivedConfirmedAt)
+                    });
+            }
+
             var handoverCompleted =
                 detail.SellerHandoverConfirmedAt.HasValue;
 
@@ -365,8 +394,7 @@ namespace HomeCycle.Application.Services.Orders
 
             var handoverStatus = handoverCompleted
                 ? OrderTimelineStepStatus.Completed
-                : detail.Shipment?.SellerReadyAt.HasValue == true ||
-                  isInspectionCollectNow
+                : detail.Shipment?.SellerReadyAt.HasValue == true
                     ? OrderTimelineStepStatus.InProgress
                     : OrderTimelineStepStatus.Upcoming;
 
@@ -379,19 +407,16 @@ namespace HomeCycle.Application.Services.Orders
             var overallStatus = receivedCompleted
                 ? OrderTimelineStepStatus.Completed
                 : handoverCompleted ||
-                  detail.Shipment?.SellerReadyAt.HasValue == true ||
-                  isInspectionCollectNow
+                  detail.Shipment?.SellerReadyAt.HasValue == true
                     ? OrderTimelineStepStatus.InProgress
                     : OrderTimelineStepStatus.Upcoming;
 
-            var title = isInspectionCollectNow
-                ? "Giao nhận sau kiểm định"
-                : detail.DeliveryMethod switch
-                {
-                    DeliveryMethod.BuyerPickUp => "Người mua đến nhận hàng",
-                    DeliveryMethod.SellerDelivers => "Người bán giao hàng",
-                    _ => "Giao nhận sản phẩm"
-                };
+            var title = detail.DeliveryMethod switch
+            {
+                DeliveryMethod.BuyerPickUp => "Người mua đến nhận hàng",
+                DeliveryMethod.SellerDelivers => "Người bán giao hàng",
+                _ => "Giao nhận sản phẩm"
+            };
 
             return CreateStep(
                 "handover",
@@ -452,8 +477,9 @@ namespace HomeCycle.Application.Services.Orders
         {
             var status = detail.Dispute.LatestDisputeStatus switch
             {
-                DisputeStatus.Pending => OrderTimelineStepStatus.InProgress,
-                DisputeStatus.UnderReview => OrderTimelineStepStatus.InProgress,
+                DisputeStatus.AwaitingResponse or
+                DisputeStatus.Pending or
+                DisputeStatus.UnderReview or
                 DisputeStatus.AwaitingReturn => OrderTimelineStepStatus.InProgress,
                 DisputeStatus.Closed => OrderTimelineStepStatus.Cancelled,
                 _ => OrderTimelineStepStatus.Completed
@@ -461,9 +487,10 @@ namespace HomeCycle.Application.Services.Orders
 
             var description = detail.Dispute.LatestDisputeStatus switch
             {
-                DisputeStatus.Pending => "Tranh chấp đã được gửi và đang chờ moderator tiếp nhận.",
+                DisputeStatus.AwaitingResponse => "Tranh chấp đã được tạo và đang chờ bên còn lại phản hồi.",
+                DisputeStatus.Pending => "Tranh chấp đang chờ Moderator tiếp nhận.",
                 DisputeStatus.UnderReview => "Moderator đang xem xét tranh chấp.",
-                DisputeStatus.AwaitingReturn => "Moderator đã đưa ra kết luận và đang chờ xác nhận trả hàng.",
+                DisputeStatus.AwaitingReturn => "Tranh chấp đã có phương án giải quyết và đang chờ hoàn trả sản phẩm.",
                 DisputeStatus.Resolved => "Tranh chấp đã được giải quyết.",
                 DisputeStatus.Rejected => "Tranh chấp đã bị từ chối.",
                 DisputeStatus.Closed => "Tranh chấp đã được đóng.",
@@ -475,8 +502,7 @@ namespace HomeCycle.Application.Services.Orders
                 "Xử lý tranh chấp",
                 description,
                 status,
-                detail.Dispute.LatestDisputeResolvedAt ??
-                detail.Dispute.LatestDisputeCreatedAt);
+                detail.Dispute.LatestDisputeResolvedAt ?? detail.Dispute.LatestDisputeCreatedAt);
         }
 
         private static OrderTimelineStepDto BuildReturnStep(OrderDetailDto detail)
@@ -568,20 +594,13 @@ namespace HomeCycle.Application.Services.Orders
 
         private static DateTime? GetInspectionStartedAt(AppointmentSummaryDto appointment)
         {
-            var buyerCheckAt =
-                appointment.InspectionCheckIn?.BuyerCheckAt;
+            var buyerCheckAt = appointment.InspectionCheckIn?.BuyerCheckAt;
+            var sellerCheckAt = appointment.InspectionCheckIn?.SellerCheckAt;
 
-            var sellerCheckAt =
-                appointment.InspectionCheckIn?.SellerCheckAt;
+            if (!buyerCheckAt.HasValue || !sellerCheckAt.HasValue)
+                return null;
 
-            if (buyerCheckAt.HasValue && sellerCheckAt.HasValue)
-            {
-                return buyerCheckAt.Value <= sellerCheckAt.Value
-                    ? buyerCheckAt
-                    : sellerCheckAt;
-            }
-
-            return buyerCheckAt ?? sellerCheckAt;
+            return buyerCheckAt.Value >= sellerCheckAt.Value ? buyerCheckAt : sellerCheckAt;
         }
 
         private static string BuildAppointmentDescription(AppointmentSummaryDto appointment)

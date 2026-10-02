@@ -86,6 +86,26 @@ namespace HomeCycle.API.Controllers
             return Ok(result.Data);
         }
 
+
+        [HttpPost("{disputeId:guid}/response")]
+        [Consumes("multipart/form-data")]
+        public async Task<IActionResult> Respond(
+            Guid disputeId,
+            [FromForm] RespondDisputeRequest request,
+            CancellationToken cancellationToken)
+        {
+            var result = await _disputeService.RespondAsync(
+                disputeId,
+                CurrentUserId,
+                request,
+                cancellationToken);
+
+            if (!result.IsSuccess)
+                return BadRequest(result.Error);
+
+            return Ok(result.Data);
+        }
+
         private Guid CurrentUserId
         {
             get
