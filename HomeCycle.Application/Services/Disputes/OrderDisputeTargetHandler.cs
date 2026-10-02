@@ -5,10 +5,12 @@ using HomeCycle.Application.DTOs.Responses.Disputes;
 using HomeCycle.Application.Interfaces.Repositories.Agreements;
 using HomeCycle.Application.Interfaces.Repositories.Appointments;
 using HomeCycle.Application.Interfaces.Repositories.Disputes;
+using HomeCycle.Application.Interfaces.Repositories.GHN;
 using HomeCycle.Application.Interfaces.Repositories.Inspections;
 using HomeCycle.Application.Interfaces.Repositories.Orders;
 using HomeCycle.Application.Interfaces.Repositories.Shipments;
 using HomeCycle.Application.Interfaces.Services.Disputes;
+using HomeCycle.Application.Services.GHN;
 using HomeCycle.Domain.Entities;
 using HomeCycle.Domain.Enums;
 using System;
@@ -25,6 +27,7 @@ namespace HomeCycle.Application.Services.Disputes
         private readonly IOrderRepository _orderRepository;
         private readonly IAgreementFormRepository _agreementRepository;
         private readonly IShipmentRepository _shipmentRepository;
+        private readonly IGhnShipmentRepository _ghnShipmentRepository;
         private readonly IAppointmentRepository _appointmentRepository;
         private readonly IDisputeRepository _disputeRepository;
         private readonly IDisputeWindowPolicy _windowPolicy;
@@ -34,6 +37,7 @@ namespace HomeCycle.Application.Services.Disputes
             IOrderRepository orderRepository,
             IAgreementFormRepository agreementRepository,
             IShipmentRepository shipmentRepository,
+            IGhnShipmentRepository ghnShipmentRepository,
             IAppointmentRepository appointmentRepository,
             IDisputeRepository disputeRepository,
             IDisputeWindowPolicy windowPolicy)
@@ -41,6 +45,7 @@ namespace HomeCycle.Application.Services.Disputes
             _orderRepository = orderRepository;
             _agreementRepository = agreementRepository;
             _shipmentRepository = shipmentRepository;
+            _ghnShipmentRepository = ghnShipmentRepository;
             _appointmentRepository = appointmentRepository;
             _disputeRepository = disputeRepository;
             _windowPolicy = windowPolicy;
@@ -127,12 +132,19 @@ namespace HomeCycle.Application.Services.Disputes
                 inspectionNoShowEligible ||
                 directCollectionNoShowEligible;
 
-            var deliveryStarted =
-                shipment != null &&
-                (shipment.SellerReadyAt.HasValue ||
-                 shipment.PickedUpAt.HasValue ||
-                 (shipment.ShipmentStatus.HasValue &&
-                  shipment.ShipmentStatus != ShipmentStatus.ReadyToPick));
+            var ghnShipment = deliveryMethod == DeliveryMethod.GhnDelivery
+                ? await _ghnShipmentRepository.GetByOrderIdAsync(order.OrderId, cancellationToken)
+                : null;
+
+            // Đơn GHN chỉ được khiếu nại khi GHN đã bắt đầu giao (delivering) trở đi.
+            // Trước khi GHN lấy hàng thì hủy đơn; từ lúc lấy hàng tới trước khi giao thì chờ GHN.
+            var deliveryStarted = deliveryMethod == DeliveryMethod.GhnDelivery
+                ? GhnStatusMapper.HasStartedDelivery(ghnShipment?.GHNStatusCode)
+                : shipment != null &&
+                  (shipment.SellerReadyAt.HasValue ||
+                   shipment.PickedUpAt.HasValue ||
+                   (shipment.ShipmentStatus.HasValue &&
+                    shipment.ShipmentStatus != ShipmentStatus.ReadyToPick));
 
             if (orderStatus == OrderStatus.Processing)
             {
@@ -149,7 +161,8 @@ namespace HomeCycle.Application.Services.Disputes
             if (!OrderDisputeCategoryPolicy.IsAllowed(
                 categoryCode,
                 noShowEligible,
-                deliveryMethod))
+                deliveryMethod,
+                isBuyer))
             {
                 return Result<DisputeTargetCreateContext>.Fail(
                     DisputeErrors.InvalidCategory(categoryCode));

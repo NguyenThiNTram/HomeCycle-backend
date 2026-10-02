@@ -14,6 +14,7 @@ using HomeCycle.Application.Interfaces.Generics;
 using HomeCycle.Application.Interfaces.Repositories.Agreements;
 using HomeCycle.Application.Interfaces.Repositories.Appointments;
 using HomeCycle.Application.Interfaces.Repositories.Disputes;
+using HomeCycle.Application.Interfaces.Repositories.GHN;
 using HomeCycle.Application.Interfaces.Repositories.Inspections;
 using HomeCycle.Application.Interfaces.Repositories.Orders;
 using HomeCycle.Application.Interfaces.Repositories.Posts;
@@ -29,6 +30,7 @@ using HomeCycle.Application.Interfaces.Services.Payments;
 using HomeCycle.Application.Interfaces.Services.PlatformPolicies;
 using HomeCycle.Application.Interfaces.Services.Wallets;
 using HomeCycle.Application.Services.Disputes;
+using HomeCycle.Application.Services.GHN;
 using HomeCycle.Domain.Entities;
 using HomeCycle.Domain.Enums;
 using System;
@@ -66,6 +68,7 @@ namespace HomeCycle.Application.Services.Orders
         private readonly IGhnShipmentCreationService _ghnLifecycle;
         private readonly IAppointmentRealtimeService _appointmentRealtimeService;
         private readonly IFinanceRealtimeService _financeRealtimeService;
+        private readonly IGhnShipmentRepository _ghnShipmentRepo;
 
         public OrderService(
             IOrderRepository orderRepo,
@@ -90,7 +93,8 @@ namespace HomeCycle.Application.Services.Orders
             IMapper mapper,
             IGhnShipmentCreationService ghnLifecycle,
             IAppointmentRealtimeService appointmentRealtimeService,
-            IFinanceRealtimeService financeRealtimeService)
+            IFinanceRealtimeService financeRealtimeService,
+            IGhnShipmentRepository ghnShipmentRepo)
         {
             _orderRepo = orderRepo;
             _postRepo = postRepo;
@@ -115,6 +119,7 @@ namespace HomeCycle.Application.Services.Orders
             _ghnLifecycle = ghnLifecycle;
             _appointmentRealtimeService = appointmentRealtimeService;
             _financeRealtimeService = financeRealtimeService;
+            _ghnShipmentRepo = ghnShipmentRepo;
         }
 
         public async Task<Result<PagedResult<OrderListItemDto>>> GetMyOrdersAsync(
@@ -1001,10 +1006,14 @@ namespace HomeCycle.Application.Services.Orders
                         appointmentToCancel.LateThresholdAt.HasValue &&
                         now >= appointmentToCancel.LateThresholdAt.Value;
 
+                    var isGhnCollection = shipmentToCancel.DeliveryMethod == DeliveryMethod.GhnDelivery;
+
+                    // GHN: hủy được tới trước khi GHN lấy hàng (ready_to_pick/picking), kể cả khi người bán đã sẵn sàng.
+                    // Giao trực tiếp: chỉ hủy được trước khi người bán sẵn sàng.
                     var canCancelCollection =
                         appointmentToCancel.AppointmentStatus == (int)AppointmentStatus.Scheduled &&
                         shipmentToCancel.ShipmentStatus == ShipmentStatus.ReadyToPick &&
-                        !shipmentToCancel.SellerReadyAt.HasValue &&
+                        (isGhnCollection || !shipmentToCancel.SellerReadyAt.HasValue) &&
                         !shipmentToCancel.PickedUpAt.HasValue &&
                         !collectionOverdue;
 
@@ -1013,6 +1022,22 @@ namespace HomeCycle.Application.Services.Orders
                         await _unitOfWork.RollbackTransactionAsync(ct);
                         return Result<OrderCancellationResponseDto>.Fail(OrderErrors.CancellationNotAllowed);
                     }
+
+                    if (isGhnCollection)
+                    {
+                        // Hủy vận đơn GHN trước rồi mới hoàn tiền. GHN từ chối (đã lấy hàng) hoặc chưa rõ kết quả
+                        // (vận đơn đang được tạo) thì không hủy đơn, tránh hoàn tiền trong khi hàng vẫn được giao.
+                        var ghnCancelResult = await _ghnLifecycle.CancelForOrderAsync(order.OrderId, ct);
+
+                        if (!ghnCancelResult.IsSuccess)
+                        {
+                            await _unitOfWork.RollbackTransactionAsync(ct);
+                            return Result<OrderCancellationResponseDto>.Fail(
+                                ghnCancelResult.Error?.Code == "Ghn.CancellationRefused"
+                                    ? OrderErrors.GhnRefusedCancellation
+                                    : ghnCancelResult.Error!);
+                        }
+                    }
                 }
                 else
                 {
@@ -1020,7 +1045,8 @@ namespace HomeCycle.Application.Services.Orders
                     return Result<OrderCancellationResponseDto>.Fail(OrderErrors.CancellationNotAllowed);
                 }
 
-                var refundResult = await _paymentService.RefundAllRemainingOrderHeldAmountAsync(
+                // Hủy trước khi GHN lấy hàng: hoàn cả tiền hàng lẫn phí ship GHN (nếu có).
+                var refundResult = await _paymentService.RefundAllRemainingOrderHeldAmountWithShippingAsync(
                     order,
                     agreement,
                     ct);
@@ -1039,7 +1065,9 @@ namespace HomeCycle.Application.Services.Orders
 
                 var cancellationReason = agreement.AgreementType == (int)AgreementType.Inspection
                     ? "Transaction cancelled before inspection started."
-                    : "Transaction cancelled before seller confirmed readiness.";
+                    : shipmentToCancel?.DeliveryMethod == DeliveryMethod.GhnDelivery
+                        ? "Transaction cancelled before GHN picked up the parcel."
+                        : "Transaction cancelled before seller confirmed readiness.";
 
                 appointmentToCancel.AppointmentStatus = (int)AppointmentStatus.Cancelled;
                 appointmentToCancel.CancelledAt = now;
@@ -1133,23 +1161,37 @@ namespace HomeCycle.Application.Services.Orders
                         }
                         : null;
 
-                var cancelRecipientId = userId == agreement.BuyerId
+                var cancelledByBuyer = userId == agreement.BuyerId;
+                var cancelRecipientId = cancelledByBuyer
                     ? agreement.SellerId
                     : agreement.BuyerId;
 
-                var isGhnDelivery = shipmentToCancel?.DeliveryMethod == DeliveryMethod.GhnDelivery;
-                var notificationMessage = isGhnDelivery
-                    ? "Đơn hàng đã bị hủy. Khoản tiền hàng nền tảng đang tạm giữ đã được hoàn lại; phí vận chuyển GHN không được hoàn."
-                    : "Đơn hàng đã bị hủy. Khoản tiền nền tảng đang tạm giữ đã được hoàn lại.";
+                // Thông tin tiền hoàn chỉ gửi cho người mua (người nhận tiền), dù ai bấm hủy.
+                var refundMessage = refundedAmount > AmountEpsilon
+                    ? $" Khoản tiền {refundedAmount:N0}đ (gồm tiền hàng và phí vận chuyển nếu có) đã được hoàn về ví của bạn."
+                    : string.Empty;
 
                 var cancellationNotification = await _notificationService.AddPendingAsync(
                     new CreateNotificationCommand(
                         cancelRecipientId,
                         "Đơn hàng đã bị hủy",
-                        notificationMessage,
+                        cancelledByBuyer
+                            ? "Người mua đã hủy đơn hàng."
+                            : "Người bán đã hủy đơn hàng." + refundMessage,
                         NotificationTargetType.Order,
                         order.OrderId),
                     ct);
+
+                var buyerRefundNotification = cancelledByBuyer && refundedAmount > AmountEpsilon
+                    ? await _notificationService.AddPendingAsync(
+                        new CreateNotificationCommand(
+                            agreement.BuyerId,
+                            "Đã hoàn tiền đơn hàng",
+                            "Bạn đã hủy đơn hàng." + refundMessage,
+                            NotificationTargetType.Order,
+                            order.OrderId),
+                        ct)
+                    : null;
 
                 await _auditService.EnqueueAsync(cancelOrderAuditEvent, ct);
                 await _unitOfWork.SaveChangesAsync(ct);
@@ -1158,6 +1200,8 @@ namespace HomeCycle.Application.Services.Orders
                 if (financeChange != null)
                     await _financeRealtimeService.PublishUpdatedSafelyAsync(financeChange);
                 await _notificationService.PublishCreatedSafelyAsync(cancellationNotification);
+                if (buyerRefundNotification != null)
+                    await _notificationService.PublishCreatedSafelyAsync(buyerRefundNotification);
                 await _orderTrackingRealtimeService.PublishByOrderIdSafelyAsync(order.OrderId, order.UpdatedAt);
                 if (appointmentToCancel != null)
                 {
@@ -1165,9 +1209,6 @@ namespace HomeCycle.Application.Services.Orders
                         appointmentToCancel.AppointmentId,
                         appointmentToCancel.UpdatedAt);
                 }
-
-                if (isGhnDelivery)
-                    await _ghnLifecycle.CancelForOrderSafelyAsync(order.OrderId, CancellationToken.None);
 
                 return Result<OrderCancellationResponseDto>.Success(new OrderCancellationResponseDto
                 {
@@ -1908,12 +1949,18 @@ namespace HomeCycle.Application.Services.Orders
                 inspectionNoShowEligible ||
                 directCollectionNoShowEligible;
 
-            var deliveryStarted =
-                shipment != null &&
-                (shipment.SellerReadyAt.HasValue ||
-                 shipment.PickedUpAt.HasValue ||
-                 (shipment.ShipmentStatus.HasValue &&
-                  shipment.ShipmentStatus != ShipmentStatus.ReadyToPick));
+            // Cùng điều kiện với OrderDisputeTargetHandler: đơn GHN chỉ khiếu nại được từ khi GHN bắt đầu giao.
+            var ghnShipment = shipment?.DeliveryMethod == DeliveryMethod.GhnDelivery
+                ? await _ghnShipmentRepo.GetByOrderIdAsync(detail.OrderId, ct)
+                : null;
+
+            var deliveryStarted = shipment?.DeliveryMethod == DeliveryMethod.GhnDelivery
+                ? GhnStatusMapper.HasStartedDelivery(ghnShipment?.GHNStatusCode)
+                : shipment != null &&
+                  (shipment.SellerReadyAt.HasValue ||
+                   shipment.PickedUpAt.HasValue ||
+                   (shipment.ShipmentStatus.HasValue &&
+                    shipment.ShipmentStatus != ShipmentStatus.ReadyToPick));
 
             var collectionConfirmationOpen =
                 latestCollection?.ScheduledAt.HasValue == true &&
@@ -2029,11 +2076,12 @@ namespace HomeCycle.Application.Services.Orders
                 latestInspection.InspectionCheckIn?.SellerCheckAt == null &&
                 !inspectionNoShowEligible;
 
+            // Cùng điều kiện với CancelOrderAsync: đơn GHN hủy được tới trước khi GHN lấy hàng.
             var canCancelCollection =
                 agreement.AgreementType == (int)AgreementType.No_Inspection &&
                 latestCollection?.AppointmentStatus == AppointmentStatus.Scheduled &&
                 shipment?.ShipmentStatus == ShipmentStatus.ReadyToPick &&
-                !shipment.SellerReadyAt.HasValue &&
+                (shipment.DeliveryMethod == DeliveryMethod.GhnDelivery || !shipment.SellerReadyAt.HasValue) &&
                 !shipment.PickedUpAt.HasValue &&
                 !directCollectionNoShowEligible;
 
@@ -2061,7 +2109,7 @@ namespace HomeCycle.Application.Services.Orders
 
             var allowedDisputeCategories =
                 canDispute
-                    ? await BuildAllowedDisputeCategoriesAsync(detail, noShowEligible, ct)
+                    ? await BuildAllowedDisputeCategoriesAsync(detail, noShowEligible, isBuyer, ct)
                     : Array.Empty<DisputeCategoryOptionDto>();
 
             return new OrderActionDto
@@ -2081,6 +2129,7 @@ namespace HomeCycle.Application.Services.Orders
         private async Task<IReadOnlyList<DisputeCategoryOptionDto>> BuildAllowedDisputeCategoriesAsync(
             OrderDetailDto detail,
             bool noShowEligible,
+            bool isBuyer,
             CancellationToken ct)
         {
             var categories =
@@ -2094,7 +2143,8 @@ namespace HomeCycle.Application.Services.Orders
                     OrderDisputeCategoryPolicy.IsAllowed(
                         x.Code,
                         noShowEligible,
-                        detail.DeliveryMethod))
+                        detail.DeliveryMethod,
+                        isBuyer))
                 .Select(x =>
                     _mapper.Map<DisputeCategoryOptionDto>(x))
                 .ToArray();

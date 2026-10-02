@@ -2083,6 +2083,14 @@ namespace HomeCycle.Application.Services.Payments
             return RefundOrderHeldAmountCoreAsync(order, agreement, null, ct);
         }
 
+        public Task<Result<decimal>> RefundAllRemainingOrderHeldAmountWithShippingAsync(
+            order order,
+            agreement_form agreement,
+            CancellationToken ct = default)
+        {
+            return RefundOrderHeldAmountCoreAsync(order, agreement, null, ct, includeShippingFee: true);
+        }
+
         public async Task<Result<decimal>> ReleaseCompletedOrderHeldAmountAsync(Guid orderId, CancellationToken ct = default)
         {
             await _unitOfWork.BeginTransactionAsync(ct);
@@ -3366,7 +3374,8 @@ namespace HomeCycle.Application.Services.Payments
             order order,
             agreement_form agreement,
             decimal? requestedAmount,
-            CancellationToken ct)
+            CancellationToken ct,
+            bool includeShippingFee = false)
         {
             var currentOrderPaid = order.AmountPaid ?? 0;
             if (currentOrderPaid <= AmountEpsilon)
@@ -3384,6 +3393,12 @@ namespace HomeCycle.Application.Services.Payments
                 : PaymentStatus.Completed;
 
             var orderEscrowWallet = await _walletRepo.GetSystemWalletForUpdateAsync(SystemWalletPurpose.Order_Escrow, ct);
+
+            // Khóa Shipping_Escrow trước ví người mua, cùng thứ tự với lúc thanh toán.
+            var shippingEscrowWallet = includeShippingFee
+                ? await _walletRepo.GetSystemWalletForUpdateAsync(SystemWalletPurpose.Shipping_Escrow, ct)
+                : null;
+
             var buyerWallet = await _walletRepo.GetUserWalletForUpdateAsync(agreement.BuyerId, ct);
 
             if (orderEscrowWallet == null || buyerWallet == null)
@@ -3391,6 +3406,12 @@ namespace HomeCycle.Application.Services.Payments
 
             var orderHeldAmount = await _ledgerRepo.GetNetOrderHeldAmountAsync(
                 orderEscrowWallet.WalletId, order.OrderId, BalanceType.Available, ct);
+
+            // Phí ship GHN của đơn đang nằm ở Shipping_Escrow (chỉ đơn GHN mới có).
+            var shippingHeldAmount = shippingEscrowWallet == null
+                ? 0
+                : await _ledgerRepo.GetNetOrderHeldAmountAsync(
+                    shippingEscrowWallet.WalletId, order.OrderId, BalanceType.Available, ct);
 
             if (orderHeldAmount <= AmountEpsilon)
                 return Result<decimal>.Fail(PaymentErrors.OrderHeldAmountNotFound);
@@ -3461,7 +3482,76 @@ namespace HomeCycle.Application.Services.Payments
             buyerWallet.AvailableBalance += amount;
             buyerWallet.UpdatedAt = now;
 
-            var isFullRefund = amount >= currentOrderPaid - AmountEpsilon;
+            // Hoàn phí ship GHN từ Shipping_Escrow, dùng chung buyerWallet ở trên để số dư không bị ghi đè.
+            var shippingRefundAmount = 0m;
+            wallet_transaction? shippingTransaction = null;
+            wallet_ledger? shippingEscrowLedger = null;
+            wallet_ledger? buyerShippingLedger = null;
+
+            if (shippingEscrowWallet != null && shippingHeldAmount > AmountEpsilon)
+            {
+                if (amount + shippingHeldAmount > currentOrderPaid + AmountEpsilon)
+                    return Result<decimal>.Fail(PaymentErrors.InvalidRefundAmount);
+
+                if (shippingEscrowWallet.AvailableBalance + AmountEpsilon < shippingHeldAmount)
+                    return Result<decimal>.Fail(PaymentErrors.InsufficientHeldBalance);
+
+                shippingRefundAmount = shippingHeldAmount;
+                var shippingTransactionId = Guid.NewGuid();
+
+                shippingTransaction = new wallet_transaction
+                {
+                    WalletTransactionId = shippingTransactionId,
+                    FromWalletId = shippingEscrowWallet.WalletId,
+                    ToWalletId = buyerWallet.WalletId,
+                    PaymentId = payment.PaymentId,
+                    ReferenceId = order.OrderId,
+                    ReferenceType = (int)ReferenceType.Order,
+                    TransactionType = (int)TransactionType.Order_Refund,
+                    Amount = shippingRefundAmount,
+                    WalletTransactionStatus = (int)WalletTransactionStatus.Completed,
+                    CreatedAt = now
+                };
+
+                shippingEscrowLedger = new wallet_ledger
+                {
+                    LedgerId = Guid.NewGuid(),
+                    WalletTransactionId = shippingTransactionId,
+                    WalletId = shippingEscrowWallet.WalletId,
+                    Direction = (int)LedgerDirection.Out,
+                    BalanceType = (int)BalanceType.Available,
+                    Amount = shippingRefundAmount,
+                    BalanceBefore = shippingEscrowWallet.AvailableBalance,
+                    BalanceAfter = shippingEscrowWallet.AvailableBalance - shippingRefundAmount,
+                    ReferenceType = (int)ReferenceType.Order,
+                    ReferenceId = order.OrderId,
+                    Description = $"Hoàn phí ship GHN - Đơn {order.OrderCode} - {order.ProductName}",
+                    CreatedAt = now
+                };
+
+                buyerShippingLedger = new wallet_ledger
+                {
+                    LedgerId = Guid.NewGuid(),
+                    WalletTransactionId = shippingTransactionId,
+                    WalletId = buyerWallet.WalletId,
+                    Direction = (int)LedgerDirection.In,
+                    BalanceType = (int)BalanceType.Available,
+                    Amount = shippingRefundAmount,
+                    BalanceBefore = buyerWallet.AvailableBalance,
+                    BalanceAfter = buyerWallet.AvailableBalance + shippingRefundAmount,
+                    ReferenceType = (int)ReferenceType.Order,
+                    ReferenceId = order.OrderId,
+                    Description = $"Nhận hoàn phí ship GHN - Đơn {order.OrderCode} - {order.ProductName}",
+                    CreatedAt = now
+                };
+
+                shippingEscrowWallet.AvailableBalance -= shippingRefundAmount;
+                shippingEscrowWallet.UpdatedAt = now;
+                buyerWallet.AvailableBalance += shippingRefundAmount;
+            }
+
+            var totalRefundAmount = amount + shippingRefundAmount;
+            var isFullRefund = totalRefundAmount >= currentOrderPaid - AmountEpsilon;
             payment.PaymentStatus = isFullRefund
                 ? (int)PaymentStatus.Refunded
                 : (int)PaymentStatus.PartiallyRefunded;
@@ -3471,6 +3561,15 @@ namespace HomeCycle.Application.Services.Payments
             await _walletTxRepo.AddAsync(walletTransaction, ct);
             await _ledgerRepo.AddAsync(escrowLedger, ct);
             await _ledgerRepo.AddAsync(buyerLedger, ct);
+
+            if (shippingTransaction != null)
+            {
+                await _walletRepo.UpdateAsync(shippingEscrowWallet!, ct);
+                await _walletTxRepo.AddAsync(shippingTransaction, ct);
+                await _ledgerRepo.AddAsync(shippingEscrowLedger!, ct);
+                await _ledgerRepo.AddAsync(buyerShippingLedger!, ct);
+            }
+
             await _paymentRepo.UpdateAsync(payment, ct);
 
             var refundAuditDiff = new AuditDiffBuilder()
@@ -3489,15 +3588,17 @@ namespace HomeCycle.Application.Services.Payments
                 {
                     ["orderId"] = order.OrderId,
                     ["amount"] = amount,
+                    ["shippingRefundAmount"] = shippingRefundAmount,
                     ["fullRefund"] = isFullRefund,
                     ["fromWalletId"] = orderEscrowWallet.WalletId,
                     ["toWalletId"] = buyerWallet.WalletId,
-                    ["walletTransactionId"] = walletTransactionId
+                    ["walletTransactionId"] = walletTransactionId,
+                    ["shippingWalletTransactionId"] = shippingTransaction?.WalletTransactionId
                 }
             };
 
             await _auditService.EnqueueAsync(paymentRefundAuditEvent, ct);
-            return Result<decimal>.Success(amount);
+            return Result<decimal>.Success(totalRefundAmount);
         }
 
         private async Task ExecuteSuccessfulPaymentCoreAsync(string payOsOrderCode, string payOsTransactionId, AuditSource auditSource, CancellationToken ct, decimal? confirmedAmount = null)
