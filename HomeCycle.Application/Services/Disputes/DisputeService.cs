@@ -1186,6 +1186,14 @@ if (dispute.TargetUserId.HasValue &&
                 foreach (var notification in claimNotifications)
                     await _notificationService.PublishCreatedSafelyAsync(notification);
 
+                // Khiếu nại chuyển sang UnderReview làm đổi trạng thái khiếu nại trên màn đơn hàng.
+                if (dispute.OrderId.HasValue)
+                {
+                    await _orderTrackingRealtimeService.PublishByOrderIdSafelyAsync(
+                        dispute.OrderId.Value,
+                        now);
+                }
+
                 return Result<ClaimDisputeResponse>.Success(new ClaimDisputeResponse
                 {
                     DisputeId = dispute.DisputeId,
