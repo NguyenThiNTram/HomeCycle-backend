@@ -1,15 +1,11 @@
-using AutoMapper;
 using HomeCycle.Application.Commons.Errors;
 using HomeCycle.Application.Commons.Results;
 using HomeCycle.Application.DTOs.Requests.Carts;
 using HomeCycle.Application.DTOs.Responses.Carts;
-using HomeCycle.Application.DTOs.Responses.Media;
-using HomeCycle.Application.DTOs.Responses.Posts;
 using HomeCycle.Application.Interfaces.Generics;
 using HomeCycle.Application.Interfaces.Repositories.Carts;
 using HomeCycle.Application.Interfaces.Repositories.Posts;
 using HomeCycle.Application.Interfaces.Services.Carts;
-using HomeCycle.Application.Interfaces.Services.Posts;
 using HomeCycle.Domain.Entities;
 using HomeCycle.Domain.Enums;
 using System;
@@ -22,61 +18,33 @@ namespace HomeCycle.Application.Services.Carts
 {
     public class CartService : ICartService
     {
-        private const string PostMediaTargetType = "Post";
-
         private readonly ICartItemRepository _cartItemRepository;
         private readonly IPostRepository _postRepository;
-        private readonly IMediaService _mediaService;
         private readonly IUnitOfWork _unitOfWork;
-        private readonly IMapper _mapper;
         private readonly ICartRealtimeService _cartRealtimeService;
+        private readonly CartReadModelBuilder _cartReadModelBuilder;
 
         public CartService(
             ICartItemRepository cartItemRepository,
             IPostRepository postRepository,
-            IMediaService mediaService,
             IUnitOfWork unitOfWork,
-            IMapper mapper,
-            ICartRealtimeService cartRealtimeService)
+            ICartRealtimeService cartRealtimeService,
+            CartReadModelBuilder cartReadModelBuilder)
         {
             _cartItemRepository = cartItemRepository;
             _postRepository = postRepository;
-            _mediaService = mediaService;
             _unitOfWork = unitOfWork;
-            _mapper = mapper;
             _cartRealtimeService = cartRealtimeService;
+            _cartReadModelBuilder = cartReadModelBuilder;
         }
 
         // ================== GET ==================
 
-        public async Task<Result<CartResponse>> GetAsync(
+        public Task<Result<CartResponse>> GetAsync(
             Guid userId,
             CancellationToken cancellationToken = default)
         {
-            var items = await _cartItemRepository.GetByUserAsync(userId, cancellationToken);
-            await _postRepository.ApplyPriorityAsync(
-                items.Where(x => x.Post != null).Select(x => x.Post!).ToList(), cancellationToken);
-
-            var postIds = items.Select(x => x.PostId).Distinct().ToArray();
-
-            var mediaResult = await _mediaService.GetByTargetsAsync(
-                postIds, PostMediaTargetType, cancellationToken);
-
-            if (!mediaResult.IsSuccess || mediaResult.Data is null)
-                return Result<CartResponse>.Fail(mediaResult.Error!);
-
-            var responseItems = items
-                .Select(x => MapToResponse(x, mediaResult.Data))
-                .ToList();
-
-            var response = new CartResponse
-            {
-                Items = responseItems,
-                TotalQuantity = responseItems.Sum(x => x.Quantity),
-                TotalPrice = responseItems.Sum(x => (x.Post.BasePrice ?? 0) * x.Quantity)
-            };
-
-            return Result<CartResponse>.Success(response);
+            return _cartReadModelBuilder.BuildAsync(userId, cancellationToken);
         }
 
         // ================== ADD ==================
@@ -127,13 +95,13 @@ namespace HomeCycle.Application.Services.Carts
             if (created.Post != null)
                 await _postRepository.ApplyPriorityAsync(new[] { created.Post }, cancellationToken);
 
-            var mediaResult = await _mediaService.GetByTargetsAsync(
-                new[] { postId }, PostMediaTargetType, cancellationToken);
+            var mediaResult = await _cartReadModelBuilder.GetPostMediasAsync(
+                new[] { postId }, cancellationToken);
 
             if (!mediaResult.IsSuccess || mediaResult.Data is null)
                 return Result<CartItemResponse>.Fail(mediaResult.Error!);
 
-            return Result<CartItemResponse>.Success(MapToResponse(created, mediaResult.Data));
+            return Result<CartItemResponse>.Success(_cartReadModelBuilder.MapItem(created, mediaResult.Data));
         }
 
         // ================== REMOVE ==================
@@ -154,27 +122,6 @@ namespace HomeCycle.Application.Services.Carts
             await _unitOfWork.SaveChangesAsync(cancellationToken);
             await _cartRealtimeService.PublishUpdatedSafelyAsync(userId, DateTime.UtcNow);
             return Result<bool>.Success(true);
-        }
-
-        // ================== PRIVATE HELPERS ==================
-
-        private CartItemResponse MapToResponse(
-            cart_item item,
-            IReadOnlyDictionary<Guid, IReadOnlyList<MediaResponse>> mediaByPost)
-        {
-            var postResponse = _mapper.Map<PostResponse>(item.Post);
-            postResponse.Medias = mediaByPost.TryGetValue(item.PostId, out var medias)
-                ? medias
-                : Array.Empty<MediaResponse>();
-
-            return new CartItemResponse
-            {
-                CartItemId = item.CartItemId,
-                PostId = item.PostId,
-                Quantity = item.Quantity,
-                AddedAt = item.CreatedAt,
-                Post = postResponse
-            };
         }
     }
 }
