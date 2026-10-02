@@ -2512,6 +2512,20 @@ if (dispute.TargetUserId.HasValue &&
             return !BuyerHasItem(order, shipment) && IsGhnParcelInTransit(shipment);
         }
 
+        private async Task<bool> IsShippingFeeRefundCategoryAsync(
+            dispute dispute,
+            CancellationToken cancellationToken)
+        {
+            if (!dispute.DisputeCategory.HasValue)
+                return false;
+
+            var category = await _disputeCategoryRepository.GetByIdAsync(
+                dispute.DisputeCategory.Value,
+                cancellationToken);
+
+            return OrderDisputeCategoryPolicy.RefundsShippingFee(category?.Code);
+        }
+
         private async Task<bool> IsAcceptedInspectionReturnBlockedAsync(
             dispute dispute,
             Guid orderId,
@@ -2599,10 +2613,20 @@ if (dispute.TargetUserId.HasValue &&
             }
             else if (!buyerHasItem)
             {
-                var refundResult = await _paymentService.RefundAllRemainingOrderHeldAmountAsync(
-                    order,
-                    agreement,
-                    cancellationToken);
+                // Sự cố GHN do lỗi vận chuyển (mất hàng, shipper tự ý hủy/hoàn) mà người mua thắng thì hoàn thêm phí ship.
+                var refundShippingFee =
+                    outcome == DisputeResolutionOutcome.BuyerFavored &&
+                    await IsShippingFeeRefundCategoryAsync(dispute, cancellationToken);
+
+                var refundResult = refundShippingFee
+                    ? await _paymentService.RefundAllRemainingOrderHeldAmountWithShippingAsync(
+                        order,
+                        agreement,
+                        cancellationToken)
+                    : await _paymentService.RefundAllRemainingOrderHeldAmountAsync(
+                        order,
+                        agreement,
+                        cancellationToken);
 
                 if (!refundResult.IsSuccess)
                     return Result<OrderResolutionExecution>.Fail(refundResult.Error!);
