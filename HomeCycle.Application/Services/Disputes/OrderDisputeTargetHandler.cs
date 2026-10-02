@@ -161,7 +161,8 @@ namespace HomeCycle.Application.Services.Disputes
             if (!OrderDisputeCategoryPolicy.IsAllowed(
                 categoryCode,
                 noShowEligible,
-                deliveryMethod))
+                deliveryMethod,
+                isBuyer))
             {
                 return Result<DisputeTargetCreateContext>.Fail(
                     DisputeErrors.InvalidCategory(categoryCode));

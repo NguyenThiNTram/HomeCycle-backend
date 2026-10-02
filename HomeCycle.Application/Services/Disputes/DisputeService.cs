@@ -567,14 +567,22 @@ namespace HomeCycle.Application.Services.Disputes
                         cancellationToken)
                     : (DisputeOrigin.UserReported, (Guid?)null);
 
-                var initialStatus = isOrderDispute
-                    ? DisputeStatus.AwaitingResponse
-                    : DisputeStatus.Pending;
+                // Sự cố vận chuyển GHN không phải lỗi của bên bị khiếu nại nên gửi thẳng cho kiểm duyệt viên,
+                // bỏ qua bước hai bên tự xử lý.
+                var isGhnCarrierDispute =
+                    isOrderDispute &&
+                    OrderDisputeCategoryPolicy.IsGhnCarrierCategory(category.Code);
+
+                var sendsDirectlyToModerator = !isOrderDispute || isGhnCarrierDispute;
+
+                var initialStatus = sendsDirectlyToModerator
+                    ? DisputeStatus.Pending
+                    : DisputeStatus.AwaitingResponse;
 
                 int? responseWindowHours = null;
                 DateTime? responseDeadlineAt = null;
 
-                if (isOrderDispute)
+                if (!sendsDirectlyToModerator)
                 {
                     var orderDisputePolicy =
                         await _platformPolicyProvider.GetDisputeConfigAsync(
@@ -607,7 +615,8 @@ namespace HomeCycle.Application.Services.Disputes
                     DisputeStatus = (int)initialStatus,
 
                     ResponseDeadlineAt = responseDeadlineAt,
-                    EscalatedAt = null,
+                    // Khiếu nại đơn hàng chỉ được kiểm duyệt viên nhận khi đã có EscalatedAt.
+                    EscalatedAt = isGhnCarrierDispute ? now : null,
                     ModeratorClaimedAt = null,
 
                     ModeratorNote = null,
@@ -669,9 +678,11 @@ namespace HomeCycle.Application.Services.Disputes
                 if (dispute.TargetUserId.HasValue &&
                     dispute.TargetUserId.Value != dispute.SenderId)
                 {
-                    var notificationMessage = isOrderDispute
-                        ? $"Một tranh chấp liên quan đến đơn hàng vừa được tạo. Bạn có {responseWindowHours!.Value} giờ để chấp nhận hoặc phản hồi."
-                        : "Một tranh chấp liên quan đến bạn vừa được tạo. Vui lòng kiểm tra thông tin.";
+                    var notificationMessage = isGhnCarrierDispute
+                        ? "Một tranh chấp về sự cố vận chuyển GHN của đơn hàng vừa được tạo và đã chuyển cho kiểm duyệt viên xử lý."
+                        : isOrderDispute
+                            ? $"Một tranh chấp liên quan đến đơn hàng vừa được tạo. Bạn có {responseWindowHours!.Value} giờ để chấp nhận hoặc phản hồi."
+                            : "Một tranh chấp liên quan đến bạn vừa được tạo. Vui lòng kiểm tra thông tin.";
 
                     disputeNotification =
                         await _notificationService.AddPendingAsync(
@@ -687,7 +698,7 @@ namespace HomeCycle.Application.Services.Disputes
                 var moderatorNotifications =
                     new List<notification>();
 
-                if (!isOrderDispute)
+                if (sendsDirectlyToModerator)
                 {
                     var createdModeratorNotifications =
                         await _notificationService.AddPendingForActiveModeratorsAsync(

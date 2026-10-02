@@ -2109,7 +2109,7 @@ namespace HomeCycle.Application.Services.Orders
 
             var allowedDisputeCategories =
                 canDispute
-                    ? await BuildAllowedDisputeCategoriesAsync(detail, noShowEligible, ct)
+                    ? await BuildAllowedDisputeCategoriesAsync(detail, noShowEligible, isBuyer, ct)
                     : Array.Empty<DisputeCategoryOptionDto>();
 
             return new OrderActionDto
@@ -2129,6 +2129,7 @@ namespace HomeCycle.Application.Services.Orders
         private async Task<IReadOnlyList<DisputeCategoryOptionDto>> BuildAllowedDisputeCategoriesAsync(
             OrderDetailDto detail,
             bool noShowEligible,
+            bool isBuyer,
             CancellationToken ct)
         {
             var categories =
@@ -2142,7 +2143,8 @@ namespace HomeCycle.Application.Services.Orders
                     OrderDisputeCategoryPolicy.IsAllowed(
                         x.Code,
                         noShowEligible,
-                        detail.DeliveryMethod))
+                        detail.DeliveryMethod,
+                        isBuyer))
                 .Select(x =>
                     _mapper.Map<DisputeCategoryOptionDto>(x))
                 .ToArray();
