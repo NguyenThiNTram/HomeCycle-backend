@@ -25,7 +25,6 @@ public class dispute
     public string? Description { get; set; }
     public int? DisputeStatus { get; set; }
 
-    public int? ProposedResolutionOutcome { get; set; }
     public int? ResolutionOutcome { get; set; }
     public int? ResolutionSource { get; set; }
 

@@ -2089,22 +2089,12 @@ namespace HomeCycle.Application.Services.Orders
                         DisputeTargetType.Order,
                         ct);
 
-            var latestInspectionForm =
-                await _inspectionFormRepo.GetLatestByOrderIdAsync(
-                    detail.OrderId,
-                    ct);
-
-            var hasAcceptedInspection =
-                latestInspectionForm?.InspectionStatus ==
-                (int)InspectionStatus.Accepted;
-
             return categories
                 .Where(x =>
                     OrderDisputeCategoryPolicy.IsAllowed(
                         x.Code,
                         noShowEligible,
-                        detail.DeliveryMethod,
-                        hasAcceptedInspection))
+                        detail.DeliveryMethod))
                 .Select(x =>
                     _mapper.Map<DisputeCategoryOptionDto>(x))
                 .ToArray();

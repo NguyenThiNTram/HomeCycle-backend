@@ -9,7 +9,7 @@ namespace HomeCycle.Application.Services.Disputes
 {
     public static class OrderDisputeCategoryPolicy
     {
-        public static bool IsAllowed(string code, bool noShowEligible, DeliveryMethod? deliveryMethod, bool hasAcceptedInspection)
+        public static bool IsAllowed(string code, bool noShowEligible, DeliveryMethod? deliveryMethod)
         {
             var normalizedCode = code.Trim().ToUpperInvariant();
 
@@ -17,7 +17,6 @@ namespace HomeCycle.Application.Services.Disputes
             {
                 "NO_SHOW" => noShowEligible,
 
-                "ITEM_MISMATCH" => !hasAcceptedInspection,
 
                 "SELLER_NOT_SHIPPED" or
                 "DAMAGED_OR_LOST" or

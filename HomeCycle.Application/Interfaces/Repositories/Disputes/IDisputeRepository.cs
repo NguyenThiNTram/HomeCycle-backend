@@ -60,7 +60,7 @@ namespace HomeCycle.Application.Interfaces.Repositories.Disputes
             int limit,
             CancellationToken ct = default);
 
-        Task<IReadOnlyList<Guid>> GetRecoverableSystemNoShowCandidateIdsAsync(
+        Task<IReadOnlyList<Guid>> GetSystemNoShowMaintenanceCandidateIdsAsync(
             int limit,
             CancellationToken ct = default);
     }

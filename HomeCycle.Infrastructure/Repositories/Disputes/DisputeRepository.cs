@@ -241,9 +241,7 @@ namespace HomeCycle.Infrastructure.Repositories.Disputes
         }
 
 
-        public async Task<IReadOnlyList<Guid>> GetRecoverableSystemNoShowCandidateIdsAsync(
-            int limit,
-            CancellationToken ct = default)
+        public async Task<IReadOnlyList<Guid>> GetSystemNoShowMaintenanceCandidateIdsAsync(int limit, CancellationToken ct = default)
         {
             return await _db.Disputes
                 .AsNoTracking()
@@ -256,8 +254,25 @@ namespace HomeCycle.Infrastructure.Repositories.Disputes
                         (
                             x.Origin == (int)DisputeOrigin.InspectionNoShow &&
                             x.Appointment != null &&
-                            x.Appointment.BuyerCheckAt.HasValue &&
-                            x.Appointment.SellerCheckAt.HasValue
+                            (
+                                (
+                                    x.Appointment.BuyerCheckAt.HasValue &&
+                                    x.Appointment.SellerCheckAt.HasValue
+                                ) ||
+                                (
+                                    x.TargetUserId == null &&
+                                    (
+                                        (
+                                            x.Appointment.BuyerCheckAt.HasValue &&
+                                            !x.Appointment.SellerCheckAt.HasValue
+                                        ) ||
+                                        (
+                                            !x.Appointment.BuyerCheckAt.HasValue &&
+                                            x.Appointment.SellerCheckAt.HasValue
+                                        )
+                                    )
+                                )
+                            )
                         ) ||
                         (
                             x.Origin == (int)DisputeOrigin.CollectionNoShow &&

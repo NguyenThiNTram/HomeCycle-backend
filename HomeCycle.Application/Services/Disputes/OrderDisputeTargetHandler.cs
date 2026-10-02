@@ -28,7 +28,6 @@ namespace HomeCycle.Application.Services.Disputes
         private readonly IAppointmentRepository _appointmentRepository;
         private readonly IDisputeRepository _disputeRepository;
         private readonly IDisputeWindowPolicy _windowPolicy;
-        private readonly IInspectionFormRepository _inspectionFormRepository;
         public DisputeTargetType TargetType => DisputeTargetType.Order;
 
         public OrderDisputeTargetHandler(
@@ -37,8 +36,7 @@ namespace HomeCycle.Application.Services.Disputes
             IShipmentRepository shipmentRepository,
             IAppointmentRepository appointmentRepository,
             IDisputeRepository disputeRepository,
-            IDisputeWindowPolicy windowPolicy,
-            IInspectionFormRepository inspectionFormRepository)
+            IDisputeWindowPolicy windowPolicy)
         {
             _orderRepository = orderRepository;
             _agreementRepository = agreementRepository;
@@ -46,7 +44,6 @@ namespace HomeCycle.Application.Services.Disputes
             _appointmentRepository = appointmentRepository;
             _disputeRepository = disputeRepository;
             _windowPolicy = windowPolicy;
-            _inspectionFormRepository = inspectionFormRepository;
         }
 
         public async Task<Result<DisputeTargetCreateContext>> PrepareCreateAsync(
@@ -148,18 +145,11 @@ namespace HomeCycle.Application.Services.Disputes
                     return Result<DisputeTargetCreateContext>.Fail(OrderErrors.InvalidStatus);
             }
 
-            var latestInspectionForm = await _inspectionFormRepository.GetLatestByOrderIdAsync(
-                order.OrderId,
-                cancellationToken);
-
-            var hasAcceptedInspection =
-                latestInspectionForm?.InspectionStatus == (int)InspectionStatus.Accepted;
 
             if (!OrderDisputeCategoryPolicy.IsAllowed(
                 categoryCode,
                 noShowEligible,
-                deliveryMethod,
-                hasAcceptedInspection))
+                deliveryMethod))
             {
                 return Result<DisputeTargetCreateContext>.Fail(
                     DisputeErrors.InvalidCategory(categoryCode));

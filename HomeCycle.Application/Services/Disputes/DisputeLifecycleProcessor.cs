@@ -73,18 +73,18 @@ namespace HomeCycle.Application.Services.Disputes
             var processed = 0;
             var policy = await _platformPolicyProvider.GetDisputeConfigAsync(ct);
 
-            var recoverableIds =
-                await _disputeRepository.GetRecoverableSystemNoShowCandidateIdsAsync(
+            var systemNoShowMaintenanceIds =
+                await _disputeRepository.GetSystemNoShowMaintenanceCandidateIdsAsync(
                     batchSize,
                     ct);
 
-            foreach (var disputeId in recoverableIds)
+            foreach (var disputeId in systemNoShowMaintenanceIds)
             {
                 ct.ThrowIfCancellationRequested();
 
                 try
                 {
-                    if (await RecoverSystemNoShowAsync(disputeId, ct))
+                    if (await MaintainSystemNoShowAsync(disputeId, ct))
                         processed++;
                 }
                 catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -264,9 +264,7 @@ namespace HomeCycle.Application.Services.Disputes
             return true;
         }
 
-        private async Task<bool> RecoverSystemNoShowAsync(
-            Guid disputeId,
-            CancellationToken ct)
+        private async Task<bool> MaintainSystemNoShowAsync(Guid disputeId, CancellationToken ct)
         {
             var notifications = new List<notification>();
             Guid? orderIdForRealtime = null;
@@ -276,9 +274,7 @@ namespace HomeCycle.Application.Services.Disputes
 
             try
             {
-                var lockedDispute = await _disputeRepository.GetByIdForUpdateAsync(
-                    disputeId,
-                    ct);
+                var lockedDispute = await _disputeRepository.GetByIdForUpdateAsync(disputeId, ct);
 
                 if (lockedDispute == null ||
                     lockedDispute.SenderId.HasValue ||
@@ -291,21 +287,17 @@ namespace HomeCycle.Application.Services.Disputes
                 }
 
                 if (lockedDispute.Origin is not
-                    ((int)DisputeOrigin.InspectionNoShow or
-                     (int)DisputeOrigin.CollectionNoShow))
+                    ((int)DisputeOrigin.InspectionNoShow or (int)DisputeOrigin.CollectionNoShow))
                 {
                     await _unitOfWork.RollbackTransactionAsync(ct);
                     return false;
                 }
 
                 var lockedOrder = await _orderRepository.GetByIdForUpdateAsync(
-                    lockedDispute.OrderId.Value,
-                    ct);
+                    lockedDispute.OrderId.Value, ct);
 
-                var lockedAppointment =
-                    await _appointmentRepository.GetByIdForUpdateAsync(
-                        lockedDispute.AppointmentId.Value,
-                        ct);
+                var lockedAppointment = await _appointmentRepository.GetByIdForUpdateAsync(
+                    lockedDispute.AppointmentId.Value, ct);
 
                 if (lockedOrder == null || lockedAppointment == null)
                 {
@@ -313,23 +305,8 @@ namespace HomeCycle.Application.Services.Disputes
                     return false;
                 }
 
-                var recovered =
-                    lockedDispute.Origin == (int)DisputeOrigin.InspectionNoShow
-                        ? lockedAppointment.BuyerCheckAt.HasValue &&
-                          lockedAppointment.SellerCheckAt.HasValue
-                        : lockedOrder.SellerHandoverConfirmedAt.HasValue ||
-                          lockedOrder.BuyerReceivedConfirmedAt.HasValue ||
-                          lockedOrder.OrderStatus == (int)OrderStatus.Completed;
-
-                if (!recovered)
-                {
-                    await _unitOfWork.RollbackTransactionAsync(ct);
-                    return false;
-                }
-
                 var agreement = await _agreementRepository.GetByIdAsync(
-                    lockedOrder.AgreementId,
-                    ct);
+                    lockedOrder.AgreementId, ct);
 
                 if (agreement == null)
                     throw new InvalidOperationException(
@@ -337,56 +314,130 @@ namespace HomeCycle.Application.Services.Disputes
 
                 var now = DateTime.UtcNow;
 
-                lockedDispute.DisputeStatus = (int)DisputeStatus.Closed;
-                lockedDispute.ResolutionSource =
-                    (int)DisputeResolutionSource.SystemAutoClosed;
+                if (lockedDispute.Origin == (int)DisputeOrigin.InspectionNoShow)
+                {
+                    var buyerCheckedIn = lockedAppointment.BuyerCheckAt.HasValue;
+                    var sellerCheckedIn = lockedAppointment.SellerCheckAt.HasValue;
 
-                // Closed khác Resolved nên không set ResolvedAt.
-                lockedDispute.UpdatedAt = now;
+                    if (buyerCheckedIn && sellerCheckedIn)
+                    {
+                        lockedDispute.DisputeStatus = (int)DisputeStatus.Closed;
+                        lockedDispute.ResolutionSource = (int)DisputeResolutionSource.SystemAutoClosed;
+                        lockedDispute.UpdatedAt = now;
 
-                await _disputeRepository.UpdateAsync(lockedDispute, ct);
+                        await _disputeRepository.UpdateAsync(lockedDispute, ct);
 
-                var message =
-                    "Hệ thống ghi nhận giao dịch đã tiếp tục thành công. Sự cố NO_SHOW đã được tự động đóng.";
+                        var recoveryMessage =
+                            "Hệ thống ghi nhận cả hai bên đã check-in. Sự cố NO_SHOW đã được tự động đóng.";
 
-                notifications.Add(
-                    await _notificationService.AddPendingAsync(
+                        notifications.Add(await _notificationService.AddPendingAsync(
+                            new CreateNotificationCommand(
+                                agreement.BuyerId,
+                                "Sự cố NO_SHOW đã được đóng",
+                                recoveryMessage,
+                                NotificationTargetType.Dispute,
+                                lockedDispute.DisputeId),
+                            ct));
+
+                        notifications.Add(await _notificationService.AddPendingAsync(
+                            new CreateNotificationCommand(
+                                agreement.SellerId,
+                                "Sự cố NO_SHOW đã được đóng",
+                                recoveryMessage,
+                                NotificationTargetType.Dispute,
+                                lockedDispute.DisputeId),
+                            ct));
+
+                        await _auditService.EnqueueAsync(
+                            new AuditEvent
+                            {
+                                Category = AuditCategory.BusinessOperation,
+                                Action = AuditActions.DisputeAutoClose,
+                                Outcome = AuditOutcome.Success,
+                                ActorType = AuditActorType.System,
+                                Source = AuditSource.BackgroundJob,
+                                TargetType = AuditTargetTypes.Dispute,
+                                TargetId = lockedDispute.DisputeId
+                            },
+                            ct);
+                    }
+                    else if (lockedDispute.TargetUserId == null &&
+                             buyerCheckedIn != sellerCheckedIn)
+                    {
+                        var missingUserId = buyerCheckedIn
+                            ? agreement.SellerId
+                            : agreement.BuyerId;
+
+                        lockedDispute.TargetUserId = missingUserId;
+                        lockedDispute.UpdatedAt = now;
+
+                        await _disputeRepository.UpdateAsync(lockedDispute, ct);
+                    }
+                    else
+                    {
+                        await _unitOfWork.RollbackTransactionAsync(ct);
+                        return false;
+                    }
+                }
+                else
+                {
+                    var collectionRecovered =
+                        lockedOrder.SellerHandoverConfirmedAt.HasValue ||
+                        lockedOrder.BuyerReceivedConfirmedAt.HasValue ||
+                        lockedOrder.OrderStatus == (int)OrderStatus.Completed;
+
+                    if (!collectionRecovered)
+                    {
+                        await _unitOfWork.RollbackTransactionAsync(ct);
+                        return false;
+                    }
+
+                    lockedDispute.DisputeStatus = (int)DisputeStatus.Closed;
+                    lockedDispute.ResolutionSource = (int)DisputeResolutionSource.SystemAutoClosed;
+                    lockedDispute.UpdatedAt = now;
+
+                    await _disputeRepository.UpdateAsync(lockedDispute, ct);
+
+                    var recoveryMessage =
+                        "Hệ thống ghi nhận giao dịch đã tiếp tục thành công. Sự cố NO_SHOW đã được tự động đóng.";
+
+                    notifications.Add(await _notificationService.AddPendingAsync(
                         new CreateNotificationCommand(
                             agreement.BuyerId,
                             "Sự cố NO_SHOW đã được đóng",
-                            message,
+                            recoveryMessage,
                             NotificationTargetType.Dispute,
                             lockedDispute.DisputeId),
                         ct));
 
-                notifications.Add(
-                    await _notificationService.AddPendingAsync(
+                    notifications.Add(await _notificationService.AddPendingAsync(
                         new CreateNotificationCommand(
                             agreement.SellerId,
                             "Sự cố NO_SHOW đã được đóng",
-                            message,
+                            recoveryMessage,
                             NotificationTargetType.Dispute,
                             lockedDispute.DisputeId),
                         ct));
 
-                await _auditService.EnqueueAsync(
-                    new AuditEvent
-                    {
-                        Category = AuditCategory.BusinessOperation,
-                        Action = AuditActions.DisputeAutoClose,
-                        Outcome = AuditOutcome.Success,
-                        ActorType = AuditActorType.System,
-                        Source = AuditSource.BackgroundJob,
-                        TargetType = AuditTargetTypes.Dispute,
-                        TargetId = lockedDispute.DisputeId
-                    },
-                    ct);
+                    await _auditService.EnqueueAsync(
+                        new AuditEvent
+                        {
+                            Category = AuditCategory.BusinessOperation,
+                            Action = AuditActions.DisputeAutoClose,
+                            Outcome = AuditOutcome.Success,
+                            ActorType = AuditActorType.System,
+                            Source = AuditSource.BackgroundJob,
+                            TargetType = AuditTargetTypes.Dispute,
+                            TargetId = lockedDispute.DisputeId
+                        },
+                        ct);
+                }
 
                 await _unitOfWork.SaveChangesAsync(ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
 
                 orderIdForRealtime = lockedOrder.OrderId;
-                realtimeAt = now;
+                realtimeAt = lockedDispute.UpdatedAt;
             }
             catch
             {
@@ -397,11 +448,10 @@ namespace HomeCycle.Application.Services.Disputes
             foreach (var notification in notifications)
                 await _notificationService.PublishCreatedSafelyAsync(notification);
 
-            if (orderIdForRealtime.HasValue)
+            if (orderIdForRealtime.HasValue && realtimeAt.HasValue)
             {
                 await _orderTrackingRealtimeService.PublishByOrderIdSafelyAsync(
-                    orderIdForRealtime.Value,
-                    realtimeAt!.Value);
+                    orderIdForRealtime.Value, realtimeAt.Value);
             }
 
             return true;

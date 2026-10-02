@@ -1565,10 +1565,11 @@ public sealed class DashboardRepository(HomeCycleDbContext db) : IDashboardRepos
 
         var activeDisputeStatuses = new[]
         {
-        (int)DisputeStatus.Pending,
-        (int)DisputeStatus.UnderReview,
-        (int)DisputeStatus.AwaitingReturn
-    };
+            (int)DisputeStatus.AwaitingResponse,
+            (int)DisputeStatus.Pending,
+            (int)DisputeStatus.UnderReview,
+            (int)DisputeStatus.AwaitingReturn
+        };
 
         var overdueReleaseAmounts =
             from held in orderEscrowAmounts

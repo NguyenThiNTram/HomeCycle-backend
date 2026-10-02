@@ -45,7 +45,6 @@ public partial class Dispute
     public int? ResolutionOutcome { get; set; }
 
     public int Origin { get; set; }
-    public int? ProposedResolutionOutcome { get; set; }
     public int? ResolutionSource { get; set; }
 
     public DateTime? ResponseDeadlineAt { get; set; }

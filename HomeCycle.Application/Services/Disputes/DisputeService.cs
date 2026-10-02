@@ -563,6 +563,7 @@ namespace HomeCycle.Application.Services.Disputes
                 var source = isOrderDispute && target.OrderId.HasValue
                     ? await ResolveOrderDisputeSourceAsync(
                         target.OrderId.Value,
+                        category.Code,
                         cancellationToken)
                     : (DisputeOrigin.UserReported, (Guid?)null);
 
@@ -1190,9 +1191,7 @@ if (dispute.TargetUserId.HasValue &&
         }
 
         private async Task<Result<DisputeDecisionResponse>> ResolveOrderDisputeAsync(
-            Guid disputeId,
-            Guid moderatorId,
-            ResolveDisputeRequest request,
+            Guid disputeId, Guid moderatorId, ResolveDisputeRequest request,
             CancellationToken cancellationToken = default)
         {
             var validation = await _resolveValidator.ValidateAsync(request, cancellationToken);
@@ -1208,12 +1207,20 @@ if (dispute.TargetUserId.HasValue &&
             try
             {
                 var disputeSnapshot = await _disputeRepository.GetByIdAsync(disputeId, cancellationToken);
+
                 if (disputeSnapshot?.OrderId is Guid relatedOrderId)
                 {
-                    var tradeSnapshot = await _postRepo.GetTradeByOrderAsync(relatedOrderId, cancellationToken);
-                    if (tradeSnapshot != null) await _postRepo.LockAsync(tradeSnapshot.PostId, tradeSnapshot.BuyPostId, cancellationToken);
+                    var tradeSnapshot = await _postRepo.GetTradeByOrderAsync(
+                        relatedOrderId, cancellationToken);
+
+                    if (tradeSnapshot != null)
+                        await _postRepo.LockAsync(
+                            tradeSnapshot.PostId, tradeSnapshot.BuyPostId, cancellationToken);
                 }
-                var dispute = await _disputeRepository.GetByIdForUpdateAsync(disputeId, cancellationToken);
+
+                var dispute = await _disputeRepository.GetByIdForUpdateAsync(
+                    disputeId, cancellationToken);
+
                 var stateError = ValidateModeratorDecisionState(dispute, moderatorId);
 
                 if (stateError != null)
@@ -1233,7 +1240,8 @@ if (dispute.TargetUserId.HasValue &&
                 if (targetType != DisputeTargetType.Order)
                 {
                     await _unitOfWork.RollbackTransactionAsync(cancellationToken);
-                    return Result<DisputeDecisionResponse>.Fail(DisputeErrors.UnsupportedTarget(targetType));
+                    return Result<DisputeDecisionResponse>.Fail(
+                        DisputeErrors.UnsupportedTarget(targetType));
                 }
 
                 if (!dispute.OrderId.HasValue)
@@ -1242,7 +1250,8 @@ if (dispute.TargetUserId.HasValue &&
                     return Result<DisputeDecisionResponse>.Fail(DisputeErrors.MissingTarget);
                 }
 
-                var order = await _orderRepository.GetByIdForUpdateAsync(dispute.OrderId.Value, cancellationToken);
+                var order = await _orderRepository.GetByIdForUpdateAsync(
+                    dispute.OrderId.Value, cancellationToken);
 
                 if (order == null)
                 {
@@ -1252,8 +1261,7 @@ if (dispute.TargetUserId.HasValue &&
 
                 var isSystemNoShowDispute = IsSystemNoShow(dispute);
 
-                if (!isSystemNoShowDispute &&
-                    order.OrderStatus != (int)OrderStatus.Disputing)
+                if (!isSystemNoShowDispute && order.OrderStatus != (int)OrderStatus.Disputing)
                 {
                     await _unitOfWork.RollbackTransactionAsync(cancellationToken);
                     return Result<DisputeDecisionResponse>.Fail(OrderErrors.NotDisputing);
@@ -1268,7 +1276,8 @@ if (dispute.TargetUserId.HasValue &&
                     return Result<DisputeDecisionResponse>.Fail(OrderErrors.InvalidStatus);
                 }
 
-                var agreement = await _agreementRepository.GetByIdAsync(order.AgreementId, cancellationToken);
+                var agreement = await _agreementRepository.GetByIdAsync(
+                    order.AgreementId, cancellationToken);
 
                 if (agreement == null)
                 {
@@ -1276,131 +1285,81 @@ if (dispute.TargetUserId.HasValue &&
                     return Result<DisputeDecisionResponse>.Fail(AgreementErrors.NotFound);
                 }
 
-                var previousDisputeStatus = (DisputeStatus)dispute.DisputeStatus.Value;
+                var previousDisputeStatus = (DisputeStatus)dispute.DisputeStatus!.Value;
+
                 var previousResolutionOutcome = dispute.ResolutionOutcome.HasValue
                     ? (DisputeResolutionOutcome?)dispute.ResolutionOutcome.Value
                     : null;
-                var previousOrderStatus = (OrderStatus)order.OrderStatus.Value;
+
+                var previousOrderStatus = (OrderStatus)order.OrderStatus!.Value;
                 var previousReturnDueAt = order.ReturnDueAt;
+                var resolutionAt = DateTime.UtcNow;
+                var resolutionOutcome = request.ResolutionOutcome!.Value;
 
-                var policy = await _platformPolicyProvider.GetDisputeConfigAsync(cancellationToken);
-                var now = DateTime.UtcNow;
-
-                var shipment = await _shipmentRepository.GetByOrderIdAsync(order.OrderId, cancellationToken);
-
-                var buyerHasItem =
-                    order.CompletedAt.HasValue ||
-                    (
-                        shipment?.DeliveryMethod == DeliveryMethod.GhnDelivery &&
-                        shipment.ShipmentStatus == ShipmentStatus.Delivered &&
-                        shipment.DeliveredAt.HasValue
-                    );
-
-                if (buyerHasItem && !order.CompletedAt.HasValue)
-                {
-                    order.CompletedAt = now;
-                    order.CompletionSource =
-                        (int)OrderCompletionSource.ModeratorResolved;
-
-                    // Buyer đã sử dụng dispute trước khi normal auto-complete.
-                    // Không mở lại một dispute window mới sau khi return lifecycle kết thúc.
-                    order.DisputeWindowEndsAt ??= now;
-                }
-
-                var refundedAmount = 0m;
-
-                dispute.ResolutionOutcome = (int)request.ResolutionOutcome;
-                dispute.ModeratorNote = request.ModeratorNote.Trim();
-                dispute.UpdatedAt = now;
-
-                var penalizedUserId = request.ResolutionOutcome == DisputeResolutionOutcome.BuyerFavored
-                    ? agreement.SellerId
-                    : agreement.BuyerId;
-
-                if (request.ResolutionOutcome == DisputeResolutionOutcome.BuyerFavored && buyerHasItem)
-                {
-                    dispute.DisputeStatus = (int)DisputeStatus.AwaitingReturn;
-                    dispute.ResolvedAt = null;
-
-                    order.OrderStatus = (int)OrderStatus.Disputing;
-                    order.BuyerReturnConfirmedAt = null;
-                    order.SellerReturnReceivedAt = null;
-                    order.ReturnedAt = null;
-                    order.ReturnDueAt = now.AddDays(policy.ReturnWindowDays);
-                    order.UpdatedAt = now;
-                }
-                else
-                {
-                    if (!buyerHasItem)
-                    {
-                        var refundResult = await _paymentService.RefundAllRemainingOrderHeldAmountAsync(
-                            order,
-                            agreement,
-                            cancellationToken);
-
-                        if (!refundResult.IsSuccess)
-                        {
-                            await _unitOfWork.RollbackTransactionAsync(cancellationToken);
-                            return Result<DisputeDecisionResponse>.Fail(refundResult.Error!);
-                        }
-
-                        refundedAmount = refundResult.Data;
-
-                        var cancellationReason =
-                            request.ResolutionOutcome == DisputeResolutionOutcome.BuyerFavored
-                                ? "Order cancelled and platform-held funds refunded after a buyer-favored dispute."
-                                : "Order cancelled and platform-held funds refunded because the seller retained the item.";
-
-                        await _postRepo.RestoreOrderQuantityAsync(order.OrderId, true, cancellationToken);
-                        ApplyRefundedCancellationState(
-                            order,
-                            refundedAmount,
-                            moderatorId,
-                            cancellationReason,
-                            now);
-                    }
-                    else
-                    {
-                        order.OrderStatus = (int)OrderStatus.Completed;
-                        order.ReturnDueAt = null;
-                        order.UpdatedAt = now;
-                    }
-
-                    dispute.DisputeStatus = (int)DisputeStatus.Resolved;
-                    dispute.ResolvedAt = now;
-                }
-
-                var reputationResult = await ApplyReputationPenaltyAsync(
-                    penalizedUserId,
-                    policy.DisputeLossPenaltyPoints,
-                    now,
+                var resolutionExecutionResult = await ApplyOrderResolutionCoreAsync(
+                    dispute,
+                    order,
+                    agreement,
+                    resolutionOutcome,
+                    moderatorId,
+                    OrderCompletionSource.ModeratorResolved,
+                    applyReputationPenalty: true,
+                    resolutionAt,
                     cancellationToken);
 
-                if (!reputationResult.IsSuccess)
+                if (!resolutionExecutionResult.IsSuccess)
                 {
                     await _unitOfWork.RollbackTransactionAsync(cancellationToken);
-                    return Result<DisputeDecisionResponse>.Fail(reputationResult.Error!);
+                    return Result<DisputeDecisionResponse>.Fail(
+                        resolutionExecutionResult.Error!);
                 }
 
-                FinanceRealtimeChange? financeChange =
-                    refundedAmount > AmountEpsilon
-                        ? new FinanceRealtimeChange
-                        {
-                            EventType = FinanceEventType.OrderRefunded,
-                            UserId = agreement.BuyerId,
-                            AffectedUserIds = new[] { agreement.SellerId },
-                            ReferenceType = ReferenceType.Order,
-                            ReferenceId = order.OrderId,
-                            TransactionType = TransactionType.Order_Refund,
-                            OccurredAt = now
-                        }
-                        : null;
+                var resolutionExecution = resolutionExecutionResult.Data!;
+
+                dispute.ResolutionOutcome = (int)resolutionOutcome;
+                dispute.ResolutionSource = (int)DisputeResolutionSource.ModeratorDecision;
+                dispute.ModeratorNote = request.ModeratorNote.Trim();
+
+                dispute.DisputeStatus = resolutionExecution.ReturnRequired
+                    ? (int)DisputeStatus.AwaitingReturn
+                    : (int)DisputeStatus.Resolved;
+
+                dispute.ResolvedAt = resolutionExecution.ReturnRequired ? null : resolutionAt;
+                dispute.UpdatedAt = resolutionAt;
+
+                var refundedAmount = resolutionExecution.RefundedAmount;
+                var buyerHasItem = resolutionExecution.BuyerHasItem;
+
+                FinanceRealtimeChange? financeChange = refundedAmount > AmountEpsilon
+                    ? new FinanceRealtimeChange
+                    {
+                        EventType = FinanceEventType.OrderRefunded,
+                        UserId = agreement.BuyerId,
+                        AffectedUserIds = new[] { agreement.SellerId },
+                        ReferenceType = ReferenceType.Order,
+                        ReferenceId = order.OrderId,
+                        TransactionType = TransactionType.Order_Refund,
+                        OccurredAt = resolutionAt
+                    }
+                    : null;
 
                 var resolveDisputeAuditDiff = new AuditDiffBuilder()
-                    .Add("status", previousDisputeStatus.ToString(), ((DisputeStatus)dispute.DisputeStatus.Value).ToString())
-                    .Add("resolutionOutcome", previousResolutionOutcome?.ToString(), ((DisputeResolutionOutcome)dispute.ResolutionOutcome.Value).ToString())
-                    .Add("orderStatus", previousOrderStatus.ToString(), ((OrderStatus)order.OrderStatus.Value).ToString())
-                    .Add("returnDueAt", previousReturnDueAt, order.ReturnDueAt);
+                    .Add(
+                        "status",
+                        previousDisputeStatus.ToString(),
+                        ((DisputeStatus)dispute.DisputeStatus.Value).ToString())
+                    .Add(
+                        "resolutionOutcome",
+                        previousResolutionOutcome?.ToString(),
+                        resolutionOutcome.ToString())
+                    .Add(
+                        "orderStatus",
+                        previousOrderStatus.ToString(),
+                        ((OrderStatus)order.OrderStatus.Value).ToString())
+                    .Add(
+                        "returnDueAt",
+                        previousReturnDueAt,
+                        order.ReturnDueAt);
 
                 var resolveDisputeAuditEvent = new AuditEvent
                 {
@@ -1417,76 +1376,87 @@ if (dispute.TargetUserId.HasValue &&
                     {
                         ["orderId"] = order.OrderId,
                         ["buyerHasItem"] = buyerHasItem,
-                        ["returnRequired"] = dispute.DisputeStatus == (int)DisputeStatus.AwaitingReturn
+                        ["returnRequired"] = resolutionExecution.ReturnRequired,
+                        ["resolutionSource"] = DisputeResolutionSource.ModeratorDecision.ToString()
                     }
                 };
 
                 string buyerMessage;
                 string sellerMessage;
 
-                if (request.ResolutionOutcome == DisputeResolutionOutcome.BuyerFavored)
+                if (resolutionOutcome == DisputeResolutionOutcome.BuyerFavored)
                 {
-                    if (buyerHasItem)
+                    if (resolutionExecution.ReturnRequired)
                     {
-                        buyerMessage = "Tranh chấp được giải quyết có lợi cho bạn. Vui lòng hoàn trả sản phẩm trong thời hạn quy định.";
-                        sellerMessage = "Tranh chấp được giải quyết có lợi cho người mua. Đơn hàng đang chờ sản phẩm được hoàn trả.";
+                        buyerMessage =
+                            "Tranh chấp được giải quyết có lợi cho bạn. Vui lòng hoàn trả sản phẩm trong thời hạn quy định.";
+
+                        sellerMessage =
+                            "Tranh chấp được giải quyết có lợi cho người mua. Đơn hàng đang chờ sản phẩm được hoàn trả.";
                     }
                     else
                     {
-                        buyerMessage = "Tranh chấp được giải quyết có lợi cho bạn. Khoản tiền nền tảng giữ đã được hoàn lại.";
-                        sellerMessage = "Tranh chấp được giải quyết có lợi cho người mua và đơn hàng đã được kết thúc.";
+                        buyerMessage =
+                            "Tranh chấp được giải quyết có lợi cho bạn. Khoản tiền nền tảng giữ đã được hoàn lại.";
+
+                        sellerMessage =
+                            "Tranh chấp được giải quyết có lợi cho người mua và đơn hàng đã được kết thúc.";
                     }
                 }
                 else
                 {
-                    buyerMessage = "Tranh chấp được giải quyết có lợi cho người bán. Vui lòng xem kết luận của moderator.";
-                    sellerMessage = "Tranh chấp được giải quyết có lợi cho bạn. Vui lòng xem kết luận của moderator.";
+                    buyerMessage =
+                        "Tranh chấp được giải quyết có lợi cho người bán. Vui lòng xem kết luận của moderator.";
+
+                    sellerMessage =
+                        "Tranh chấp được giải quyết có lợi cho bạn. Vui lòng xem kết luận của moderator.";
                 }
 
                 var decisionNotifications = new List<notification>
-                {
-                    await _notificationService.AddPendingAsync(
-                        new CreateNotificationCommand(
-                            agreement.BuyerId,
-                            "Kết quả tranh chấp",
-                            buyerMessage,
-                            NotificationTargetType.Dispute,
-                            dispute.DisputeId),
-                        cancellationToken),
+        {
+            await _notificationService.AddPendingAsync(
+                new CreateNotificationCommand(
+                    agreement.BuyerId,
+                    "Kết quả tranh chấp",
+                    buyerMessage,
+                    NotificationTargetType.Dispute,
+                    dispute.DisputeId),
+                cancellationToken),
 
-                    await _notificationService.AddPendingAsync(
-                        new CreateNotificationCommand(
-                            agreement.SellerId,
-                            "Kết quả tranh chấp",
-                            sellerMessage,
-                            NotificationTargetType.Dispute,
-                            dispute.DisputeId),
-                        cancellationToken)
-                };
+            await _notificationService.AddPendingAsync(
+                new CreateNotificationCommand(
+                    agreement.SellerId,
+                    "Kết quả tranh chấp",
+                    sellerMessage,
+                    NotificationTargetType.Dispute,
+                    dispute.DisputeId),
+                cancellationToken)
+        };
 
                 await _orderRepository.UpdateAsync(order, cancellationToken);
                 await _disputeRepository.UpdateAsync(dispute, cancellationToken);
                 await _auditService.EnqueueAsync(resolveDisputeAuditEvent, cancellationToken);
-
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 await _unitOfWork.CommitTransactionAsync(cancellationToken);
 
                 if (financeChange != null)
                     await _financeRealtimeService.PublishUpdatedSafelyAsync(financeChange);
+
                 if (order.OrderStatus == (int)OrderStatus.Cancelled)
                     await _ghnLifecycle.CancelForOrderSafelyAsync(order.OrderId, cancellationToken);
-                foreach (var notification in decisionNotifications)
-                    await _notificationService.PublishCreatedSafelyAsync(notification);
 
-                if (dispute.OrderId.HasValue)
+                foreach (var notification in decisionNotifications)
                 {
-                    await _orderTrackingRealtimeService.PublishByOrderIdSafelyAsync(
-                        dispute.OrderId.Value,
-                        dispute.UpdatedAt);
+                    await _notificationService.PublishCreatedSafelyAsync(
+                        notification);
                 }
 
+                await _orderTrackingRealtimeService.PublishByOrderIdSafelyAsync(
+                    order.OrderId, dispute.UpdatedAt);
+
                 var response = _mapper.Map<DisputeDecisionResponse>(dispute);
-                response.OrderStatus = (OrderStatus)order.OrderStatus!.Value;
+
+                response.OrderStatus = (OrderStatus)order.OrderStatus.Value;
                 response.RefundedAmount = refundedAmount;
                 response.ReturnDueAt = order.ReturnDueAt;
 
@@ -2306,6 +2276,155 @@ if (dispute.TargetUserId.HasValue &&
         // ========================== HELPER =============================
         #region HELPER
 
+
+        private async Task<Result<IReadOnlyList<DisputeResponseDto>>> BuildDisputeResponsesAsync(Guid disputeId, CancellationToken cancellationToken)
+        {
+            var disputeResponses = await _disputeResponseRepository.GetByDisputeIdAsync(
+                disputeId, cancellationToken);
+
+            if (disputeResponses.Count == 0)
+                return Result<IReadOnlyList<DisputeResponseDto>>.Success(Array.Empty<DisputeResponseDto>());
+
+            var responseIds = disputeResponses.Select(x => x.DisputeResponseId).ToArray();
+
+            var mediaResult = await _mediaService.GetByTargetsAsync(
+                responseIds, MediaTargetTypes.DisputeResponse.ToString(), cancellationToken);
+
+            if (!mediaResult.IsSuccess)
+                return Result<IReadOnlyList<DisputeResponseDto>>.Fail(mediaResult.Error!);
+
+            var result = new List<DisputeResponseDto>(disputeResponses.Count);
+
+            foreach (var disputeResponse in disputeResponses)
+            {
+                var responder = await _userRepository.GetByIdAsync(
+                    disputeResponse.ResponderId, cancellationToken);
+
+                if (responder == null)
+                    return Result<IReadOnlyList<DisputeResponseDto>>.Fail(ProfileErrors.UserNotFound);
+
+                IReadOnlyList<MediaResponse> evidenceImages = Array.Empty<MediaResponse>();
+
+                if (mediaResult.Data != null &&
+                    mediaResult.Data.TryGetValue(disputeResponse.DisputeResponseId, out var foundMedia))
+                {
+                    evidenceImages = foundMedia;
+                }
+
+                result.Add(new DisputeResponseDto
+                {
+                    DisputeResponseId = disputeResponse.DisputeResponseId,
+                    ResponseType = (DisputeResponseType)disputeResponse.ResponseType,
+                    Content = disputeResponse.Content,
+                    CreatedAt = disputeResponse.CreatedAt,
+                    Responder = _mapper.Map<DisputeUserSummaryDto>(responder),
+                    EvidenceImages = evidenceImages
+                });
+            }
+
+            return Result<IReadOnlyList<DisputeResponseDto>>.Success(result);
+        }
+
+        private async Task<DisputeInspectionContextDto?> BuildInspectionContextAsync(
+            dispute dispute, CancellationToken cancellationToken)
+        {
+            if (!dispute.AppointmentId.HasValue)
+                return null;
+
+            var inspectionAppointment = await _inspectionAppointmentRepository.GetByAppointmentIdAsync(
+                dispute.AppointmentId.Value, cancellationToken);
+
+            if (inspectionAppointment == null)
+                return null;
+
+            var inspectionForm = await _inspectionFormRepository.GetByInspectionAppointmentIdAsync(
+                inspectionAppointment.InspectionAppointmentId, cancellationToken);
+
+            if (inspectionForm == null)
+                return null;
+
+            var mediaResult = await _mediaService.GetByTargetsAsync(
+                new[] { inspectionForm.InspectionFormId },
+                MediaTargetTypes.Inspection.ToString(),
+                cancellationToken);
+
+            IReadOnlyList<MediaResponse> images = Array.Empty<MediaResponse>();
+
+            if (mediaResult.IsSuccess &&
+                mediaResult.Data != null &&
+                mediaResult.Data.TryGetValue(inspectionForm.InspectionFormId, out var foundImages))
+            {
+                images = foundImages;
+            }
+
+            return new DisputeInspectionContextDto
+            {
+                InspectionFormId = inspectionForm.InspectionFormId,
+                InspectionMode = (InspectionMode)inspectionForm.InspectionMode,
+                InspectionStatus = inspectionForm.InspectionStatus.HasValue
+                    ? (InspectionStatus?)inspectionForm.InspectionStatus.Value
+                    : null,
+                OperatingStatus = inspectionForm.OperatingStatus.HasValue
+                    ? (InspectionOperatingStatus?)inspectionForm.OperatingStatus.Value
+                    : null,
+                AppearanceStatus = inspectionForm.AppearanceStatus.HasValue
+                    ? (InspectionAppearanceStatus?)inspectionForm.AppearanceStatus.Value
+                    : null,
+                PartsStatus = inspectionForm.PartsStatus.HasValue
+                    ? (InspectionPartsStatus?)inspectionForm.PartsStatus.Value
+                    : null,
+                MatchStatus = inspectionForm.MatchStatus.HasValue
+                    ? (InspectionMatchStatus?)inspectionForm.MatchStatus.Value
+                    : null,
+                InspectorNotes = inspectionForm.InspectorNotes,
+                Conclusion = inspectionForm.Conclusion.HasValue
+                    ? (InspectionConclusion?)inspectionForm.Conclusion.Value
+                    : null,
+                SubmittedAt = inspectionForm.SubmittedAt,
+                SellerDecisionAt = inspectionForm.SellerDecisionAt,
+                SellerDecisionReason = inspectionForm.SellerDecisionReason,
+                Images = images
+            };
+        }
+
+        private async Task<DisputeAppointmentContextDto?> BuildAppointmentContextAsync(
+            dispute dispute, CancellationToken cancellationToken)
+        {
+            if (!dispute.AppointmentId.HasValue)
+                return null;
+
+            var appointment = await _appointmentRepository.GetByIdAsync(
+                dispute.AppointmentId.Value, cancellationToken);
+
+            if (appointment == null)
+                return null;
+
+            var appointmentSummaries =
+                await _appointmentRepository.GetAppointmentSummariesByAgreementIdAsync(
+                    appointment.AgreementId, cancellationToken);
+
+            var appointmentSummary = appointmentSummaries
+                .FirstOrDefault(x => x.AppointmentId == appointment.AppointmentId);
+
+            return new DisputeAppointmentContextDto
+            {
+                AppointmentId = appointment.AppointmentId,
+                AppointmentType = appointment.AppointmentType.HasValue
+                    ? (AppointmentType?)appointment.AppointmentType.Value
+                    : null,
+                AppointmentStatus = appointment.AppointmentStatus.HasValue
+                    ? (AppointmentStatus?)appointment.AppointmentStatus.Value
+                    : null,
+                ScheduledAt = appointmentSummary?.ScheduledAt,
+                Location = appointmentSummary?.Location,
+                BuyerCheckAt = appointment.BuyerCheckAt,
+                SellerCheckAt = appointment.SellerCheckAt,
+                LateThresholdAt = appointment.LateThresholdAt
+            };
+        }
+
+
+
         private async Task<bool> IsAcceptedInspectionReturnBlockedAsync(
             dispute dispute,
             Guid orderId,
@@ -2492,26 +2611,27 @@ if (dispute.TargetUserId.HasValue &&
         }
 
         private async Task<(DisputeOrigin Origin, Guid? AppointmentId)> ResolveOrderDisputeSourceAsync(
-            Guid orderId,
-            CancellationToken cancellationToken)
+            Guid orderId, string categoryCode, CancellationToken cancellationToken)
         {
             var inspectionForm = await _inspectionFormRepository.GetLatestByOrderIdAsync(
-                orderId,
-                cancellationToken);
+                orderId, cancellationToken);
 
-            if (inspectionForm == null ||
-                inspectionForm.InspectionStatus != (int)InspectionStatus.Rejected)
-            {
+            if (inspectionForm == null)
                 return (DisputeOrigin.UserReported, null);
-            }
 
             var inspectionAppointment = await _inspectionAppointmentRepository.GetByIdAsync(
-                inspectionForm.InspectionAppointmentId,
-                cancellationToken);
+                inspectionForm.InspectionAppointmentId, cancellationToken);
 
-            return (
-                DisputeOrigin.InspectionRejected,
-                inspectionAppointment?.AppointmentId);
+            if (inspectionAppointment == null)
+                return (DisputeOrigin.UserReported, null);
+
+            if (inspectionForm.InspectionStatus == (int)InspectionStatus.Rejected)
+                return (DisputeOrigin.InspectionRejected, inspectionAppointment.AppointmentId);
+
+            if (string.Equals(categoryCode, "ITEM_MISMATCH", StringComparison.OrdinalIgnoreCase))
+                return (DisputeOrigin.UserReported, inspectionAppointment.AppointmentId);
+
+            return (DisputeOrigin.UserReported, null);
         }
 
         private async Task<Result<bool>> ApplyReputationPenaltyAsync(
@@ -2623,10 +2743,7 @@ if (dispute.TargetUserId.HasValue &&
         }
 
         private async Task<Result<DisputeDetailResponse>> BuildDetailAsync(
-            dispute dispute,
-            Guid? currentUserId,
-            Guid? moderatorId,
-            CancellationToken cancellationToken)
+            dispute dispute, Guid? currentUserId, Guid? moderatorId, CancellationToken cancellationToken)
         {
             if (!dispute.DisputeTargetType.HasValue)
                 return Result<DisputeDetailResponse>.Fail(DisputeErrors.MissingTarget);
@@ -2640,16 +2757,11 @@ if (dispute.TargetUserId.HasValue &&
 
             if (dispute.SenderId.HasValue)
             {
-                sender = await _userRepository.GetByIdAsync(
-                    dispute.SenderId.Value,
-                    cancellationToken);
+                sender = await _userRepository.GetByIdAsync(dispute.SenderId.Value, cancellationToken);
 
                 if (sender == null)
                     return Result<DisputeDetailResponse>.Fail(DisputeErrors.SenderNotFound);
             }
-
-            if (sender == null)
-                return Result<DisputeDetailResponse>.Fail(DisputeErrors.SenderNotFound);
 
             user? targetUser = null;
 
@@ -2662,9 +2774,7 @@ if (dispute.TargetUserId.HasValue &&
                 return Result<DisputeDetailResponse>.Fail(targetSummaryResult.Error!);
 
             var mediaResult = await _mediaService.GetByTargetsAsync(
-                new[] { dispute.DisputeId },
-                MediaTargetTypes.Dispute.ToString(),
-                cancellationToken);
+                new[] { dispute.DisputeId }, MediaTargetTypes.Dispute.ToString(), cancellationToken);
 
             if (!mediaResult.IsSuccess)
                 return Result<DisputeDetailResponse>.Fail(mediaResult.Error!);
@@ -2677,40 +2787,20 @@ if (dispute.TargetUserId.HasValue &&
                 evidenceImages = foundMedia;
             }
 
+            var responsesResult = await BuildDisputeResponsesAsync(
+                dispute.DisputeId, cancellationToken);
+
+            if (!responsesResult.IsSuccess)
+                return Result<DisputeDetailResponse>.Fail(responsesResult.Error!);
+
+            var appointmentContext = await BuildAppointmentContextAsync(dispute, cancellationToken);
+            var inspectionContext = await BuildInspectionContextAsync(dispute, cancellationToken);
+
             var disputeStatus = dispute.DisputeStatus.HasValue
                 ? (DisputeStatus?)dispute.DisputeStatus.Value
                 : null;
 
-            var isAssignedModerator =
-                moderatorId.HasValue &&
-                dispute.ModeratorId.HasValue &&
-                dispute.ModeratorId.Value == moderatorId.Value;
-
             var orderSummary = targetSummaryResult.Data.Order;
-
-            var canVerifyReturn =
-                isAssignedModerator &&
-                disputeStatus == DisputeStatus.AwaitingReturn &&
-                orderSummary?.BuyerReturnConfirmedAt != null &&
-                orderSummary.ReturnDueAt != null &&
-                DateTime.UtcNow >= orderSummary.ReturnDueAt.Value;
-
-            DisputeCategoryOptionDto? category = null;
-
-            if (dispute.DisputeCategory.HasValue)
-            {
-                var categoryEntity =
-                    await _disputeCategoryRepository.GetByIdAsync(
-                        dispute.DisputeCategory.Value,
-                        cancellationToken);
-
-                if (categoryEntity != null)
-                {
-                    category =
-                        _mapper.Map<DisputeCategoryOptionDto>(
-                            categoryEntity);
-                }
-            }
 
             DisputeResolutionOutcome? proposedOutcome = null;
 
@@ -2718,15 +2808,12 @@ if (dispute.TargetUserId.HasValue &&
                 dispute.SenderId.HasValue &&
                 dispute.OrderId.HasValue)
             {
-                var order = await _orderRepository.GetByIdAsync(
-                    dispute.OrderId.Value,
-                    cancellationToken);
+                var order = await _orderRepository.GetByIdAsync(dispute.OrderId.Value, cancellationToken);
 
                 if (order != null)
                 {
                     var agreement = await _agreementRepository.GetByIdAsync(
-                        order.AgreementId,
-                        cancellationToken);
+                        order.AgreementId, cancellationToken);
 
                     if (agreement != null)
                     {
@@ -2740,10 +2827,8 @@ if (dispute.TargetUserId.HasValue &&
 
             var responseWindowOpen =
                 disputeStatus == DisputeStatus.AwaitingResponse &&
-                (
-                    !dispute.ResponseDeadlineAt.HasValue ||
-                    DateTime.UtcNow <= dispute.ResponseDeadlineAt.Value
-                );
+                (!dispute.ResponseDeadlineAt.HasValue ||
+                 DateTime.UtcNow <= dispute.ResponseDeadlineAt.Value);
 
             var systemNoShow = IsSystemNoShow(dispute);
 
@@ -2752,26 +2837,55 @@ if (dispute.TargetUserId.HasValue &&
                 dispute.TargetUserId.HasValue &&
                 dispute.TargetUserId.Value == currentUserId.Value;
 
+            var canVerifyReturn =
+                moderatorId.HasValue &&
+                disputeStatus == DisputeStatus.AwaitingReturn &&
+                orderSummary?.BuyerReturnConfirmedAt.HasValue == true &&
+                orderSummary.ReturnDueAt.HasValue &&
+                DateTime.UtcNow >= orderSummary.ReturnDueAt.Value &&
+                (!dispute.ModeratorId.HasValue ||
+                 dispute.ModeratorId.Value == moderatorId.Value);
+
+            DisputeCategoryOptionDto? category = null;
+
+            if (dispute.DisputeCategory.HasValue)
+            {
+                var categoryEntity = await _disputeCategoryRepository.GetByIdAsync(
+                    dispute.DisputeCategory.Value, cancellationToken);
+
+                if (categoryEntity != null)
+                    category = _mapper.Map<DisputeCategoryOptionDto>(categoryEntity);
+            }
+
             var response = new DisputeDetailResponse
             {
                 DisputeId = dispute.DisputeId,
-                Sender = sender == null
-                    ? null
-                    : _mapper.Map<DisputeUserSummaryDto>(sender),
+                Sender = sender == null ? null : _mapper.Map<DisputeUserSummaryDto>(sender),
                 TargetUser = targetUser == null ? null : _mapper.Map<DisputeUserSummaryDto>(targetUser),
                 Target = targetSummaryResult.Data,
                 Category = category,
+                AppointmentContext = appointmentContext,
+                InspectionContext = inspectionContext,
                 Description = dispute.Description,
                 Status = disputeStatus,
+                Origin = (DisputeOrigin)dispute.Origin,
+                ProposedResolutionOutcome = proposedOutcome,
                 ResolutionOutcome = dispute.ResolutionOutcome.HasValue
                     ? (DisputeResolutionOutcome?)dispute.ResolutionOutcome.Value
                     : null,
+                ResolutionSource = dispute.ResolutionSource.HasValue
+                    ? (DisputeResolutionSource?)dispute.ResolutionSource.Value
+                    : null,
+                ResponseDeadlineAt = dispute.ResponseDeadlineAt,
+                EscalatedAt = dispute.EscalatedAt,
+                ModeratorClaimedAt = dispute.ModeratorClaimedAt,
                 ModeratorId = dispute.ModeratorId,
                 ModeratorNote = dispute.ModeratorNote,
                 CreatedAt = dispute.CreatedAt,
                 UpdatedAt = dispute.UpdatedAt,
                 ResolvedAt = dispute.ResolvedAt,
                 EvidenceImages = evidenceImages,
+                Responses = responsesResult.Data ?? Array.Empty<DisputeResponseDto>(),
                 Actions = new DisputeActionDto
                 {
                     CanCloseDispute =
@@ -2781,29 +2895,15 @@ if (dispute.TargetUserId.HasValue &&
                         disputeStatus is DisputeStatus.AwaitingResponse or DisputeStatus.Pending &&
                         !dispute.ModeratorId.HasValue,
 
-                    CanAccept =
-                        responseWindowOpen &&
-                        !systemNoShow &&
-                        currentUserIsTarget,
-
-                    CanRebut =
-                        responseWindowOpen &&
-                        !systemNoShow &&
-                        currentUserIsTarget,
-
-                    CanSubmitStatement =
-                        responseWindowOpen &&
-                        systemNoShow &&
-                        currentUserId.HasValue,
+                    CanAccept = responseWindowOpen && !systemNoShow && currentUserIsTarget,
+                    CanRebut = responseWindowOpen && !systemNoShow && currentUserIsTarget,
+                    CanSubmitStatement = responseWindowOpen && systemNoShow && currentUserId.HasValue,
 
                     CanClaimDispute =
                         moderatorId.HasValue &&
                         disputeStatus == DisputeStatus.Pending &&
                         !dispute.ModeratorId.HasValue &&
-                        (
-                            targetType != DisputeTargetType.Order ||
-                            dispute.EscalatedAt.HasValue
-                        ),
+                        (targetType != DisputeTargetType.Order || dispute.EscalatedAt.HasValue),
 
                     CanResolveDispute =
                         moderatorId.HasValue &&
@@ -2815,13 +2915,12 @@ if (dispute.TargetUserId.HasValue &&
                         disputeStatus == DisputeStatus.UnderReview &&
                         dispute.ModeratorId == moderatorId,
 
-                    CanVerifyReturn =
-                        moderatorId.HasValue &&
-                        disputeStatus == DisputeStatus.AwaitingReturn
+                    CanVerifyReturn = canVerifyReturn
                 }
             };
 
             response.Timeline = _disputeTimelineBuilder.Build(response);
+
             return Result<DisputeDetailResponse>.Success(response);
         }
         #endregion
