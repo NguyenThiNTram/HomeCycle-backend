@@ -141,8 +141,11 @@ public sealed class DashboardRepository(HomeCycleDbContext db) : IDashboardRepos
     public async Task<ListingDashboardData> GetListingsAsync(DashboardPeriod period, CancellationToken ct)
     {
         var posts = db.Posts.AsNoTracking().Where(x => x.CreatedAt >= period.FromUtc && x.CreatedAt < period.EndUtc);
-        var orders = db.Orders.AsNoTracking().Where(x => x.OrderStatus == (int)OrderStatus.Completed
-            && x.CompletedAt >= period.FromUtc && x.CompletedAt < period.EndUtc);
+        var orders = db.Orders.AsNoTracking().Where(x =>
+            x.OrderStatus == (int)OrderStatus.Completed &&
+            x.PaymentStatus == (int)PaymentStatus.Completed &&
+            x.CompletedAt >= period.FromUtc &&
+            x.CompletedAt < period.EndUtc);
         return new()
         {
             CurrentlyReportedListingCount = await db.Disputes.AsNoTracking()
@@ -450,8 +453,11 @@ public sealed class DashboardRepository(HomeCycleDbContext db) : IDashboardRepos
                 .Select(s => (int?)s.DeliveryMethod).FirstOrDefault() == (int)request.DeliveryMethod.Value);
 
         var created = query.Where(x => x.CreatedAt >= period.FromUtc && x.CreatedAt < period.EndUtc);
-        var successful = query.Where(x => x.OrderStatus == (int)OrderStatus.Completed
-            && x.CompletedAt >= period.FromUtc && x.CompletedAt < period.EndUtc);
+        var successful = query.Where(x =>
+            x.OrderStatus == (int)OrderStatus.Completed &&
+            x.PaymentStatus == (int)PaymentStatus.Completed &&
+            x.CompletedAt >= period.FromUtc &&
+            x.CompletedAt < period.EndUtc);
         var paid = db.Payments.AsNoTracking().Where(x => x.PaidAt >= period.FromUtc && x.PaidAt < period.EndUtc
             && (x.PaymentType == (int)PaymentType.Deposit || x.PaymentType == (int)PaymentType.Full_Payment)
             && (x.PaymentStatus == (int)PaymentStatus.Completed || x.PaymentStatus == (int)PaymentStatus.Refunded
