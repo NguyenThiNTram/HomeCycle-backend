@@ -20,7 +20,7 @@ public partial class Dispute
     [Key]
     public Guid DisputeId { get; set; }
 
-    public Guid SenderId { get; set; }
+    public Guid? SenderId { get; set; }
 
     public Guid? TargetUserId { get; set; }
 
@@ -30,6 +30,8 @@ public partial class Dispute
     public Guid? PostId { get; set; }
 
     public Guid? OrderId { get; set; }
+    public Guid? AppointmentId { get; set; }
+
 
     public int? DisputeTargetType { get; set; }
 
@@ -41,6 +43,13 @@ public partial class Dispute
 
     public string? ModeratorNote { get; set; }
     public int? ResolutionOutcome { get; set; }
+
+    public int Origin { get; set; }
+    public int? ResolutionSource { get; set; }
+
+    public DateTime? ResponseDeadlineAt { get; set; }
+    public DateTime? EscalatedAt { get; set; }
+    public DateTime? ModeratorClaimedAt { get; set; }
 
     public DateTime CreatedAt { get; set; }
 
@@ -63,9 +72,12 @@ public partial class Dispute
     [ForeignKey("PostId")]
     public virtual Post? Post { get; set; }
 
+    [ForeignKey(nameof(AppointmentId))]
+    public virtual Appointment? Appointment { get; set; }
+
     [ForeignKey("SenderId")]
     [InverseProperty("DisputeSenders")]
-    public virtual User Sender { get; set; } = null!;
+    public virtual User? Sender { get; set; } = null!;
 
     [ForeignKey("TargetUserId")]
     [InverseProperty("DisputeTargetUsers")]

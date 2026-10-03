@@ -1222,6 +1222,14 @@ namespace HomeCycle.Application.Services.Orders
                     return Result<OrderReturnConfirmationResponseDto>.Fail(OrderErrors.NotFound);
                 }
 
+                if (await IsAcceptedInspectionPhysicalReturnBlockedAsync(dispute, orderId, ct))
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+
+                    return Result<OrderReturnConfirmationResponseDto>.Fail(
+                        OrderErrors.ReturnBlockedByAcceptedInspection);
+                }
+
                 var agreement = await _agreementRepo.GetByIdAsync(order.AgreementId, ct);
 
                 if (agreement == null)
@@ -1370,6 +1378,14 @@ namespace HomeCycle.Application.Services.Orders
                 {
                     await _unitOfWork.RollbackTransactionAsync(ct);
                     return Result<OrderReturnConfirmationResponseDto>.Fail(OrderErrors.NotFound);
+                }
+
+                if (await IsAcceptedInspectionPhysicalReturnBlockedAsync(dispute, orderId, ct))
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+
+                    return Result<OrderReturnConfirmationResponseDto>.Fail(
+                        OrderErrors.ReturnBlockedByAcceptedInspection);
                 }
 
                 var agreement = await _agreementRepo.GetByIdAsync(order.AgreementId, ct);
@@ -1773,6 +1789,34 @@ namespace HomeCycle.Application.Services.Orders
 
         //================ HELPER =======================
 
+        private async Task<bool> IsAcceptedInspectionPhysicalReturnBlockedAsync(
+            dispute dispute,
+            Guid orderId,
+            CancellationToken ct)
+        {
+            if (!dispute.DisputeCategory.HasValue)
+                return false;
+
+            var category = await _disputeCategoryRepo.GetByIdAsync(
+                dispute.DisputeCategory.Value,
+                ct);
+
+            if (category == null ||
+                !string.Equals(
+                    category.Code,
+                    "ITEM_MISMATCH",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            var inspectionForm = await _inspectionFormRepo.GetLatestByOrderIdAsync(
+                orderId,
+                ct);
+
+            return inspectionForm?.InspectionStatus ==
+                (int)InspectionStatus.Accepted;
+        }
         private async Task<bool> IsInspectionCollectNowReadyAsync(
             Guid orderId,
             CancellationToken ct)

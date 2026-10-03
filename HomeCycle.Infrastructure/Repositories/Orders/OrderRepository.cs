@@ -249,6 +249,7 @@ namespace HomeCycle.Infrastructure.Repositories.Orders
                 new DisputeSummaryDto
                 {
                     HasActiveDispute =
+                        latestDispute?.DisputeStatus == (int)DisputeStatus.AwaitingResponse ||
                         latestDispute?.DisputeStatus == (int)DisputeStatus.Pending ||
                         latestDispute?.DisputeStatus == (int)DisputeStatus.UnderReview ||
                         latestDispute?.DisputeStatus == (int)DisputeStatus.AwaitingReturn,
@@ -407,6 +408,7 @@ namespace HomeCycle.Infrastructure.Repositories.Orders
                     o.OrderStatus == (int)OrderStatus.Processing &&
                     o.BuyerReceivedConfirmedAt == null &&
                     !o.Disputes.Any(d =>
+                        d.DisputeStatus == (int)DisputeStatus.AwaitingResponse ||
                         d.DisputeStatus == (int)DisputeStatus.Pending ||
                         d.DisputeStatus == (int)DisputeStatus.UnderReview ||
                         d.DisputeStatus == (int)DisputeStatus.AwaitingReturn) &&
@@ -443,6 +445,7 @@ namespace HomeCycle.Infrastructure.Repositories.Orders
                     o.DisputeWindowEndsAt.HasValue &&
                     o.DisputeWindowEndsAt.Value < nowUtc &&
                     !o.Disputes.Any(d =>
+                        d.DisputeStatus == (int)DisputeStatus.AwaitingResponse ||
                         d.DisputeStatus == (int)DisputeStatus.Pending ||
                         d.DisputeStatus == (int)DisputeStatus.UnderReview ||
                         d.DisputeStatus == (int)DisputeStatus.AwaitingReturn) &&
@@ -473,11 +476,21 @@ namespace HomeCycle.Infrastructure.Repositories.Orders
 
             var shipmentIssueStatuses = new int?[] { (int)ShipmentStatus.Cancelled, (int)ShipmentStatus.Exception,
                 (int)ShipmentStatus.Damage_Lost, (int)ShipmentStatus.Returning, (int)ShipmentStatus.Returned };
-            var issues = query.Where(o => o.OrderStatus == (int)OrderStatus.Cancelled || o.OrderStatus == (int)OrderStatus.Returned
-                || o.OrderStatus == (int)OrderStatus.Disputing
-                || o.Disputes.Any(d => d.DisputeStatus == (int)DisputeStatus.Pending || d.DisputeStatus == (int)DisputeStatus.UnderReview || d.DisputeStatus == (int)DisputeStatus.AwaitingReturn)
-                || shipmentIssueStatuses.Contains(o.Shipments.OrderByDescending(s => s.CreatedAt).ThenByDescending(s => s.ShipmentId)
-                    .Select(s => s.ShipmentStatus).FirstOrDefault()));
+            var issues = query.Where(o =>
+                o.OrderStatus == (int)OrderStatus.Cancelled ||
+                o.OrderStatus == (int)OrderStatus.Returned ||
+                o.OrderStatus == (int)OrderStatus.Disputing ||
+                o.Disputes.Any(d =>
+                    d.DisputeStatus == (int)DisputeStatus.AwaitingResponse ||
+                    d.DisputeStatus == (int)DisputeStatus.Pending ||
+                    d.DisputeStatus == (int)DisputeStatus.UnderReview ||
+                    d.DisputeStatus == (int)DisputeStatus.AwaitingReturn) ||
+                shipmentIssueStatuses.Contains(
+                    o.Shipments
+                        .OrderByDescending(s => s.CreatedAt)
+                        .ThenByDescending(s => s.ShipmentId)
+                        .Select(s => s.ShipmentStatus)
+                        .FirstOrDefault()));
             if (request.Group == OrderHistoryGroup.Issue) query = issues;
             else if (request.Group == OrderHistoryGroup.Successful)
                 query = query.Where(o => o.OrderStatus == (int)OrderStatus.Completed && !issues.Any(i => i.OrderId == o.OrderId));
@@ -550,6 +563,7 @@ namespace HomeCycle.Infrastructure.Repositories.Orders
                 {
                     query = query.Where(o =>
                         o.Disputes.Any(d =>
+                            d.DisputeStatus == (int)DisputeStatus.AwaitingResponse ||
                             d.DisputeStatus == (int)DisputeStatus.Pending ||
                             d.DisputeStatus == (int)DisputeStatus.UnderReview ||
                             d.DisputeStatus == (int)DisputeStatus.AwaitingReturn));
@@ -558,6 +572,7 @@ namespace HomeCycle.Infrastructure.Repositories.Orders
                 {
                     query = query.Where(o =>
                         !o.Disputes.Any(d =>
+                            d.DisputeStatus == (int)DisputeStatus.AwaitingResponse ||
                             d.DisputeStatus == (int)DisputeStatus.Pending ||
                             d.DisputeStatus == (int)DisputeStatus.UnderReview ||
                             d.DisputeStatus == (int)DisputeStatus.AwaitingReturn));
@@ -668,6 +683,7 @@ namespace HomeCycle.Infrastructure.Repositories.Orders
 
                     HasActiveDispute =
                         o.Disputes.Any(d =>
+                            d.DisputeStatus == (int)DisputeStatus.AwaitingResponse ||
                             d.DisputeStatus == (int)DisputeStatus.Pending ||
                             d.DisputeStatus == (int)DisputeStatus.UnderReview ||
                             d.DisputeStatus == (int)DisputeStatus.AwaitingReturn),

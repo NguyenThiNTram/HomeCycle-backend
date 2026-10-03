@@ -207,6 +207,7 @@ namespace HomeCycle.Application.Services.Appointments
                         InspectionFormId = inspectionForm.InspectionFormId,
                         Revision = inspectionForm.Revision,
                         InspectionStatus = (InspectionStatus)inspectionForm.InspectionStatus,
+                        InspectionMode = (InspectionMode)inspectionForm.InspectionMode,
                         Conclusion = conclusion
                     };
                 }
@@ -432,7 +433,9 @@ namespace HomeCycle.Application.Services.Appointments
                 else
                     appointment.SellerCheckAt = now;
 
-                if (appointment.AppointmentStatus == (int)AppointmentStatus.Scheduled)
+                var isFullyCheckedIn = appointment.BuyerCheckAt.HasValue && appointment.SellerCheckAt.HasValue;
+
+                if (appointment.AppointmentStatus == (int)AppointmentStatus.Scheduled && isFullyCheckedIn)
                     appointment.AppointmentStatus = (int)AppointmentStatus.InProgress;
 
                 appointment.UpdatedAt = now;
@@ -455,13 +458,12 @@ namespace HomeCycle.Application.Services.Appointments
                     NewValues = checkInAuditDiff.NewValues
                 };
 
-                var isFullyCheckedIn = appointment.BuyerCheckAt.HasValue && appointment.SellerCheckAt.HasValue;
                 var checkInRecipientId = isBuyer ? agreement.SellerId : agreement.BuyerId;
                 var checkInMessage = isFullyCheckedIn
                     ? "Cả hai bên đã check-in. Buổi kiểm định có thể bắt đầu."
                     : isBuyer
-                        ? "Người mua đã check-in tại lịch hẹn kiểm định."
-                        : "Người bán đã check-in tại lịch hẹn kiểm định.";
+                        ? "Người mua đã check-in và đang chờ bạn tại lịch hẹn kiểm định."
+                        : "Người bán đã check-in và đang chờ bạn tại lịch hẹn kiểm định.";
 
                 await _appointmentRepo.UpdateAsync(appointment, ct);
 

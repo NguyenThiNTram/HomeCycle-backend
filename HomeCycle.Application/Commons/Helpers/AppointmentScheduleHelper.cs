@@ -10,7 +10,7 @@ namespace HomeCycle.Application.Commons.Helpers
     {
         private static readonly TimeSpan VietnamOffset = TimeSpan.FromHours(7);
         private static readonly TimeSpan BusinessStartTime = TimeSpan.FromHours(8);
-        private static readonly TimeSpan BusinessEndTime = TimeSpan.FromHours(20);
+        private static readonly TimeSpan BusinessEndTime = TimeSpan.FromHours(22);
 
         public static bool IsWithinBusinessHours(DateTime scheduledAt)
         {

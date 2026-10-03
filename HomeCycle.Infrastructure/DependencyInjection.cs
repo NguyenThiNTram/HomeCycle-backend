@@ -232,6 +232,11 @@ namespace HomeCycle.Infrastructure
             services.AddScoped<HomeCycle.Application.Pricing.Matching.DynamicAttributeMatcher>();
             services.AddScoped<HomeCycle.Application.Pricing.Matching.EquivalentModelMatcher>();
             services.AddScoped<HomeCycle.Application.Interfaces.Services.AI.IExternalUsedPriceSearchService, GeminiExternalUsedPriceSearchService>();
+            services.AddScoped<HomeCycle.Application.Interfaces.Services.AI.INewPriceSearchService, GeminiNewPriceSearchService>();
+            services.AddSingleton(
+                configuration.GetSection(HomeCycle.Application.Pricing.Models.PriceSuggestionOptions.SectionName)
+                    .Get<HomeCycle.Application.Pricing.Models.PriceSuggestionOptions>()
+                ?? new HomeCycle.Application.Pricing.Models.PriceSuggestionOptions());
             services.AddScoped<HomeCycle.Application.Interfaces.Services.SupplierMatching.ISupplierMatchAiReranker,
                 GeminiSupplierMatchReranker>();
             services.AddScoped<HomeCycle.Application.Interfaces.Services.SupplierMatching.ISupplierMatchEntitlementService,
@@ -311,6 +316,7 @@ namespace HomeCycle.Infrastructure
             services.AddScoped<IDisputeCategoryRepository, DisputeCategoryRepository>();
             services.AddScoped<ISubscriptionPackageRepository, SubscriptionPackageRepository>();
             services.AddScoped<IUserSubscriptionRepository, UserSubscriptionRepository>();
+            services.AddScoped<IDisputeResponseRepository, DisputeResponseRepository>();
 
             // register Services
             services.AddScoped<IAuthService, AuthService>();
@@ -347,11 +353,14 @@ namespace HomeCycle.Infrastructure
             //services.AddScoped<IOrderSettlementService, OrderSettlementService>();
             services.AddScoped<IAppointmentService, AppointmentService>();
             services.AddScoped<IAppointmentRealtimeService, AppointmentRealtimeService>();
+            services.AddScoped<IAppointmentReminderProcessor, AppointmentReminderProcessor>();
             services.AddScoped<IOrderService, OrderService>();
+            services.AddScoped<IOrderLifecycleProcessor, DisputeLifecycleProcessor>();
             services.AddScoped<IOrderLifecycleProcessor, BuyerReturnTimeoutProcessor>();
             services.AddScoped<IOrderLifecycleProcessor, AutoCompleteOrderProcessor>();
             services.AddScoped<IOrderLifecycleProcessor, AutoReleaseOrderProcessor>();
             services.AddSingleton<IOrderTimelineBuilder, OrderTimelineBuilder>();
+            services.AddSingleton<IDisputeTimelineBuilder, DisputeTimelineBuilder>();
             services.AddScoped<IOrderTrackingRealtimeService, OrderTrackingRealtimeService>();
             services.AddScoped<IShipmentService, ShipmentService>();
             services.AddScoped<IReviewService, ReviewService>();

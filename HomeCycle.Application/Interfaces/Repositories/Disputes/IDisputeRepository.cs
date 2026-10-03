@@ -50,6 +50,18 @@ namespace HomeCycle.Application.Interfaces.Repositories.Disputes
             DateTime nowUtc,
             int limit,
             CancellationToken cancellationToken = default);
+        Task<bool> ExistsForAppointmentOriginAsync(
+            Guid appointmentId,
+            DisputeOrigin origin,
+            CancellationToken ct = default);
 
+        Task<IReadOnlyList<Guid>> GetAwaitingResponseTimeoutCandidateIdsAsync(
+            DateTime nowUtc,
+            int limit,
+            CancellationToken ct = default);
+
+        Task<IReadOnlyList<Guid>> GetSystemNoShowMaintenanceCandidateIdsAsync(
+            int limit,
+            CancellationToken ct = default);
     }
 }

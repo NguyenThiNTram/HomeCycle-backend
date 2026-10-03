@@ -68,5 +68,10 @@ namespace HomeCycle.Application.Interfaces.Services.Disputes
             Guid moderatorId,
             VerifyDisputeReturnRequest request,
             CancellationToken cancellationToken = default);
+        Task<Result<DisputeDetailResponse>> RespondAsync(
+            Guid disputeId,
+            Guid responderId,
+            RespondDisputeRequest request,
+            CancellationToken cancellationToken = default);
     }
 }

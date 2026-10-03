@@ -89,6 +89,12 @@ namespace HomeCycle.API.Controllers
             return result.IsSuccess ? Ok(result.Data) : BadRequest(result.Error);
         }
 
+        [HttpPost("appointment/{appointmentId:guid}/quick-accept")]
+        public async Task<IActionResult> QuickAccept(Guid appointmentId, CancellationToken cancellationToken)
+        {
+            var result = await _inspectionService.QuickAcceptAsync(appointmentId, GetCurrentUserId(), cancellationToken);
+            return result.IsSuccess ? Ok(result.Data) : BadRequest(result.Error);
+        }
         private Guid GetCurrentUserId()
         {
             var claim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;

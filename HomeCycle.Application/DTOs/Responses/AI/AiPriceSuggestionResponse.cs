@@ -11,9 +11,27 @@ public sealed class AiPriceSuggestionResponse
     public string Explanation { get; set; } = string.Empty;
     public AiPriceEvidenceSummary Evidence { get; set; } = new();
     public List<AiPriceSource> Sources { get; set; } = [];
+    public AiPriceBreakdown? Breakdown { get; set; }
     public int RemainingToday { get; set; }
     public DateTimeOffset ResetsAt { get; set; }
 }
+
+// Cách tính giá để FE hiển thị trong "Xem cách tính". Các dòng điều chỉnh áp dụng nối tiếp.
+public sealed class AiPriceBreakdown
+{
+    // USED_MARKET | BLENDED | NEW_PRICE_DEPRECIATION
+    public string Method { get; set; } = string.Empty;
+    public string BaseLabel { get; set; } = string.Empty;
+    public decimal BasePrice { get; set; }
+    public List<AiPriceAdjustment> Adjustments { get; set; } = [];
+    public decimal FinalPrice { get; set; }
+    public decimal? NewPriceReference { get; set; }
+}
+
+public sealed record AiPriceAdjustment(
+    string Label,
+    decimal? Percent,
+    decimal? Amount);
 
 public sealed class AiPriceEvidenceSummary
 {
@@ -32,4 +50,6 @@ public sealed record AiPriceSource(
     string SourceType,
     string SourceName,
     string SourceUrl,
-    DateTimeOffset ObservedAt);
+    DateTimeOffset ObservedAt,
+    string? TrustLevel = null,
+    bool UsedInCalculation = false);

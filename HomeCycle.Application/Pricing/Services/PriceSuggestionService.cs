@@ -7,27 +7,21 @@ using HomeCycle.Application.Pricing.Models;
 
 namespace HomeCycle.Application.Pricing.Services;
 
+// Giá gợi ý = giá gốc (máy tình trạng tốt) × hệ số tình trạng, tối đa 85% giá bán mới.
+// Giá gốc lấy từ giá máy cũ cùng model (đã quy về tình trạng tốt); thiếu mẫu thì kết hợp
+// hoặc thay bằng giá bán mới đã khấu hao theo thời gian sử dụng. Gemini chỉ dùng để tìm dữ liệu.
 public sealed class PriceSuggestionService(
     IPriceEvidenceRepository evidenceRepository,
     IProductContextProvider productContextProvider,
     IExternalUsedPriceSearchService externalSearch,
-    IPriceSuggestionAiClient aiClient,
+    INewPriceSearchService newPriceSearch,
     IPriceSuggestionQuota quota,
     DynamicAttributeMatcher attributeMatcher,
     EquivalentModelMatcher equivalentModelMatcher,
+    PriceSuggestionOptions options,
     TimeProvider clock) : IPriceSuggestionService
 {
-    private static readonly HashSet<string> AllowedReasonCodes = new(StringComparer.Ordinal)
-    {
-        "COMPLETED_TRADE_REFERENCE",
-        "INTERNAL_LISTING_REFERENCE",
-        "EXTERNAL_USED_LISTING_REFERENCE",
-        "EQUIVALENT_MODEL_REFERENCE",
-        "NEW_MARKET_PRICE_REFERENCE",
-        "LIMITED_EVIDENCE",
-        "ATTRIBUTE_MATCH_UNKNOWN",
-        "NO_RELIABLE_EVIDENCE"
-    };
+    private const int ReliableUsedSampleCount = 3;
 
     public async Task<AiPriceSuggestionResponse?> SuggestAsync(
         Guid userId,
@@ -39,8 +33,12 @@ public sealed class PriceSuggestionService(
             return null;
 
         var now = clock.GetUtcNow();
-        var completedCandidates = await evidenceRepository.GetCompletedAsync(
-            product.ProductTypeId, product.BrandId, product.Model, now.UtcDateTime, cancellationToken);
+        // Giá giao dịch/tin đăng HomeCycle chỉ được dùng khi bật cấu hình (xem PriceSuggestionOptions).
+        var useHomeCycleEvidence = options.UseHomeCyclePriceEvidence;
+        var completedCandidates = useHomeCycleEvidence
+            ? await evidenceRepository.GetCompletedAsync(
+                product.ProductTypeId, product.BrandId, product.Model, now.UtcDateTime, cancellationToken)
+            : Array.Empty<CompletedPriceEvidence>();
 
         var evaluatedTrades = completedCandidates
             .Select(item => new EvaluatedTrade(item, attributeMatcher.Match(product.Attributes, item.Attributes)))
@@ -48,17 +46,12 @@ public sealed class PriceSuggestionService(
             .Take(120)
             .ToList();
         var unknownTradeSamples = evaluatedTrades.Count(x => x.Match.Level == AttributeMatchLevel.Unknown);
-        var sameCondition = evaluatedTrades
-            .Where(x => x.Evidence.FunctionalityStatus == (int)product.FunctionalityStatus &&
-                        x.Evidence.DamageLevel == (int)product.DamageLevel)
-            .Select(x => x.Evidence)
-            .ToList();
-        var trades = sameCondition.Count >= 3
-            ? sameCondition
-            : evaluatedTrades.Select(x => x.Evidence).ToList();
+        var trades = evaluatedTrades.Select(x => x.Evidence).ToList();
 
-        var listingCandidates = await evidenceRepository.GetActiveAsync(
-            product.ProductTypeId, product.BrandId, product.Model, now.UtcDateTime, cancellationToken);
+        var listingCandidates = useHomeCycleEvidence
+            ? await evidenceRepository.GetActiveAsync(
+                product.ProductTypeId, product.BrandId, product.Model, now.UtcDateTime, cancellationToken)
+            : Array.Empty<ListingPriceEvidence>();
         var listings = listingCandidates
             .Where(item => attributeMatcher.Match(product.Attributes, item.Attributes).Level !=
                            AttributeMatchLevel.Conflicted)
@@ -72,7 +65,10 @@ public sealed class PriceSuggestionService(
         var remaining = await quota.RemainingAsync(userId, dailyLimit, cancellationToken);
         var reserved = false;
         var external = ExternalUsedPriceSearchResult.Empty;
-        if (trades.Count + listings.Count < 2)
+        var searchedNewPrices = NewPriceSearchResult.Empty;
+        var needsExternalUsed = trades.Count + listings.Count < 2;
+        var needsNewPriceSearch = marketReferences.Count == 0;
+        if (needsExternalUsed || needsNewPriceSearch)
         {
             var reservedRemaining = await quota.ReserveAsync(userId, dailyLimit, cancellationToken);
             if (reservedRemaining is null)
@@ -80,7 +76,13 @@ public sealed class PriceSuggestionService(
 
             reserved = true;
             remaining = reservedRemaining.Value;
-            external = await externalSearch.SearchAsync(product, cancellationToken);
+
+            // Chạy lần lượt: GeminiRequestService chỉ cho một lệnh Gemini chạy tại một thời điểm và
+            // thời gian chờ của từng lệnh tính cả lúc xếp hàng, nên chạy song song làm lệnh sau hết giờ.
+            if (needsExternalUsed)
+                external = await externalSearch.SearchAsync(product, cancellationToken);
+            if (needsNewPriceSearch)
+                searchedNewPrices = await newPriceSearch.SearchAsync(product, cancellationToken);
         }
 
         var exactExternalItems = external.Items
@@ -96,7 +98,7 @@ public sealed class PriceSuggestionService(
         if (hasExactUsedEvidence)
             relatedExternalItems = [];
 
-        if (!hasExactUsedEvidence)
+        if (!hasExactUsedEvidence && useHomeCycleEvidence)
         {
             var equivalentTradeCandidates = await evidenceRepository.GetEquivalentCompletedAsync(
                 product.ProductTypeId,
@@ -129,52 +131,107 @@ public sealed class PriceSuggestionService(
                 .ToList();
         }
 
-        var completedAll = CalculateStats(trades.Select(x => x.Price));
-        var completedRecent = CalculateStats(trades
-            .Where(x => x.CompletedAt >= now.AddDays(-30).UtcDateTime)
-            .Select(x => x.Price));
-        var completedOlder = CalculateStats(trades
-            .Where(x => x.CompletedAt < now.AddDays(-30).UtcDateTime)
-            .Select(x => x.Price));
-        var listingStats = CalculateStats(listings.Select(x => x.Price));
-        var externalStats = CalculateStats(exactExternalItems.Select(x => x.PriceVnd));
-        var equivalentExternalStats = CalculateStats(relatedExternalItems.Select(x => x.PriceVnd));
-        var equivalentCompletedStats = CalculateStats(equivalentTrades.Select(x => x.Price));
-        var equivalentListingStats = CalculateStats(equivalentListings.Select(x => x.Price));
-        var equivalentCombinedStats = CalculateStats(
-            equivalentTrades.Select(x => x.Price)
-                .Concat(equivalentListings.Select(x => x.Price))
-                .Concat(relatedExternalItems.Select(x => x.PriceVnd)));
-        var combinedListingStats = CalculateStats(
-            listings.Select(x => x.Price).Concat(exactExternalItems.Select(x => x.PriceVnd)));
-        var marketStats = CalculateStats(marketReferences.Select(x => x.PriceVndPerUnit));
+        // Bước 2: giá bán mới, lấy từ nguồn uy tín nhất có dữ liệu: bảng giá đã kiểm duyệt
+        // → trang chính hãng → chuỗi bán lẻ lớn (ưu tiên ≥ 2 nguồn khớp nhau, cuối cùng mới tới 1 nguồn).
+        var (newPrice, newPriceSourceLabel, newPriceOrigin, newPriceRetailers) =
+            SelectNewPrice(marketReferences, searchedNewPrices.Items);
+        if (newPrice is not > 0)
+            newPrice = null;
+        var newPriceSampleCount = marketReferences.Count > 0 ? marketReferences.Count : searchedNewPrices.Items.Count;
+
+        // Bước 1: giá máy cũ quy về tình trạng tốt. Lấy lần lượt giao dịch HomeCycle → tin đăng
+        // HomeCycle → chuỗi bán lẻ lớn → trang rao vặt, dừng khi đã đủ mẫu.
+        var usingEquivalentEvidence = !hasExactUsedEvidence;
+        var usedTiers = usingEquivalentEvidence
+            // Mẫu web khác model chỉ hiển thị để tham khảo: hãng, loại hàng và độ tương thích của
+            // chúng do Gemini tự đánh giá nên không đủ căn cứ để tính giá. Mẫu tương đương trên
+            // HomeCycle được so thuộc tính bằng code nên vẫn dùng.
+            ? BuildUsedTiers(equivalentTrades, equivalentListings, Array.Empty<ExternalUsedPriceEvidence>())
+            : BuildUsedTiers(trades, listings, exactExternalItems);
+        var (pooledUsedPrices, usedSourceTiers) = TakeMostTrusted(usedTiers);
+
+        // Giá mới thấp hơn giá máy cũ tình trạng tốt là mâu thuẫn. Chỉ bỏ giá mới khi nó yếu (chỉ 1
+        // nhà bán lẻ) và mâu thuẫn với dữ liệu HomeCycle. Các trường hợp khác giữ giá mới làm giới
+        // hạn, để bộ lọc loại các mẫu máy cũ cao hơn giá mới và giá gợi ý không vượt giá mới.
+        var homeCycleUsedPrices = usedTiers
+            .Where(t => (t.Tier is PriceSourceTier.HomeCycleTrade or PriceSourceTier.HomeCycleListing) &&
+                        usedSourceTiers.Contains(t.Tier))
+            .SelectMany(t => t.Prices)
+            .OrderBy(x => x)
+            .ToArray();
+        var newPriceConflict = false;
+        if (newPrice is not null && newPriceOrigin == NewPriceOrigin.SingleRetailer &&
+            homeCycleUsedPrices.Length > 0 &&
+            newPrice.Value < PriceConditionFormula.Median(homeCycleUsedPrices))
+        {
+            newPrice = null;
+            newPriceSourceLabel = null;
+            newPriceOrigin = NewPriceOrigin.None;
+            newPriceConflict = true;
+        }
+
+        var usedPrices = PriceConditionFormula.FilterUsedPrices(pooledUsedPrices, newPrice);
+        var usedSampleCount = usedPrices.Length;
+        decimal? usedGoodPrice = usedSampleCount > 0 ? PriceConditionFormula.Median(usedPrices) : null;
 
         var response = CreateBaseResponse(
-            completedAll.SampleCount,
-            listingStats.SampleCount,
-            externalStats.SampleCount,
-            equivalentCompletedStats.SampleCount,
-            equivalentListingStats.SampleCount,
-            equivalentExternalStats.SampleCount,
-            marketStats.SampleCount,
+            trades.Count,
+            listings.Count,
+            exactExternalItems.Count,
+            equivalentTrades.Count,
+            equivalentListings.Count,
+            relatedExternalItems.Count,
+            newPriceSampleCount,
             unknownTradeSamples,
             external.FromCache,
             remaining,
-            quota.ResetsAt,
+            quota.ResetsAt);
+        response.Sources = BuildSources(
             exactExternalItems.Concat(relatedExternalItems).ToArray(),
-            marketReferences);
+            marketReferences,
+            searchedNewPrices.Items,
+            usedSourceTiers,
+            usedPrices,
+            newPrice is null ? NewPriceOrigin.None : newPriceOrigin,
+            newPriceRetailers);
 
-        var hasExactEvidence = completedAll.SampleCount > 0 ||
-                               listingStats.SampleCount > 0 ||
-                               externalStats.SampleCount > 0;
-        var hasEquivalentEvidence = equivalentCombinedStats.SampleCount > 0;
-        var hasReliableEvidence = hasExactEvidence || hasEquivalentEvidence;
-        if (!hasReliableEvidence)
+        // Bước 3: giá gốc cho máy tình trạng tốt.
+        var annualRate = PriceConditionFormula.AnnualDepreciationRate(product.ProductTypeName);
+        var usageYears = product.UsageDuration;
+        var remainingRatio = PriceConditionFormula.RemainingValueRatio(annualRate, usageYears ?? 1);
+        decimal? depreciatedNewPrice = newPrice * remainingRatio;
+
+        string method;
+        decimal basePrice;
+        var adjustments = new List<AiPriceAdjustment>();
+        if (usedGoodPrice is not null &&
+            (usedSampleCount >= ReliableUsedSampleCount || depreciatedNewPrice is null))
+        {
+            method = "USED_MARKET";
+            basePrice = usedGoodPrice.Value;
+        }
+        else if (usedGoodPrice is not null && depreciatedNewPrice is not null)
+        {
+            method = "BLENDED";
+            basePrice = (usedGoodPrice.Value + depreciatedNewPrice.Value) / 2;
+        }
+        else if (newPrice is not null)
+        {
+            method = "NEW_PRICE_DEPRECIATION";
+            basePrice = newPrice.Value;
+            adjustments.Add(new AiPriceAdjustment(
+                usageYears is null
+                    ? $"Khấu hao tạm tính 1 năm (chưa nhập thời gian sử dụng) × {FormatPercent(annualRate)}/năm"
+                    : $"Khấu hao {usageYears} năm × {FormatPercent(annualRate)}/năm",
+                ToPercentChange(remainingRatio),
+                null));
+        }
+        else
         {
             response.Status = "NO_RELIABLE_DATA";
             response.ReasonCodes = ["NO_RELIABLE_EVIDENCE"];
             response.Explanation =
-                "Chưa tìm được giao dịch, bài đăng hoặc tin bán đồ cũ cùng loại và cùng hãng đủ tin cậy để đưa ra giá tham khảo.";
+                "Chưa tìm được giá đồ cũ cùng loại, cùng hãng hoặc giá bán mới đủ tin cậy để tính giá tham khảo.";
             return response;
         }
 
@@ -186,73 +243,198 @@ public sealed class PriceSuggestionService(
             response.RemainingToday = reservedRemaining.Value;
         }
 
-        var usingEquivalentEvidence = !hasExactEvidence && hasEquivalentEvidence;
-        var basisPrices = usingEquivalentEvidence
-            ? equivalentTrades.Select(x => x.Price)
-                .Concat(equivalentListings.Select(x => x.Price))
-                .Concat(relatedExternalItems.Select(x => x.PriceVnd))
-            : listings.Select(x => x.Price)
-                .Concat(trades.Select(x => x.Price))
-                .Concat(exactExternalItems.Select(x => x.PriceVnd));
-        var basis = CalculateStats(basisPrices);
-        var allowedRange = new AllowedPriceRange(
-            RoundDown(basis.MinPrice!.Value),
-            RoundUp(basis.MaxPrice!.Value));
-
-        var context = new PriceSuggestionContext(
-            new PriceSuggestionProduct(
-                product.ProductTypeName,
-                product.BrandName,
-                product.Model,
-                product.FunctionalityStatus.ToString(),
-                product.DamageLevel.ToString(),
-                product.UsageDuration,
-                product.Attributes.Select(x => new PriceContextAttribute(x.Name, x.DisplayValue, x.Unit)).ToArray()),
-            new PriceTimeGroupedStatistics(
-                completedRecent,
-                completedOlder,
-                completedAll,
-                sameCondition.Count),
-            listingStats,
-            externalStats,
-            equivalentCompletedStats,
-            equivalentListingStats,
-            equivalentExternalStats,
-            marketStats,
-            allowedRange,
-            new PriceEvidenceQuality(
-                evaluatedTrades.Count(x => x.Match.Level == AttributeMatchLevel.Matched),
-                unknownTradeSamples,
-                exactExternalItems.Count > 0 || relatedExternalItems.Count > 0,
-                external.FromCache));
-
-        var decision = await aiClient.SuggestAsync(context, cancellationToken);
-        if (TryAcceptDecision(decision, context, out var accepted))
+        // Bước 4: trừ theo tình trạng người bán chọn, tối đa 85% giá bán mới.
+        var functionalityFactor = PriceConditionFormula.FunctionalityFactor(product.FunctionalityStatus);
+        var damageFactor = PriceConditionFormula.DamageFactor(product.DamageLevel);
+        var conditionFactor = PriceConditionFormula.ConditionFactor(product.FunctionalityStatus, product.DamageLevel);
+        var functionalityLabel = PriceConditionFormula.FunctionalityLabel(product.FunctionalityStatus);
+        var damageLabel = PriceConditionFormula.DamageLabel(product.DamageLevel);
+        if (conditionFactor > functionalityFactor * damageFactor)
         {
-            response.Status = "SUGGESTED";
-            response.SuggestedPrice = accepted.SuggestedPrice;
-            response.MinPrice = accepted.MinPrice;
-            response.MaxPrice = accepted.MaxPrice;
-            response.ReasonCodes = accepted.ReasonCodes.ToList();
-            response.Explanation = accepted.ShortExplanation;
-            response.Confidence = GetConfidence(
-                completedAll.SampleCount,
-                listingStats.SampleCount,
-                externalStats.SampleCount,
-                usingEquivalentEvidence);
-            return response;
+            adjustments.Add(new AiPriceAdjustment(
+                $"{functionalityLabel}, {damageLabel} (tính theo giá thanh lý)",
+                ToPercentChange(conditionFactor),
+                null));
+        }
+        else
+        {
+            adjustments.Add(new AiPriceAdjustment(functionalityLabel, ToPercentChange(functionalityFactor), null));
+            adjustments.Add(new AiPriceAdjustment(damageLabel, ToPercentChange(damageFactor), null));
         }
 
-        ApplyFallback(
-            response,
-            completedAll,
-            listingStats,
-            externalStats,
-            combinedListingStats,
-            equivalentCombinedStats,
-            usingEquivalentEvidence);
+        var workingPrice = method == "NEW_PRICE_DEPRECIATION"
+            ? basePrice * remainingRatio * conditionFactor
+            : basePrice * conditionFactor;
+        if (newPrice is not null)
+        {
+            var cap = newPrice.Value * PriceConditionFormula.MaxUsedToNewPriceRatio;
+            if (workingPrice > cap)
+            {
+                adjustments.Add(new AiPriceAdjustment(
+                    $"Giới hạn tối đa {FormatPercent(PriceConditionFormula.MaxUsedToNewPriceRatio)} giá bán mới",
+                    null,
+                    RoundNearest(cap - workingPrice)));
+                workingPrice = cap;
+            }
+        }
+
+        var suggestedPrice = Math.Max(10_000m, RoundNearest(workingPrice));
+        response.Status = "SUGGESTED";
+        response.SuggestedPrice = suggestedPrice;
+        response.MinPrice = Math.Max(10_000m, RoundDown(suggestedPrice * (1m - PriceConditionFormula.SuggestedRangeRatio)));
+        response.MaxPrice = RoundUp(suggestedPrice * (1m + PriceConditionFormula.SuggestedRangeRatio));
+        response.Confidence = GetConfidence(
+            method,
+            usingEquivalentEvidence,
+            usedSourceTiers.Contains(PriceSourceTier.HomeCycleTrade) ? trades.Count : 0,
+            usedSampleCount,
+            usedSourceTiers.Contains(PriceSourceTier.Classified) || newPriceConflict);
+        response.ReasonCodes = BuildReasonCodes(
+            method,
+            usingEquivalentEvidence,
+            usedSourceTiers.Contains(PriceSourceTier.HomeCycleTrade) ? 1 : 0,
+            usedSourceTiers.Contains(PriceSourceTier.HomeCycleListing) ? 1 : 0,
+            usedSourceTiers.Any(t => t is PriceSourceTier.MajorRetailer or PriceSourceTier.Classified) ? 1 : 0,
+            newPrice is not null,
+            usedSampleCount,
+            unknownTradeSamples);
+        response.Explanation = BuildExplanation(
+            method, usingEquivalentEvidence, usedSampleCount, usageYears, usedSourceTiers, newPriceSourceLabel);
+        if (newPriceConflict)
+            response.Explanation +=
+                " Giá bán mới tìm được (chỉ 1 nhà bán lẻ) thấp hơn giá máy cũ trên HomeCycle nên không được dùng; nên kiểm tra lại trước khi đăng.";
+        response.Breakdown = new AiPriceBreakdown
+        {
+            Method = method,
+            BaseLabel = method switch
+            {
+                "BLENDED" => "Giá tham chiếu tình trạng tốt (máy cũ và giá mới đã khấu hao)",
+                "NEW_PRICE_DEPRECIATION" => $"Giá bán mới ({newPriceSourceLabel})",
+                _ => usingEquivalentEvidence
+                    ? "Giá máy cũ model tương đương, tình trạng tốt"
+                    : "Giá máy cũ cùng model, tình trạng tốt"
+            },
+            BasePrice = RoundNearest(basePrice),
+            Adjustments = adjustments,
+            FinalPrice = suggestedPrice,
+            NewPriceReference = newPrice is null ? null : RoundNearest(newPrice.Value)
+        };
         return response;
     }
+
+    private static IReadOnlyList<(PriceSourceTier Tier, IReadOnlyList<decimal> Prices)> BuildUsedTiers(
+        IEnumerable<CompletedPriceEvidence> trades,
+        IEnumerable<ListingPriceEvidence> listings,
+        IEnumerable<ExternalUsedPriceEvidence> externalItems)
+    {
+        var external = externalItems.ToList();
+        return new (PriceSourceTier, IReadOnlyList<decimal>)[]
+        {
+            (PriceSourceTier.HomeCycleTrade,
+                NormalizeToGood(trades.Select(x => (x.Price, x.FunctionalityStatus, x.DamageLevel)))),
+            (PriceSourceTier.HomeCycleListing,
+                NormalizeToGood(listings.Select(x => (x.Price, x.FunctionalityStatus, x.DamageLevel)))),
+            // Tin trên mạng chưa có tình trạng chuẩn hóa nên giữ nguyên giá.
+            // Mỗi nhà bán lẻ chỉ tính một mẫu; tin rao vặt là của từng người bán nên tính riêng từng tin.
+            (PriceSourceTier.MajorRetailer, ExternalPricesPerDomain(external, PriceSourceTier.MajorRetailer)),
+            (PriceSourceTier.Classified, ExternalPrices(external, PriceSourceTier.Classified))
+        };
+    }
+
+    private static IReadOnlyList<decimal> NormalizeToGood(
+        IEnumerable<(decimal Price, int? Functionality, int? Damage)> samples) =>
+        samples
+            .Select(x => PriceConditionFormula.NormalizeToGoodCondition(x.Price, x.Functionality, x.Damage))
+            .Where(x => x is > 0)
+            .Select(x => x!.Value)
+            .ToArray();
+
+    private static IReadOnlyList<decimal> ExternalPrices(
+        IEnumerable<ExternalUsedPriceEvidence> items,
+        PriceSourceTier tier) =>
+        items
+            .Where(x => x.SourceTier == tier && PriceConditionFormula.IsWithinPostingLimits(x.PriceVnd))
+            .Select(x => x.PriceVnd)
+            .ToArray();
+
+    private static IReadOnlyList<decimal> ExternalPricesPerDomain(
+        IEnumerable<ExternalUsedPriceEvidence> items,
+        PriceSourceTier tier) =>
+        items
+            .Where(x => x.SourceTier == tier && PriceConditionFormula.IsWithinPostingLimits(x.PriceVnd))
+            .GroupBy(x => x.SourceDomain ?? x.SourceName, StringComparer.OrdinalIgnoreCase)
+            .Select(g => PriceConditionFormula.Median(g.Select(x => x.PriceVnd).OrderBy(x => x).ToArray()))
+            .ToArray();
+
+    // Gom mẫu từ nhóm uy tín nhất trở xuống, dừng khi đã đủ mẫu tin cậy.
+    private static (List<decimal> Prices, List<PriceSourceTier> Tiers) TakeMostTrusted(
+        IReadOnlyList<(PriceSourceTier Tier, IReadOnlyList<decimal> Prices)> tiers)
+    {
+        var prices = new List<decimal>();
+        var usedTiers = new List<PriceSourceTier>();
+        foreach (var (tier, values) in tiers)
+        {
+            if (values.Count == 0)
+                continue;
+            prices.AddRange(values);
+            usedTiers.Add(tier);
+            if (prices.Count >= ReliableUsedSampleCount)
+                break;
+        }
+
+        return (prices, usedTiers);
+    }
+
+    private enum NewPriceOrigin { None, Verified, Official, RetailerConsensus, SingleRetailer }
+
+    private static (decimal? Price, string? SourceLabel, NewPriceOrigin Origin, IReadOnlySet<string> Retailers)
+        SelectNewPrice(IReadOnlyList<MarketPriceEvidence> verified, IReadOnlyList<NewPriceEvidence> searched)
+    {
+        var none = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var verifiedPrices = verified.Select(x => x.PriceVndPerUnit).Where(x => x > 0).OrderBy(x => x).ToArray();
+        if (verifiedPrices.Length > 0)
+            return (PriceConditionFormula.Median(verifiedPrices), "bảng giá đã kiểm duyệt", NewPriceOrigin.Verified, none);
+
+        // Mỗi nhà bán lẻ chỉ tính là một nguồn, dù có nhiều trang sản phẩm.
+        var official = PricePerDomain(searched, PriceSourceTier.OfficialBrand);
+        var retail = PricePerDomain(searched, PriceSourceTier.MajorRetailer);
+        var agreed = PriceConditionFormula.AgreeingNewPrices(retail.Select(x => x.Price));
+        decimal? consensus = agreed.Length > 0 ? PriceConditionFormula.Median(agreed) : null;
+        if (official.Length > 0)
+        {
+            var officialPrice = PriceConditionFormula.Median(official.Select(x => x.Price).ToArray());
+            // Có giá đồng thuận của nhà bán lẻ thì giá chính hãng phải khớp (lệch ≤ 25%) mới được dùng.
+            if (consensus is null ||
+                Math.Abs(officialPrice - consensus.Value) <= consensus.Value * PriceConditionFormula.NewPriceOutlierBand)
+                return (officialPrice, "trang chính hãng", NewPriceOrigin.Official, Keys(official));
+        }
+
+        if (consensus is not null)
+        {
+            var agreedRetailers = retail.Where(x => agreed.Contains(x.Price)).ToArray();
+            return (consensus, $"{agreedRetailers.Length} nhà bán lẻ lớn", NewPriceOrigin.RetailerConsensus,
+                Keys(agreedRetailers));
+        }
+
+        return retail.Length == 1
+            ? (retail[0].Price, "1 nhà bán lẻ lớn", NewPriceOrigin.SingleRetailer, Keys(retail))
+            : (null, null, NewPriceOrigin.None, none);
+
+        static IReadOnlySet<string> Keys(IEnumerable<RetailerPrice> items) =>
+            items.Select(x => x.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private sealed record RetailerPrice(string Key, decimal Price);
+
+    private static RetailerPrice[] PricePerDomain(IEnumerable<NewPriceEvidence> items, PriceSourceTier tier) =>
+        items
+            .Where(x => x.SourceTier == tier && PriceConditionFormula.IsWithinPostingLimits(x.PriceVnd))
+            .GroupBy(x => x.SourceDomain ?? x.SourceName, StringComparer.OrdinalIgnoreCase)
+            .Select(g => new RetailerPrice(
+                g.Key,
+                PriceConditionFormula.Median(g.Select(x => x.PriceVnd).OrderBy(x => x).ToArray())))
+            .OrderBy(x => x.Price)
+            .ToArray();
 
     private static AiPriceSuggestionResponse CreateBaseResponse(
         int completedTrades,
@@ -265,37 +447,98 @@ public sealed class PriceSuggestionService(
         int unknownAttributeSamples,
         bool externalSearchFromCache,
         int remainingToday,
-        DateTimeOffset resetsAt,
-        IReadOnlyList<ExternalUsedPriceEvidence> externalSources,
-        IReadOnlyList<MarketPriceEvidence> marketSources)
+        DateTimeOffset resetsAt) => new()
     {
-        return new AiPriceSuggestionResponse
+        RemainingToday = remainingToday,
+        ResetsAt = resetsAt,
+        Evidence = new AiPriceEvidenceSummary
         {
-            RemainingToday = remainingToday,
-            ResetsAt = resetsAt,
-            Evidence = new AiPriceEvidenceSummary
-            {
-                CompletedTradeSamples = completedTrades,
-                InternalListingSamples = internalListings,
-                ExternalListingSamples = externalListings,
-                EquivalentCompletedTradeSamples = equivalentCompletedTrades,
-                EquivalentInternalListingSamples = equivalentInternalListings,
-                EquivalentExternalListingSamples = equivalentExternalListings,
-                NewMarketPriceSamples = newMarketPrices,
-                UnknownAttributeSamples = unknownAttributeSamples,
-                ExternalSearchFromCache = externalSearchFromCache
-            },
-            Sources = externalSources.Select(x => new AiPriceSource(
-                    x.ModelMatchLevel == ExternalModelMatchLevel.Related
-                        ? "EXTERNAL_EQUIVALENT_LISTING"
-                        : "EXTERNAL_USED_LISTING",
-                    x.SourceName,
-                    x.SourceUrl,
-                    x.RetrievedAt))
-                .Concat(marketSources.Take(3).Select(x => new AiPriceSource(
-                    "NEW_MARKET_REFERENCE", x.SourceName, x.SourceUrl, AsUtcOffset(x.ObservedAt))))
-                .ToList()
-        };
+            CompletedTradeSamples = completedTrades,
+            InternalListingSamples = internalListings,
+            ExternalListingSamples = externalListings,
+            EquivalentCompletedTradeSamples = equivalentCompletedTrades,
+            EquivalentInternalListingSamples = equivalentInternalListings,
+            EquivalentExternalListingSamples = equivalentExternalListings,
+            NewMarketPriceSamples = newMarketPrices,
+            UnknownAttributeSamples = unknownAttributeSamples,
+            ExternalSearchFromCache = externalSearchFromCache
+        }
+    };
+
+    // Danh sách nguồn trả cho app; UsedInCalculation cho biết nguồn có thực sự vào phép tính không.
+    private static List<AiPriceSource> BuildSources(
+        IReadOnlyList<ExternalUsedPriceEvidence> externalItems,
+        IReadOnlyList<MarketPriceEvidence> marketSources,
+        IReadOnlyList<NewPriceEvidence> searchedNewPriceSources,
+        IReadOnlyList<PriceSourceTier> usedSourceTiers,
+        IReadOnlyList<decimal> usedPrices,
+        NewPriceOrigin newPriceOrigin,
+        IReadOnlySet<string> newPriceRetailers)
+    {
+        // Giá máy cũ: nhà bán lẻ được tính bằng giá giữa của từng nhà bán lẻ, tin rao vặt tính từng tin.
+        // Nguồn được coi là "dùng để tính" khi đúng giá đó còn nằm trong tập giá sau khi lọc.
+        var keptPrices = usedPrices.ToHashSet();
+        var retailerMedians = externalItems
+            .Where(x => x.SourceTier == PriceSourceTier.MajorRetailer &&
+                        x.ModelMatchLevel != ExternalModelMatchLevel.Related &&
+                        PriceConditionFormula.IsWithinPostingLimits(x.PriceVnd))
+            .GroupBy(x => x.SourceDomain ?? x.SourceName, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                g => g.Key,
+                g => PriceConditionFormula.Median(g.Select(x => x.PriceVnd).OrderBy(x => x).ToArray()),
+                StringComparer.OrdinalIgnoreCase);
+
+        var used = externalItems.OrderBy(x => x.SourceTier).Select(x =>
+        {
+            var referenceOnly = x.ModelMatchLevel == ExternalModelMatchLevel.Related;
+            var contributedPrice = x.SourceTier == PriceSourceTier.MajorRetailer
+                ? retailerMedians.GetValueOrDefault(x.SourceDomain ?? x.SourceName)
+                : x.PriceVnd;
+            var inCalculation = !referenceOnly &&
+                                usedSourceTiers.Contains(x.SourceTier) &&
+                                PriceConditionFormula.IsWithinPostingLimits(x.PriceVnd) &&
+                                keptPrices.Contains(contributedPrice);
+            return new AiPriceSource(
+                referenceOnly ? "EXTERNAL_EQUIVALENT_LISTING" : "EXTERNAL_USED_LISTING",
+                x.SourceName,
+                x.SourceUrl,
+                x.RetrievedAt,
+                referenceOnly
+                    ? $"{PriceSourceCatalog.TrustLabel(x.SourceTier)} · chỉ tham khảo"
+                    : PriceSourceCatalog.TrustLabel(x.SourceTier),
+                inCalculation);
+        });
+
+        // Giá mới: chỉ những nhà bán lẻ thực sự tham gia tính giá mới được đánh dấu. Nguồn được
+        // dùng luôn đứng trước và luôn được hiện đủ; còn chỗ (tối đa 3) mới thêm nguồn không dùng.
+        IEnumerable<AiPriceSource> newPrices;
+        if (marketSources.Count > 0)
+        {
+            // Mọi mục trong bảng giá đã kiểm duyệt (tối đa 10, giới hạn ở repository) đều vào phép tính.
+            newPrices = marketSources.Select(x => new AiPriceSource(
+                "NEW_MARKET_REFERENCE", x.SourceName, x.SourceUrl, AsUtcOffset(x.ObservedAt),
+                "Bảng giá đã kiểm duyệt", newPriceOrigin == NewPriceOrigin.Verified));
+        }
+        else
+        {
+            var searched = searchedNewPriceSources
+                .Select(x => (
+                    Tier: x.SourceTier,
+                    Source: new AiPriceSource(
+                        "NEW_MARKET_REFERENCE", x.SourceName, x.SourceUrl, x.RetrievedAt,
+                        PriceSourceCatalog.TrustLabel(x.SourceTier),
+                        newPriceOrigin != NewPriceOrigin.None &&
+                        PriceConditionFormula.IsWithinPostingLimits(x.PriceVnd) &&
+                        newPriceRetailers.Contains(x.SourceDomain ?? x.SourceName))))
+                .OrderByDescending(x => x.Source.UsedInCalculation)
+                .ThenBy(x => x.Tier)
+                .Select(x => x.Source)
+                .ToList();
+            var usedCount = searched.Count(x => x.UsedInCalculation);
+            newPrices = searched.Take(Math.Max(3, usedCount));
+        }
+
+        return used.Concat(newPrices).ToList();
     }
 
     private static AiPriceSuggestionResponse CreateLimitResponse(IPriceSuggestionQuota quota, int dailyLimit) => new()
@@ -306,212 +549,88 @@ public sealed class PriceSuggestionService(
         ResetsAt = quota.ResetsAt
     };
 
-    private static void ApplyFallback(
-        AiPriceSuggestionResponse response,
-        PriceStatistics completed,
-        PriceStatistics internalListings,
-        PriceStatistics external,
-        PriceStatistics combinedListings,
-        PriceStatistics equivalentCombined,
-        bool usingEquivalentEvidence)
-    {
-        if (usingEquivalentEvidence && equivalentCombined.SampleCount > 0)
-        {
-            response.Status = "FALLBACK_EQUIVALENT_MODEL";
-            response.SuggestedPrice = RoundNearest(equivalentCombined.MedianPrice!.Value);
-            response.MinPrice = RoundDown(equivalentCombined.MinPrice!.Value);
-            response.MaxPrice = RoundUp(equivalentCombined.MaxPrice!.Value);
-            response.Confidence = "LOW";
-            response.ReasonCodes = ["EQUIVALENT_MODEL_REFERENCE", "LIMITED_EVIDENCE"];
-            // OLD (2026-09-18, Edit 4 - giu lai de doi chieu):
-            // response.Explanation =
-            //     "AI chưa trả được kết quả hợp lệ. Đây là giá tham khảo từ các model cùng hãng, cùng loại và có thuộc tính phù hợp.";
-            // NEW (2026-09-18, Edit 4):
-            response.Explanation =
-                "AI chưa trả được kết quả hợp lệ. Đây là giá tham khảo từ các model cùng hãng, cùng loại và có thuộc tính phù hợp, hoặc tin bán đồ cũ tương đương bên ngoài.";
-            return;
-        }
-
-        if (completed.SampleCount > 0)
-        {
-            response.Status = "FALLBACK_DB_ONLY";
-            response.SuggestedPrice = RoundNearest(completed.MedianPrice!.Value);
-            response.MinPrice = RoundDown(completed.MinPrice!.Value);
-            response.MaxPrice = RoundUp(completed.MaxPrice!.Value);
-            response.Confidence = completed.SampleCount >= 3 ? "MEDIUM" : "LOW";
-            response.ReasonCodes = ["COMPLETED_TRADE_REFERENCE", "LIMITED_EVIDENCE"];
-            response.Explanation = "AI chưa trả được kết quả hợp lệ. Đây là giá tham khảo từ giao dịch cùng model trên HomeCycle.";
-            return;
-        }
-
-        if (internalListings.SampleCount >= 1 && external.SampleCount >= 1)
-        {
-            response.Status = "FALLBACK_MARKET_LISTINGS";
-            response.SuggestedPrice = RoundNearest(combinedListings.MedianPrice!.Value);
-            response.MinPrice = RoundDown(combinedListings.MinPrice!.Value);
-            response.MaxPrice = RoundUp(combinedListings.MaxPrice!.Value);
-            response.Confidence = "LOW";
-            response.ReasonCodes =
-                ["INTERNAL_LISTING_REFERENCE", "EXTERNAL_USED_LISTING_REFERENCE", "LIMITED_EVIDENCE"];
-            response.Explanation =
-                "AI chưa trả được kết quả hợp lệ. Đây là giá tham khảo tổng hợp từ bài đăng HomeCycle và tin bán đồ cũ cùng model.";
-            return;
-        }
-
-        if (internalListings.SampleCount >= 1)
-        {
-            response.Status = "FALLBACK_INTERNAL_LISTINGS";
-            response.SuggestedPrice = RoundNearest(internalListings.MedianPrice!.Value);
-            response.MinPrice = RoundDown(internalListings.MinPrice!.Value);
-            response.MaxPrice = RoundUp(internalListings.MaxPrice!.Value);
-            response.Confidence = internalListings.SampleCount >= 3 ? "MEDIUM" : "LOW";
-            response.ReasonCodes = ["INTERNAL_LISTING_REFERENCE", "LIMITED_EVIDENCE"];
-            response.Explanation =
-                "AI chưa trả được kết quả hợp lệ. Đây là giá tham khảo từ các bài đăng đang hoạt động cùng model trên HomeCycle.";
-            return;
-        }
-
-        if (external.SampleCount >= 1)
-        {
-            response.Status = "FALLBACK_MARKET_LISTINGS";
-            response.SuggestedPrice = RoundNearest(external.MedianPrice!.Value);
-            response.MinPrice = RoundDown(external.MinPrice!.Value);
-            response.MaxPrice = RoundUp(external.MaxPrice!.Value);
-            response.Confidence = "LOW";
-            response.ReasonCodes = ["EXTERNAL_USED_LISTING_REFERENCE", "LIMITED_EVIDENCE"];
-            response.Explanation = "AI chưa trả được kết quả hợp lệ. Đây là giá tham khảo từ các tin bán đồ cũ cùng model.";
-            return;
-        }
-
-        response.Status = "NO_RELIABLE_DATA";
-        response.Confidence = "NONE";
-        response.ReasonCodes = ["NO_RELIABLE_EVIDENCE"];
-        response.Explanation = "Không còn chứng cứ giá hợp lệ để tạo giá tham khảo.";
-    }
-
-    private static bool TryAcceptDecision(
-        AiPriceDecision? decision,
-        PriceSuggestionContext context,
-        out AiPriceDecision accepted)
-    {
-        accepted = null!;
-        if (decision?.SuggestedPrice is not > 0 || decision.MinPrice is not > 0 ||
-            decision.MaxPrice is not > 0 || decision.ReasonCodes.Count == 0 ||
-            decision.ReasonCodes.Any(code => !AllowedReasonCodes.Contains(code)) ||
-            decision.ReasonCodes.Contains("NO_RELIABLE_EVIDENCE", StringComparer.Ordinal) ||
-            !ReasonCodesMatchEvidence(decision.ReasonCodes, context) ||
-            string.IsNullOrWhiteSpace(decision.ShortExplanation) ||
-            decision.ShortExplanation.Length > 300 || CountSentences(decision.ShortExplanation) > 2)
-            return false;
-
-        var suggested = RoundNearest(decision.SuggestedPrice.Value);
-        var min = RoundNearest(decision.MinPrice.Value);
-        var max = RoundNearest(decision.MaxPrice.Value);
-        if (min > suggested || suggested > max ||
-            min < context.AllowedPriceRange.MinPrice || max > context.AllowedPriceRange.MaxPrice)
-            return false;
-
-        accepted = decision with
-        {
-            SuggestedPrice = suggested,
-            MinPrice = min,
-            MaxPrice = max,
-            ShortExplanation = decision.ShortExplanation.Trim()
-        };
-        return true;
-    }
-
-    private static bool ReasonCodesMatchEvidence(
-        IReadOnlyList<string> reasonCodes,
-        PriceSuggestionContext context)
-    {
-        var hasExactUsedEvidence = context.CompletedTrades.All.SampleCount > 0 ||
-                                   context.ActiveListings.SampleCount > 0 ||
-                                   context.ExternalUsedListings.SampleCount > 0;
-        var hasEquivalentEvidence = context.EquivalentCompletedTrades.SampleCount > 0 ||
-                                    context.EquivalentActiveListings.SampleCount > 0 ||
-                                    context.EquivalentExternalUsedListings.SampleCount > 0;
-
-        if (reasonCodes.Contains("COMPLETED_TRADE_REFERENCE", StringComparer.Ordinal) &&
-            context.CompletedTrades.All.SampleCount == 0)
-            return false;
-        if (reasonCodes.Contains("INTERNAL_LISTING_REFERENCE", StringComparer.Ordinal) &&
-            context.ActiveListings.SampleCount == 0)
-            return false;
-        if (reasonCodes.Contains("EXTERNAL_USED_LISTING_REFERENCE", StringComparer.Ordinal) &&
-            context.ExternalUsedListings.SampleCount == 0 &&
-            context.EquivalentExternalUsedListings.SampleCount == 0)
-            return false;
-        if (reasonCodes.Contains("EQUIVALENT_MODEL_REFERENCE", StringComparer.Ordinal) &&
-            !hasEquivalentEvidence)
-            return false;
-        if (!hasExactUsedEvidence && hasEquivalentEvidence &&
-            !reasonCodes.Contains("EQUIVALENT_MODEL_REFERENCE", StringComparer.Ordinal))
-            return false;
-        if (reasonCodes.Contains("NEW_MARKET_PRICE_REFERENCE", StringComparer.Ordinal) &&
-            context.NewMarketPrices.SampleCount == 0)
-            return false;
-        if (reasonCodes.Contains("ATTRIBUTE_MATCH_UNKNOWN", StringComparer.Ordinal) &&
-            context.EvidenceQuality.UnknownAttributeSamples == 0)
-            return false;
-        return true;
-    }
-
-    private static PriceStatistics CalculateStats(IEnumerable<decimal> source)
-    {
-        var values = source.Where(x => x > 0).OrderBy(x => x).ToArray();
-        if (values.Length == 0)
-            return new PriceStatistics(0, null, null, null);
-
-        if (values.Length >= 4)
-        {
-            var half = values.Length / 2;
-            var lowerHalf = values.Take(half).ToArray();
-            var upperHalf = values.Skip((values.Length + 1) / 2).ToArray();
-            var firstQuartile = CalculateMedian(lowerHalf);
-            var thirdQuartile = CalculateMedian(upperHalf);
-            var interquartileRange = thirdQuartile - firstQuartile;
-            var lowerBound = firstQuartile - 1.5m * interquartileRange;
-            var upperBound = thirdQuartile + 1.5m * interquartileRange;
-            var filtered = values
-                .Where(value => value >= lowerBound && value <= upperBound)
-                .ToArray();
-            if (filtered.Length > 0)
-                values = filtered;
-        }
-
-        var median = CalculateMedian(values);
-        return new PriceStatistics(values.Length, median, values[0], values[^1]);
-    }
-
-    private static decimal CalculateMedian(IReadOnlyList<decimal> sortedValues)
-    {
-        var midpoint = sortedValues.Count / 2;
-        return sortedValues.Count % 2 == 0
-            ? (sortedValues[midpoint - 1] + sortedValues[midpoint]) / 2
-            : sortedValues[midpoint];
-    }
-
     private static string GetConfidence(
-        int completedSamples,
-        int internalSamples,
-        int externalSamples,
-        bool usingEquivalentEvidence) =>
-        usingEquivalentEvidence
-            ? "LOW"
-            : completedSamples >= 3
-            ? "HIGH"
-            : completedSamples >= 1 || internalSamples >= 3
-                ? "MEDIUM"
-                : internalSamples + externalSamples >= 1
-                    ? "LOW"
-                    : "NONE";
+        string method,
+        bool usingEquivalentEvidence,
+        int completedTrades,
+        int usedSampleCount,
+        bool usesClassifiedListings)
+    {
+        // Dùng tới tin rao vặt thì độ tin cậy tối đa là thấp. Chỉ dựa trên giá rao (tin đăng,
+        // nhà bán lẻ) mà chưa có giao dịch thật thì cũng chỉ ở mức thấp.
+        if (method != "USED_MARKET" || usingEquivalentEvidence || usesClassifiedListings)
+            return "LOW";
+        if (completedTrades >= ReliableUsedSampleCount)
+            return "HIGH";
+        return completedTrades >= 1 && usedSampleCount >= ReliableUsedSampleCount ? "MEDIUM" : "LOW";
+    }
 
-    private static int CountSentences(string value) =>
-    value.Split(
-        new char[] { '.', '!', '?' },
-        StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
-    ).Length;
+    private static List<string> BuildReasonCodes(
+        string method,
+        bool usingEquivalentEvidence,
+        int tradeSamples,
+        int listingSamples,
+        int externalSamples,
+        bool hasNewPrice,
+        int usedSampleCount,
+        int unknownAttributeSamples)
+    {
+        var codes = new List<string>();
+        if (method != "NEW_PRICE_DEPRECIATION")
+        {
+            if (tradeSamples > 0)
+                codes.Add("COMPLETED_TRADE_REFERENCE");
+            if (listingSamples > 0 && !usingEquivalentEvidence)
+                codes.Add("INTERNAL_LISTING_REFERENCE");
+            if (externalSamples > 0)
+                codes.Add("EXTERNAL_USED_LISTING_REFERENCE");
+            if (usingEquivalentEvidence)
+                codes.Add("EQUIVALENT_MODEL_REFERENCE");
+        }
+        if (hasNewPrice)
+            codes.Add("NEW_MARKET_PRICE_REFERENCE");
+        if (usedSampleCount < ReliableUsedSampleCount)
+            codes.Add("LIMITED_EVIDENCE");
+        if (unknownAttributeSamples > 0 && method != "NEW_PRICE_DEPRECIATION")
+            codes.Add("ATTRIBUTE_MATCH_UNKNOWN");
+        return codes;
+    }
+
+    private static string BuildExplanation(
+        string method,
+        bool usingEquivalentEvidence,
+        int usedSampleCount,
+        int? usageYears,
+        IReadOnlyList<PriceSourceTier> usedTiers,
+        string? newPriceSource)
+    {
+        var usedSource = usingEquivalentEvidence ? "model tương đương" : "cùng model";
+        var usedFrom = usedTiers.Count > 0
+            ? $" ({string.Join(", ", usedTiers.Select(PriceSourceCatalog.TrustLabel))})"
+            : string.Empty;
+        var newFrom = string.IsNullOrWhiteSpace(newPriceSource) ? string.Empty : $" ({newPriceSource})";
+        var askingOnly = method != "NEW_PRICE_DEPRECIATION" && !usedTiers.Contains(PriceSourceTier.HomeCycleTrade)
+            ? " Chưa có giao dịch đã hoàn tất, các mẫu là giá đang rao nên chỉ để tham khảo."
+            : string.Empty;
+        return BuildExplanationCore() + askingOnly;
+
+        string BuildExplanationCore() => method switch
+        {
+            "USED_MARKET" =>
+                $"Tính từ {usedSampleCount} mẫu giá đồ cũ {usedSource}{usedFrom}, quy về máy tình trạng tốt rồi trừ theo tình trạng bạn chọn.",
+            "BLENDED" =>
+                $"Chỉ có {usedSampleCount} mẫu giá đồ cũ {usedSource}{usedFrom} nên kết hợp với giá bán mới{newFrom} đã khấu hao, rồi trừ theo tình trạng bạn chọn.",
+            _ => usageYears is null
+                ? $"Chưa có giá đồ cũ nên tính từ giá bán mới{newFrom}, tạm khấu hao 1 năm vì chưa nhập thời gian sử dụng, rồi trừ theo tình trạng bạn chọn."
+                : $"Chưa có giá đồ cũ nên tính từ giá bán mới{newFrom}, khấu hao theo {usageYears} năm sử dụng rồi trừ theo tình trạng bạn chọn."
+        };
+    }
+
+    // Hệ số 0,87 → −13 (%).
+    private static decimal ToPercentChange(decimal factor) => Math.Round((factor - 1m) * 100m, 1);
+
+    private static string FormatPercent(decimal ratio) =>
+        $"{Math.Round(ratio * 100m, 1).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture).Replace('.', ',')}%";
 
     private static decimal RoundNearest(decimal value) =>
         Math.Round(value / 10_000m, 0, MidpointRounding.AwayFromZero) * 10_000m;

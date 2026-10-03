@@ -15,6 +15,8 @@ namespace HomeCycle.Application.DTOs.Configs
         public int RescheduleCutoffHours { get; set; }
 
         public int CancellationCutoffHours { get; set; }
+
+        public int ReminderBeforeMinutes { get; set; } = 60;
     }
 
 }

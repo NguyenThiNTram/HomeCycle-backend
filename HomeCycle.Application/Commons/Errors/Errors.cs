@@ -362,6 +362,30 @@ namespace HomeCycle.Application.Commons.Errors
         public static readonly Error ReturnVerificationNotAllowed =
             new("DISPUTE_RETURN_VERIFICATION_NOT_ALLOWED", "Tranh chấp hiện không ở trạng thái chờ xác minh hoàn trả.");
 
+        public static readonly Error ResponseNotAllowed =
+            new("DISPUTE_RESPONSE_NOT_ALLOWED",
+        "Trạng thái tranh chấp hiện tại không cho phép gửi phản hồi.");
+
+        public static readonly Error ResponseAlreadySubmitted =
+            new("DISPUTE_RESPONSE_ALREADY_SUBMITTED",
+                "Bạn đã gửi phản hồi chính thức cho tranh chấp này.");
+
+        public static readonly Error InvalidResponseType =
+            new("DISPUTE_INVALID_RESPONSE_TYPE",
+                "Loại phản hồi không phù hợp với tranh chấp hiện tại.");
+
+        public static Error ResponseWindowExpired(DateTime deadline) =>
+            new("DISPUTE_RESPONSE_WINDOW_EXPIRED",
+                $"Thời hạn phản hồi đã kết thúc lúc {deadline:O}.");
+
+        public static readonly Error InvalidOrderSender =
+            new("DISPUTE_INVALID_ORDER_SENDER",
+                "Không xác định được vai trò của người tạo tranh chấp trong đơn hàng.");
+
+        public static readonly Error AcceptedInspectionBlocksReturn =
+            new("DISPUTE_ACCEPTED_INSPECTION_BLOCKS_RETURN",
+                "Sản phẩm đã được chấp nhận qua kiểm định nên tranh chấp về tình trạng sản phẩm không thể dẫn tới hoàn trả vật lý.");
+
         public static Error ReturnVerificationNotDue(DateTime dueAt) =>
             new("DISPUTE_RETURN_VERIFICATION_NOT_DUE", $"Kiểm duyệt viên chỉ có thể xác minh hoàn trả sau thời hạn {dueAt:O}.");
     }
@@ -412,6 +436,9 @@ namespace HomeCycle.Application.Commons.Errors
         public static readonly Error ReturnConfirmationNotAllowed =
             new("Order.ReturnConfirmationNotAllowed", "Đơn hàng hiện không ở trạng thái chờ hoàn trả.");
 
+        public static readonly Error ReturnBlockedByAcceptedInspection =
+            new("Order.ReturnBlockedByAcceptedInspection",
+                "Sản phẩm đã được chấp nhận qua kiểm định nên không thể thực hiện hoàn trả cho tranh chấp về tình trạng sản phẩm.");
         public static Error ReturnDeadlineExpired(DateTime dueAt) =>
             new("Order.ReturnDeadlineExpired", $"Thời hạn xác nhận trả hàng đã kết thúc lúc {dueAt:O}.");
     }
@@ -563,7 +590,7 @@ namespace HomeCycle.Application.Commons.Errors
             new("Appointment.CollectionConfirmationNotOpen", $"Chưa đến ngày được phép xác nhận giao nhận. Lịch thu gom: {scheduledAt:O}.");
 
         public static readonly Error ScheduleOutsideBusinessHours =
-            new("Appointment.ScheduleOutsideBusinessHours", "Thời gian lịch hẹn phải nằm trong khoảng 08:00 đến 20:00 theo giờ Việt Nam.");
+            new("Appointment.ScheduleOutsideBusinessHours", "Thời gian lịch hẹn phải nằm trong khoảng 08:00 đến 22:00 theo giờ Việt Nam.");
     }
 
     public static class InspectionErrors
@@ -611,7 +638,7 @@ namespace HomeCycle.Application.Commons.Errors
             new("Inspection.InvalidOrderPrice", "Không xác định được giá giao dịch hiện tại.");
 
         public static readonly Error AcceptedRequired =
-            new("Inspection.AcceptedRequired", "Biểu mẫu phải được người bán xác nhận trước khi tiếp tục thu gom.");
+            new("Inspection.AcceptedRequired", "Kết quả kiểm định phải ở trạng thái đã chấp nhận trước khi tiếp tục thu gom.");
 
         public static readonly Error FailedCannotCollect =
             new("Inspection.FailedCannotCollect", "Kết quả kiểm định không đạt nên không thể tiếp tục thu gom.");
@@ -627,6 +654,9 @@ namespace HomeCycle.Application.Commons.Errors
 
         public static readonly Error CollectionScheduleFailed =
             new("Inspection.CollectionScheduleFailed", "Không thể tạo lịch thu gom.");
+
+        public static readonly Error QuickAcceptPersonalOnly =
+            new("Inspection.QuickAcceptPersonalOnly", "Chỉ người mua tài khoản cá nhân mới có thể sử dụng xác nhận nhanh.");
     }
 
     public static class PaymentErrors

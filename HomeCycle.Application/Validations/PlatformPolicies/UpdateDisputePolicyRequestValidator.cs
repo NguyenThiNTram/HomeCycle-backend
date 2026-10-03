@@ -19,6 +19,7 @@ namespace HomeCycle.Application.Validations.PlatformPolicies
                     x.LowReputationDisputeWindowDays.HasValue ||
                     x.LowReputationThreshold.HasValue ||
                     x.ReturnWindowDays.HasValue ||
+                    x.ResponseWindowHours.HasValue ||
                     x.DisputeLossPenaltyPoints.HasValue ||
                     x.PostViolationPenaltyPoints.HasValue ||
                     x.ReviewViolationPenaltyPoints.HasValue)
@@ -39,6 +40,10 @@ namespace HomeCycle.Application.Validations.PlatformPolicies
             RuleFor(x => x.ReturnWindowDays)
                 .Must(x => !x.HasValue || x.Value is >= 1 and <= 30)
                 .WithMessage("ReturnWindowDays phải từ 1 đến 30 ngày.");
+
+            RuleFor(x => x.ResponseWindowHours)
+                .Must(x => !x.HasValue || x.Value is >= 1 and <= 168)
+                .WithMessage("ResponseWindowHours phải từ 1 đến 168 giờ.");
 
             RuleFor(x => x.DisputeLossPenaltyPoints)
                 .Must(x => !x.HasValue || x.Value is >= 1 and <= 100)

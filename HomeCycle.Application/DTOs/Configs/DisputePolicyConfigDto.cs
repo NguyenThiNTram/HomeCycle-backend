@@ -16,6 +16,8 @@ namespace HomeCycle.Application.DTOs.Configs
 
         public int ReturnWindowDays { get; set; }
 
+        public int ResponseWindowHours { get; set; } = 24;
+
         public int DisputeLossPenaltyPoints { get; set; }
 
         // Defaults also apply to existing policy JSON that predates content reporting.

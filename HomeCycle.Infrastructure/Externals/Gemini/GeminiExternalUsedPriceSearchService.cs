@@ -5,6 +5,7 @@ using Google.GenAI.Types;
 using HomeCycle.Application.Interfaces.Services.AI;
 using HomeCycle.Application.Pricing.Matching;
 using HomeCycle.Application.Pricing.Models;
+using HomeCycle.Application.Pricing.Services;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -53,15 +54,16 @@ public sealed class GeminiExternalUsedPriceSearchService(
             }
 
             var maxResults = Math.Clamp(settings.ExternalUsedPriceSearchMaxResults, 1, 5);
-            var groundedSources = BuildGroundedSources(groundingResponses, maxResults);
+            var groundedSources = BuildGroundedSources(groundingResponses, maxResults, PriceSourceCatalog.AcceptsUsedPrice);
             var responseText = string.Join("\n\n", responseTexts);
 
             logger.LogInformation(
-                "Gemini external grounding diagnostics: searchCallCount={SearchCallCount}, successfulSearchCallCount={SuccessfulSearchCallCount}, groundedSourceCount={GroundedSourceCount}, responseLength={ResponseLength}",
+                "Gemini external grounding diagnostics: searchCallCount={SearchCallCount}, successfulSearchCallCount={SuccessfulSearchCallCount}, groundedSourceCount={GroundedSourceCount}, responseLength={ResponseLength}, returnedDomains=[{ReturnedDomains}]",
                 prompts.Count,
                 groundingResponses.Count,
                 groundedSources.Count,
-                responseText.Length);
+                responseText.Length,
+                DescribeGroundingDomains(groundingResponses));
 
             if (groundedSources.Count == 0 || string.IsNullOrWhiteSpace(responseText))
             {
@@ -80,8 +82,9 @@ public sealed class GeminiExternalUsedPriceSearchService(
             extractionTimeout.CancelAfter(TimeSpan.FromSeconds(
                 Math.Max(1, settings.ExternalUsedPriceExtractionTimeoutSeconds)));
 
-            var extractionResponse = await gemini.GenerateContentAsync(
-                settings.MarketSearchModel,
+            var extractionResponse = await PriceSearchGeminiCall.GenerateAsync(
+                gemini,
+                settings,
                 ExternalUsedPriceSearchPrompt.BuildExtractionPrompt(
                     product,
                     responseText,
@@ -94,6 +97,8 @@ public sealed class GeminiExternalUsedPriceSearchService(
                     MaxOutputTokens = Math.Clamp(
                         settings.ExternalUsedPriceExtractionMaxOutputTokens, 100, 600)
                 },
+                logger,
+                "used-price extraction",
                 extractionTimeout.Token);
 
             logger.LogInformation(
@@ -154,8 +159,9 @@ public sealed class GeminiExternalUsedPriceSearchService(
             timeout.CancelAfter(TimeSpan.FromSeconds(
                 Math.Max(1, settings.ExternalUsedPriceSearchTimeoutSeconds)));
 
-            var response = await gemini.GenerateContentAsync(
-                settings.MarketSearchModel,
+            var response = await PriceSearchGeminiCall.GenerateGroundedAsync(
+                gemini,
+                settings,
                 prompt,
                 new GenerateContentConfig
                 {
@@ -164,6 +170,8 @@ public sealed class GeminiExternalUsedPriceSearchService(
                     MaxOutputTokens = Math.Clamp(
                         settings.ExternalUsedPriceSearchMaxOutputTokens, 100, 600)
                 },
+                logger,
+                $"used-price grounding {attemptNumber}",
                 timeout.Token);
 
             logger.LogInformation(
@@ -201,44 +209,74 @@ public sealed class GeminiExternalUsedPriceSearchService(
         }
     }
 
-    private static IReadOnlyList<GroundedSource> BuildGroundedSources(
+    // Liệt kê tên miền Google trả về kèm mức uy tín, để log biết nguồn nào bị loại vì ngoài danh mục.
+    internal static string DescribeGroundingDomains(IEnumerable<GenerateContentResponse> responses) =>
+        string.Join(", ", responses
+            .SelectMany(response => response.Candidates ?? [])
+            .SelectMany(candidate => candidate.GroundingMetadata?.GroundingChunks ?? [])
+            .Where(chunk => chunk.Web is not null)
+            .Select(chunk =>
+            {
+                var domain = PriceSourceCatalog.ResolveDomain(chunk.Web!.Domain, chunk.Web.Title, chunk.Web.Uri);
+                return $"{domain ?? chunk.Web.Title ?? "?"}:{PriceSourceCatalog.Classify(domain)}";
+            })
+            .Distinct(StringComparer.OrdinalIgnoreCase));
+
+    // Chỉ giữ nguồn có mức uy tín được chấp nhận; nguồn uy tín hơn được chọn trước,
+    // cùng mức thì xen kẽ giữa các lượt tìm. Ưu tiên mỗi tên miền một nguồn trước,
+    // còn chỗ trống mới lấy thêm trang khác của cùng tên miền.
+    internal static IReadOnlyList<GroundedSource> BuildGroundedSources(
         IEnumerable<GenerateContentResponse> responses,
-        int maxResults)
+        int maxResults,
+        Func<PriceSourceTier, bool> acceptTier)
     {
-        var sourcesBySearch = responses
+        var candidates = responses
             .Select(response => response.Candidates ?? [])
-            .Select(candidates => candidates
+            .SelectMany((responseCandidates, searchIndex) => responseCandidates
                 .SelectMany(candidate => candidate.GroundingMetadata?.GroundingChunks ?? [])
                 .Where(chunk => chunk.Web is not null)
                 .Select(chunk => chunk.Web!)
                 .Where(web => TryNormalizeHttpUrl(web.Uri, out _))
                 .GroupBy(web => NormalizeUrl(web.Uri!), StringComparer.OrdinalIgnoreCase)
-                .Select(group => new SourceCandidate(
-                    NormalizeSourceTitle(group.First().Title),
-                    group.Key))
-                .ToArray())
-            .ToArray();
+                .Select((group, position) =>
+                {
+                    var web = group.First();
+                    var domain = PriceSourceCatalog.ResolveDomain(web.Domain, web.Title, web.Uri);
+                    return new SourceCandidate(
+                        NormalizeSourceTitle(domain ?? web.Title),
+                        group.Key,
+                        PriceSourceCatalog.RetailerKey(domain),
+                        PriceSourceCatalog.Classify(domain),
+                        searchIndex,
+                        position);
+                }))
+            .Where(x => acceptTier(x.Tier))
+            .OrderBy(x => x.Tier)
+            .ThenBy(x => x.Position)
+            .ThenBy(x => x.SearchIndex)
+            .ToList();
 
         var selected = new List<SourceCandidate>(maxResults);
         var seenUrls = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var largestSearch = sourcesBySearch.Length == 0 ? 0 : sourcesBySearch.Max(x => x.Length);
-
-        for (var position = 0; position < largestSearch && selected.Count < maxResults; position++)
+        var seenDomains = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var distinctDomainsOnly in new[] { true, false })
         {
-            foreach (var sources in sourcesBySearch)
+            foreach (var candidate in candidates)
             {
-                if (position >= sources.Length || !seenUrls.Add(sources[position].Url))
-                    continue;
-
-                selected.Add(sources[position]);
                 if (selected.Count == maxResults)
                     break;
+                if (seenUrls.Contains(candidate.Url))
+                    continue;
+                if (distinctDomainsOnly && !seenDomains.Add(candidate.Domain ?? candidate.Url))
+                    continue;
+                seenUrls.Add(candidate.Url);
+                selected.Add(candidate);
             }
         }
 
         return selected
             .Select((source, index) => new GroundedSource(
-                $"S{index + 1}", source.Title, source.Url))
+                $"S{index + 1}", source.Title, source.Url, source.Tier, source.Domain))
             .ToArray();
     }
 
@@ -363,7 +401,9 @@ public sealed class GeminiExternalUsedPriceSearchService(
                 string.IsNullOrWhiteSpace(condition) ? null : condition,
                 source.Title,
                 source.Url,
-                retrievedAt));
+                retrievedAt,
+                source.Tier,
+                source.Domain));
         }
 
         var exactOrVariant = accepted
@@ -382,7 +422,32 @@ public sealed class GeminiExternalUsedPriceSearchService(
                 .ToArray();
     }
 
-    private static (ExternalModelMatchLevel Level, decimal Similarity) ClassifyModel(
+    // Gemini đôi khi trả cả tên sản phẩm ("Máy giặt Samsung Inverter 9.5 kg WW95TA046AX/SV") thay vì
+    // chỉ mã model, nên ngoài cả chuỗi còn so từng cụm có chứa chữ số và lấy kết quả khớp nhất.
+    internal static (ExternalModelMatchLevel Level, decimal Similarity) ClassifyModel(
+        string requestedModel,
+        string observedModel)
+    {
+        var best = ClassifySingleModel(requestedModel, observedModel);
+        if (best.Level == ExternalModelMatchLevel.Exact)
+            return best;
+
+        foreach (var token in observedModel.Split(
+                     new[] { ' ', ',', ';', '(', ')', '[', ']', '|' },
+                     StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (!token.Any(char.IsDigit))
+                continue;
+            var candidate = ClassifySingleModel(requestedModel, token);
+            if (candidate.Level > best.Level ||
+                (candidate.Level == best.Level && candidate.Similarity > best.Similarity))
+                best = candidate;
+        }
+
+        return best;
+    }
+
+    private static (ExternalModelMatchLevel Level, decimal Similarity) ClassifySingleModel(
         string requestedModel,
         string observedModel)
     {
@@ -473,7 +538,7 @@ public sealed class GeminiExternalUsedPriceSearchService(
             product.BrandId.ToString("D"),
             product.Model,
             string.Join(';', attributes));
-        return "gemini:external-used-price:v4:" +
+        return "gemini:external-used-price:v7:" +
                Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(rawKey)));
     }
 
@@ -498,7 +563,9 @@ public sealed class GeminiExternalUsedPriceSearchService(
     private static string NormalizeUrl(string value) => value.Trim().TrimEnd('/');
 
     private sealed record SearchAttemptResult(GenerateContentResponse Response, string? ResponseText);
-    private sealed record SourceCandidate(string Title, string Url);
-    private sealed record GroundedSource(string SourceId, string Title, string Url);
+    private sealed record SourceCandidate(
+        string Title, string Url, string? Domain, PriceSourceTier Tier, int SearchIndex, int Position);
+    internal sealed record GroundedSource(
+        string SourceId, string Title, string Url, PriceSourceTier Tier, string? Domain);
 }
 

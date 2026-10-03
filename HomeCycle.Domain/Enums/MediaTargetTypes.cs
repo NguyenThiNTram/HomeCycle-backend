@@ -13,7 +13,8 @@ namespace HomeCycle.Domain.Enums
         Comment = 2,
         Inspection = 3,
         Delivery = 4,
-        Order = 5
+        Order = 5,
+        DisputeResponse = 6
         //...
     }
 }

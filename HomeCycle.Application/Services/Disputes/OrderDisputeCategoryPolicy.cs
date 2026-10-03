@@ -17,6 +17,7 @@ namespace HomeCycle.Application.Services.Disputes
             {
                 "NO_SHOW" => noShowEligible,
 
+
                 "SELLER_NOT_SHIPPED" or
                 "DAMAGED_OR_LOST" or
                 "ITEM_NOT_RECEIVED"
