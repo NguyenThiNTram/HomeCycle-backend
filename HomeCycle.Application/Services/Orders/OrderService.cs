@@ -31,6 +31,7 @@ using HomeCycle.Application.Interfaces.Services.PlatformPolicies;
 using HomeCycle.Application.Interfaces.Services.Wallets;
 using HomeCycle.Application.Services.Disputes;
 using HomeCycle.Application.Services.GHN;
+using HomeCycle.Application.Services.Appointments;
 using HomeCycle.Domain.Entities;
 using HomeCycle.Domain.Enums;
 using System;
@@ -792,6 +793,15 @@ namespace HomeCycle.Application.Services.Orders
                         ct);
                 }
 
+                // Đơn GHN và đơn có lịch giao nhận sau kiểm định không đi qua nhánh giao trực tiếp ở trên,
+                // nhưng hàng cũng đã tới tay người mua nên lịch giao nhận còn mở được hoàn thành luôn.
+                var completedCollection = directCollection ??
+                    await CollectionAppointmentCompletion.CompleteOpenAsync(
+                        _appointmentRepo,
+                        agreement.AgreementId,
+                        completedAt,
+                        ct);
+
                 var receivedNotification = await _notificationService.AddPendingAsync(
                     new CreateNotificationCommand(
                         agreement.SellerId,
@@ -814,11 +824,11 @@ namespace HomeCycle.Application.Services.Orders
                     order.OrderId,
                     order.UpdatedAt);
 
-                if (directCollection != null)
+                if (completedCollection != null)
                 {
                     await _appointmentRealtimeService.PublishUpdatedSafelyAsync(
-                        directCollection.AppointmentId,
-                        directCollection.UpdatedAt);
+                        completedCollection.AppointmentId,
+                        completedCollection.UpdatedAt);
                 }
 
                 return Result<OrderConfirmationResponseDto>.Success(

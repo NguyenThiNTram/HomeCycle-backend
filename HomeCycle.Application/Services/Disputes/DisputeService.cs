@@ -23,6 +23,7 @@ using HomeCycle.Application.Interfaces.Repositories.Profiles;
 using HomeCycle.Application.Interfaces.Repositories.Reviews;
 using HomeCycle.Application.Interfaces.Repositories.Shipments;
 using HomeCycle.Application.Interfaces.Repositories.Users;
+using HomeCycle.Application.Interfaces.Services.Appointments;
 using HomeCycle.Application.Interfaces.Services.Audits;
 using HomeCycle.Application.Interfaces.Services.Auths;
 using HomeCycle.Application.Interfaces.Services.Disputes;
@@ -33,6 +34,7 @@ using HomeCycle.Application.Interfaces.Services.Payments;
 using HomeCycle.Application.Interfaces.Services.PlatformPolicies;
 using HomeCycle.Application.Interfaces.Services.Posts;
 using HomeCycle.Application.Interfaces.Services.Wallets;
+using HomeCycle.Application.Services.Appointments;
 using HomeCycle.Domain.Entities;
 using HomeCycle.Domain.Enums;
 using System;
@@ -74,6 +76,7 @@ namespace HomeCycle.Application.Services.Disputes
         private readonly IAuditService _auditService;
         private readonly IEmailService _emailService;
         private readonly IAppointmentRepository _appointmentRepository;
+        private readonly IAppointmentRealtimeService _appointmentRealtimeService;
         private readonly IFinanceRealtimeService _financeRealtimeService;
         private readonly IInspectionFormRepository _inspectionFormRepository;
         private readonly IInspectionAppointmentRepository _inspectionAppointmentRepository;
@@ -108,6 +111,7 @@ namespace HomeCycle.Application.Services.Disputes
             IAuditService auditService,
             IEmailService emailService,
             IAppointmentRepository appointmentRepository,
+            IAppointmentRealtimeService appointmentRealtimeService,
             IFinanceRealtimeService financeRealtimeService,
             IInspectionFormRepository inspectionFormRepository,
             IInspectionAppointmentRepository inspectionAppointmentRepository,
@@ -144,6 +148,7 @@ namespace HomeCycle.Application.Services.Disputes
             _auditService = auditService;
             _emailService = emailService;
             _appointmentRepository = appointmentRepository;
+            _appointmentRealtimeService = appointmentRealtimeService;
             _financeRealtimeService = financeRealtimeService;
             _inspectionFormRepository = inspectionFormRepository;
             _inspectionAppointmentRepository = inspectionAppointmentRepository;
@@ -2602,6 +2607,24 @@ if (dispute.TargetUserId.HasValue &&
 
                 // Không mở một dispute window mới sau resolution.
                 order.DisputeWindowEndsAt ??= now;
+            }
+
+            // Người mua đã có hàng nghĩa là buổi giao nhận đã diễn ra, dù kết luận nghiêng về bên nào.
+            if (buyerHasItem)
+            {
+                var completedCollection = await CollectionAppointmentCompletion.CompleteOpenAsync(
+                    _appointmentRepository,
+                    order.AgreementId,
+                    now,
+                    cancellationToken);
+
+                if (completedCollection != null)
+                {
+                    _unitOfWork.RegisterAfterCommit(() =>
+                        _appointmentRealtimeService.PublishUpdatedSafelyAsync(
+                            completedCollection.AppointmentId,
+                            completedCollection.UpdatedAt));
+                }
             }
 
             var refundedAmount = 0m;

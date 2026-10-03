@@ -3,14 +3,17 @@ using HomeCycle.Application.Commons.Helpers;
 using HomeCycle.Application.DTOs.Responses.Notifications;
 using HomeCycle.Application.Interfaces.Generics;
 using HomeCycle.Application.Interfaces.Repositories.Agreements;
+using HomeCycle.Application.Interfaces.Repositories.Appointments;
 using HomeCycle.Application.Interfaces.Repositories.Disputes;
 using HomeCycle.Application.Interfaces.Repositories.Orders;
 using HomeCycle.Application.Interfaces.Repositories.Shipments;
+using HomeCycle.Application.Interfaces.Services.Appointments;
 using HomeCycle.Application.Interfaces.Services.Audits;
 using HomeCycle.Application.Interfaces.Services.Disputes;
 using HomeCycle.Application.Interfaces.Services.Notifications;
 using HomeCycle.Application.Interfaces.Services.Orders;
 using HomeCycle.Application.Interfaces.Services.PlatformPolicies;
+using HomeCycle.Application.Services.Appointments;
 using HomeCycle.Domain.Enums;
 using Microsoft.Extensions.Logging;
 using System;
@@ -26,11 +29,13 @@ namespace HomeCycle.Application.Services.Orders
         private readonly IOrderRepository _orderRepository;
         private readonly IAgreementFormRepository _agreementRepository;
         private readonly IShipmentRepository _shipmentRepository;
+        private readonly IAppointmentRepository _appointmentRepository;
         private readonly IDisputeRepository _disputeRepository;
         private readonly IDisputeWindowPolicy _disputeWindowPolicy;
         private readonly IPlatformPolicyProvider _platformPolicyProvider;
         private readonly INotificationService _notificationService;
         private readonly IOrderTrackingRealtimeService _orderTrackingRealtimeService;
+        private readonly IAppointmentRealtimeService _appointmentRealtimeService;
         private readonly IAuditService _auditService;
         private readonly IUnitOfWork _unitOfWork;
         private readonly ILogger<AutoCompleteOrderProcessor> _logger;
@@ -41,11 +46,13 @@ namespace HomeCycle.Application.Services.Orders
             IOrderRepository orderRepository,
             IAgreementFormRepository agreementRepository,
             IShipmentRepository shipmentRepository,
+            IAppointmentRepository appointmentRepository,
             IDisputeRepository disputeRepository,
             IDisputeWindowPolicy disputeWindowPolicy,
             IPlatformPolicyProvider platformPolicyProvider,
             INotificationService notificationService,
             IOrderTrackingRealtimeService orderTrackingRealtimeService,
+            IAppointmentRealtimeService appointmentRealtimeService,
             IAuditService auditService,
             IUnitOfWork unitOfWork,
             ILogger<AutoCompleteOrderProcessor> logger)
@@ -53,11 +60,13 @@ namespace HomeCycle.Application.Services.Orders
             _orderRepository = orderRepository;
             _agreementRepository = agreementRepository;
             _shipmentRepository = shipmentRepository;
+            _appointmentRepository = appointmentRepository;
             _disputeRepository = disputeRepository;
             _disputeWindowPolicy = disputeWindowPolicy;
             _platformPolicyProvider = platformPolicyProvider;
             _notificationService = notificationService;
             _orderTrackingRealtimeService = orderTrackingRealtimeService;
+            _appointmentRealtimeService = appointmentRealtimeService;
             _auditService = auditService;
             _unitOfWork = unitOfWork;
             _logger = logger;
@@ -268,6 +277,13 @@ namespace HomeCycle.Application.Services.Orders
 
                 await _orderRepository.UpdateAsync(order, ct);
 
+                var completedCollection =
+                    await CollectionAppointmentCompletion.CompleteOpenAsync(
+                        _appointmentRepository,
+                        agreement.AgreementId,
+                        now,
+                        ct);
+
                 var notification =
                     await _notificationService.AddPendingAsync(
                         new CreateNotificationCommand(
@@ -288,6 +304,13 @@ namespace HomeCycle.Application.Services.Orders
                 await _orderTrackingRealtimeService.PublishByOrderIdSafelyAsync(
                     order.OrderId,
                     order.UpdatedAt);
+
+                if (completedCollection != null)
+                {
+                    await _appointmentRealtimeService.PublishUpdatedSafelyAsync(
+                        completedCollection.AppointmentId,
+                        completedCollection.UpdatedAt);
+                }
 
                 return true;
             }
