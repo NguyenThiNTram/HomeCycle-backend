@@ -334,6 +334,7 @@ namespace HomeCycle.Infrastructure
                 HomeCycle.Application.SupplierMatching.Services.SupplierMatchMonitorService>();
             services.AddScoped<ICartService, CartService>();
             services.AddScoped<ICartRealtimeService, CartRealtimeService>();
+            services.AddScoped<CartReadModelBuilder>();
             services.AddScoped<IProductService, ProductService>();
             services.AddScoped<IMediaService, MediaService>();
             services.AddScoped<IProductAttributeOptionService, ProductAttributeOptionService>();

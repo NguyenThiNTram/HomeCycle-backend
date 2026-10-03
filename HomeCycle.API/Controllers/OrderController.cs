@@ -125,7 +125,7 @@ namespace HomeCycle.API.Controllers
         [HttpPost("{orderId:guid}/cancel")]
         [SwaggerOperation(
             Summary = "Hủy đơn hàng trước khi giao dịch bắt đầu",
-            Description = "Buyer hoặc Seller có thể hủy Inspection Order trước khi có check-in, hoặc Collection Order trước khi Seller xác nhận đã chuẩn bị hàng. Sau mốc này đơn chỉ có thể xử lý qua Dispute. Phí GHN đã phát sinh không được hoàn."
+            Description = "Buyer hoặc Seller có thể hủy Inspection Order trước khi có check-in, Collection Order giao trực tiếp trước khi Seller xác nhận đã chuẩn bị hàng, hoặc Collection Order GHN trước khi GHN lấy hàng (BE hủy vận đơn GHN trước, GHN từ chối thì không hủy đơn). Khi hủy, Buyer được hoàn tiền hàng và phí ship GHN. Sau mốc này đơn chỉ có thể xử lý qua Dispute."
         )]
         [ProducesResponseType(StatusCodes.Status200OK)]
         public async Task<IActionResult> CancelOrder(Guid orderId, CancellationToken cancellationToken)
