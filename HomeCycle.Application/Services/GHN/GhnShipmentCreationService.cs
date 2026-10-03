@@ -10,6 +10,7 @@ using HomeCycle.Application.Interfaces.Repositories.GHN;
 using HomeCycle.Application.Interfaces.Repositories.Orders;
 using HomeCycle.Application.Interfaces.Repositories.Shipments;
 using HomeCycle.Application.Interfaces.Services.GHN;
+using HomeCycle.Application.Interfaces.Services.Orders;
 using HomeCycle.Domain.Entities;
 using HomeCycle.Domain.Enums;
 using Microsoft.Extensions.Logging;
@@ -31,6 +32,7 @@ namespace HomeCycle.Application.Services.GHN
         private readonly IUnitOfWork _unitOfWork;
         private readonly ILogger<GhnShipmentCreationService> _logger;
         private readonly HomeCycle.Application.Interfaces.Repositories.Inspections.IInspectionFormRepository _inspectionRepo;
+        private readonly IOrderTrackingRealtimeService _orderTrackingRealtimeService;
 
         public GhnShipmentCreationService(
             IGhnShipmentRepository ghnShipmentRepo,
@@ -41,7 +43,8 @@ namespace HomeCycle.Application.Services.GHN
             IGhnService ghnService,
             IUnitOfWork unitOfWork,
             ILogger<GhnShipmentCreationService> logger,
-            HomeCycle.Application.Interfaces.Repositories.Inspections.IInspectionFormRepository inspectionRepo)
+            HomeCycle.Application.Interfaces.Repositories.Inspections.IInspectionFormRepository inspectionRepo,
+            IOrderTrackingRealtimeService orderTrackingRealtimeService)
         {
             _ghnShipmentRepo = ghnShipmentRepo;
             _shipmentRepo = shipmentRepo;
@@ -52,6 +55,7 @@ namespace HomeCycle.Application.Services.GHN
             _unitOfWork = unitOfWork;
             _logger = logger;
             _inspectionRepo = inspectionRepo;
+            _orderTrackingRealtimeService = orderTrackingRealtimeService;
         }
 
         public async Task<Result> CancelForOrderAsync(Guid orderId, CancellationToken cancellationToken = default)
@@ -246,6 +250,7 @@ namespace HomeCycle.Application.Services.GHN
                     "GhnShipmentCreationService: vận đơn {GHNShipmentId} thiếu GhnInfo để tạo đơn GHN",
                     candidate.GHNShipmentId);
                 await MarkFailedAsync(candidate, "PERMANENT:MISSING_GHN_INFO", ct);
+                await PublishOrderTrackingAsync(order.OrderId);
                 return true;
             }
 
@@ -299,6 +304,8 @@ namespace HomeCycle.Application.Services.GHN
                     await MarkUncertainAsync(claimedShipment, "GHN_UNCERTAIN", ct);
                 }
 
+                // Trạng thái tạo vận đơn (có mã, thất bại, chưa rõ) đã được lưu: báo màn đơn hàng.
+                await PublishOrderTrackingAsync(order.OrderId);
                 return true;
             }
             catch (ArgumentException ex)
@@ -307,9 +314,14 @@ namespace HomeCycle.Application.Services.GHN
                     "GhnShipmentCreationService: dữ liệu vận đơn {GHNShipmentId} không đủ/không hợp lệ để tạo đơn GHN",
                     candidate.GHNShipmentId);
                 await MarkFailedAsync(candidate, "PERMANENT:INVALID_GHN_DATA", ct);
+                await PublishOrderTrackingAsync(order.OrderId);
                 return true;
             }
         }
+
+        // Worker lưu trạng thái ngay (không nằm trong transaction của request) nên phát được luôn.
+        private Task PublishOrderTrackingAsync(Guid orderId) =>
+            _orderTrackingRealtimeService.PublishByOrderIdSafelyAsync(orderId, DateTime.UtcNow);
 
         private async Task MarkSuccessAsync(ghn_shipment shipment, GhnCreateOrderResponse response, DateTime now, CancellationToken ct)
         {

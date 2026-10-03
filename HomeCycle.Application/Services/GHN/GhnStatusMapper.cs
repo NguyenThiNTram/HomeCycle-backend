@@ -12,6 +12,13 @@ namespace HomeCycle.Application.Services.GHN
         public static bool IsTerminal(string? status) => status?.Trim().ToLowerInvariant() is
             "delivered" or "returned" or "cancel" or "exception" or "lost" or "damage" or "scrap";
 
+        // GHN đã bắt đầu giao cho người nhận (delivering) hoặc đã có kết quả/sự cố (delivered, lost, damage, hoàn hàng...).
+        // Các bước lấy hàng, nhập kho, trung chuyển và vận đơn đã hủy chưa tính là bắt đầu giao.
+        public static bool HasStartedDelivery(string? status) =>
+            status?.Trim().ToLowerInvariant() is { Length: > 0 } normalized &&
+            normalized is not ("ready_to_pick" or "picking" or "money_collect_picking" or
+                "picked" or "storing" or "transporting" or "sorting" or "cancel");
+
         public static bool CanApply(string? previous, string? incoming)
         {
             var normalizedPrevious = previous?.Trim().ToLowerInvariant();

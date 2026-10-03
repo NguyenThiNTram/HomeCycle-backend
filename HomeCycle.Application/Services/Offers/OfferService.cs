@@ -547,6 +547,17 @@ namespace HomeCycle.Application.Services.Offers
 
                 var initialOfferMessage = CreateInitialOfferMessage(offer, conversation.ConversationId, negotiation.NegotiationId, post.BasePrice, MessageOfferStatus.Accepted, now);
 
+                // Tin mở đầu là của người gửi Offer nên không tính chưa đọc với họ.
+                // Thêm tin hệ thống của người chấp nhận (giống luồng Accept trong Negotiation)
+                // để người gửi Offer thấy hội thoại chưa đọc. Đặt sau tin mở đầu 1ms để giữ thứ tự.
+                var acceptorName = await GetUsernameAsync(userId, cancellationToken);
+                var acceptedSystemMessage = CreateOfferAcceptedSystemMessage(
+                    conversation.ConversationId,
+                    negotiation.NegotiationId,
+                    userId,
+                    acceptorName,
+                    now.AddMilliseconds(1));
+
                 // Offer Accepted nghĩa là Offer đã được xử lý và đưa vào Negotiation.
                 var previousOfferStatus = offer.OfferStatus;
                 offer.OfferStatus = OfferStatus.Accepted;
@@ -563,7 +574,8 @@ namespace HomeCycle.Application.Services.Offers
                 await _offerRepository.UpdateAsync(offer, cancellationToken);
                 await _negotiationRepository.AddAsync(negotiation, cancellationToken);
                 await _messageRepository.AddAsync(initialOfferMessage, cancellationToken);
-                await _conversationRepository.UpdateLastActivityAsync(conversation.ConversationId, now, cancellationToken);
+                await _messageRepository.AddAsync(acceptedSystemMessage, cancellationToken);
+                await _conversationRepository.UpdateLastActivityAsync(conversation.ConversationId, acceptedSystemMessage.CreatedAt, cancellationToken);
                 await _auditService.EnqueueAsync(new AuditEvent
                 {
                     Category = AuditCategory.BusinessOperation,
@@ -593,13 +605,18 @@ namespace HomeCycle.Application.Services.Offers
 
                 await PublishConversationMessageCreatedSafelyAsync(conversation.ConversationId, initialOfferMessageResponse);
 
+                var acceptedSystemMessageResponse = _mapper.Map<MessageResponse>(acceptedSystemMessage);
+
+                await PublishMessageCreatedSafelyAsync(negotiation.NegotiationId, acceptedSystemMessageResponse);
+                await PublishConversationMessageCreatedSafelyAsync(conversation.ConversationId, acceptedSystemMessageResponse);
+
                 // Realtime: hiện hộp chat Nego mới mở cho cả 2 bên (Buyer + Seller)
                 await PublishConversationUpdatedSafelyAsync(
                     conversation.ConversationId,
                     negotiation.NegotiationId,
                     negotiation.SellerId,
                     negotiation.BuyerId,
-                    initialOfferMessageResponse,
+                    acceptedSystemMessageResponse,
                     NegotiationStatus.Agreed,
                     offer.OfferPrice,
                     offer.OfferQuantity,
@@ -956,6 +973,37 @@ namespace HomeCycle.Application.Services.Offers
             return initialMessage;
         }
 
+        private static message CreateOfferAcceptedSystemMessage(Guid conversationId, Guid negotiationId, Guid acceptorId, string acceptorName, DateTime createdAt)
+        {
+            return new message
+            {
+                MessageId = Guid.NewGuid(),
+                NegotiationId = negotiationId,
+                ConversationId = conversationId,
+                SenderId = acceptorId,
+                ClientMessageId = null,
+                MessageType = MessageType.System,
+                MessageContent = $"Người dùng {acceptorName} đã chấp nhận giá và số lượng trong đề nghị.",
+                OfferPrice = null,
+                OfferQuantity = 0,
+                OfferStatus = null,
+                MediaUrl = null,
+                BasePriceSnapshot = null,
+                IsRead = false,
+                CreatedAt = createdAt,
+                UpdatedAt = createdAt
+            };
+        }
+
+        private async Task<string> GetUsernameAsync(Guid userId, CancellationToken cancellationToken)
+        {
+            var user = await _userRepository.GetByIdAsync(userId, cancellationToken);
+
+            return string.IsNullOrWhiteSpace(user?.Username)
+                ? "không xác định"
+                : user.Username.Trim();
+        }
+
         private static OfferParticipantResponse MapParticipant(user? participant, Guid userId)
         {
             return new OfferParticipantResponse
@@ -1086,6 +1134,7 @@ namespace HomeCycle.Application.Services.Offers
                 MessageType.Media => "[Hình ảnh]",
                 MessageType.Offer or MessageType.CounterOffer =>
                     $"Đề nghị {m.OfferPrice:N0}đ x {m.OfferQuantity}",
+                MessageType.System => m.MessageContent ?? "[Hệ thống]",
                 _ => "[Hệ thống]"
             };
         }

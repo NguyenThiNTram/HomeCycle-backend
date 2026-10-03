@@ -567,14 +567,22 @@ namespace HomeCycle.Application.Services.Disputes
                         cancellationToken)
                     : (DisputeOrigin.UserReported, (Guid?)null);
 
-                var initialStatus = isOrderDispute
-                    ? DisputeStatus.AwaitingResponse
-                    : DisputeStatus.Pending;
+                // Sự cố vận chuyển GHN không phải lỗi của bên bị khiếu nại nên gửi thẳng cho kiểm duyệt viên,
+                // bỏ qua bước hai bên tự xử lý.
+                var isGhnCarrierDispute =
+                    isOrderDispute &&
+                    OrderDisputeCategoryPolicy.IsGhnCarrierCategory(category.Code);
+
+                var sendsDirectlyToModerator = !isOrderDispute || isGhnCarrierDispute;
+
+                var initialStatus = sendsDirectlyToModerator
+                    ? DisputeStatus.Pending
+                    : DisputeStatus.AwaitingResponse;
 
                 int? responseWindowHours = null;
                 DateTime? responseDeadlineAt = null;
 
-                if (isOrderDispute)
+                if (!sendsDirectlyToModerator)
                 {
                     var orderDisputePolicy =
                         await _platformPolicyProvider.GetDisputeConfigAsync(
@@ -607,7 +615,8 @@ namespace HomeCycle.Application.Services.Disputes
                     DisputeStatus = (int)initialStatus,
 
                     ResponseDeadlineAt = responseDeadlineAt,
-                    EscalatedAt = null,
+                    // Khiếu nại đơn hàng chỉ được kiểm duyệt viên nhận khi đã có EscalatedAt.
+                    EscalatedAt = isGhnCarrierDispute ? now : null,
                     ModeratorClaimedAt = null,
 
                     ModeratorNote = null,
@@ -669,9 +678,11 @@ namespace HomeCycle.Application.Services.Disputes
                 if (dispute.TargetUserId.HasValue &&
                     dispute.TargetUserId.Value != dispute.SenderId)
                 {
-                    var notificationMessage = isOrderDispute
-                        ? $"Một tranh chấp liên quan đến đơn hàng vừa được tạo. Bạn có {responseWindowHours!.Value} giờ để chấp nhận hoặc phản hồi."
-                        : "Một tranh chấp liên quan đến bạn vừa được tạo. Vui lòng kiểm tra thông tin.";
+                    var notificationMessage = isGhnCarrierDispute
+                        ? "Một tranh chấp về sự cố vận chuyển GHN của đơn hàng vừa được tạo và đã chuyển cho kiểm duyệt viên xử lý."
+                        : isOrderDispute
+                            ? $"Một tranh chấp liên quan đến đơn hàng vừa được tạo. Bạn có {responseWindowHours!.Value} giờ để chấp nhận hoặc phản hồi."
+                            : "Một tranh chấp liên quan đến bạn vừa được tạo. Vui lòng kiểm tra thông tin.";
 
                     disputeNotification =
                         await _notificationService.AddPendingAsync(
@@ -687,7 +698,7 @@ namespace HomeCycle.Application.Services.Disputes
                 var moderatorNotifications =
                     new List<notification>();
 
-                if (!isOrderDispute)
+                if (sendsDirectlyToModerator)
                 {
                     var createdModeratorNotifications =
                         await _notificationService.AddPendingForActiveModeratorsAsync(
@@ -1174,6 +1185,14 @@ if (dispute.TargetUserId.HasValue &&
                 await _unitOfWork.CommitTransactionAsync(cancellationToken);
                 foreach (var notification in claimNotifications)
                     await _notificationService.PublishCreatedSafelyAsync(notification);
+
+                // Khiếu nại chuyển sang UnderReview làm đổi trạng thái khiếu nại trên màn đơn hàng.
+                if (dispute.OrderId.HasValue)
+                {
+                    await _orderTrackingRealtimeService.PublishByOrderIdSafelyAsync(
+                        dispute.OrderId.Value,
+                        now);
+                }
 
                 return Result<ClaimDisputeResponse>.Success(new ClaimDisputeResponse
                 {
@@ -2446,13 +2465,7 @@ if (dispute.TargetUserId.HasValue &&
                 order.OrderId,
                 cancellationToken);
 
-            var buyerHasItem =
-                order.CompletedAt.HasValue ||
-                (
-                    shipment?.DeliveryMethod == DeliveryMethod.GhnDelivery &&
-                    shipment.ShipmentStatus == ShipmentStatus.Delivered &&
-                    shipment.DeliveredAt.HasValue
-                );
+            var buyerHasItem = BuyerHasItem(order, shipment);
 
             if (!buyerHasItem)
                 return false;
@@ -2461,6 +2474,64 @@ if (dispute.TargetUserId.HasValue &&
                 dispute,
                 order.OrderId,
                 cancellationToken);
+        }
+
+        // Người mua đã cầm hàng khi: đơn đã hoàn tất, người bán đã xác nhận bàn giao trực tiếp
+        // (giống cách tự hoàn tất đơn tính mốc bàn giao), hoặc GHN báo đã giao.
+        private static bool BuyerHasItem(order order, shipment? shipment) =>
+            order.CompletedAt.HasValue ||
+            order.SellerHandoverConfirmedAt.HasValue ||
+            (
+                shipment?.DeliveryMethod == DeliveryMethod.GhnDelivery &&
+                shipment.ShipmentStatus == ShipmentStatus.Delivered &&
+                shipment.DeliveredAt.HasValue
+            );
+
+        // GHN đã lấy hàng và đang giao (gồm giao thất bại chờ giao lại). Có PickedUpAt mà trạng thái
+        // còn ReadyToPick thì coi như webhook cập nhật trạng thái chưa tới.
+        private static bool IsGhnParcelInTransit(shipment? shipment) =>
+            shipment?.DeliveryMethod == DeliveryMethod.GhnDelivery &&
+            (
+                shipment.ShipmentStatus == ShipmentStatus.Delivering ||
+                (
+                    shipment.PickedUpAt.HasValue &&
+                    shipment.ShipmentStatus == ShipmentStatus.ReadyToPick
+                )
+            );
+
+        private async Task<bool> IsGhnParcelInTransitAsync(
+            dispute dispute,
+            CancellationToken cancellationToken)
+        {
+            if (!dispute.OrderId.HasValue)
+                return false;
+
+            var order = await _orderRepository.GetByIdAsync(
+                dispute.OrderId.Value,
+                cancellationToken);
+
+            if (order == null)
+                return false;
+
+            var shipment = await _shipmentRepository.GetByOrderIdAsync(
+                order.OrderId,
+                cancellationToken);
+
+            return !BuyerHasItem(order, shipment) && IsGhnParcelInTransit(shipment);
+        }
+
+        private async Task<bool> IsShippingFeeRefundCategoryAsync(
+            dispute dispute,
+            CancellationToken cancellationToken)
+        {
+            if (!dispute.DisputeCategory.HasValue)
+                return false;
+
+            var category = await _disputeCategoryRepository.GetByIdAsync(
+                dispute.DisputeCategory.Value,
+                cancellationToken);
+
+            return OrderDisputeCategoryPolicy.RefundsShippingFee(category?.Code);
         }
 
         private async Task<bool> IsAcceptedInspectionReturnBlockedAsync(
@@ -2503,13 +2574,15 @@ if (dispute.TargetUserId.HasValue &&
                 order.OrderId,
                 cancellationToken);
 
-            var buyerHasItem =
-                order.CompletedAt.HasValue ||
-                (
-                    shipment?.DeliveryMethod == DeliveryMethod.GhnDelivery &&
-                    shipment.ShipmentStatus == ShipmentStatus.Delivered &&
-                    shipment.DeliveredAt.HasValue
-                );
+            var buyerHasItem = BuyerHasItem(order, shipment);
+
+            // Mọi kết luận khi người mua chưa có hàng đều hủy đơn và hoàn tiền. GHN không cho hủy
+            // vận đơn đã lấy hàng, nên nếu kết luận lúc này thì hàng vẫn tới tay người mua.
+            if (!buyerHasItem && IsGhnParcelInTransit(shipment))
+            {
+                return Result<OrderResolutionExecution>.Fail(
+                    DisputeErrors.GhnShipmentInTransit);
+            }
 
             if (outcome == DisputeResolutionOutcome.BuyerFavored &&
                 buyerHasItem &&
@@ -2548,10 +2621,20 @@ if (dispute.TargetUserId.HasValue &&
             }
             else if (!buyerHasItem)
             {
-                var refundResult = await _paymentService.RefundAllRemainingOrderHeldAmountAsync(
-                    order,
-                    agreement,
-                    cancellationToken);
+                // Sự cố GHN do lỗi vận chuyển (mất hàng, shipper tự ý hủy/hoàn) mà người mua thắng thì hoàn thêm phí ship.
+                var refundShippingFee =
+                    outcome == DisputeResolutionOutcome.BuyerFavored &&
+                    await IsShippingFeeRefundCategoryAsync(dispute, cancellationToken);
+
+                var refundResult = refundShippingFee
+                    ? await _paymentService.RefundAllRemainingOrderHeldAmountWithShippingAsync(
+                        order,
+                        agreement,
+                        cancellationToken)
+                    : await _paymentService.RefundAllRemainingOrderHeldAmountAsync(
+                        order,
+                        agreement,
+                        cancellationToken);
 
                 if (!refundResult.IsSuccess)
                     return Result<OrderResolutionExecution>.Fail(refundResult.Error!);
@@ -2578,6 +2661,9 @@ if (dispute.TargetUserId.HasValue &&
             else
             {
                 order.OrderStatus = (int)OrderStatus.Completed;
+                // Đơn đặt cọc (phần còn lại trả trực tiếp) hoàn tất giống khi người mua xác nhận đã nhận hàng.
+                if (order.PaymentStatus == (int)PaymentStatus.Pending)
+                    order.PaymentStatus = (int)PaymentStatus.Completed;
                 order.ReturnDueAt = null;
                 order.UpdatedAt = now;
             }
@@ -2884,6 +2970,12 @@ if (dispute.TargetUserId.HasValue &&
                     proposedOutcome,
                     cancellationToken);
 
+            var acceptBlockedByGhnInTransit =
+                responseWindowOpen &&
+                !systemNoShow &&
+                currentUserIsTarget &&
+                await IsGhnParcelInTransitAsync(dispute, cancellationToken);
+
             var canVerifyReturn =
                 moderatorId.HasValue &&
                 disputeStatus == DisputeStatus.AwaitingReturn &&
@@ -2946,7 +3038,8 @@ if (dispute.TargetUserId.HasValue &&
                         responseWindowOpen &&
                         !systemNoShow &&
                         currentUserIsTarget &&
-                        !acceptBlockedByAcceptedInspection,
+                        !acceptBlockedByAcceptedInspection &&
+                        !acceptBlockedByGhnInTransit,
                     CanRebut = responseWindowOpen && !systemNoShow && currentUserIsTarget,
                     CanSubmitStatement = responseWindowOpen && systemNoShow && currentUserId.HasValue,
 

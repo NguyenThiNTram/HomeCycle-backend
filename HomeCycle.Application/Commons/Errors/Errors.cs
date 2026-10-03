@@ -382,6 +382,10 @@ namespace HomeCycle.Application.Commons.Errors
             new("DISPUTE_INVALID_ORDER_SENDER",
                 "Không xác định được vai trò của người tạo tranh chấp trong đơn hàng.");
 
+        public static readonly Error GhnShipmentInTransit =
+            new("DISPUTE_GHN_SHIPMENT_IN_TRANSIT",
+                "Kiện hàng đang được GHN vận chuyển. Vui lòng chờ GHN giao xong hoặc hoàn về rồi mới kết luận tranh chấp.");
+
         public static readonly Error AcceptedInspectionBlocksReturn =
             new("DISPUTE_ACCEPTED_INSPECTION_BLOCKS_RETURN",
                 "Sản phẩm đã được chấp nhận qua kiểm định nên tranh chấp về tình trạng sản phẩm không thể dẫn tới hoàn trả vật lý.");
@@ -421,6 +425,9 @@ namespace HomeCycle.Application.Commons.Errors
 
         public static readonly Error CancellationNotAllowed =
             new("Order.CancellationNotAllowed", "Đơn hàng đã vượt mốc cho phép hủy trực tiếp. Nếu phát sinh vấn đề, vui lòng sử dụng tranh chấp.");
+
+        public static readonly Error GhnRefusedCancellation =
+            new("Order.GhnRefusedCancellation", "GHN đã lấy hàng hoặc không cho hủy vận đơn này nên không thể hủy đơn. Nếu phát sinh vấn đề, vui lòng sử dụng tranh chấp khi GHN đang giao.");
 
         public static readonly Error ActiveDisputeBlocksCancellation =
             new("Order.ActiveDisputeBlocksCancellation", "Đơn hàng đang có tranh chấp nên không thể hủy trực tiếp.");
