@@ -8,6 +8,10 @@ namespace HomeCycle.Application.Interfaces.Repositories.Dashboard;
 
 public interface IDashboardRepository
 {
+    Task<ListingMonitorOverviewData> GetListingMonitorOverviewAsync(ListingMonitorRequest request, DashboardPeriod growthPeriod, CancellationToken ct);
+    Task<PagedResult<ListingMonitorItem>> GetListingMonitorItemsAsync(ListingMonitorRequest request, DateTime nowUtc, CancellationToken ct);
+    Task<ListingMonitorItem?> GetListingMonitorItemAsync(Guid postId, DateTime nowUtc, CancellationToken ct);
+    Task<IReadOnlyList<DashboardAmountDay>> GetPlatformRevenueDailyAsync(DashboardPeriod period, CancellationToken ct);
     Task<IReadOnlyList<BusinessGrowthDay>> GetBusinessGrowthAsync(BusinessOverviewRequest request, DashboardPeriod period, CancellationToken ct);
     Task<ListingDashboardData> GetListingsAsync(DashboardPeriod period, CancellationToken ct);
     Task<PagedResult<ReportedListingItem>> GetReportedListingsAsync(ReportedListingRequest request, CancellationToken ct);

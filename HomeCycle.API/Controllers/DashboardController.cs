@@ -24,6 +24,36 @@ namespace HomeCycle.API.Controllers;
 [Authorize(Roles = nameof(UserRole.Admin))]
 public sealed class DashboardController(IDashboardService service) : ControllerBase
 {
+    [HttpGet("listings/overview")]
+    [SwaggerOperation(Summary = "Giám sát bài đăng hiện tại, loại Nháp",
+        Description = "KPI/phân bố/danh mục dùng cùng filter Keyword, PostType, Status, CategoryId, City, OwnerRole, HasOpenReports; không lọc ngày. GrowthSeries là 30 ngày đã hoàn tất theo UTC+7, đếm CreatedAt của bài hiện không phải Nháp; không phải số bài tăng ròng hoặc thời điểm xuất bản. Active theo trạng thái lưu, hết hạn là thông tin riêng. Phân trang và SortBy không ảnh hưởng overview.")]
+    public async Task<ActionResult<ListingMonitorOverviewResponse>> GetListingMonitorOverview(
+        [FromQuery] ListingMonitorRequest request, CancellationToken ct)
+        => Ok(await service.GetListingMonitorOverviewAsync(request, ct));
+
+    [HttpGet("listings/items")]
+    [SwaggerOperation(Summary = "Danh sách quản trị bài mua/bán và báo cáo còn mở",
+        Description = "Loại Nháp và áp bộ lọc trước phân trang. PostType=Sell/Buy cho hai thẻ danh sách. HasOpenReports=true/false để lọc có/không có báo cáo chưa giải quyết. Keyword tìm sản phẩm, tên người đăng hoặc PostId GUID. Giá bài bán là BasePrice; bài mua dùng PriceFrom/PriceTo. SortBy=Newest hoặc MostOpenReports.")]
+    public async Task<ActionResult<PagedResult<ListingMonitorItem>>> GetListingMonitorItems(
+        [FromQuery] ListingMonitorRequest request, CancellationToken ct)
+        => Ok(await service.GetListingMonitorItemsAsync(request, ct));
+
+    [HttpGet("listings/items/{postId:guid}")]
+    [SwaggerOperation(Summary = "Chi tiết giám sát bài đăng và tài khoản người đăng",
+        Description = "Chỉ đọc, gồm cả bài Deleted; bài Nháp trả 404. Trả mô tả, thuộc tính cơ bản sản phẩm, giá, số lượng, khu vực, thời gian, số báo cáo và hồ sơ tài khoản người đăng. Không cập nhật trạng thái hoặc hết hạn.")]
+    public async Task<ActionResult<ListingMonitorDetailResponse>> GetListingMonitorDetail(Guid postId, CancellationToken ct)
+    {
+        var response = await service.GetListingMonitorDetailAsync(postId, ct);
+        return response == null ? NotFound() : Ok(response);
+    }
+
+    [HttpGet("overview")]
+    [SwaggerOperation(Summary = "Tổng quan hệ thống: báo cáo trong kỳ và tồn đọng hiện tại",
+        Description = "From/To theo UTC+7, To không tính; mặc định 30 ngày đã hoàn tất. So sánh kỳ liền trước cùng số ngày; ChangePercent null khi kỳ trước bằng 0. Khách hàng gồm Personal và Business theo role hiện tại. GMV gồm phí ship cấu hình. Doanh thu và chuỗi cùng tính Subscription_Fee Completed vào Platform_Revenue, mọi gói. Snapshot không phụ thuộc kỳ; các truy vấn đọc tuần tự, không phải snapshot nguyên tử. Kỳ có hôm nay được đánh dấu partial. TopCategoriesByGmv trả tối đa 5 danh mục, không gom Khác.")]
+    public async Task<ActionResult<AdminDashboardOverviewResponse>> GetOverview(
+        [FromQuery] DashboardPeriodRequest request, CancellationToken ct)
+        => Ok(await service.GetAdminOverviewAsync(request, ct));
+
     [HttpGet("listings")]
     public async Task<ActionResult<ListingDashboardResponse>> GetListings([FromQuery] DashboardPeriodRequest request, CancellationToken ct)
         => Ok(await service.GetListingDashboardAsync(request, ct));
