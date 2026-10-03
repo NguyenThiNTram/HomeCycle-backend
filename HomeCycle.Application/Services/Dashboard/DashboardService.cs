@@ -11,6 +11,130 @@ namespace HomeCycle.Application.Services.Dashboard;
 
 public sealed class DashboardService(IDashboardRepository repository, IDisputeCategoryRepository disputeCategoryRepository, TimeProvider clock) : IDashboardService
 {
+    public async Task<ListingMonitorOverviewResponse> GetListingMonitorOverviewAsync(ListingMonitorRequest request, CancellationToken ct)
+    {
+        var today = DateOnly.FromDateTime(clock.GetUtcNow().ToOffset(TimeSpan.FromHours(7)).DateTime);
+        var period = ResolvePeriod(new DashboardPeriodRequest { From = today.AddDays(-30), To = today });
+        var data = await repository.GetListingMonitorOverviewAsync(request, period, ct);
+        var total = data.Statuses.Sum(x => x.Count);
+        var active = data.Statuses.Where(x => x.Status == (int)PostStatus.Active).Sum(x => x.Count);
+        var sell = data.Statuses.Where(x => x.PostType == (int)PostType.Sell).ToArray();
+        var buy = data.Statuses.Where(x => x.PostType == (int)PostType.Buy).ToArray();
+        IReadOnlyList<DistributionItem> Statuses(IEnumerable<ListingTypeStatusCount> rows)
+            => Distribution<PostStatus>(rows.Select(x => new DashboardCodeCount(x.Status, x.Count)))
+                .Where(x => x.Key != nameof(PostStatus.Draft)).ToArray();
+        return new ListingMonitorOverviewResponse
+        {
+            GeneratedAtUtc = clock.GetUtcNow().UtcDateTime,
+            TotalCount = total, ActiveCount = active, InactiveCount = total - active,
+            SellCount = sell.Sum(x => x.Count), BuyCount = buy.Sum(x => x.Count),
+            UnknownPostTypeCount = total - sell.Sum(x => x.Count) - buy.Sum(x => x.Count),
+            CurrentlyReportedListingCount = data.CurrentlyReportedListingCount,
+            SellStatusDistribution = Statuses(sell), BuyStatusDistribution = Statuses(buy),
+            Categories = data.Categories, GrowthPeriod = period,
+            GrowthSeries = Buckets(period).Select(b =>
+            {
+                var rows = data.Daily.Where(x => DateOnly.FromDateTime(x.Date) >= b.From && DateOnly.FromDateTime(x.Date) < b.To).ToArray();
+                return new ListingGrowthPoint(b.From,
+                    rows.Where(x => x.PostType == (int)PostType.Sell).Sum(x => x.Count),
+                    rows.Where(x => x.PostType == (int)PostType.Buy).Sum(x => x.Count),
+                    rows.Where(x => x.PostType != (int)PostType.Sell && x.PostType != (int)PostType.Buy).Sum(x => x.Count));
+            }).ToArray()
+        };
+    }
+
+    public Task<PagedResult<ListingMonitorItem>> GetListingMonitorItemsAsync(ListingMonitorRequest request, CancellationToken ct)
+        => repository.GetListingMonitorItemsAsync(request, clock.GetUtcNow().UtcDateTime, ct);
+
+    public async Task<ListingMonitorDetailResponse?> GetListingMonitorDetailAsync(Guid postId, CancellationToken ct)
+    {
+        var listing = await repository.GetListingMonitorItemAsync(postId, clock.GetUtcNow().UtcDateTime, ct);
+        if (listing == null) return null;
+        var owner = await repository.GetAccountDetailAsync(listing.OwnerId, ct);
+        return new ListingMonitorDetailResponse { GeneratedAtUtc = clock.GetUtcNow().UtcDateTime, Listing = listing, Owner = owner };
+    }
+
+    public async Task<AdminDashboardOverviewResponse> GetAdminOverviewAsync(
+        DashboardPeriodRequest request, CancellationToken ct)
+    {
+        var period = ResolvePeriod(request);
+        var nowUtc = clock.GetUtcNow().UtcDateTime;
+        var comparisonPeriod = new DashboardPeriod
+        {
+            From = period.From.AddDays(-(period.ToExclusive.DayNumber - period.From.DayNumber)),
+            ToExclusive = period.From,
+            GroupBy = period.GroupBy
+        };
+        var personalRegistrations = await repository.GetRegistrationsAsync(
+            UserRole.Personal, comparisonPeriod.FromUtc, period.EndUtc, ct);
+        var businessRegistrations = await repository.GetRegistrationsAsync(
+            UserRole.Business, comparisonPeriod.FromUtc, period.EndUtc, ct);
+        var registrations = personalRegistrations.Concat(businessRegistrations).ToArray();
+        var listings = await repository.GetListingsAsync(period, ct);
+        var previousListings = await repository.GetListingsAsync(comparisonPeriod, ct);
+        var orders = await repository.GetOrdersAsync(new OrderDashboardRequest(), period, ct);
+        var previousOrders = await repository.GetOrdersAsync(new OrderDashboardRequest(), comparisonPeriod, ct);
+        var revenue = await repository.GetPlatformRevenueDailyAsync(period, ct);
+        var previousRevenue = await repository.GetPlatformRevenueDailyAsync(comparisonPeriod, ct);
+        var operations = await repository.GetOperationOverviewAsync(period, nowUtc, ct);
+        var activity = await repository.GetUserActivityAsync(nowUtc, ct);
+        var financeHealth = await repository.GetFinanceHealthAsync(period, nowUtc, ct);
+
+        return new AdminDashboardOverviewResponse
+        {
+            GeneratedAtUtc = clock.GetUtcNow().UtcDateTime,
+            Period = period,
+            ComparisonPeriod = comparisonPeriod,
+            Kpis = new AdminDashboardKpis
+            {
+                NewCustomers = Compare(
+                    registrations.Where(x => x.Date >= period.From && x.Date < period.ToExclusive).Sum(x => x.Count),
+                    registrations.Where(x => x.Date >= comparisonPeriod.From && x.Date < comparisonPeriod.ToExclusive).Sum(x => x.Count),
+                    "Customer"),
+                NewListings = Compare(listings.Statuses.Sum(x => x.Count), previousListings.Statuses.Sum(x => x.Count), "Post"),
+                CompletedOrders = Compare(orders.SuccessfulInPeriodCount, previousOrders.SuccessfulInPeriodCount, "Order"),
+                CompletedGmv = Compare(orders.Gmv, previousOrders.Gmv, "VND"),
+                PlatformRevenue = Compare(revenue.Sum(x => x.Amount), previousRevenue.Sum(x => x.Amount), "VND")
+            },
+            OrderSeries = Buckets(period).Select(b => new OrderTradePoint(b.From, b.To,
+                orders.CreatedDaily.Where(x => DateOnly.FromDateTime(x.Date) >= b.From && DateOnly.FromDateTime(x.Date) < b.To).Sum(x => x.Count),
+                orders.GmvDaily.Where(x => DateOnly.FromDateTime(x.Date) >= b.From && DateOnly.FromDateTime(x.Date) < b.To).Sum(x => x.Count),
+                orders.GmvDaily.Where(x => DateOnly.FromDateTime(x.Date) >= b.From && DateOnly.FromDateTime(x.Date) < b.To).Sum(x => x.Amount))).ToArray(),
+            RevenueSeries = Buckets(period).Select(b => new ValueSeriesPoint(b.From, b.To,
+                revenue.Where(x => DateOnly.FromDateTime(x.Date) >= b.From && DateOnly.FromDateTime(x.Date) < b.To).Sum(x => x.Amount))).ToArray(),
+            CreatedOrderStatusDistribution = Distribution<OrderStatus>(orders.CreatedStatuses),
+            TopCategoriesByGmv = listings.TopCategoriesByGmv.Take(5).ToArray(),
+            Snapshot = new AdminDashboardSnapshot
+            {
+                AsOfUtc = nowUtc,
+                Today = DateOnly.FromDateTime(nowUtc.AddHours(7)),
+                ActiveOrders = operations.ActiveOrderCount,
+                TodayAppointments = operations.TodayAppointmentCount,
+                UnresolvedDisputes = operations.UnresolvedDisputeCount,
+                OverdueReleaseOrders = financeHealth.OverdueReleaseOrders,
+                StalePendingPayments = financeHealth.StalePendingPayments,
+                PendingBusinessVerificationCount = activity.PendingBusinessVerificationCount,
+                PendingPersonalVerificationCount = activity.PendingPersonalVerificationCount,
+                CurrentlyReportedListingCount = listings.CurrentlyReportedListingCount
+            },
+            DataQuality = new AdminDashboardDataQuality
+            {
+                CompletedOrdersMissingAmountCount = orders.SuccessfulOrdersMissingAmountCount,
+                PreviousCompletedOrdersMissingAmountCount = previousOrders.SuccessfulOrdersMissingAmountCount
+            }
+        };
+    }
+
+    private static DashboardComparisonMetric Compare(decimal value, decimal previousValue, string unit)
+        => new()
+        {
+            Value = value,
+            PreviousValue = previousValue,
+            Change = value - previousValue,
+            ChangePercent = previousValue == 0 ? null : Math.Round((value - previousValue) * 100m / previousValue, 2),
+            Unit = unit
+        };
+
     public async Task<ListingDashboardResponse> GetListingDashboardAsync(DashboardPeriodRequest request, CancellationToken ct)
     {
         var period = ResolvePeriod(request);

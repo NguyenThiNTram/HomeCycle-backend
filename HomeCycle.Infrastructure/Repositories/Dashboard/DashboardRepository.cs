@@ -13,6 +13,131 @@ namespace HomeCycle.Infrastructure.Repositories.Dashboard;
 public sealed class DashboardRepository(HomeCycleDbContext db) : IDashboardRepository
 {
     private const decimal AmountEpsilon = 0.01m;
+    private IQueryable<Post> ListingMonitorQuery(ListingMonitorRequest request)
+    {
+        var query = db.Posts.AsNoTracking().Where(p => p.Status != (int)PostStatus.Draft);
+        if (request.PostType.HasValue) query = query.Where(p => p.PostType == (int)request.PostType.Value);
+        if (request.Status.HasValue) query = query.Where(p => p.Status == (int)request.Status.Value);
+        if (request.CategoryId.HasValue) query = query.Where(p => p.Product != null && p.Product.CategoryId == request.CategoryId.Value);
+        if (!string.IsNullOrWhiteSpace(request.City))
+        {
+            var city = request.City.Trim();
+            query = query.Where(p => p.City == city);
+        }
+        if (request.OwnerRole.HasValue) query = query.Where(p => p.User != null && p.User.Role == (int)request.OwnerRole.Value);
+        if (request.HasOpenReports.HasValue)
+        {
+            var hasOpen = request.HasOpenReports.Value;
+            query = query.Where(p => db.Disputes.Any(d => d.PostId == p.PostId
+                && d.DisputeTargetType == (int)DisputeTargetType.Post
+                && UnresolvedDisputeStatuses.Contains(d.DisputeStatus)) == hasOpen);
+        }
+        if (!string.IsNullOrWhiteSpace(request.Keyword))
+        {
+            var keyword = request.Keyword.Trim();
+            var pattern = "%" + keyword.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
+            var isId = Guid.TryParse(keyword, out var postId);
+            query = query.Where(p => (isId && p.PostId == postId)
+                || (p.Product != null && EF.Functions.ILike(p.Product.ProductName!, pattern))
+                || (p.User != null && (EF.Functions.ILike(p.User.Username, pattern)
+                    || (p.User.Personal_ProfileUser != null && EF.Functions.ILike(p.User.Personal_ProfileUser.FullName!, pattern))
+                    || (p.User.Business_Profile != null && EF.Functions.ILike(p.User.Business_Profile.BusinessName!, pattern)))));
+        }
+        return query;
+    }
+
+    private IQueryable<ListingMonitorItem> ListingMonitorItemsQuery(IQueryable<Post> query, DateTime nowUtc)
+        => query.Select(p => new ListingMonitorItem
+        {
+            PostId = p.PostId, OwnerId = p.OwnerId,
+            OwnerName = p.User == null ? null : p.User.Role == (int)UserRole.Business && p.User.Business_Profile != null
+                ? p.User.Business_Profile.BusinessName : p.User.Personal_ProfileUser != null
+                    ? p.User.Personal_ProfileUser.FullName : p.User.Username,
+            OwnerRole = p.User == null ? null : (UserRole?)p.User.Role,
+            PostType = (PostType?)p.PostType, Status = (PostStatus?)p.Status,
+            ProductName = p.Product == null ? null : p.Product.ProductName,
+            CategoryId = p.Product == null ? null : p.Product.CategoryId,
+            CategoryName = p.Product == null || p.Product.Category == null ? null : p.Product.Category.CategoryName,
+            ProductTypeName = p.Product == null || p.Product.ProductType == null ? null : p.Product.ProductType.ProductTypeName,
+            BrandName = p.Product == null || p.Product.Brand == null ? null : p.Product.Brand.BrandName,
+            Description = p.Description,
+            BasePrice = p.PostType == (int)PostType.Sell ? p.BasePrice : null,
+            PriceFrom = p.PostType == (int)PostType.Buy ? p.MinExpectedPrice : null,
+            PriceTo = p.PostType == (int)PostType.Buy ? p.BasePrice : null,
+            Quantity = p.Quantity, RemainingQuantity = p.RemainingQuantity,
+            City = p.City, Ward = p.Ward, StreetAddress = p.StreetAddress,
+            CreatedAt = p.CreatedAt, UpdatedAt = p.UpdatedAt, ExpiryDate = p.ExpiryDate,
+            IsExpired = p.ExpiryDate.HasValue && p.ExpiryDate.Value <= nowUtc,
+            OpenReportCount = db.Disputes.Count(d => d.PostId == p.PostId
+                && d.DisputeTargetType == (int)DisputeTargetType.Post && UnresolvedDisputeStatuses.Contains(d.DisputeStatus)),
+            TotalReportCount = db.Disputes.Count(d => d.PostId == p.PostId && d.DisputeTargetType == (int)DisputeTargetType.Post)
+        });
+
+    public async Task<ListingMonitorOverviewData> GetListingMonitorOverviewAsync(
+        ListingMonitorRequest request, DashboardPeriod growthPeriod, CancellationToken ct)
+    {
+        var query = ListingMonitorQuery(request);
+        return new ListingMonitorOverviewData
+        {
+            CurrentlyReportedListingCount = await query.CountAsync(p => db.Disputes.Any(d => d.PostId == p.PostId
+                && d.DisputeTargetType == (int)DisputeTargetType.Post && UnresolvedDisputeStatuses.Contains(d.DisputeStatus)), ct),
+            Statuses = await query.GroupBy(p => new { p.PostType, p.Status })
+                .Select(g => new ListingTypeStatusCount(g.Key.PostType, g.Key.Status, g.Count())).ToListAsync(ct),
+            Categories = await query.GroupBy(p => new
+                {
+                    Id = p.Product == null ? null : p.Product.CategoryId,
+                    Name = p.Product == null || p.Product.Category == null ? "Unspecified" : p.Product.Category.CategoryName
+                })
+                .Select(g => new
+                {
+                    g.Key.Id, g.Key.Name,
+                    SellCount = g.Count(p => p.PostType == (int)PostType.Sell),
+                    BuyCount = g.Count(p => p.PostType == (int)PostType.Buy),
+                    UnknownPostTypeCount = g.Count(p => p.PostType != (int)PostType.Sell && p.PostType != (int)PostType.Buy)
+                })
+                .OrderByDescending(x => x.SellCount + x.BuyCount + x.UnknownPostTypeCount).ThenBy(x => x.Id)
+                .Select(x => new ListingTypeCategoryMetric(x.Id, x.Name ?? "Unspecified", x.SellCount, x.BuyCount, x.UnknownPostTypeCount)).ToListAsync(ct),
+            Daily = await query.Where(p => p.CreatedAt >= growthPeriod.FromUtc && p.CreatedAt < growthPeriod.EndUtc)
+                .GroupBy(p => new { Date = p.CreatedAt.AddHours(7).Date, p.PostType })
+                .Select(g => new ListingTypeDailyCount(g.Key.Date, g.Key.PostType, g.Count())).ToListAsync(ct)
+        };
+    }
+
+    public async Task<PagedResult<ListingMonitorItem>> GetListingMonitorItemsAsync(
+        ListingMonitorRequest request, DateTime nowUtc, CancellationToken ct)
+    {
+        var query = ListingMonitorQuery(request);
+        var total = await query.CountAsync(ct);
+        var items = ListingMonitorItemsQuery(query, nowUtc);
+        var ordered = request.SortBy == ListingMonitorSort.MostOpenReports
+            ? items.OrderByDescending(p => p.OpenReportCount).ThenByDescending(p => p.CreatedAt).ThenBy(p => p.PostId)
+            : items.OrderByDescending(p => p.CreatedAt).ThenBy(p => p.PostId);
+        return new PagedResult<ListingMonitorItem>
+        {
+            Items = await ordered.Skip((request.PageNumber - 1) * request.PageSize).Take(request.PageSize).ToListAsync(ct),
+            TotalCount = total, PageNumber = request.PageNumber, PageSize = request.PageSize
+        };
+    }
+
+    public Task<ListingMonitorItem?> GetListingMonitorItemAsync(Guid postId, DateTime nowUtc, CancellationToken ct)
+        => ListingMonitorItemsQuery(ListingMonitorQuery(new ListingMonitorRequest()).Where(p => p.PostId == postId), nowUtc)
+            .FirstOrDefaultAsync(ct);
+
+    public async Task<IReadOnlyList<DashboardAmountDay>> GetPlatformRevenueDailyAsync(
+        DashboardPeriod period, CancellationToken ct)
+    {
+        return await db.Wallet_Transactions.AsNoTracking()
+            .Where(x => x.WalletTransactionStatus == (int)WalletTransactionStatus.Completed
+                && x.CreatedAt >= period.FromUtc && x.CreatedAt < period.EndUtc
+                && x.TransactionType == (int)TransactionType.Subscription_Fee
+                && x.ToWallet != null && x.ToWallet.WalletType == (int)WalletTypeEnum.System
+                && x.ToWallet.Purpose == (int)SystemWalletPurpose.Platform_Revenue)
+            .GroupBy(x => x.CreatedAt.AddHours(7).Date)
+            .Select(g => new DashboardAmountDay(g.Key, g.Count(), g.Sum(x => Math.Abs(x.Amount ?? 0))))
+            .OrderBy(x => x.Date)
+            .ToListAsync(ct);
+    }
+
     public async Task<ListingDashboardData> GetListingsAsync(DashboardPeriod period, CancellationToken ct)
     {
         var posts = db.Posts.AsNoTracking().Where(x => x.CreatedAt >= period.FromUtc && x.CreatedAt < period.EndUtc);
