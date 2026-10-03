@@ -335,6 +335,10 @@ namespace HomeCycle.Application.Commons.Errors
         public static Error WindowExpired(DateTime deadline) =>
             new("DISPUTE_WINDOW_EXPIRED", $"Thời hạn tạo tranh chấp đã kết thúc lúc {deadline:O}.");
 
+        public static readonly Error OrderReviewedBySender =
+            new("DISPUTE_ORDER_REVIEWED",
+                "Bạn đã đánh giá đơn hàng này nên không thể gửi khiếu nại.");
+
         public static Error UnsupportedTarget(DisputeTargetType targetType) =>
             new("DISPUTE_TARGET_NOT_SUPPORTED", $"Loại đối tượng tranh chấp '{targetType}' hiện chưa được hỗ trợ.");
 
