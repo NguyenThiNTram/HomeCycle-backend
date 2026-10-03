@@ -442,6 +442,7 @@ namespace HomeCycle.Infrastructure.Repositories.Orders
                 .AsNoTracking()
                 .Where(o =>
                     o.OrderStatus == (int)OrderStatus.Completed &&
+                    o.PaymentStatus == (int)PaymentStatus.Completed &&
                     o.DisputeWindowEndsAt.HasValue &&
                     o.DisputeWindowEndsAt.Value < nowUtc &&
                     !o.Disputes.Any(d =>
@@ -480,6 +481,8 @@ namespace HomeCycle.Infrastructure.Repositories.Orders
                 o.OrderStatus == (int)OrderStatus.Cancelled ||
                 o.OrderStatus == (int)OrderStatus.Returned ||
                 o.OrderStatus == (int)OrderStatus.Disputing ||
+                o.PaymentStatus == (int)PaymentStatus.Refunded ||
+                o.PaymentStatus == (int)PaymentStatus.PartiallyRefunded ||
                 o.Disputes.Any(d =>
                     d.DisputeStatus == (int)DisputeStatus.AwaitingResponse ||
                     d.DisputeStatus == (int)DisputeStatus.Pending ||
@@ -493,7 +496,10 @@ namespace HomeCycle.Infrastructure.Repositories.Orders
                         .FirstOrDefault()));
             if (request.Group == OrderHistoryGroup.Issue) query = issues;
             else if (request.Group == OrderHistoryGroup.Successful)
-                query = query.Where(o => o.OrderStatus == (int)OrderStatus.Completed && !issues.Any(i => i.OrderId == o.OrderId));
+                query = query.Where(o =>
+                    o.OrderStatus == (int)OrderStatus.Completed &&
+                    o.PaymentStatus == (int)PaymentStatus.Completed &&
+                    !issues.Any(i => i.OrderId == o.OrderId));
             else if (request.Group == OrderHistoryGroup.Trading)
                 query = query.Where(o => (o.OrderStatus == (int)OrderStatus.Pending || o.OrderStatus == (int)OrderStatus.Processing)
                     && !issues.Any(i => i.OrderId == o.OrderId));

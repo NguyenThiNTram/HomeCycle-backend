@@ -469,33 +469,33 @@ namespace HomeCycle.API.Controllers
         }
 
 
-        [HttpPost("disputes/{disputeId:guid}/verify-return")]
-        [SwaggerOperation(
-            Summary = "Moderator xác minh hoàn trả hàng",
-            Description = "Xác minh việc hoàn trả sau khi Buyer đã xác nhận trả hàng và Seller không phản hồi đúng hạn."
-        )]
-        [ProducesResponseType(typeof(DisputeDecisionResponse), StatusCodes.Status200OK)]
-        public async Task<IActionResult> VerifyDisputeReturn(
-            Guid disputeId,
-            [FromBody] VerifyDisputeReturnRequest request,
-            CancellationToken cancellationToken)
-        {
-            var moderatorId = GetCurrentUserId();
+        //[HttpPost("disputes/{disputeId:guid}/verify-return")]
+        //[SwaggerOperation(
+        //    Summary = "Moderator xác minh hoàn trả hàng",
+        //    Description = "Xác minh việc hoàn trả sau khi Buyer đã xác nhận trả hàng và Seller không phản hồi đúng hạn."
+        //)]
+        //[ProducesResponseType(typeof(DisputeDecisionResponse), StatusCodes.Status200OK)]
+        //public async Task<IActionResult> VerifyDisputeReturn(
+        //    Guid disputeId,
+        //    [FromBody] VerifyDisputeReturnRequest request,
+        //    CancellationToken cancellationToken)
+        //{
+        //    var moderatorId = GetCurrentUserId();
 
-            if (moderatorId == Guid.Empty)
-                return Unauthorized();
+        //    if (moderatorId == Guid.Empty)
+        //        return Unauthorized();
 
-            var result = await _disputeService.VerifyReturnByModeratorAsync(
-                disputeId,
-                moderatorId,
-                request,
-                cancellationToken);
+        //    var result = await _disputeService.VerifyReturnByModeratorAsync(
+        //        disputeId,
+        //        moderatorId,
+        //        request,
+        //        cancellationToken);
 
-            if (!result.IsSuccess)
-                return MapDisputeError(result.Error!);
+        //    if (!result.IsSuccess)
+        //        return MapDisputeError(result.Error!);
 
-            return Ok(result.Data);
-        }
+        //    return Ok(result.Data);
+        //}
 
 
         [HttpGet("orders")]
