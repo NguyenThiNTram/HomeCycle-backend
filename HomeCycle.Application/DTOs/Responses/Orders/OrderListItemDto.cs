@@ -18,6 +18,7 @@ namespace HomeCycle.Application.DTOs.Responses.Orders
         public decimal? AmountRemaining { get; set; }
         public int? OrderStatus { get; set; }
         public int? PaymentStatus { get; set; }
+        public DateTime CreatedAt { get; set; }
     }
 
 }
