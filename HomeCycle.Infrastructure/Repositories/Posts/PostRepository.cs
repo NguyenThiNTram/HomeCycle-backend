@@ -202,6 +202,7 @@ namespace HomeCycle.Infrastructure.Repositories.Posts
         {
             var query = _db.Posts
                 .AsNoTracking()
+                .Include(x => x.User)
                 .Include(x => x.Product)
                     .ThenInclude(x => x.ProductType)
                 .Include(x => x.Product)
@@ -233,6 +234,7 @@ namespace HomeCycle.Infrastructure.Repositories.Posts
         {
             var query = _db.Posts
                 .AsNoTracking()
+                .Include(x => x.User)
                 .Include(x => x.Product)
                     .ThenInclude(x => x.ProductType)
                 .Include(x => x.Product)
@@ -263,6 +265,7 @@ namespace HomeCycle.Infrastructure.Repositories.Posts
         {
             var query = _db.Posts
                 .AsNoTracking()
+                .Include(x => x.User)
                 .Include(x => x.Product)
                     .ThenInclude(x => x.ProductType)
                 .Include(x => x.Product)
