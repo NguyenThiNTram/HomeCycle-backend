@@ -2073,7 +2073,9 @@ namespace HomeCycle.Application.Services.Orders
                         }
                     }
 
+                    // Người xem đã đánh giá đơn thì không khiếu nại được nữa (OrderDisputeTargetHandler cũng chặn).
                     canDispute =
+                        !detail.Review.HasReviewed &&
                         disputeWindowEndsAt.HasValue &&
                         now <= disputeWindowEndsAt.Value;
                 }

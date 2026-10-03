@@ -8,6 +8,7 @@ using HomeCycle.Application.Interfaces.Repositories.Disputes;
 using HomeCycle.Application.Interfaces.Repositories.GHN;
 using HomeCycle.Application.Interfaces.Repositories.Inspections;
 using HomeCycle.Application.Interfaces.Repositories.Orders;
+using HomeCycle.Application.Interfaces.Repositories.Reviews;
 using HomeCycle.Application.Interfaces.Repositories.Shipments;
 using HomeCycle.Application.Interfaces.Services.Disputes;
 using HomeCycle.Application.Services.GHN;
@@ -31,6 +32,7 @@ namespace HomeCycle.Application.Services.Disputes
         private readonly IAppointmentRepository _appointmentRepository;
         private readonly IDisputeRepository _disputeRepository;
         private readonly IDisputeWindowPolicy _windowPolicy;
+        private readonly IReviewRepository _reviewRepository;
         public DisputeTargetType TargetType => DisputeTargetType.Order;
 
         public OrderDisputeTargetHandler(
@@ -40,7 +42,8 @@ namespace HomeCycle.Application.Services.Disputes
             IGhnShipmentRepository ghnShipmentRepository,
             IAppointmentRepository appointmentRepository,
             IDisputeRepository disputeRepository,
-            IDisputeWindowPolicy windowPolicy)
+            IDisputeWindowPolicy windowPolicy,
+            IReviewRepository reviewRepository)
         {
             _orderRepository = orderRepository;
             _agreementRepository = agreementRepository;
@@ -49,6 +52,7 @@ namespace HomeCycle.Application.Services.Disputes
             _appointmentRepository = appointmentRepository;
             _disputeRepository = disputeRepository;
             _windowPolicy = windowPolicy;
+            _reviewRepository = reviewRepository;
         }
 
         public async Task<Result<DisputeTargetCreateContext>> PrepareCreateAsync(
@@ -208,6 +212,11 @@ namespace HomeCycle.Application.Services.Disputes
                 if (nowUtc > disputeDeadlineUtc.Value)
                     return Result<DisputeTargetCreateContext>.Fail(
                         DisputeErrors.WindowExpired(disputeDeadlineUtc.Value));
+
+                // Trong thời hạn giữ tiền: ai đã đánh giá đơn coi như chấp nhận giao dịch, không khiếu nại được nữa.
+                // Bên còn lại nếu chưa đánh giá vẫn khiếu nại được trong hạn.
+                if (await _reviewRepository.ExistsAsync(order.OrderId, senderId, cancellationToken))
+                    return Result<DisputeTargetCreateContext>.Fail(DisputeErrors.OrderReviewedBySender);
             }
 
             var targetUserId = isBuyer ? agreement.SellerId : agreement.BuyerId;
