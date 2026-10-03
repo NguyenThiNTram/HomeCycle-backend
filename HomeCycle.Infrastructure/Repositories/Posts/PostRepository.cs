@@ -232,6 +232,11 @@ namespace HomeCycle.Infrastructure.Repositories.Posts
         // Loại trừ các bài đã bị đình chỉ (Suspended), đóng (Closed) hoặc xóa (Deleted).
         public async Task<PagedResult<post>> GetAllActiveAsync(PaginationRequest request, CancellationToken cancellationToken = default)
         {
+            var now = DateTime.UtcNow;
+
+            // Bài của chủ tin có gói đang hiệu lực được xếp lên trước rồi mới tới mới nhất,
+            // sắp ngay trong query (trước phân trang) để trang nào cũng đúng thứ tự.
+            // Điều kiện khớp ApplyPriorityAsync (cờ IsPriority trả về cho FE).
             var query = _db.Posts
                 .AsNoTracking()
                 .Include(x => x.User)
@@ -242,8 +247,16 @@ namespace HomeCycle.Infrastructure.Repositories.Posts
                 .Include(x => x.Product)
                     .ThenInclude(x => x.Brand)
                 .Include(x => x.Product)
-                .Where(x => x.Status == (int)PostStatus.Active && (x.ExpiryDate == null || x.ExpiryDate > DateTime.UtcNow))
-                .OrderByDescending(x => x.CreatedAt).ThenBy(x => x.PostId);
+                .Where(x => x.Status == (int)PostStatus.Active && (x.ExpiryDate == null || x.ExpiryDate > now))
+                .OrderByDescending(x => x.RemainingQuantity > 0 && x.Product != null &&
+                    _db.User_Subscriptions.Any(s => s.UserId == x.OwnerId &&
+                        s.Status == (int)UserSubscriptionStatus.Active &&
+                        s.ActivatedAt <= now && s.ExpiresAt > now &&
+                        s.User.Status == (int)UserStatus.Active &&
+                        ((s.User.Role == (int)UserRole.Personal && s.User.Personal_ProfileUser != null) ||
+                         (s.User.Role == (int)UserRole.Business && s.User.Business_Profile != null &&
+                          s.User.Business_Profile.Status == (int)BusinessProfileStatus.Approved))))
+                .ThenByDescending(x => x.CreatedAt).ThenBy(x => x.PostId);
 
             var totalCount = await query.CountAsync(cancellationToken);
 
