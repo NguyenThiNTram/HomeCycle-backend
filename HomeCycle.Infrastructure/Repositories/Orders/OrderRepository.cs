@@ -84,6 +84,7 @@ namespace HomeCycle.Infrastructure.Repositories.Orders
                     AmountRemaining = o.AmountRemaining,
                     OrderStatus = o.OrderStatus,
                     PaymentStatus = o.PaymentStatus,
+                    CreatedAt = o.CreatedAt,
                 })
                 .ToListAsync(ct);
 
