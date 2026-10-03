@@ -17,9 +17,7 @@ public sealed class PriceEvidenceRepository(HomeCycleDbContext db) : IPriceEvide
         Validate(typeId, brandId, model, nowUtc);
         var since = nowUtc.AddDays(-90);
         var candidates = await db.Orders.AsNoTracking()
-            .Where(x => x.OrderStatus == (int)OrderStatus.Completed &&
-                x.PaymentStatus == (int)PaymentStatus.Completed &&
-                x.ReturnedAt == null &&
+            .Where(x => x.OrderStatus == (int)OrderStatus.Completed && x.ReturnedAt == null &&
                 x.CompletedAt >= since && x.CompletedAt <= nowUtc && x.Agreement.FinalPrice > 0 &&
                 x.Post.PostType == (int)PostType.Sell && x.Post.Product != null &&
                 x.Post.Product.ProductTypeId == typeId && x.Post.Product.BrandId == brandId &&
@@ -74,9 +72,7 @@ public sealed class PriceEvidenceRepository(HomeCycleDbContext db) : IPriceEvide
         Validate(typeId, brandId, excludedModel, nowUtc);
         var since = nowUtc.AddDays(-90);
         var candidates = await db.Orders.AsNoTracking()
-            .Where(x => x.OrderStatus == (int)OrderStatus.Completed &&
-                x.PaymentStatus == (int)PaymentStatus.Completed &&
-                x.ReturnedAt == null &&
+            .Where(x => x.OrderStatus == (int)OrderStatus.Completed && x.ReturnedAt == null &&
                 x.CompletedAt >= since && x.CompletedAt <= nowUtc && x.Agreement.FinalPrice > 0 &&
                 x.Post.PostType == (int)PostType.Sell && x.Post.Product != null &&
                 x.Post.Product.ProductTypeId == typeId && x.Post.Product.BrandId == brandId &&
