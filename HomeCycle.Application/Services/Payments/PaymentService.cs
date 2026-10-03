@@ -1278,16 +1278,22 @@ namespace HomeCycle.Application.Services.Payments
                 await _ledgerRepo.AddAsync(orderEscrowLedger, ct);
 
                 if (shippingWalletTx != null)
+                {
                     flowLog.Step($"Calling {_walletTxRepo.GetType().Name}.AddAsync");
                     await _walletTxRepo.AddAsync(shippingWalletTx, ct);
+                }
 
                 if (buyerShippingLedger != null)
+                {
                     flowLog.Step($"Calling {_ledgerRepo.GetType().Name}.AddAsync");
                     await _ledgerRepo.AddAsync(buyerShippingLedger, ct);
+                }
 
                 if (shippingLedger != null)
+                {
                     flowLog.Step($"Calling {_ledgerRepo.GetType().Name}.AddAsync");
                     await _ledgerRepo.AddAsync(shippingLedger, ct);
+                }
 
                 if (needsSystemLedger && shippingEscrowWallet != null)
                     await _walletRepo.UpdateAsync(shippingEscrowWallet, ct);
@@ -3899,12 +3905,16 @@ namespace HomeCycle.Application.Services.Payments
                 await _walletRepo.UpdateAsync(orderEscrowWallet, ct);
 
                 if (shippingWalletTx != null)
+                {
                     flowLog.Step($"Calling {_walletTxRepo.GetType().Name}.AddAsync");
                     await _walletTxRepo.AddAsync(shippingWalletTx, ct);
+                }
 
                 if (shippingLedger != null)
+                {
                     flowLog.Step($"Calling {_ledgerRepo.GetType().Name}.AddAsync");
                     await _ledgerRepo.AddAsync(shippingLedger, ct);
+                }
 
                 if (needsSystemLedger && shippingEscrowWallet != null)
                     await _walletRepo.UpdateAsync(shippingEscrowWallet, ct);
