@@ -10,6 +10,7 @@ namespace HomeCycle.Application.DTOs.Requests.Appointments
 {
     public class ModeratorAppointmentSearchRequest : PaginationRequest
     {
+        public bool EffectiveOnly { get; set; }
         public bool? HasOpenDispute { get; set; }
         [System.ComponentModel.DataAnnotations.EnumDataType(typeof(DeliveryMethod))]
         public DeliveryMethod? DeliveryMethod { get; set; }
@@ -27,6 +28,7 @@ namespace HomeCycle.Application.DTOs.Requests.Appointments
 
     public sealed class ModeratorAppointmentQuery
     {
+        public bool EffectiveOnly { get; init; }
         public bool? HasOpenDispute { get; init; }
         public DeliveryMethod? DeliveryMethod { get; init; }
         public string? Keyword { get; init; }

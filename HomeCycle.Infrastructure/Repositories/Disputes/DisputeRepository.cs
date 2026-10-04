@@ -297,6 +297,13 @@ namespace HomeCycle.Infrastructure.Repositories.Disputes
            IQueryable<Dispute> query,
            DisputeSearchRequest request)
         {
+            if (request.UnresolvedOnly)
+                query = query.Where(x =>
+                    x.DisputeStatus == (int)DisputeStatus.Pending ||
+                    x.DisputeStatus == (int)DisputeStatus.AwaitingResponse ||
+                    x.DisputeStatus == (int)DisputeStatus.UnderReview ||
+                    x.DisputeStatus == (int)DisputeStatus.AwaitingReturn);
+
             if (request.Status.HasValue)
                 query = query.Where(x => x.DisputeStatus == (int)request.Status.Value);
 
