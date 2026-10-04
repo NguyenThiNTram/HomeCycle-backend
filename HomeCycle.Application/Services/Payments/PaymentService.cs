@@ -3346,6 +3346,14 @@ namespace HomeCycle.Application.Services.Payments
             string reasonCode,
             Dictionary<string, object?> metadata)
         {
+            // Retry tự động chỉ ghi operational log tại nơi xử lý lỗi.
+            if (source == AuditSource.BackgroundJob &&
+                (reasonCode == "Payment.InternalPostingFailed" ||
+                 reasonCode == "Payment.ReconcileFailed"))
+            {
+                return;
+            }
+
             try
             {
                 await _auditService.EnqueueAsync(new AuditEvent
