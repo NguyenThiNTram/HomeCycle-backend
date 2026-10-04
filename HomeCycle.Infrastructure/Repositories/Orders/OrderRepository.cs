@@ -71,6 +71,7 @@ namespace HomeCycle.Infrastructure.Repositories.Orders
                 {
                     OrderId = o.OrderId,
                     OrderCode = o.OrderCode,
+                    CreatedAt = o.CreatedAt,
                     ProductName = o.ProductName,
                     // Lấy 1 ảnh đại diện của Post (DisplayOrder nhỏ nhất) làm thumbnail.
                     ThumbnailUrl = _db.Media

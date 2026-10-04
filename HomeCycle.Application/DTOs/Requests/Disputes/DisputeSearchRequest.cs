@@ -12,6 +12,9 @@ namespace HomeCycle.Application.DTOs.Requests.Disputes
     {
         public DisputeStatus? Status { get; set; }
 
+        /// <summary>Only include disputes that are still awaiting completion.</summary>
+        public bool UnresolvedOnly { get; set; }
+
         public int? DisputeCategoryId { get; set; }
 
         public DisputeTargetType? TargetType { get; set; }

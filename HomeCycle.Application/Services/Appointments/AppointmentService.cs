@@ -1249,6 +1249,7 @@ namespace HomeCycle.Application.Services.Appointments
         {
             var query = new ModeratorAppointmentQuery
             {
+                EffectiveOnly = request.EffectiveOnly,
                 HasOpenDispute = request.HasOpenDispute,
                 DeliveryMethod = request.DeliveryMethod,
                 Keyword = request.Keyword,
