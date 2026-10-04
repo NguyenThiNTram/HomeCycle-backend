@@ -10,7 +10,6 @@ namespace HomeCycle.Application.DTOs.Responses.Orders
     {
         public Guid OrderId { get; set; }
         public string OrderCode { get; set; } = string.Empty;
-        public DateTime CreatedAt { get; set; }
         public string? ProductName { get; set; }
         public string? ThumbnailUrl { get; set; }
         public int Quantity { get; set; }
@@ -19,6 +18,7 @@ namespace HomeCycle.Application.DTOs.Responses.Orders
         public decimal? AmountRemaining { get; set; }
         public int? OrderStatus { get; set; }
         public int? PaymentStatus { get; set; }
+        public DateTime CreatedAt { get; set; }
     }
 
 }

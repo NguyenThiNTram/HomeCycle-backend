@@ -186,6 +186,11 @@ namespace HomeCycle.Application.Services.Disputes
 
             if (orderStatus == OrderStatus.Completed)
             {
+                if (order.PaymentStatus != (int)PaymentStatus.Completed)
+                {
+                    return Result<DisputeTargetCreateContext>.Fail(
+                        OrderErrors.InvalidStatus);
+                }
                 // Ưu tiên snapshot đã lưu trên Order.
                 disputeDeadlineUtc = order.DisputeWindowEndsAt;
 
