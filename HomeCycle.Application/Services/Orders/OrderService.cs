@@ -2046,7 +2046,9 @@ namespace HomeCycle.Application.Services.Orders
                         : agreement.AgreementType == (int)AgreementType.No_Inspection &&
                           (deliveryStarted || directCollectionNoShowEligible);
                 }
-                else if (detail.OrderStatus == OrderStatus.Completed)
+                else if (
+                     detail.OrderStatus == OrderStatus.Completed &&
+                     detail.PaymentStatus == PaymentStatus.Completed)
                 {
                     DateTime? disputeWindowEndsAt =
                         detail.DisputeWindowEndsAt;
@@ -2102,23 +2104,6 @@ namespace HomeCycle.Application.Services.Orders
                 !detail.Dispute.HasActiveDispute &&
                 (canCancelInspection || canCancelCollection);
 
-
-            var isAwaitingReturn =
-                detail.OrderStatus == OrderStatus.Disputing &&
-                detail.Dispute.LatestDisputeStatus == DisputeStatus.AwaitingReturn;
-
-            var canConfirmReturn =
-                isBuyer &&
-                isAwaitingReturn &&
-                !detail.BuyerReturnConfirmedAt.HasValue &&
-                detail.ReturnDueAt.HasValue &&
-                now <= detail.ReturnDueAt.Value;
-
-            var canConfirmReturnReceived =
-                isSeller &&
-                isAwaitingReturn &&
-                !detail.SellerReturnReceivedAt.HasValue;
-
             var allowedDisputeCategories =
                 canDispute
                     ? await BuildAllowedDisputeCategoriesAsync(detail, noShowEligible, isBuyer, ct)
@@ -2132,8 +2117,8 @@ namespace HomeCycle.Application.Services.Orders
                 CanCancel = canCancel,
                 CanReview = canReview,
                 CanDispute = canDispute,
-                CanConfirmReturn = canConfirmReturn,
-                CanConfirmReturnReceived = canConfirmReturnReceived,
+                CanConfirmReturn = false,
+                CanConfirmReturnReceived = false,
                 AllowedDisputeCategories = allowedDisputeCategories
             };
         }
