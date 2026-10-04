@@ -126,16 +126,17 @@ public sealed class DashboardRepository(HomeCycleDbContext db) : IDashboardRepos
     public async Task<IReadOnlyList<DashboardAmountDay>> GetPlatformRevenueDailyAsync(
         DashboardPeriod period, CancellationToken ct)
     {
-        return await db.Wallet_Transactions.AsNoTracking()
+        var rows = await db.Wallet_Transactions.AsNoTracking()
             .Where(x => x.WalletTransactionStatus == (int)WalletTransactionStatus.Completed
                 && x.CreatedAt >= period.FromUtc && x.CreatedAt < period.EndUtc
                 && x.TransactionType == (int)TransactionType.Subscription_Fee
                 && x.ToWallet != null && x.ToWallet.WalletType == (int)WalletTypeEnum.System
                 && x.ToWallet.Purpose == (int)SystemWalletPurpose.Platform_Revenue)
             .GroupBy(x => x.CreatedAt.AddHours(7).Date)
-            .Select(g => new DashboardAmountDay(g.Key, g.Count(), g.Sum(x => Math.Abs(x.Amount ?? 0))))
+            .Select(g => new { Date = g.Key, Count = g.Count(), Amount = g.Sum(x => Math.Abs(x.Amount ?? 0)) })
             .OrderBy(x => x.Date)
             .ToListAsync(ct);
+        return rows.Select(x => new DashboardAmountDay(x.Date, x.Count, x.Amount)).ToArray();
     }
 
     public async Task<ListingDashboardData> GetListingsAsync(DashboardPeriod period, CancellationToken ct)
