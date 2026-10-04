@@ -299,6 +299,7 @@ namespace HomeCycle.Application.Services.Appointments
             }
 
             var canCreateInspectionForm =
+                order.OrderStatus == (int)OrderStatus.Processing &&
                 isBuyer &&
                 schedule.AppointmentType == AppointmentType.Inspection &&
                 status == AppointmentStatus.InProgress &&
