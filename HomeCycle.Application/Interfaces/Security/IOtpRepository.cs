@@ -9,7 +9,7 @@ namespace HomeCycle.Application.Interfaces.Security
 {
     public interface IOtpRepository
     {
-        Task<otp?> GetPasswordResetOtpAsync(string email, string code, CancellationToken cancellationToken = default);
+        Task<otp?> GetPasswordResetOtpAsync(string email, string hash, CancellationToken cancellationToken = default);
         Task<bool> ConsumePasswordResetOtpAsync(Guid tokenId, CancellationToken cancellationToken = default);
         Task AddModeratorTokenAsync(otp token, CancellationToken cancellationToken = default);
         Task<otp?> GetModeratorTokenAsync(string hash, string purpose, CancellationToken cancellationToken = default);
