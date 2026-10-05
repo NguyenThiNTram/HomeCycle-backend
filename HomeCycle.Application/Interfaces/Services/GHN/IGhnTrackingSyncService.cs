@@ -10,6 +10,10 @@ namespace HomeCycle.Application.Interfaces.Services.GHN
 {
     public interface IGhnTrackingSyncService
     {
+        Task<Result<ShipmentTrackingResponse>> GetForModeratorAsync(
+            Guid orderId,
+            CancellationToken cancellationToken = default);
+
         Task<Result<ShipmentTrackingResponse>> SyncByOrderIdAsync(
             Guid orderId,
             Guid currentUserId,
