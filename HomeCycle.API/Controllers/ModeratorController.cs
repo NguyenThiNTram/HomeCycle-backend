@@ -125,6 +125,26 @@ namespace HomeCycle.API.Controllers
             });
         }
 
+        [HttpGet("business-profiles/history")]
+        public async Task<IActionResult> GetBusinessVerificationHistory(CancellationToken cancellationToken)
+        {
+            var result = await _moderatorService.GetBusinessVerificationHistoryAsync(cancellationToken);
+            if (!result.IsSuccess)
+                return BadRequest(result.Error);
+
+            return Ok(new { success = true, data = result.Data });
+        }
+
+        [HttpGet("personal-profiles/history")]
+        public async Task<IActionResult> GetPersonalVerificationHistory(CancellationToken cancellationToken)
+        {
+            var result = await _moderatorService.GetPersonalVerificationHistoryAsync(cancellationToken);
+            if (!result.IsSuccess)
+                return BadRequest(result.Error);
+
+            return Ok(new { success = true, data = result.Data });
+        }
+
         [HttpGet("business-profiles/pending")]
         public async Task<IActionResult> GetPendingBusinessProfiles(
             [FromQuery] string? keyword,

@@ -9,6 +9,7 @@ namespace HomeCycle.Application.Interfaces.Repositories.Users
 {
     public interface IPersonalProfileRepository
     {
+        Task<List<personal_profile>> GetVerificationHistoryAsync(CancellationToken cancellationToken = default);
         Task<personal_profile?> GetByUserIdAsync(Guid userId, CancellationToken cancellationToken = default);
         Task<personal_profile?> GetByIdAsync(Guid personalProfileId, CancellationToken cancellationToken = default);
 

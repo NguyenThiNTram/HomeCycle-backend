@@ -9,6 +9,7 @@ namespace HomeCycle.Application.Interfaces.Repositories.Profiles
 {
     public interface IBusinessProfileRepository
     {
+        Task<List<business_profile>> GetVerificationHistoryAsync(CancellationToken cancellationToken = default);
         Task AddAsync(business_profile profile, CancellationToken cancellationToken = default);
         Task<business_profile?> GetByUserIdAsync(Guid userId, CancellationToken cancellationToken = default);
         Task<business_profile?> GetByIdAsync(Guid businessProfileId, CancellationToken cancellationToken = default);

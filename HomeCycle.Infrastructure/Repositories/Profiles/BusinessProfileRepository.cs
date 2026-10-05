@@ -86,6 +86,20 @@ namespace HomeCycle.Infrastructure.Repositories.Profiles
             return entities.Select(e => e.ToDomain()!).ToList();
         }
 
+        public async Task<List<business_profile>> GetVerificationHistoryAsync(
+            CancellationToken cancellationToken = default)
+        {
+            var entities = await _db.Business_Profiles
+                .AsNoTracking()
+                .Where(p => p.Status == (int)BusinessProfileStatus.Approved ||
+                            p.Status == (int)BusinessProfileStatus.Rejected)
+                .OrderByDescending(p => p.VerifiedAt.HasValue)
+                .ThenByDescending(p => p.VerifiedAt)
+                .ToListAsync(cancellationToken);
+
+            return entities.Select(p => p.ToDomain()!).ToList();
+        }
+
         public async Task<business_profile?> GetByUserIdForUpdateAsync(
             Guid userId,
             CancellationToken cancellationToken = default)
