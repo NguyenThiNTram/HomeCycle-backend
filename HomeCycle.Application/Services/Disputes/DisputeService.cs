@@ -1424,18 +1424,26 @@ if (dispute.TargetUserId.HasValue &&
                 if (resolutionOutcome == DisputeResolutionOutcome.BuyerFavored)
                 {
                     buyerMessage =
-                        "Tranh chấp được giải quyết có lợi cho bạn. Khoản tiền nền tảng giữ đã được hoàn lại.";
+                        "Tranh chấp được giải quyết có lợi cho bạn. Khoản tiền nền tảng đang giữ đã được hoàn lại cho bạn.";
 
                     sellerMessage =
-                        "Tranh chấp được giải quyết có lợi cho người mua. Khoản tiền nền tảng giữ đã được hoàn lại cho người mua.";
+                        "Tranh chấp được giải quyết có lợi cho người mua. Khoản tiền nền tảng đang giữ đã được hoàn lại cho người mua.";
+                }
+                else if (!buyerHasItem)
+                {
+                    buyerMessage =
+                        "Tranh chấp được giải quyết có lợi cho người bán. Tuy nhiên, do bạn chưa nhận sản phẩm, đơn hàng đã bị hủy và khoản tiền nền tảng đang giữ đã được hoàn lại cho bạn.";
+
+                    sellerMessage =
+                        "Tranh chấp được giải quyết có lợi cho bạn. Do người mua chưa nhận sản phẩm, đơn hàng đã bị hủy và khoản tiền nền tảng đang giữ đã được hoàn lại cho người mua.";
                 }
                 else
                 {
                     buyerMessage =
-                        "Tranh chấp được giải quyết có lợi cho người bán. Khoản tiền nền tảng giữ đã được giải ngân cho người bán.";
+                        "Tranh chấp được giải quyết có lợi cho người bán. Khoản tiền nền tảng đang giữ đã được giải ngân cho người bán.";
 
                     sellerMessage =
-                        "Tranh chấp được giải quyết có lợi cho bạn. Khoản tiền nền tảng giữ đã được giải ngân vào ví của bạn.";
+                        "Tranh chấp được giải quyết có lợi cho bạn. Khoản tiền nền tảng đang giữ đã được giải ngân vào ví của bạn.";
                 }
 
                 var decisionNotifications = new List<notification>
@@ -2183,9 +2191,23 @@ if (dispute.TargetUserId.HasValue &&
                         };
                     }
 
-                    var settlementMessage = acceptedOutcome == DisputeResolutionOutcome.BuyerFavored
-                        ? "Hai bên đã thống nhất phương án có lợi cho người mua. Khoản tiền nền tảng giữ đã được hoàn lại cho người mua."
-                        : "Hai bên đã thống nhất phương án có lợi cho người bán. Khoản tiền nền tảng giữ đã được giải ngân cho người bán.";
+                    string settlementMessage;
+
+                    if (acceptedOutcome == DisputeResolutionOutcome.BuyerFavored)
+                    {
+                        settlementMessage =
+                            "Hai bên đã thống nhất phương án có lợi cho người mua. Khoản tiền nền tảng đang giữ đã được hoàn lại cho người mua.";
+                    }
+                    else if (!execution.BuyerHasItem)
+                    {
+                        settlementMessage =
+                            "Hai bên đã thống nhất phương án có lợi cho người bán. Do người mua chưa nhận sản phẩm, đơn hàng đã bị hủy và khoản tiền nền tảng đang giữ đã được hoàn lại cho người mua.";
+                    }
+                    else
+                    {
+                        settlementMessage =
+                            "Hai bên đã thống nhất phương án có lợi cho người bán. Khoản tiền nền tảng đang giữ đã được giải ngân cho người bán.";
+                    }
 
                     notifications.Add(
                         await _notificationService.AddPendingAsync(
@@ -2562,7 +2584,7 @@ if (dispute.TargetUserId.HasValue &&
 
                 appointment.AppointmentStatus = (int)AppointmentStatus.Cancelled;
                 appointment.CancelledAt = now;
-                appointment.CancellationReason = "Appointment closed after final dispute resolution.";
+                appointment.CancellationReason = "Cuộc hẹn đã được hủy sau khi tranh chấp được giải quyết dứt điểm.";
                 appointment.UpdatedAt = now;
 
                 await _appointmentRepository.UpdateAsync(appointment, ct);
@@ -2581,7 +2603,7 @@ if (dispute.TargetUserId.HasValue &&
                     {
                         proposal.AppointmentStatus = (int)AppointmentStatus.Cancelled;
                         proposal.CancelledAt = now;
-                        proposal.CancellationReason = "Appointment closed after final dispute resolution.";
+                        proposal.CancellationReason = "Cuộc hẹn đã được hủy sau khi tranh chấp được giải quyết dứt điểm.";
                         proposal.UpdatedAt = now;
 
                         await _appointmentRepository.UpdateAsync(proposal, ct);
@@ -2626,11 +2648,16 @@ if (dispute.TargetUserId.HasValue &&
             var refundedAmount = 0m;
             var releasedAmount = 0m;
 
-            if (outcome == DisputeResolutionOutcome.BuyerFavored)
+            // Buyer chưa nhận được sản phẩm:
+            // giao dịch mua bán không hoàn tất nên tiền nền tảng đang giữ
+            // luôn được hoàn lại cho Buyer, bất kể outcome nghiêng về bên nào.
+            if (!buyerHasItem)
             {
                 var refundShippingFee =
-                    !buyerHasItem &&
-                    await IsShippingFeeRefundCategoryAsync(dispute, cancellationToken);
+                    outcome == DisputeResolutionOutcome.BuyerFavored &&
+                    await IsShippingFeeRefundCategoryAsync(
+                        dispute,
+                        cancellationToken);
 
                 var refundResult = refundShippingFee
                     ? await _paymentService.RefundAllRemainingOrderHeldAmountWithShippingAsync(
@@ -2643,49 +2670,79 @@ if (dispute.TargetUserId.HasValue &&
                         cancellationToken);
 
                 if (!refundResult.IsSuccess)
-                    return Result<OrderResolutionExecution>.Fail(refundResult.Error!);
+                {
+                    return Result<OrderResolutionExecution>.Fail(
+                        refundResult.Error!);
+                }
 
                 refundedAmount = refundResult.Data;
 
-                if (buyerHasItem)
+                await _postRepo.RestoreOrderQuantityAsync(
+                    order.OrderId,
+                    true,
+                    cancellationToken);
+
+                var cancellationReason =
+                    outcome == DisputeResolutionOutcome.BuyerFavored
+                        ? "Đơn hàng đã bị hủy và khoản tiền nền tảng đang giữ đã được hoàn lại cho người mua sau khi tranh chấp được giải quyết có lợi cho người mua."
+                        : "Đơn hàng đã bị hủy và khoản tiền nền tảng đang giữ đã được hoàn lại cho người mua vì người mua chưa nhận sản phẩm.";
+
+                ApplyRefundedCancellationState(
+                    order,
+                    refundedAmount,
+                    decisionActorId,
+                    cancellationReason,
+                    now);
+            }
+            // Buyer đã có sản phẩm + Buyer thắng:
+            // refund tiền nhưng không restore quantity.
+            else if (outcome == DisputeResolutionOutcome.BuyerFavored)
+            {
+                var refundResult =
+                    await _paymentService.RefundAllRemainingOrderHeldAmountAsync(
+                        order,
+                        agreement,
+                        cancellationToken);
+
+                if (!refundResult.IsSuccess)
                 {
-                    if (!order.CompletedAt.HasValue)
-                    {
-                        order.CompletedAt = now;
-                        order.CompletionSource = (int)completionSource;
-                    }
+                    return Result<OrderResolutionExecution>.Fail(
+                        refundResult.Error!);
+                }
 
-                    var remainingPaid = Math.Max((order.AmountPaid ?? 0) - refundedAmount, 0);
+                refundedAmount = refundResult.Data;
 
-                    order.AmountPaid = remainingPaid;
-                    order.AmountRemaining = 0;
-                    order.PaymentStatus = remainingPaid <= AmountEpsilon
+                if (!order.CompletedAt.HasValue)
+                {
+                    order.CompletedAt = now;
+                    order.CompletionSource = (int)completionSource;
+                }
+
+                var remainingPaid =
+                    Math.Max(
+                        (order.AmountPaid ?? 0) - refundedAmount,
+                        0);
+
+                order.AmountPaid = remainingPaid;
+                order.AmountRemaining = 0;
+
+                order.PaymentStatus =
+                    remainingPaid <= AmountEpsilon
                         ? (int)PaymentStatus.Refunded
                         : (int)PaymentStatus.PartiallyRefunded;
 
-                    order.OrderStatus = (int)OrderStatus.Completed;
-                    order.BuyerReturnConfirmedAt = null;
-                    order.SellerReturnReceivedAt = null;
-                    order.ReturnDueAt = null;
-                    order.ReturnedAt = null;
-                    order.DisputeWindowEndsAt = now;
-                    order.UpdatedAt = now;
-                }
-                else
-                {
-                    await _postRepo.RestoreOrderQuantityAsync(
-                        order.OrderId,
-                        true,
-                        cancellationToken);
+                order.OrderStatus = (int)OrderStatus.Completed;
 
-                    ApplyRefundedCancellationState(
-                        order,
-                        refundedAmount,
-                        decisionActorId,
-                        "Order cancelled and platform-held funds refunded after a buyer-favored dispute.",
-                        now);
-                }
+                order.BuyerReturnConfirmedAt = null;
+                order.SellerReturnReceivedAt = null;
+                order.ReturnDueAt = null;
+                order.ReturnedAt = null;
+
+                order.DisputeWindowEndsAt = now;
+                order.UpdatedAt = now;
             }
+            // Buyer đã có sản phẩm + Seller thắng:
+            // giao dịch hoàn tất và tiền được giải ngân cho Seller.
             else
             {
                 if (!order.CompletedAt.HasValue)
@@ -2696,20 +2753,26 @@ if (dispute.TargetUserId.HasValue &&
 
                 order.OrderStatus = (int)OrderStatus.Completed;
                 order.PaymentStatus = (int)PaymentStatus.Completed;
+
                 order.BuyerReturnConfirmedAt = null;
                 order.SellerReturnReceivedAt = null;
                 order.ReturnDueAt = null;
                 order.ReturnedAt = null;
+
                 order.DisputeWindowEndsAt = now;
                 order.UpdatedAt = now;
 
-                var releaseResult = await _paymentService.ReleaseAllRemainingOrderHeldAmountAsync(
-                    order,
-                    agreement,
-                    cancellationToken);
+                var releaseResult =
+                    await _paymentService.ReleaseAllRemainingOrderHeldAmountAsync(
+                        order,
+                        agreement,
+                        cancellationToken);
 
                 if (!releaseResult.IsSuccess)
-                    return Result<OrderResolutionExecution>.Fail(releaseResult.Error!);
+                {
+                    return Result<OrderResolutionExecution>.Fail(
+                        releaseResult.Error!);
+                }
 
                 releasedAmount = releaseResult.Data;
             }

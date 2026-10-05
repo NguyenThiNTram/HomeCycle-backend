@@ -166,6 +166,14 @@ namespace HomeCycle.Application.Services.Inspections
                     return Result<InspectionFormResponseDto>.Fail(OrderErrors.NotFound);
                 }
 
+                if (order.OrderStatus != (int)OrderStatus.Processing)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+
+                    return Result<InspectionFormResponseDto>.Fail(
+                        OrderErrors.InvalidStatus);
+                }
+
                 var originalPrice = order.FinalTotalAmount ?? order.OriginalTotalAmount;
 
                 if (!originalPrice.HasValue || originalPrice.Value <= 0)
@@ -463,6 +471,24 @@ namespace HomeCycle.Application.Services.Inspections
                     return Result<InspectionFormResponseDto>.Fail(InspectionErrors.RevisionMismatch);
                 }
 
+                var order = await _orderRepo.GetByIdForUpdateAsync(form.OrderId, ct);
+
+                if (order == null)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+
+                    return Result<InspectionFormResponseDto>.Fail(
+                        OrderErrors.NotFound);
+                }
+
+                if (order.OrderStatus != (int)OrderStatus.Processing)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+
+                    return Result<InspectionFormResponseDto>.Fail(
+                        OrderErrors.InvalidStatus);
+                }
+
                 form.OperatingStatus = request.OperatingStatus.HasValue
                     ? (int?)request.OperatingStatus.Value
                     : null;
@@ -580,6 +606,24 @@ namespace HomeCycle.Application.Services.Inspections
                 {
                     await _unitOfWork.RollbackTransactionAsync(ct);
                     return Result<InspectionFormResponseDto>.Fail(InspectionErrors.RevisionMismatch);
+                }
+
+                var order = await _orderRepo.GetByIdForUpdateAsync(form.OrderId, ct);
+
+                if (order == null)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+
+                    return Result<InspectionFormResponseDto>.Fail(
+                        OrderErrors.NotFound);
+                }
+
+                if (order.OrderStatus != (int)OrderStatus.Processing)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+
+                    return Result<InspectionFormResponseDto>.Fail(
+                        OrderErrors.InvalidStatus);
                 }
 
                 if (!IsComplete(form))
@@ -733,6 +777,14 @@ namespace HomeCycle.Application.Services.Inspections
                 {
                     await _unitOfWork.RollbackTransactionAsync(ct);
                     return Result<InspectionFormResponseDto>.Fail(OrderErrors.NotFound);
+                }
+
+                if (order.OrderStatus != (int)OrderStatus.Processing)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(ct);
+
+                    return Result<InspectionFormResponseDto>.Fail(
+                        OrderErrors.InvalidStatus);
                 }
 
                 var agreement = await _agreementRepo.GetByIdAsync(order.AgreementId, ct);
@@ -1472,6 +1524,8 @@ namespace HomeCycle.Application.Services.Inspections
                 ? (InspectionCollectAction?)form.CollectAction.Value
                 : null;
 
+            var orderIsProcessing = order.OrderStatus == (int)OrderStatus.Processing;
+
             return new InspectionFormResponseDto
             {
                 InspectionFormId = form.InspectionFormId,
@@ -1531,25 +1585,25 @@ namespace HomeCycle.Application.Services.Inspections
 
                 Actions = new InspectionFormActionDto
                 {
-                    CanEdit = isBuyer && status == InspectionStatus.Draft,
-                    CanSubmit = isBuyer && status == InspectionStatus.Draft,
+                    CanEdit = orderIsProcessing && isBuyer && status == InspectionStatus.Draft,
+                    CanSubmit = orderIsProcessing && isBuyer && status == InspectionStatus.Draft,
 
-                    CanSellerConfirm = isSeller && status == InspectionStatus.PendingSellerConfirmation,
-                    CanSellerReject = isSeller && status == InspectionStatus.PendingSellerConfirmation,
+                    CanSellerConfirm = orderIsProcessing && isSeller && status == InspectionStatus.PendingSellerConfirmation,
+                    CanSellerReject = orderIsProcessing && isSeller && status == InspectionStatus.PendingSellerConfirmation,
 
                     CanCollectNow =
+                        orderIsProcessing &&
                         isBuyer &&
                         status == InspectionStatus.Accepted &&
                         conclusion != InspectionConclusion.Failed &&
-                        !collectAction.HasValue &&
-                        order.OrderStatus == (int)OrderStatus.Processing,
+                        !collectAction.HasValue,
 
                     CanScheduleCollection =
+                        orderIsProcessing &&
                         isBuyer &&
                         status == InspectionStatus.Accepted &&
                         conclusion != InspectionConclusion.Failed &&
-                        !collectAction.HasValue &&
-                        order.OrderStatus == (int)OrderStatus.Processing,
+                        !collectAction.HasValue,
 
                     CanCancelTransaction = false
                 }
