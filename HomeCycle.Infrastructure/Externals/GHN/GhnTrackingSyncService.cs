@@ -62,6 +62,27 @@ namespace HomeCycle.Infrastructure.Externals.GHN
                     new Error("Auth.Forbidden", "Bạn không có quyền xem trạng thái vận chuyển của đơn hàng này."));
             }
 
+            return await ReadTrackingAsync(orderId, cancellationToken);
+        }
+
+        public async Task<Result<ShipmentTrackingResponse>> GetForModeratorAsync(
+            Guid orderId,
+            CancellationToken cancellationToken = default)
+        {
+            var order = await _orderRepo.GetByIdAsync(orderId, cancellationToken);
+            if (order is null)
+            {
+                return Result<ShipmentTrackingResponse>.Fail(
+                    new Error("Order.NotFound", "Không tìm thấy đơn hàng."));
+            }
+
+            return await ReadTrackingAsync(orderId, cancellationToken);
+        }
+
+        private async Task<Result<ShipmentTrackingResponse>> ReadTrackingAsync(
+            Guid orderId,
+            CancellationToken cancellationToken)
+        {
             var shipment = await _shipmentRepo.GetByOrderIdAsync(orderId, cancellationToken);
 
             if (shipment is null)

@@ -15,6 +15,7 @@ using HomeCycle.Application.DTOs.Responses.Payments;
 using HomeCycle.Application.DTOs.Responses.Wallets;
 using HomeCycle.Application.Interfaces.Services.Appointments;
 using HomeCycle.Application.Interfaces.Services.Disputes;
+using HomeCycle.Application.Interfaces.Services.GHN;
 using HomeCycle.Application.Interfaces.Services.Inspections;
 using HomeCycle.Application.Interfaces.Services.Moderators;
 using HomeCycle.Application.Interfaces.Services.Negotiates;
@@ -530,6 +531,29 @@ namespace HomeCycle.API.Controllers
 
             if (!result.IsSuccess)
                 return MapModeratorReadError(result.Error!);
+
+            return Ok(result.Data);
+        }
+
+        [HttpGet("orders/{orderId:guid}/shipment-tracking")]
+        [SwaggerOperation(
+            Summary = "Lấy trạng thái vận chuyển GHN cho Moderator",
+            Description = "Đọc trạng thái đã lưu trong HomeCycle, được cập nhật qua webhook GHN.")]
+        public async Task<IActionResult> GetShipmentTracking(
+            Guid orderId,
+            [FromServices] IGhnTrackingSyncService trackingService,
+            CancellationToken cancellationToken)
+        {
+            var result = await trackingService.GetForModeratorAsync(orderId, cancellationToken);
+            if (!result.IsSuccess)
+            {
+                return result.Error!.Code switch
+                {
+                    "Order.NotFound" or "Shipment.NotFound" => NotFound(result.Error),
+                    "Shipment.GhnRecordNotFound" or "Shipment.GhnOrderCodeMissing" => Conflict(result.Error),
+                    _ => BadRequest(result.Error)
+                };
+            }
 
             return Ok(result.Data);
         }

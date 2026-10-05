@@ -476,6 +476,16 @@ namespace HomeCycle.Infrastructure.Repositories.Orders
                 query = query.Where(o => o.Shipments.OrderByDescending(s => s.CreatedAt).ThenByDescending(s => s.ShipmentId)
                     .Select(s => (int?)s.DeliveryMethod).FirstOrDefault() == (int)request.DeliveryMethod.Value);
 
+            if (request.ShipmentStatus.HasValue)
+            {
+                var shipmentStatus = (int)request.ShipmentStatus.Value;
+                query = query.Where(o => o.Shipments
+                    .OrderByDescending(s => s.CreatedAt)
+                    .ThenByDescending(s => s.ShipmentId)
+                    .Select(s => s.ShipmentStatus)
+                    .FirstOrDefault() == shipmentStatus);
+            }
+
             var shipmentIssueStatuses = new int?[] { (int)ShipmentStatus.Cancelled, (int)ShipmentStatus.Exception,
                 (int)ShipmentStatus.Damage_Lost, (int)ShipmentStatus.Returning, (int)ShipmentStatus.Returned };
             var issues = query.Where(o =>

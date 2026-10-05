@@ -15,6 +15,7 @@ using HomeCycle.Application.DTOs.Responses.Offers;
 using HomeCycle.Application.Interfaces.Externals;
 using HomeCycle.Application.Interfaces.Generics;
 using HomeCycle.Application.Interfaces.Repositories.Agreements;
+using HomeCycle.Application.Interfaces.Repositories.Appointments;
 using HomeCycle.Application.Interfaces.Repositories.Offers;
 using HomeCycle.Application.Interfaces.Repositories.Posts;
 using HomeCycle.Application.Interfaces.Repositories.Products;
@@ -40,6 +41,7 @@ namespace HomeCycle.Application.Services.Agreements
     {
         private readonly IUnitOfWork _unitOfWork;
         private readonly IAgreementFormRepository _agreementRepo;
+        private readonly IAppointmentRepository _appointmentRepo;
         private readonly INegotiationRepository _negotiationRepo;
         private readonly IMessageRepository _messageRepo;
         private readonly IConversationRepository _conversationRepo;
@@ -94,10 +96,12 @@ namespace HomeCycle.Application.Services.Agreements
             Microsoft.Extensions.Configuration.IConfiguration configuration,
             HomeCycle.Application.Interfaces.Repositories.Profiles.IBusinessProfileRepository businessProfileRepo,
             HomeCycle.Application.Interfaces.Services.Payments.IPaymentService paymentService,
-            INegotiationService negotiationService)
+            INegotiationService negotiationService,
+            IAppointmentRepository appointmentRepo)
         {
             _unitOfWork = unitOfWork;
             _agreementRepo = agreementRepo;
+            _appointmentRepo = appointmentRepo;
             _negotiationRepo = negotiationRepo;
             _messageRepo = messageRepo;
             _conversationRepo = conversationRepo;
@@ -206,7 +210,10 @@ namespace HomeCycle.Application.Services.Agreements
             return true;
         }
 
-        public async Task<Result<AgreementPreviewResponse>> GetPreviewAsync(Guid negotiationId, Guid currentUserId, CancellationToken cancellationToken = default)
+        public async Task<Result<AgreementPreviewResponse>> GetPreviewAsync(
+            Guid negotiationId, Guid currentUserId,
+            CancellationToken cancellationToken = default,
+            DateTimeOffset? scheduledAt = null)
         {
             var negotiation = await _negotiationRepo.GetByIdAsync(negotiationId, cancellationToken);
             if (negotiation == null)
@@ -217,6 +224,14 @@ namespace HomeCycle.Application.Services.Agreements
 
             if (!isSeller && !isBuyer)
                 return Result<AgreementPreviewResponse>.Fail(new Error("Auth.Forbidden", "Bạn không có quyền truy cập."));
+
+            if (scheduledAt.HasValue &&
+                (scheduledAt.Value <= DateTimeOffset.UtcNow ||
+                 scheduledAt.Value.UtcDateTime > DateTime.MaxValue.AddHours(-3)))
+            {
+                return Result<AgreementPreviewResponse>.Fail(new Error(
+                    "Validation.InvalidRequest", "Thời gian lịch hẹn phải ở tương lai và hợp lệ."));
+            }
 
             var agreement = await _agreementRepo.GetByNegotiationIdAsync(negotiationId, cancellationToken);
 
@@ -247,6 +262,17 @@ namespace HomeCycle.Application.Services.Agreements
                 {
                     response.CanConfirm = isSeller ? agreement.SellerConfirmedAt == null : agreement.BuyerConfirmedAt == null;
                 }
+            }
+
+            if (scheduledAt.HasValue &&
+                await _appointmentRepo.HasNearbyPersonalAppointmentsAsync(
+                    negotiation.BuyerId, negotiation.SellerId,
+                    scheduledAt.Value.UtcDateTime, cancellationToken))
+            {
+                response.ScheduleWarning =
+                    "Bạn hoặc đối phương đang có lịch kiểm định/thu gom " +
+                    "trong vòng 3 giờ trước hoặc sau thời gian đã chọn. " +
+                    "Vui lòng cân nhắc lịch trình và thời gian di chuyển trước khi tiếp tục.";
             }
 
             return Result<AgreementPreviewResponse>.Success(response);

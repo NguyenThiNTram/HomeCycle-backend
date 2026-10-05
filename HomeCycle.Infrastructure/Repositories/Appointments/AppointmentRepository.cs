@@ -6,6 +6,7 @@ using HomeCycle.Domain.Entities;
 using HomeCycle.Domain.Enums;
 using HomeCycle.Infrastructure.DbContexts;
 using HomeCycle.Infrastructure.Persistences.Mappers;
+using HomeCycle.Infrastructure.Repositories.Dashboard;
 using Microsoft.EntityFrameworkCore;
 using System;
 using System.Collections.Generic;
@@ -19,6 +20,41 @@ namespace HomeCycle.Infrastructure.Repositories.Appointments
     {
         private readonly HomeCycleDbContext _db;
         public AppointmentRepository(HomeCycleDbContext db) => _db = db;
+
+        public async Task<bool> HasNearbyPersonalAppointmentsAsync(
+            Guid buyerId, Guid sellerId, DateTime scheduledAtUtc,
+            CancellationToken ct = default)
+        {
+            var personalRole = (int)UserRole.Personal;
+            var participantIds = new[] { buyerId, sellerId }.Distinct().ToArray();
+            var personalCount = await _db.Users.CountAsync(
+                u => participantIds.Contains(u.UserId) && u.Role == personalRole, ct);
+
+            if (participantIds.Length != 2 || personalCount != 2)
+                return false;
+
+            var from = scheduledAtUtc.AddHours(-3);
+            var to = scheduledAtUtc.AddHours(3);
+
+            return await _db.Appointments.AsNoTracking()
+                .Where(a =>
+                    a.AppointmentStatus == (int)AppointmentStatus.Scheduled ||
+                    a.AppointmentStatus == (int)AppointmentStatus.InProgress)
+                .Where(a => a.Agreement.Buyer.Role == personalRole &&
+                            a.Agreement.Seller.Role == personalRole)
+                .Where(a => participantIds.Contains(a.Agreement.BuyerId) ||
+                            participantIds.Contains(a.Agreement.SellerId))
+                .AnyAsync(a =>
+                    (a.AppointmentType == (int)AppointmentType.Inspection &&
+                     a.Inspection_Appointment != null &&
+                     a.Inspection_Appointment.InspectionDate >= from &&
+                     a.Inspection_Appointment.InspectionDate <= to)
+                    ||
+                    (a.AppointmentType == (int)AppointmentType.Collection &&
+                     a.Collection_Appointment != null &&
+                     a.Collection_Appointment.CollectionDate >= from &&
+                     a.Collection_Appointment.CollectionDate <= to), ct);
+        }
 
         public async Task<appointment?> GetByIdAsync(Guid appointmentId, CancellationToken ct = default)
         {
@@ -267,6 +303,26 @@ namespace HomeCycle.Infrastructure.Repositories.Appointments
             CancellationToken ct = default)
         {
             var query = _db.Appointments.AsNoTracking().AsQueryable();
+
+            if (request.EffectiveOnly)
+            {
+                // Use the same lifecycle rules as the dashboard before counting/paging.
+                var rows = query.Select(a => new AppointmentDashboardRow
+                {
+                    AppointmentId = a.AppointmentId,
+                    Status = a.AppointmentStatus,
+                    CancellationReason = a.CancellationReason,
+                    CancelledAt = a.CancelledAt,
+                    RescheduledFromAppointmentId = a.RescheduledFromAppointmentId,
+                    SourceRescheduledAt = _db.Appointments
+                        .Where(source => source.AppointmentId == a.RescheduledFromAppointmentId
+                            && source.CancellationReason == AppointmentDashboardQuery.RescheduledCancellationReason)
+                        .Select(source => source.CancelledAt)
+                        .FirstOrDefault()
+                });
+                var effectiveIds = AppointmentDashboardQuery.Effective(rows).Select(a => a.AppointmentId);
+                query = query.Where(a => effectiveIds.Contains(a.AppointmentId));
+            }
 
             if (request.HasOpenDispute.HasValue)
             {

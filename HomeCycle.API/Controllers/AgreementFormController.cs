@@ -62,11 +62,14 @@ namespace HomeCycle.API.Controllers
         }
 
         [HttpGet("preview/{negotiationId}")]
-        public async Task<IActionResult> GetPreview(Guid negotiationId, CancellationToken cancellationToken)
+        public async Task<IActionResult> GetPreview(
+            Guid negotiationId, CancellationToken cancellationToken,
+            [FromQuery] DateTimeOffset? scheduledAt = null)
         {
             var currentUserId = GetCurrentUserId();
 
-            var result = await _agreementService.GetPreviewAsync(negotiationId, currentUserId, cancellationToken);
+            var result = await _agreementService.GetPreviewAsync(
+                negotiationId, currentUserId, cancellationToken, scheduledAt);
 
             if (!result.IsSuccess)
                 return BadRequest(result.Error);

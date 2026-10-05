@@ -172,23 +172,25 @@ public sealed class DashboardRepository(HomeCycleDbContext db) : IDashboardRepos
 
     public async Task<PagedResult<ReportedListingItem>> GetReportedListingsAsync(ReportedListingRequest request, CancellationToken ct)
     {
-        var reports = db.Disputes.AsNoTracking().Where(x => x.DisputeTargetType == (int)DisputeTargetType.Post && x.PostId != null);
+        var allReports = db.Disputes.AsNoTracking().Where(x => x.DisputeTargetType == (int)DisputeTargetType.Post && x.PostId != null);
+        var reports = allReports;
         if (request.OpenOnly) reports = reports.Where(x => UnresolvedDisputeStatuses.Contains(x.DisputeStatus));
-        var posts = db.Posts.AsNoTracking().Where(p => reports.Any(d => d.PostId == p.PostId));
-        if (!string.IsNullOrWhiteSpace(request.Keyword))
-        {
-            var pattern = $"%{request.Keyword.Trim()}%";
-            posts = posts.Where(p => (p.Product != null && EF.Functions.ILike(p.Product.ProductName!, pattern))
-                || (p.User != null && EF.Functions.ILike(p.User.Username, pattern)));
-        }
+        var posts = ListingMonitorQuery(new ListingMonitorRequest { Keyword = request.Keyword })
+            .Where(p => reports.Any(d => d.PostId == p.PostId));
         var total = await posts.CountAsync(ct);
         var items = await posts.Select(p => new ReportedListingItem
         {
             LatestReportId = reports.Where(d => d.PostId == p.PostId).OrderByDescending(d => d.CreatedAt)
                 .ThenByDescending(d => d.DisputeId).Select(d => d.DisputeId).FirstOrDefault(),
             PostId = p.PostId, ProductName = p.Product == null ? null : p.Product.ProductName,
-            OwnerId = p.OwnerId, OwnerName = p.User == null ? null : p.User.Username, Status = (PostStatus?)p.Status,
+            OwnerId = p.OwnerId,
+            OwnerName = p.User == null ? null : p.User.Role == (int)UserRole.Business && p.User.Business_Profile != null
+                ? p.User.Business_Profile.BusinessName : p.User.Personal_ProfileUser != null
+                    ? p.User.Personal_ProfileUser.FullName : p.User.Username,
+            Status = (PostStatus?)p.Status,
             ReportCount = reports.Count(d => d.PostId == p.PostId),
+            OpenReportCount = allReports.Count(d => d.PostId == p.PostId && UnresolvedDisputeStatuses.Contains(d.DisputeStatus)),
+            TotalReportCount = allReports.Count(d => d.PostId == p.PostId),
             ReporterCount = reports.Where(d => d.PostId == p.PostId).Select(d => d.SenderId).Distinct().Count(),
             LatestReportedAt = reports.Where(d => d.PostId == p.PostId).Max(d => d.CreatedAt)
         }).OrderByDescending(x => x.LatestReportedAt).ThenBy(x => x.PostId)
@@ -582,7 +584,8 @@ public sealed class DashboardRepository(HomeCycleDbContext db) : IDashboardRepos
                     g.Count(x => x.Status == (int)AppointmentStatus.Cancelled))).ToListAsync(ct),
             TotalAppointments = await effective.CountAsync(ct),
             TodayCount = await effective.CountAsync(x =>
-                x.ScheduledAt >= todayStartUtc && x.ScheduledAt < todayEndUtc, ct),
+                x.ScheduledAt >= todayStartUtc && x.ScheduledAt < todayEndUtc
+                && x.Status != (int)AppointmentStatus.Cancelled, ct),
             UpcomingCount = await effective.CountAsync(x =>
                 x.Status == (int)AppointmentStatus.Scheduled && x.ScheduledAt > nowUtc, ct),
             OverdueCount = await overdue.CountAsync(ct),

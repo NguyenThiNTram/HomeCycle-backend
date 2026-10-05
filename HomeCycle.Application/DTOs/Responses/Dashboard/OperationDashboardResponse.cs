@@ -12,12 +12,19 @@ public sealed class AdminDashboardOverviewResponse
     public bool IsComparisonPartial => Period.IsPartialPeriod;
     public AdminDashboardKpis Kpis { get; init; } = new();
     public IReadOnlyList<OrderTradePoint> OrderSeries { get; init; } = [];
+    public IReadOnlyList<AdminDashboardGrowthPoint> GrowthSeries { get; init; } = [];
     public IReadOnlyList<ValueSeriesPoint> RevenueSeries { get; init; } = [];
     public IReadOnlyList<DistributionItem> CreatedOrderStatusDistribution { get; init; } = [];
     public IReadOnlyList<ListingCategoryMetric> TopCategoriesByGmv { get; init; } = [];
     public AdminDashboardSnapshot Snapshot { get; init; } = new();
     public AdminDashboardDataQuality DataQuality { get; init; } = new();
 }
+
+public sealed record AdminDashboardGrowthPoint(
+    DateOnly From,
+    DateOnly ToExclusive,
+    int NewCustomerCount,
+    int NewListingCount);
 
 public sealed class AdminDashboardKpis
 {

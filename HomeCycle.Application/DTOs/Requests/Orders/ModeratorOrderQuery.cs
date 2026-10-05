@@ -12,6 +12,7 @@ namespace HomeCycle.Application.DTOs.Requests.Orders
         public OrderHistoryGroup? Group { get; init; }
         public DeliveryMethod? DeliveryMethod { get; init; }
         public string? Keyword { get; init; }
+        public ShipmentStatus? ShipmentStatus { get; init; }
 
         public OrderStatus? Status { get; init; }
         public PaymentStatus? PaymentStatus { get; init; }

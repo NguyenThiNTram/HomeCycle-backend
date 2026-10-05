@@ -1583,6 +1583,7 @@ namespace HomeCycle.Application.Services.Orders
                     {
                         Group = request.Group,
                         DeliveryMethod = request.DeliveryMethod,
+                        ShipmentStatus = request.ShipmentStatus,
                         Keyword = request.Keyword,
 
                         Status = request.Status,
