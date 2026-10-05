@@ -146,7 +146,7 @@ namespace HomeCycle.Application.Services.Auths
                 resetOtp = new otp
                 {
                     OtpId = Guid.NewGuid(), UserId = user!.UserId, Email = request.Email,
-                    Code = code, Purpose = "PasswordReset",
+                    Code = HashPasswordResetOtp(request.Email, code), Purpose = "PasswordReset",
                     CreatedAt = DateTime.UtcNow, ExpiredAt = DateTime.UtcNow.AddMinutes(5)
                 };
                 await _otpRepository.AddAsync(resetOtp);
@@ -181,7 +181,7 @@ namespace HomeCycle.Application.Services.Auths
                 return Result<string>.Fail(AuthErrors.PasswordResetOtpLocked);
 
             var stored = await _otpRepository.GetPasswordResetOtpAsync(
-                request.Email, request.Otp, cancellationToken);
+                request.Email, HashPasswordResetOtp(request.Email, request.Otp), cancellationToken);
             if (stored?.UserId == null || stored.UserId != account.UserId)
             {
                 var locked = _otpProtectionService.RegisterFailedAttempt(protectionKey, out _, out _);
@@ -219,6 +219,9 @@ namespace HomeCycle.Application.Services.Auths
         private static bool CanResetPassword(user? user) => user != null &&
             user.Role is UserRole.Personal or UserRole.Business &&
             user.Status is UserStatus.Active or UserStatus.Pending;
+
+        private static string HashPasswordResetOtp(string email, string code) =>
+            Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes($"PasswordReset:{email}:{code}")));
 
         private static Error? ValidatePasswordResetRequest(ForgotPasswordRequest request)
         {

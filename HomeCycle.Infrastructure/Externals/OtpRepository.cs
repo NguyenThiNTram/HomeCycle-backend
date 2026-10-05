@@ -20,10 +20,10 @@ namespace HomeCycle.Infrastructure.Externals
             _db = dbContext;
         }
 
-        public async Task<otp?> GetPasswordResetOtpAsync(string email, string code, CancellationToken cancellationToken = default)
+        public async Task<otp?> GetPasswordResetOtpAsync(string email, string hash, CancellationToken cancellationToken = default)
         {
             var entity = await _db.OTPs.AsNoTracking().FirstOrDefaultAsync(x =>
-                x.Email == email && x.Code == code && x.Purpose == "PasswordReset" &&
+                x.Email == email && x.Code == hash && x.Purpose == "PasswordReset" &&
                 !x.IsUsed && x.ExpiredAt > DateTime.UtcNow, cancellationToken);
             return entity?.ToDomain();
         }
