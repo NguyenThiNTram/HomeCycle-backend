@@ -6,7 +6,6 @@ using HomeCycle.Domain.Entities;
 using HomeCycle.Domain.Enums;
 using HomeCycle.Infrastructure.DbContexts;
 using HomeCycle.Infrastructure.Persistences.Mappers;
-using HomeCycle.Infrastructure.Repositories.Dashboard;
 using Microsoft.EntityFrameworkCore;
 using System;
 using System.Collections.Generic;
@@ -268,26 +267,6 @@ namespace HomeCycle.Infrastructure.Repositories.Appointments
             CancellationToken ct = default)
         {
             var query = _db.Appointments.AsNoTracking().AsQueryable();
-
-            if (request.EffectiveOnly)
-            {
-                // Use the same lifecycle rules as the dashboard before counting/paging.
-                var rows = query.Select(a => new AppointmentDashboardRow
-                {
-                    AppointmentId = a.AppointmentId,
-                    Status = a.AppointmentStatus,
-                    CancellationReason = a.CancellationReason,
-                    CancelledAt = a.CancelledAt,
-                    RescheduledFromAppointmentId = a.RescheduledFromAppointmentId,
-                    SourceRescheduledAt = _db.Appointments
-                        .Where(source => source.AppointmentId == a.RescheduledFromAppointmentId
-                            && source.CancellationReason == AppointmentDashboardQuery.RescheduledCancellationReason)
-                        .Select(source => source.CancelledAt)
-                        .FirstOrDefault()
-                });
-                var effectiveIds = AppointmentDashboardQuery.Effective(rows).Select(a => a.AppointmentId);
-                query = query.Where(a => effectiveIds.Contains(a.AppointmentId));
-            }
 
             if (request.HasOpenDispute.HasValue)
             {

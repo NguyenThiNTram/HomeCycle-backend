@@ -124,8 +124,6 @@ public sealed class ReportedListingItem
     public string? OwnerName { get; init; }
     public PostStatus? Status { get; init; }
     public int ReportCount { get; init; }
-    public int OpenReportCount { get; init; }
-    public int TotalReportCount { get; init; }
     public int ReporterCount { get; init; }
     public DateTime LatestReportedAt { get; init; }
     public IReadOnlyList<ReportReasonItem> Reasons { get; set; } = [];
