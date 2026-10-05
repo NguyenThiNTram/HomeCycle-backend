@@ -21,6 +21,41 @@ namespace HomeCycle.Infrastructure.Repositories.Appointments
         private readonly HomeCycleDbContext _db;
         public AppointmentRepository(HomeCycleDbContext db) => _db = db;
 
+        public async Task<bool> HasNearbyPersonalAppointmentsAsync(
+            Guid buyerId, Guid sellerId, DateTime scheduledAtUtc,
+            CancellationToken ct = default)
+        {
+            var personalRole = (int)UserRole.Personal;
+            var participantIds = new[] { buyerId, sellerId }.Distinct().ToArray();
+            var personalCount = await _db.Users.CountAsync(
+                u => participantIds.Contains(u.UserId) && u.Role == personalRole, ct);
+
+            if (participantIds.Length != 2 || personalCount != 2)
+                return false;
+
+            var from = scheduledAtUtc.AddHours(-3);
+            var to = scheduledAtUtc.AddHours(3);
+
+            return await _db.Appointments.AsNoTracking()
+                .Where(a =>
+                    a.AppointmentStatus == (int)AppointmentStatus.Scheduled ||
+                    a.AppointmentStatus == (int)AppointmentStatus.InProgress)
+                .Where(a => a.Agreement.Buyer.Role == personalRole &&
+                            a.Agreement.Seller.Role == personalRole)
+                .Where(a => participantIds.Contains(a.Agreement.BuyerId) ||
+                            participantIds.Contains(a.Agreement.SellerId))
+                .AnyAsync(a =>
+                    (a.AppointmentType == (int)AppointmentType.Inspection &&
+                     a.Inspection_Appointment != null &&
+                     a.Inspection_Appointment.InspectionDate >= from &&
+                     a.Inspection_Appointment.InspectionDate <= to)
+                    ||
+                    (a.AppointmentType == (int)AppointmentType.Collection &&
+                     a.Collection_Appointment != null &&
+                     a.Collection_Appointment.CollectionDate >= from &&
+                     a.Collection_Appointment.CollectionDate <= to), ct);
+        }
+
         public async Task<appointment?> GetByIdAsync(Guid appointmentId, CancellationToken ct = default)
         {
             var entity = await _db.Appointments.AsNoTracking().FirstOrDefaultAsync(x => x.AppointmentId == appointmentId, ct);
