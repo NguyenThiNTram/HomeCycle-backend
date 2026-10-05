@@ -66,6 +66,40 @@ namespace HomeCycle.Application.Services.Moderators
             _auditService = auditService;
         }
 
+        public async Task<Result<List<VerificationHistoryItemDto>>> GetBusinessVerificationHistoryAsync(
+            CancellationToken cancellationToken = default)
+        {
+            var profiles = await _businessProfileRepository.GetVerificationHistoryAsync(cancellationToken);
+            var data = profiles.Select(p => new VerificationHistoryItemDto
+            {
+                ProfileId = p.BusinessProfileId,
+                DisplayName = !string.IsNullOrWhiteSpace(p.BusinessName) ? p.BusinessName : p.FullName,
+                Status = ((BusinessProfileStatus)p.Status).ToString(),
+                RejectReason = p.RejectReason,
+                VerifiedAt = p.VerifiedAt,
+                VerifiedBy = p.VerifiedBy
+            }).ToList();
+
+            return Result<List<VerificationHistoryItemDto>>.Success(data);
+        }
+
+        public async Task<Result<List<VerificationHistoryItemDto>>> GetPersonalVerificationHistoryAsync(
+            CancellationToken cancellationToken = default)
+        {
+            var profiles = await _personalProfileRepository.GetVerificationHistoryAsync(cancellationToken);
+            var data = profiles.Select(p => new VerificationHistoryItemDto
+            {
+                ProfileId = p.PersonalProfileId,
+                DisplayName = p.RepresentativeName,
+                Status = p.VerificationStatus?.ToString() ?? string.Empty,
+                RejectReason = p.RejectReason,
+                VerifiedAt = p.VerifiedAt,
+                VerifiedBy = p.VerifiedBy
+            }).ToList();
+
+            return Result<List<VerificationHistoryItemDto>>.Success(data);
+        }
+
         public async Task<Result<string>> ReviewBusinessProfileAsync(
             Guid moderatorId,
             ReviewBusinessProfileRequest request,
