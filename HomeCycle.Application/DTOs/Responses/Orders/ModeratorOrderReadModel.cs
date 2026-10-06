@@ -43,6 +43,9 @@ namespace HomeCycle.Application.DTOs.Responses.Orders
 
         public Guid? LatestDisputeId { get; init; }
         public int? LatestDisputeStatus { get; init; }
+        public DateTime? LatestDisputeCreatedAt { get; init; }
+
+        public DateTime? LatestDisputeResolvedAt { get; init; }
 
         public bool HasInspection { get; init; }
 

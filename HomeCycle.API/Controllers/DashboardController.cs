@@ -16,7 +16,6 @@ using HomeCycle.Application.Interfaces.Services.Orders;
 using HomeCycle.Application.Interfaces.Services.Appointments;
 using HomeCycle.Application.Interfaces.Services.Disputes;
 using HomeCycle.Application.Interfaces.Services.Payments;
-using HomeCycle.Application.Interfaces.Services.Inspections;
 
 namespace HomeCycle.API.Controllers;
 
@@ -97,13 +96,6 @@ public sealed class DashboardController(IDashboardService service) : ControllerB
     [HttpGet("appointments/{appointmentId:guid}")]
     public async Task<IActionResult> GetAppointmentDetail(Guid appointmentId, [FromServices] IAppointmentService appointments, CancellationToken ct)
         => ReadResult(await appointments.GetDetailForModeratorAsync(appointmentId, ct));
-
-    [HttpGet("appointments/{appointmentId:guid}/inspection-form")]
-    [SwaggerOperation(Summary = "Xem phiếu kiểm tra của lịch hẹn dành cho Admin",
-        Description = "Trả phiếu kiểm tra và evidence ở chế độ chỉ đọc, không cấp thao tác nghiệp vụ.")]
-    public async Task<IActionResult> GetAppointmentInspectionForm(
-        Guid appointmentId, [FromServices] IInspectionFormService inspections, CancellationToken ct)
-        => ReadResult(await inspections.GetByAppointmentForModeratorAsync(appointmentId, ct));
 
     [HttpGet("disputes/history")]
     public async Task<IActionResult> GetDisputeHistory([FromQuery] DisputeSearchRequest request, [FromServices] IDisputeService disputes, CancellationToken ct)
