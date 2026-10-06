@@ -99,6 +99,20 @@ namespace HomeCycle.Infrastructure.Repositories.Users
             return entities.Select(e => e.ToDomain()!).ToList();
         }
 
+        public async Task<List<personal_profile>> GetVerificationHistoryAsync(
+            CancellationToken cancellationToken = default)
+        {
+            var entities = await _db.Personal_Profiles
+                .AsNoTracking()
+                .Where(p => p.VerificationStatus == (int)VerifyStatus.Verified ||
+                            p.VerificationStatus == (int)VerifyStatus.Rejected)
+                .OrderByDescending(p => p.VerifiedAt.HasValue)
+                .ThenByDescending(p => p.VerifiedAt)
+                .ToListAsync(cancellationToken);
+
+            return entities.Select(p => p.ToDomain()!).ToList();
+        }
+
         public async Task<personal_profile?> GetByUserIdForUpdateAsync(
             Guid userId,
             CancellationToken cancellationToken = default)

@@ -1583,6 +1583,7 @@ namespace HomeCycle.Application.Services.Orders
                     {
                         Group = request.Group,
                         DeliveryMethod = request.DeliveryMethod,
+                        ShipmentStatus = request.ShipmentStatus,
                         Keyword = request.Keyword,
 
                         Status = request.Status,
@@ -1649,17 +1650,16 @@ namespace HomeCycle.Application.Services.Orders
                                 AvatarUrl = x.SellerAvatarUrl
                             },
 
-                        HasActiveDispute =
-                            x.HasActiveDispute,
-
-                        LatestDisputeId =
-                            x.LatestDisputeId,
-
-                        LatestDisputeStatus =
-                            x.LatestDisputeStatus.HasValue
-                                ? (DisputeStatus?)
-                                    x.LatestDisputeStatus.Value
+                        Dispute = new DisputeSummaryDto
+                        {
+                            HasActiveDispute = x.HasActiveDispute,
+                            LatestDisputeId = x.LatestDisputeId,
+                            LatestDisputeStatus = x.LatestDisputeStatus.HasValue
+                                ? (DisputeStatus?)x.LatestDisputeStatus.Value
                                 : null,
+                            LatestDisputeCreatedAt = x.LatestDisputeCreatedAt,
+                            LatestDisputeResolvedAt = x.LatestDisputeResolvedAt
+                        },
 
                         HasInspection =
                             x.HasInspection,

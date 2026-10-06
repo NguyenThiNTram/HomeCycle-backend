@@ -12,6 +12,11 @@ namespace HomeCycle.Application.Interfaces.Services.Moderators
 {
     public interface IModeratorService
     {
+        Task<Result<List<VerificationHistoryItemDto>>> GetBusinessVerificationHistoryAsync(
+            CancellationToken cancellationToken = default);
+
+        Task<Result<List<VerificationHistoryItemDto>>> GetPersonalVerificationHistoryAsync(
+            CancellationToken cancellationToken = default);
         Task<Result<string>> ReviewBusinessProfileAsync(
             Guid moderatorId,
             ReviewBusinessProfileRequest request,

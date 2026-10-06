@@ -983,8 +983,13 @@ namespace HomeCycle.Application.Services.PlatformPolicies
                             PlatformPolicyType.Payment));
                 }
 
-                var config = _mapper.Map<PaymentPolicyConfigDto>(currentConfig);
-                _mapper.Map(request, config);
+                var config = new PaymentPolicyConfigDto
+                {
+                    DepositRatePercent = request.DepositRatePercent
+                        ?? currentConfig!.DepositRatePercent,
+                    PaymentExpiryMinutes = request.PaymentExpiryMinutes
+                        ?? currentConfig!.PaymentExpiryMinutes
+                };
 
                 if (!IsValidPaymentConfig(config))
                 {

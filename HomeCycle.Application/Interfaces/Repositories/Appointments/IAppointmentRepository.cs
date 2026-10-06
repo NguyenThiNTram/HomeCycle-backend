@@ -13,6 +13,10 @@ namespace HomeCycle.Application.Interfaces.Repositories.Appointments
 {
     public interface IAppointmentRepository
     {
+        Task<bool> HasNearbyPersonalAppointmentsAsync(
+            Guid buyerId, Guid sellerId, DateTime scheduledAtUtc,
+            CancellationToken ct = default);
+
         Task<appointment?> GetByIdAsync(Guid appointmentId, CancellationToken ct = default);
         Task<appointment?> GetByAgreementIdAsync(Guid agreementId, CancellationToken ct = default);
         Task AddAsync(appointment appointment, CancellationToken ct = default);

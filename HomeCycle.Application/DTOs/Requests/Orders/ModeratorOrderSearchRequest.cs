@@ -17,6 +17,7 @@ namespace HomeCycle.Application.DTOs.Requests.Orders
         [System.ComponentModel.DataAnnotations.EnumDataType(typeof(DeliveryMethod))]
         public DeliveryMethod? DeliveryMethod { get; set; }
         public string? Keyword { get; set; }
+        public ShipmentStatus? ShipmentStatus { get; set; }
 
         public OrderStatus? Status { get; set; }
         public PaymentStatus? PaymentStatus { get; set; }
