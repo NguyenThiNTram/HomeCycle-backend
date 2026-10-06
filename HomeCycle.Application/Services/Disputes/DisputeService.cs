@@ -3006,6 +3006,15 @@ if (dispute.TargetUserId.HasValue &&
             if (dispute.TargetUserId.HasValue)
                 targetUser = await _userRepository.GetByIdAsync(dispute.TargetUserId.Value, cancellationToken);
 
+            user? moderator = null;
+
+            if (dispute.ModeratorId.HasValue)
+            {
+                moderator = await _userRepository.GetByIdAsync(
+                    dispute.ModeratorId.Value,
+                    cancellationToken);
+            }
+
             var targetSummaryResult = await handler.BuildSummaryAsync(dispute, cancellationToken);
 
             if (!targetSummaryResult.IsSuccess || targetSummaryResult.Data == null)
@@ -3116,6 +3125,9 @@ if (dispute.TargetUserId.HasValue &&
                 EscalatedAt = dispute.EscalatedAt,
                 ModeratorClaimedAt = dispute.ModeratorClaimedAt,
                 ModeratorId = dispute.ModeratorId,
+                Moderator = moderator == null
+                    ? null
+                    : _mapper.Map<DisputeUserSummaryDto>(moderator),
                 ModeratorNote = dispute.ModeratorNote,
                 CreatedAt = dispute.CreatedAt,
                 UpdatedAt = dispute.UpdatedAt,

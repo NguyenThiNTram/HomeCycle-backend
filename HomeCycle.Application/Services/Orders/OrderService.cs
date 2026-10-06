@@ -1650,17 +1650,16 @@ namespace HomeCycle.Application.Services.Orders
                                 AvatarUrl = x.SellerAvatarUrl
                             },
 
-                        HasActiveDispute =
-                            x.HasActiveDispute,
-
-                        LatestDisputeId =
-                            x.LatestDisputeId,
-
-                        LatestDisputeStatus =
-                            x.LatestDisputeStatus.HasValue
-                                ? (DisputeStatus?)
-                                    x.LatestDisputeStatus.Value
+                        Dispute = new DisputeSummaryDto
+                        {
+                            HasActiveDispute = x.HasActiveDispute,
+                            LatestDisputeId = x.LatestDisputeId,
+                            LatestDisputeStatus = x.LatestDisputeStatus.HasValue
+                                ? (DisputeStatus?)x.LatestDisputeStatus.Value
                                 : null,
+                            LatestDisputeCreatedAt = x.LatestDisputeCreatedAt,
+                            LatestDisputeResolvedAt = x.LatestDisputeResolvedAt
+                        },
 
                         HasInspection =
                             x.HasInspection,

@@ -40,9 +40,7 @@ namespace HomeCycle.Application.DTOs.Responses.Orders
         public ModeratorOrderPartyDto Buyer { get; set; } = new();
         public ModeratorOrderPartyDto Seller { get; set; } = new();
 
-        public bool HasActiveDispute { get; set; }
-        public Guid? LatestDisputeId { get; set; }
-        public DisputeStatus? LatestDisputeStatus { get; set; }
+        public DisputeSummaryDto Dispute { get; set; } = new();
 
         public bool HasInspection { get; set; }
 

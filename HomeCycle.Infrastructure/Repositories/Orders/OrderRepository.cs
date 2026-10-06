@@ -85,7 +85,48 @@ namespace HomeCycle.Infrastructure.Repositories.Orders
                     OrderStatus = o.OrderStatus,
                     PaymentStatus = o.PaymentStatus,
                     CreatedAt = o.CreatedAt,
-                })
+
+                    Dispute = new DisputeSummaryDto
+                    {
+                        HasActiveDispute =
+                            o.Disputes.Any(d =>
+                                d.DisputeStatus == (int)DisputeStatus.AwaitingResponse ||
+                                d.DisputeStatus == (int)DisputeStatus.Pending ||
+                                d.DisputeStatus == (int)DisputeStatus.UnderReview ||
+                                d.DisputeStatus == (int)DisputeStatus.AwaitingReturn),
+
+                        LatestDisputeId =
+                            o.Disputes
+                                .OrderByDescending(d => d.CreatedAt)
+                                .ThenByDescending(d => d.DisputeId)
+                                .Select(d => (Guid?)d.DisputeId)
+                                .FirstOrDefault(),
+
+                        LatestDisputeStatus =
+                            o.Disputes
+                                .OrderByDescending(d => d.CreatedAt)
+                                .ThenByDescending(d => d.DisputeId)
+                                .Select(d =>
+                                    d.DisputeStatus.HasValue
+                                        ? (DisputeStatus?)d.DisputeStatus.Value
+                                        : null)
+                                .FirstOrDefault(),
+
+                        LatestDisputeCreatedAt =
+                            o.Disputes
+                                .OrderByDescending(d => d.CreatedAt)
+                                .ThenByDescending(d => d.DisputeId)
+                                .Select(d => (DateTime?)d.CreatedAt)
+                                .FirstOrDefault(),
+
+                        LatestDisputeResolvedAt =
+                            o.Disputes
+                                .OrderByDescending(d => d.CreatedAt)
+                                .ThenByDescending(d => d.DisputeId)
+                                .Select(d => d.ResolvedAt)
+                                .FirstOrDefault()
+                                    }
+                                })
                 .ToListAsync(ct);
 
             return new PagedResult<OrderListItemDto>
@@ -158,8 +199,9 @@ namespace HomeCycle.Infrastructure.Repositories.Orders
                     .FirstOrDefault();
 
             var latestDispute =
-                entity.Disputes
+                  entity.Disputes
                     .OrderByDescending(d => d.CreatedAt)
+                    .ThenByDescending(d => d.DisputeId)
                     .FirstOrDefault();
 
             AgreementDetailsDto? agreementDetails = null;
@@ -705,15 +747,33 @@ namespace HomeCycle.Infrastructure.Repositories.Orders
                             d.DisputeStatus == (int)DisputeStatus.UnderReview ||
                             d.DisputeStatus == (int)DisputeStatus.AwaitingReturn),
 
-                    LatestDisputeId = o.Disputes
-                        .OrderByDescending(d => d.CreatedAt)
-                        .Select(d => (Guid?)d.DisputeId)
-                        .FirstOrDefault(),
+                    LatestDisputeId =
+                        o.Disputes
+                            .OrderByDescending(d => d.CreatedAt)
+                            .ThenByDescending(d => d.DisputeId)
+                            .Select(d => (Guid?)d.DisputeId)
+                            .FirstOrDefault(),
 
-                    LatestDisputeStatus = o.Disputes
-                        .OrderByDescending(d => d.CreatedAt)
-                        .Select(d => d.DisputeStatus)
-                        .FirstOrDefault(),
+                    LatestDisputeStatus =
+                        o.Disputes
+                            .OrderByDescending(d => d.CreatedAt)
+                            .ThenByDescending(d => d.DisputeId)
+                            .Select(d => d.DisputeStatus)
+                            .FirstOrDefault(),
+
+                    LatestDisputeCreatedAt =
+                        o.Disputes
+                            .OrderByDescending(d => d.CreatedAt)
+                            .ThenByDescending(d => d.DisputeId)
+                            .Select(d => (DateTime?)d.CreatedAt)
+                            .FirstOrDefault(),
+
+                    LatestDisputeResolvedAt =
+                        o.Disputes
+                            .OrderByDescending(d => d.CreatedAt)
+                            .ThenByDescending(d => d.DisputeId)
+                            .Select(d => d.ResolvedAt)
+                            .FirstOrDefault(),
 
                     HasInspection =
                         _db.Inspection_Forms.Any(f =>
