@@ -696,10 +696,17 @@ namespace HomeCycle.Application.Mappings
                     opt => opt.MapFrom(src => src.PaymentStatus.HasValue
                         ? (PaymentStatus?)src.PaymentStatus.Value
                         : null))
-                .ForMember(dest => dest.LatestDisputeStatus,
-                    opt => opt.MapFrom(src => src.LatestDisputeStatus.HasValue
-                        ? (DisputeStatus?)src.LatestDisputeStatus.Value
-                        : null))
+                .ForMember(dest => dest.Dispute,
+                    opt => opt.MapFrom(src => new DisputeSummaryDto
+                    {
+                        HasActiveDispute = src.HasActiveDispute,
+                        LatestDisputeId = src.LatestDisputeId,
+                        LatestDisputeStatus = src.LatestDisputeStatus.HasValue
+                            ? (DisputeStatus?)src.LatestDisputeStatus.Value
+                            : null,
+                        LatestDisputeCreatedAt = src.LatestDisputeCreatedAt,
+                        LatestDisputeResolvedAt = src.LatestDisputeResolvedAt
+                    }))
                 .ForMember(dest => dest.Buyer,
                     opt => opt.MapFrom(src => new ModeratorOrderPartyDto
                     {

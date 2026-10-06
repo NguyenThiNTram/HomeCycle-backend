@@ -29,6 +29,7 @@ namespace HomeCycle.Application.DTOs.Responses.Disputes
         public DisputeStatus? Status { get; set; }
 
         public Guid? ModeratorId { get; set; }
+        public DisputeUserSummaryDto? Moderator { get; set; }
         public DisputeResolutionOutcome? ResolutionOutcome { get; set; }
         public DisputeOrigin Origin { get; set; }
 
